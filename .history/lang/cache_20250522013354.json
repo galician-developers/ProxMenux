@@ -22,6 +22,7 @@
     "it": "Selezionare un'opzione:",
     "pt": "Selecione uma opção:",
     "gl": "Selecione unha opción:"
+
   },
   "GPUs and Coral-TPU": {
     "es": "GPUs y Coral-TPU",
@@ -30,6 +31,7 @@
     "it": "GPUs e Coral-TPU",
     "pt": "GPUs e Coral-TPU",
     "gl": "GPUs e Coral-TPU"
+
   },
   "Hard Drives, Disk Images, and Storage": {
     "es": "Discos duros, imágenes de disco y almacenamiento",
@@ -70,6 +72,7 @@
     "it": "HW: GPUs e Coral",
     "pt": "HW: GPUs e Coral",
     "gl": "HW: GPUs e Coral"
+
   },
   "Return to Main Menu": {
     "es": "Volver al menú principal",

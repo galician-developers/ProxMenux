@@ -22,6 +22,7 @@
     "it": "Selezionare un'opzione:",
     "pt": "Selecione uma opção:",
     "gl": "Selecione unha opción:"
+
   },
   "GPUs and Coral-TPU": {
     "es": "GPUs y Coral-TPU",
@@ -30,6 +31,7 @@
     "it": "GPUs e Coral-TPU",
     "pt": "GPUs e Coral-TPU",
     "gl": "GPUs e Coral-TPU"
+
   },
   "Hard Drives, Disk Images, and Storage": {
     "es": "Discos duros, imágenes de disco y almacenamiento",
@@ -70,6 +72,7 @@
     "it": "HW: GPUs e Coral",
     "pt": "HW: GPUs e Coral",
     "gl": "HW: GPUs e Coral"
+
   },
   "Return to Main Menu": {
     "es": "Volver al menú principal",
@@ -148,79 +151,69 @@
     "fr": "Sélectionnez une nouvelle langue pour le menu :",
     "de": "Wählen Sie eine neue Sprache für das Menü:",
     "it": "Seleziona una nuova lingua per il menu:",
-    "pt": "Selecione um novo idioma para o menu:",
-    "gl": "Seleccione un novo idioma para o menú:"
+    "pt": "Selecione um novo idioma para o menu:"
   },
   "English (Recommended)": {
     "es": "Inglés (recomendado)",
     "fr": "Anglais (recommandé)",
     "de": "Englisch (empfohlen)",
     "it": "Inglese (consigliato)",
-    "pt": "Inglês (recomendado)",
-    "gl": "Inglés (recomendado)"
+    "pt": "Inglês (recomendado)"
   },
   "Spanish": {
     "es": "Español",
     "fr": "Espagnol",
     "de": "Spanisch",
     "it": "Spagnolo",
-    "pt": "Espanhol",
-    "gl": "Castelán"
+    "pt": "Espanhol"
   },
   "French": {
     "es": "Francés",
     "fr": "Français",
     "de": "Französisch",
     "it": "Francese",
-    "pt": "Francês",
-    "gl": "Francés"
+    "pt": "Francês"
   },
   "German": {
     "es": "Alemán",
     "fr": "Allemand",
     "de": "Deutsch",
     "it": "Tedesco",
-    "pt": "Alemão",
-    "gl": "Alemán"
+    "pt": "Alemão"
   },
   "Italian": {
     "es": "Italiano",
     "fr": "Italien",
     "de": "Italienisch",
     "it": "Italiano",
-    "pt": "Italiano",
-    "gl": "Italiano"
+    "pt": "Italiano"
   },
   "Portuguese": {
     "es": "Portugués",
     "fr": "Portugais",
     "de": "Portugiesisch",
     "it": "Portoghese",
-    "pt": "Português",
-    "gl": "Portugués"
+    "pt": "Português"
   },
   "Simplified Chinese": {
     "es": "Chino simplificado",
     "fr": "Chinois simplifié",
     "de": "Vereinfachtes Chinesisch",
     "it": "Cinese semplificato",
-    "pt": "Chinês simplificado",
-    "gl": "Chinés simplificado"
+    "pt": "Chinês simplificado"
   },
   "Japanese": {
     "es": "Japonés",
     "fr": "Japonais",
     "de": "Japanisch",
     "it": "Giapponese",
-    "pt": "Japonês",
-    "gl": "Xaponés"
+    "pt": "Japonês"
   },
   "Thank you for using ProxMenu. Goodbye!": {
   "es": "Gracias por usar ProxMenu. ¡Hasta luego!",
   "fr": "Merci d'avoir utilisé ProxMenu. À bientôt !",
   "de": "Vielen Dank, dass Sie ProxMenu verwendet haben. Bis bald!",
   "it": "Grazie per aver usato ProxMenu. A presto!",
-  "pt": "Obrigado por usar o ProxMenu. Até logo!",
-  "gl": "Grazas por usar ProxMenu. Ata logo!"
+  "pt": "Obrigado por usar o ProxMenu. Até logo!"
   }
 }
