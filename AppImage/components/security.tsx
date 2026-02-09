@@ -882,8 +882,38 @@ export function Security() {
   @media print {
     .no-print { display: none !important; }
     .page-break { page-break-before: always; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     body { font-size: 11px; }
     .section { margin-bottom: 16px; }
+    /* Darken light grays for PDF readability */
+    .rpt-header-left p, .rpt-header-right { color: #374151; }
+    .rpt-header-right .rid { color: #4b5563; }
+    .exec-text p { color: #374151; }
+    .score-bar-labels { color: #4b5563; }
+    .card-label { color: #4b5563; }
+    .card-sub { color: #374151; }
+    .f-num { color: #4b5563; }
+    .f-sol { color: #374151; }
+    .f-sol strong { color: #1e293b; }
+    .f-det { color: #4b5563; }
+    .cat-cnt { color: #4b5563; }
+    .chk-tbl th { color: #374151; }
+    .chk-det { color: #4b5563; }
+    .rpt-footer { color: #4b5563; }
+    /* Force inline style overrides for print */
+    [style*="color:#64748b"] { color: #374151 !important; }
+    [style*="color:#94a3b8"] { color: #4b5563 !important; }
+    [style*="color: #64748b"] { color: #374151 !important; }
+    [style*="color: #94a3b8"] { color: #4b5563 !important; }
+    /* Ensure all greens are exactly the same shade in print */
+    [style*="color:#16a34a"], [style*="color: #16a34a"] { color: #16a34a !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    [style*="border-color:#16a34a"], [style*="border-color: #16a34a"] { border-color: #16a34a !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    [style*="background:#16a34a"], [style*="background: #16a34a"] { background: #16a34a !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .score-ring, .score-bar-fill, .card-value, .chk-tbl td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    /* Ensure red and yellow consistency too */
+    [style*="color:#dc2626"] { color: #dc2626 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    [style*="color:#ca8a04"] { color: #ca8a04 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    [style*="color:#0891b2"] { color: #0891b2 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
   @media screen {
     body { max-width: 1000px; margin: 0 auto; padding: 24px 32px; padding-top: 64px; }
@@ -1296,6 +1326,15 @@ ${(report.sections && report.sections.length > 0) ? `
       <div>
         <h1 className="text-3xl font-bold">Security</h1>
         <p className="text-muted-foreground mt-2">Manage authentication, encryption, and access control</p>
+      </div>
+
+      {/* ── ProxMenux Monitor Security Group ── */}
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <Shield className="h-4 w-4 text-cyan-500" />
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-cyan-500">ProxMenux Monitor</h2>
+        </div>
+        <div className="flex-1 h-px bg-cyan-500/20" />
       </div>
 
       {/* Authentication Settings */}
@@ -2075,6 +2114,15 @@ ${(report.sections && report.sections.length > 0) ? `
           </CardContent>
         </Card>
       )}
+
+      {/* ── Proxmox VE Security Group ── */}
+      <div className="flex items-center gap-3 mt-4">
+        <div className="flex items-center gap-2">
+          <Flame className="h-4 w-4 text-orange-500" />
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-orange-500">Proxmox VE</h2>
+        </div>
+        <div className="flex-1 h-px bg-orange-500/20" />
+      </div>
 
       {/* Proxmox Firewall */}
       <Card>
