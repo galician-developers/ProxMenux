@@ -289,3 +289,19 @@ def security_tools():
         return jsonify({"success": True, "tools": tools})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+
+
+# -------------------------------------------------------------------
+# Root Access Hardening
+# -------------------------------------------------------------------
+
+@security_bp.route('/api/security/root-hardening/status', methods=['GET'])
+def root_hardening_status():
+    """Get root access hardening status"""
+    if not security_manager:
+        return jsonify({"success": False, "message": "Security manager not available"}), 500
+    try:
+        status = security_manager.get_root_hardening_status()
+        return jsonify({"success": True, **status})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
