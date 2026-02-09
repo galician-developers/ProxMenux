@@ -872,6 +872,7 @@ export function Security() {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Security Audit Report - ${report.hostname || "ProxMenux"}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -885,7 +886,7 @@ export function Security() {
     .section { margin-bottom: 16px; }
   }
   @media screen {
-    body { max-width: 800px; margin: 0 auto; padding: 20px 24px; padding-top: 60px; }
+    body { max-width: 1000px; margin: 0 auto; padding: 24px 32px; padding-top: 64px; }
   }
 
   /* Top bar for screen only */
@@ -997,12 +998,26 @@ export function Security() {
 </head>
 <body>
 
+<script>
+function pmxPrint(){
+  try { window.print(); }
+  catch(e) {
+    // Fallback hint
+    var isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    var el = document.getElementById('pmx-print-hint');
+    if(el) el.textContent = isMac ? 'Use Cmd+P to save as PDF' : 'Use Ctrl+P to save as PDF';
+  }
+}
+</script>
 <div class="top-bar no-print">
   <div style="display:flex;align-items:center;gap:12px;">
     <strong>ProxMenux Security Audit Report</strong>
-    <span style="font-size:11px;opacity:0.7;">Use Print / Save as PDF to download</span>
+    <span id="pmx-print-hint" style="font-size:11px;opacity:0.7;">Review the report, then print or save as PDF</span>
   </div>
-  <button onclick="window.print()">Print / Save as PDF</button>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <span style="font-size:11px;opacity:0.5;">\u2318P / Ctrl+P</span>
+    <button onclick="pmxPrint()">Print / Save as PDF</button>
+  </div>
 </div>
 
 <!-- Header -->
@@ -3152,10 +3167,12 @@ ${(report.sections && report.sections.length > 0) ? `
                           onClick={(e) => {
                             e.stopPropagation()
                             const html = generatePrintableReport(lynisReport)
-                            // Use Blob URL to open preview in new tab (Safari-safe, no document.write)
-                            const blob = new Blob([html], { type: "text/html;charset=utf-8" })
+                            // Use Blob URL for Safari-safe preview (avoids document.write issues)
+                            const blob = new Blob([html], { type: "text/html" })
                             const url = URL.createObjectURL(blob)
-                            window.open(url, "_blank")
+                            const w = window.open(url, "_blank")
+                            // Revoke after a delay so it loads first
+                            if (w) setTimeout(() => URL.revokeObjectURL(url), 60000)
                           }}
                           className="h-7 gap-1.5 px-2.5 text-xs border-cyan-500/30 text-cyan-500 hover:text-cyan-400 hover:bg-cyan-500/10"
                           title="Print / Save as PDF"
