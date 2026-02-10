@@ -9,7 +9,7 @@ import {
   Shield, Lock, User, AlertCircle, CheckCircle, Info, LogOut, Key, Copy, Eye, EyeOff,
   Trash2, RefreshCw, Clock, ShieldCheck, Globe, FileKey, AlertTriangle,
   Flame, Bug, Search, Download, Power, PowerOff, Plus, Minus, Activity, Settings, Ban,
-  FileText, Printer, Play, BarChart3, TriangleAlert, ChevronDown, UserCog,
+  FileText, Printer, Play, BarChart3, TriangleAlert, ChevronDown,
 } from "lucide-react"
 import { getApiUrl, fetchApi } from "../lib/api-config"
 import { TwoFactorSetup } from "./two-factor-setup"
@@ -165,17 +165,6 @@ export function Security() {
   const [f2bSavingConfig, setF2bSavingConfig] = useState(false)
   const [f2bApplyingJails, setF2bApplyingJails] = useState(false)
 
-  // Root Hardening state
-  const [rootHardeningLoading, setRootHardeningLoading] = useState(true)
-  const [rootHardeningData, setRootHardeningData] = useState<{
-    hardening_applied: boolean
-    ssh_root_disabled: boolean
-    root_web_blocked: boolean
-    admin_user: string
-    pve_user_exists: boolean
-  } | null>(null)
-  const [showRootHardeningScript, setShowRootHardeningScript] = useState(false)
-
   // SSL/HTTPS state
   const [sslEnabled, setSslEnabled] = useState(false)
   const [sslSource, setSslSource] = useState<"none" | "proxmox" | "custom">("none")
@@ -195,7 +184,6 @@ export function Security() {
     loadSslStatus()
     loadFirewallStatus()
     loadSecurityTools()
-    loadRootHardeningStatus()
   }, [])
 
   const loadFirewallStatus = async () => {
@@ -232,26 +220,6 @@ export function Security() {
       // Silently fail
     } finally {
       setToolsLoading(false)
-    }
-  }
-
-  const loadRootHardeningStatus = async () => {
-    try {
-      setRootHardeningLoading(true)
-      const data = await fetchApi<any>("/api/security/root-hardening/status")
-      if (data.success) {
-        setRootHardeningData({
-          hardening_applied: data.hardening_applied,
-          ssh_root_disabled: data.ssh_root_disabled,
-          root_web_blocked: data.root_web_blocked,
-          admin_user: data.admin_user,
-          pve_user_exists: data.pve_user_exists,
-        })
-      }
-    } catch {
-      // Silently fail
-    } finally {
-      setRootHardeningLoading(false)
     }
   }
 
@@ -2150,124 +2118,6 @@ ${(report.sections && report.sections.length > 0) ? `
         <div className="flex-1 h-px bg-orange-500/20" />
       </div>
 
-      {/* Root Access Hardening */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <UserCog className="h-5 w-5 text-orange-500" />
-              <CardTitle>Root Access Hardening</CardTitle>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={loadRootHardeningStatus}
-              disabled={rootHardeningLoading}
-            >
-              <RefreshCw className={`h-4 w-4 ${rootHardeningLoading ? "animate-spin" : ""}`} />
-              <span className="ml-1 text-xs">Refresh</span>
-            </Button>
-          </div>
-          <CardDescription>
-            Restrict root access to SSH and Proxmox web UI by creating a dedicated admin user
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {rootHardeningLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="animate-spin h-8 w-8 border-4 border-orange-500 border-t-transparent rounded-full" />
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {/* Status indicators */}
-              <div className="flex items-center gap-4 flex-wrap px-3 py-2.5 bg-muted/30 rounded-lg border border-border">
-                <div className="flex items-center gap-1.5 text-sm">
-                  <span className="text-muted-foreground">SSH Root:</span>
-                  {rootHardeningData?.ssh_root_disabled ? (
-                    <span className="font-bold text-green-500">Disabled</span>
-                  ) : (
-                    <span className="font-bold text-yellow-500">Enabled</span>
-                  )}
-                </div>
-                <div className="w-px h-4 bg-border" />
-                <div className="flex items-center gap-1.5 text-sm">
-                  <span className="text-muted-foreground">Root Web:</span>
-                  {rootHardeningData?.root_web_blocked ? (
-                    <span className="font-bold text-green-500">Blocked</span>
-                  ) : (
-                    <span className="font-bold text-yellow-500">Active</span>
-                  )}
-                </div>
-                {rootHardeningData?.admin_user && (
-                  <>
-                    <div className="w-px h-4 bg-border" />
-                    <div className="flex items-center gap-1.5 text-sm">
-                      <span className="text-muted-foreground">Admin:</span>
-                      <span className="font-bold">{rootHardeningData.admin_user}</span>
-                      {rootHardeningData.pve_user_exists && (
-                        <CheckCircle className="h-3.5 w-3.5 text-green-500" />
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* Info/Warning based on state */}
-              {rootHardeningData?.hardening_applied ? (
-                <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <ShieldCheck className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-medium text-green-500">Root Access Hardened</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Root SSH login is disabled and root web access is blocked.
-                        Use <span className="font-mono font-semibold">{rootHardeningData.admin_user}</span> for SSH and Proxmox web UI.
-                        For root shell, run <span className="font-mono font-semibold">sudo -i</span> from the admin user.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-medium text-yellow-500">Root Access Not Hardened</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Root can access SSH and the Proxmox web UI directly. It is recommended to create a dedicated admin user and disable root remote access.
-                        ProxMenux Monitor will continue working without interruption.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Action buttons */}
-              <div className="flex flex-wrap gap-2">
-                {!rootHardeningData?.hardening_applied ? (
-                  <Button
-                    onClick={() => setShowRootHardeningScript(true)}
-                    className="bg-orange-600 hover:bg-orange-700 text-white"
-                  >
-                    <Shield className="h-4 w-4 mr-2" />
-                    Harden Root Access
-                  </Button>
-                ) : (
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowRootHardeningScript(true)}
-                    className="border-yellow-500/30 text-yellow-500 hover:bg-yellow-500/10"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Revert Hardening
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
       {/* Proxmox Firewall */}
       <Card>
         <CardHeader>
@@ -3688,16 +3538,6 @@ ${(report.sections && report.sections.length > 0) ? `
       </Card>
 
       {/* Script Terminal Modals */}
-      <ScriptTerminalModal
-        open={showRootHardeningScript}
-        onClose={() => {
-          setShowRootHardeningScript(false)
-          loadRootHardeningStatus()
-        }}
-        scriptPath="/usr/local/share/proxmenux/scripts/security/root_hardening.sh"
-        title="Root Access Hardening"
-        description="Manage root access hardening for SSH and Proxmox web UI"
-      />
       <ScriptTerminalModal
         open={showFail2banInstaller}
         onClose={() => {
