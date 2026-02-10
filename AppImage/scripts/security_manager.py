@@ -788,12 +788,16 @@ def apply_missing_jails():
             current_jails = [j.strip().lower() for j in jails_str.split(",") if j.strip()]
 
     # --- Proxmox jail (port 8006) ---
+    # Uses backend=systemd because Proxmox does not use rsyslog,
+    # so pvedaemon logs go to the systemd journal, not /var/log/daemon.log.
     if "proxmox" not in current_jails:
         try:
-            # Create filter
+            # Create filter with journalmatch for systemd backend
             filter_content = """[Definition]
-failregex = pvedaemon\\[.*authentication failure; rhost=<HOST> user=.* msg=.*
+failregex = pvedaemon\\[.*authentication (failure|error); rhost=<HOST> user=.* msg=.*
+            pvedaemon\\[.*\\]: authentication failure; rhost=<HOST>
 ignoreregex =
+journalmatch = _COMM=pvedaemon
 """
             with open("/etc/fail2ban/filter.d/proxmox.conf", "w") as f:
                 f.write(filter_content)
@@ -803,8 +807,7 @@ ignoreregex =
 enabled = true
 port = 8006
 filter = proxmox
-backend = auto
-logpath = /var/log/daemon.log
+backend = systemd
 maxretry = 3
 bantime = 3600
 findtime = 600
@@ -817,12 +820,15 @@ findtime = 600
             errors.append(f"proxmox: {str(e)}")
 
     # --- ProxMenux Monitor jail (port 8008 + reverse proxy) ---
+    # Uses backend=auto with logpath because the Flask app writes
+    # auth failures directly to this file (not via syslog/journal).
     if "proxmenux" not in current_jails:
         try:
-            # Create filter
+            # Create filter with datepattern for Python logging format
             filter_content = """[Definition]
-failregex = proxmenux-auth: authentication failure; rhost=<HOST> user=.*
+failregex = ^.*proxmenux-auth: authentication failure; rhost=<HOST> user=.*$
 ignoreregex =
+datepattern = ^%%Y-%%m-%%d %%H:%%M:%%S
 """
             with open("/etc/fail2ban/filter.d/proxmenux.conf", "w") as f:
                 f.write(filter_content)
