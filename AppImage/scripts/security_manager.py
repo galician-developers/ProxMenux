@@ -792,10 +792,13 @@ def apply_missing_jails():
     # so pvedaemon logs go to the systemd journal, not /var/log/daemon.log.
     if "proxmox" not in current_jails:
         try:
-            # Create filter with journalmatch for systemd backend
+            # Create filter with journalmatch for systemd backend.
+            # With backend=systemd, fail2ban receives only the MESSAGE field
+            # from the journal (without the "pvedaemon[PID]:" prefix).
+            # The journalmatch already filters to pvedaemon entries.
+            # Optional prefix for compatibility with file-based backends.
             filter_content = """[Definition]
-failregex = pvedaemon\\[.*authentication (failure|error); rhost=<HOST> user=.* msg=.*
-            pvedaemon\\[.*\\]: authentication failure; rhost=<HOST>
+failregex = ^(pvedaemon\\[\\d+\\]:\\s+)?authentication (failure|error); rhost=<HOST> user=.* msg=.*$
 ignoreregex =
 journalmatch = _COMM=pvedaemon
 """
