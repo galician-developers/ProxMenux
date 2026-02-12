@@ -795,12 +795,12 @@ def apply_missing_jails():
             # Create filter with journalmatch for systemd backend.
             # With backend=systemd, fail2ban receives only the MESSAGE field
             # from the journal (without the "pvedaemon[PID]:" prefix).
-            # The journalmatch already filters to pvedaemon entries.
-            # Optional prefix for compatibility with file-based backends.
+            # We use _SYSTEMD_UNIT instead of _COMM because Proxmox truncates
+            # _COMM to "pvedaemon worke" which won't match _COMM=pvedaemon.
             filter_content = """[Definition]
 failregex = ^(pvedaemon\\[\\d+\\]:\\s+)?authentication (failure|error); rhost=<HOST> user=.* msg=.*$
 ignoreregex =
-journalmatch = _COMM=pvedaemon
+journalmatch = _SYSTEMD_UNIT=pvedaemon.service
 """
             with open("/etc/fail2ban/filter.d/proxmox.conf", "w") as f:
                 f.write(filter_content)
