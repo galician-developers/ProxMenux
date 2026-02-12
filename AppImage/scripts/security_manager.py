@@ -788,28 +788,57 @@ def apply_missing_jails():
             current_jails = [j.strip().lower() for j in jails_str.split(",") if j.strip()]
 
     # --- Proxmox jail (port 8006) ---
-    # Uses backend=systemd because Proxmox does not use rsyslog,
-    # so pvedaemon logs go to the systemd journal, not /var/log/daemon.log.
+    # Fail2Ban's systemd backend can't reliably read pvedaemon worker entries
+    # in real-time. We use a systemd service that tails the journal to a file
+    # and fail2ban monitors that file with backend=auto.
     if "proxmox" not in current_jails:
         try:
-            # Create filter with journalmatch for systemd backend.
-            # No ^ anchor: fail2ban prepends timestamp+hostname to journal MESSAGE.
-            # _SYSTEMD_UNIT used instead of _COMM (Proxmox truncates _COMM).
-            # Proxmox logs IPs as ::ffff:x.x.x.x (IPv4-mapped IPv6).
+            # Create the auth logger service if not present
+            logger_service = "/etc/systemd/system/proxmox-auth-logger.service"
+            if not os.path.isfile(logger_service):
+                service_content = """[Unit]
+Description=Proxmox Auth Logger for Fail2Ban
+After=pvedaemon.service
+PartOf=fail2ban.service
+
+[Service]
+Type=simple
+ExecStart=/bin/bash -c 'journalctl -f _SYSTEMD_UNIT=pvedaemon.service -o short-iso --no-pager >> /var/log/proxmox-auth.log'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+"""
+                with open(logger_service, "w") as f:
+                    f.write(service_content)
+
+                # Create log file
+                log_file = "/var/log/proxmox-auth.log"
+                if not os.path.isfile(log_file):
+                    with open(log_file, "w") as f:
+                        pass
+                    os.chmod(log_file, 0o640)
+
+                _run_cmd(["systemctl", "daemon-reload"])
+                _run_cmd(["systemctl", "enable", "--now", "proxmox-auth-logger.service"])
+
+            # Create filter
             filter_content = """[Definition]
 failregex = authentication (failure|error); rhost=(::ffff:)?<HOST> user=.* msg=.*
 ignoreregex =
-journalmatch = _SYSTEMD_UNIT=pvedaemon.service
+datepattern = ^%%Y-%%m-%%dT%%H:%%M:%%S
 """
             with open("/etc/fail2ban/filter.d/proxmox.conf", "w") as f:
                 f.write(filter_content)
 
-            # Create jail
+            # Create jail (file-based backend)
             jail_content = """[proxmox]
 enabled = true
 port = 8006
 filter = proxmox
-backend = systemd
+backend = auto
+logpath = /var/log/proxmox-auth.log
 maxretry = 3
 bantime = 3600
 findtime = 600
