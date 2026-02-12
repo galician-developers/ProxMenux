@@ -793,11 +793,11 @@ def apply_missing_jails():
     if "proxmox" not in current_jails:
         try:
             # Create filter with journalmatch for systemd backend.
-            # With backend=systemd, fail2ban receives only the MESSAGE field.
-            # We use _SYSTEMD_UNIT instead of _COMM (Proxmox truncates _COMM).
+            # No ^ anchor: fail2ban prepends timestamp+hostname to journal MESSAGE.
+            # _SYSTEMD_UNIT used instead of _COMM (Proxmox truncates _COMM).
             # Proxmox logs IPs as ::ffff:x.x.x.x (IPv4-mapped IPv6).
             filter_content = """[Definition]
-failregex = ^(pvedaemon\\[\\d+\\]:\\s+)?authentication (failure|error); rhost=(::ffff:)?<HOST> user=.* msg=.*$
+failregex = authentication (failure|error); rhost=(::ffff:)?<HOST> user=.* msg=.*
 ignoreregex =
 journalmatch = _SYSTEMD_UNIT=pvedaemon.service
 """
