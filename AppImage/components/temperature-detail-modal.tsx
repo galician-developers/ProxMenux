@@ -127,7 +127,7 @@ export function TemperatureDetailModal({ open, onOpenChange, liveTemperature }: 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl bg-card border-border">
+      <DialogContent className="max-w-3xl bg-card border-border px-3 sm:px-6">
         <DialogHeader>
           <div className="flex items-center justify-between pr-6">
             <DialogTitle className="text-foreground flex items-center gap-2">
@@ -194,7 +194,7 @@ export function TemperatureDetailModal({ open, onOpenChange, liveTemperature }: 
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: isMobile ? -15 : 0, bottom: 0 }}>
+              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="tempGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={chartColor} stopOpacity={0.3} />
@@ -204,21 +204,19 @@ export function TemperatureDetailModal({ open, onOpenChange, liveTemperature }: 
                 <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-border" />
                 <XAxis
                   dataKey="time"
+                  stroke="currentColor"
                   className="text-foreground"
                   tick={{ fill: "currentColor", fontSize: isMobile ? 10 : 12 }}
-                  tickLine={false}
-                  axisLine={{ stroke: "hsl(var(--border))" }}
                   interval="preserveStartEnd"
                   minTickGap={isMobile ? 40 : 60}
                 />
                 <YAxis
                   domain={[yMin, yMax]}
+                  stroke="currentColor"
                   className="text-foreground"
                   tick={{ fill: "currentColor", fontSize: isMobile ? 10 : 12 }}
-                  tickLine={false}
-                  axisLine={{ stroke: "hsl(var(--border))" }}
                   tickFormatter={(v) => `${v}°`}
-                  width={isMobile ? 35 : 45}
+                  width={isMobile ? 40 : 45}
                 />
                 <Tooltip content={<CustomTooltip />} />
                 <Area
