@@ -4258,8 +4258,10 @@ def get_hardware_info():
                             current_module['size'] = 0 # Default to 0 if no size or explicitly 'No Module Installed'
                     elif line.startswith('Type:'):
                         current_module['type'] = line.split(':', 1)[1].strip()
+                    elif line.startswith('Configured Memory Speed:'):
+                        current_module['configured_speed'] = line.split(':', 1)[1].strip()
                     elif line.startswith('Speed:'):
-                        current_module['speed'] = line.split(':', 1)[1].strip()
+                        current_module['max_speed'] = line.split(':', 1)[1].strip()
                     elif line.startswith('Manufacturer:'):
                         current_module['manufacturer'] = line.split(':', 1)[1].strip()
                     elif line.startswith('Serial Number:'):

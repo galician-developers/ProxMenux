@@ -2573,7 +2573,7 @@ ${(report.sections && report.sections.length > 0) ? `
                     <Bug className={`h-5 w-5 ${fail2banInfo.active ? "text-green-500" : "text-yellow-500"}`} />
                   </div>
                   <div>
-                    <p className="font-medium">Fail2Ban {fail2banInfo.version}</p>
+                    <p className="font-medium">{fail2banInfo.version}</p>
                     <p className="text-sm text-muted-foreground">
                       {fail2banInfo.active ? "Service is running" : "Service is not running"}
                     </p>

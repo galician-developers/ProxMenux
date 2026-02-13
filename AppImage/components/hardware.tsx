@@ -466,10 +466,21 @@ export default function Hardware() {
                       <span className="font-medium">{module.type}</span>
                     </div>
                   )}
-                  {module.speed && (
+                  {(module.configured_speed || module.max_speed) && (
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Speed</span>
-                      <span className="font-medium">{module.speed}</span>
+                      <span className="font-medium">
+                        {module.configured_speed && module.max_speed && module.configured_speed !== module.max_speed ? (
+                          <span className="flex items-center gap-1.5">
+                            <span className={module.configured_speed.replace(/[^0-9]/g, '') < module.max_speed.replace(/[^0-9]/g, '') ? "text-orange-500" : "text-blue-500"}>
+                              {module.configured_speed}
+                            </span>
+                            <span className="text-xs text-muted-foreground">(max: {module.max_speed})</span>
+                          </span>
+                        ) : (
+                          <span>{module.configured_speed || module.max_speed}</span>
+                        )}
+                      </span>
                     </div>
                   )}
                   {module.manufacturer && (
