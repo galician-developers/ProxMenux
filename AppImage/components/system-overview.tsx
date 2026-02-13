@@ -476,7 +476,7 @@ export function SystemOverview() {
             <Thermometer className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between">
               <span className="text-xl lg:text-2xl font-bold text-foreground">
                 {systemData.temperature === 0 ? "N/A" : `${Math.round(systemData.temperature * 10) / 10}°C`}
               </span>

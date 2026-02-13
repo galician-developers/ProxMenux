@@ -126,7 +126,7 @@ export function TemperatureDetailModal({ open, onOpenChange }: TemperatureDetail
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl bg-card border-border">
         <DialogHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between pr-6">
             <DialogTitle className="text-foreground flex items-center gap-2">
               <Thermometer className="h-5 w-5" />
               CPU Temperature
@@ -148,11 +148,11 @@ export function TemperatureDetailModal({ open, onOpenChange }: TemperatureDetail
 
         {/* Stats bar */}
         <div className="grid grid-cols-4 gap-3">
-          <div className="bg-muted/50 rounded-lg p-3 text-center">
-            <div className="text-xs text-muted-foreground mb-1">Current</div>
-            <div className="text-lg font-bold text-foreground flex items-center justify-center gap-1.5">
-              {stats.current}°C
-              <Badge variant="outline" className={`${currentStatus.color} text-[10px] px-1.5 py-0`}>
+          <div className="bg-muted/50 rounded-lg p-3">
+            <div className="text-xs text-muted-foreground mb-1 text-center">Current</div>
+            <div className="text-lg font-bold text-foreground flex items-center justify-between">
+              <span className="flex-1 text-center">{stats.current}°C</span>
+              <Badge variant="outline" className={`${currentStatus.color} text-[10px] px-1.5 py-0 flex-shrink-0`}>
                 {currentStatus.status}
               </Badge>
             </div>
@@ -206,7 +206,8 @@ export function TemperatureDetailModal({ open, onOpenChange }: TemperatureDetail
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
                 <XAxis
                   dataKey="time"
-                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: isMobile ? 10 : 12 }}
+                  className="text-foreground"
+                  tick={{ fill: "currentColor", fontSize: isMobile ? 10 : 12 }}
                   tickLine={false}
                   axisLine={{ stroke: "hsl(var(--border))" }}
                   interval="preserveStartEnd"
@@ -214,7 +215,8 @@ export function TemperatureDetailModal({ open, onOpenChange }: TemperatureDetail
                 />
                 <YAxis
                   domain={[yMin, yMax]}
-                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: isMobile ? 10 : 12 }}
+                  className="text-foreground"
+                  tick={{ fill: "currentColor", fontSize: isMobile ? 10 : 12 }}
                   tickLine={false}
                   axisLine={{ stroke: "hsl(var(--border))" }}
                   tickFormatter={(v) => `${v}°`}
