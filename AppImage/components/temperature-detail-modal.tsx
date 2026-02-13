@@ -147,15 +147,10 @@ export function TemperatureDetailModal({ open, onOpenChange }: TemperatureDetail
         </DialogHeader>
 
         {/* Stats bar */}
-        <div className="grid grid-cols-4 gap-3">
-          <div className="bg-muted/50 rounded-lg p-3">
-            <div className="text-xs text-muted-foreground mb-1 text-center">Current</div>
-            <div className="text-lg font-bold text-foreground flex items-center justify-between">
-              <span className="flex-1 text-center">{stats.current}°C</span>
-              <Badge variant="outline" className={`${currentStatus.color} text-[10px] px-1.5 py-0 flex-shrink-0`}>
-                {currentStatus.status}
-              </Badge>
-            </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+          <div className={`rounded-lg p-3 text-center ${currentStatus.color}`}>
+            <div className="text-xs opacity-80 mb-1">Current</div>
+            <div className="text-lg font-bold">{stats.current}°C</div>
           </div>
           <div className="bg-muted/50 rounded-lg p-3 text-center">
             <div className="text-xs text-muted-foreground mb-1 flex items-center justify-center gap-1">
@@ -203,7 +198,7 @@ export function TemperatureDetailModal({ open, onOpenChange }: TemperatureDetail
                     <stop offset="100%" stopColor={chartColor} stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+                <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-border" />
                 <XAxis
                   dataKey="time"
                   className="text-foreground"
