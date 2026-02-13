@@ -518,6 +518,7 @@ export function SystemOverview() {
       <TemperatureDetailModal 
         open={tempModalOpen} 
         onOpenChange={setTempModalOpen}
+        liveTemperature={systemData.temperature}
       />
 
       <NodeMetricsCharts />

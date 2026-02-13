@@ -33,6 +33,7 @@ interface TempStats {
 interface TemperatureDetailModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  liveTemperature?: number
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -68,7 +69,7 @@ const getStatusInfo = (temp: number) => {
   return { status: "Hot", color: "bg-red-500/10 text-red-500 border-red-500/20" }
 }
 
-export function TemperatureDetailModal({ open, onOpenChange }: TemperatureDetailModalProps) {
+export function TemperatureDetailModal({ open, onOpenChange, liveTemperature }: TemperatureDetailModalProps) {
   const [timeframe, setTimeframe] = useState("hour")
   const [data, setData] = useState<TempHistoryPoint[]>([])
   const [stats, setStats] = useState<TempStats>({ min: 0, max: 0, avg: 0, current: 0 })
@@ -114,8 +115,10 @@ export function TemperatureDetailModal({ open, onOpenChange }: TemperatureDetail
     time: formatTime(d.timestamp),
   }))
 
-  const currentStatus = getStatusInfo(stats.current)
-  const chartColor = getStatusColor(stats.current)
+  // Use live temperature from the overview card (real-time) instead of last DB record
+  const currentTemp = liveTemperature && liveTemperature > 0 ? Math.round(liveTemperature * 10) / 10 : stats.current
+  const currentStatus = getStatusInfo(currentTemp)
+  const chartColor = getStatusColor(currentTemp)
 
   // Calculate Y axis domain with some padding
   const values = data.map((d) => d.value)
@@ -150,7 +153,7 @@ export function TemperatureDetailModal({ open, onOpenChange }: TemperatureDetail
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
           <div className={`rounded-lg p-3 text-center ${currentStatus.color}`}>
             <div className="text-xs opacity-80 mb-1">Current</div>
-            <div className="text-lg font-bold">{stats.current}°C</div>
+            <div className="text-lg font-bold">{currentTemp}°C</div>
           </div>
           <div className="bg-muted/50 rounded-lg p-3 text-center">
             <div className="text-xs text-muted-foreground mb-1 flex items-center justify-center gap-1">
