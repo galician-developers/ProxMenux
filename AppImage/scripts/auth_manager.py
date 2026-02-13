@@ -786,12 +786,15 @@ def authenticate(username, password, totp_token=None):
     
     if config.get("totp_enabled"):
         if not totp_token:
+            # First step: password OK, now request TOTP code (not a failure)
             return False, None, True, "2FA code required"
         
         # Verify TOTP token or backup code
         success, message = verify_totp(username, totp_token, use_backup=len(totp_token) == 9)  # Backup codes are formatted XXXX-XXXX
         if not success:
-            return False, None, True, message
+            # TOTP code is wrong: return requires_totp=False so the caller
+            # logs it as a real authentication failure for Fail2Ban
+            return False, None, False, "Invalid 2FA code"
     
     token = generate_token(username)
     if token:

@@ -157,15 +157,23 @@ def auth_login():
         if success:
             return jsonify({"success": True, "token": token, "message": message})
         elif requires_totp:
+            # First step: password OK, requesting TOTP code (not a failure)
             return jsonify({"success": False, "requires_totp": True, "message": message}), 200
         else:
-            # Log failed auth for Fail2Ban detection
+            # Authentication failure (wrong password or wrong TOTP code)
             client_ip = _get_client_ip()
             auth_logger.warning(
                 "authentication failure; rhost=%s user=%s",
                 client_ip, username or "unknown"
             )
-            return jsonify({"success": False, "message": message}), 401
+            # If user submitted a TOTP token that was wrong, tell frontend
+            # to keep showing the TOTP field (not go back to password step)
+            is_totp_failure = totp_token and "2FA" in message
+            return jsonify({
+                "success": False,
+                "message": message,
+                "requires_totp": is_totp_failure
+            }), 401
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
