@@ -550,8 +550,33 @@ export function SystemLogs() {
 
   if (loading && logs.length === 0 && events.length === 0) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i} className="bg-card border-border animate-pulse">
+              <CardContent className="p-6">
+                <div className="h-4 bg-muted rounded w-1/2 mb-4"></div>
+                <div className="h-8 bg-muted rounded w-3/4 mb-2"></div>
+                <div className="h-3 bg-muted rounded w-2/3"></div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <Card className="bg-card border-border animate-pulse">
+          <CardContent className="p-6">
+            <div className="h-6 bg-muted rounded w-1/3 mb-6"></div>
+            <div className="h-10 bg-muted rounded w-full mb-4"></div>
+            <div className="space-y-3">
+              {[...Array(8)].map((_, i) => (
+                <div key={i} className="flex gap-3">
+                  <div className="h-5 bg-muted rounded w-16"></div>
+                  <div className="h-5 bg-muted rounded w-24"></div>
+                  <div className="h-5 bg-muted rounded flex-1"></div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     )
   }
@@ -559,11 +584,13 @@ export function SystemLogs() {
   return (
     <div className="space-y-6">
       {loading && (logs.length > 0 || events.length > 0) && (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-4 p-8 rounded-lg bg-card border border-border shadow-lg">
-            <RefreshCw className="h-12 w-12 animate-spin text-primary" />
-            <div className="text-lg font-medium text-foreground">Loading logs selected...</div>
-            <div className="text-sm text-muted-foreground">Please wait while we fetch the logs</div>
+        <div className="fixed inset-0 bg-background/60 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3 p-6 rounded-xl bg-card border border-border shadow-xl">
+            <div className="relative">
+              <div className="h-10 w-10 rounded-full border-2 border-muted"></div>
+              <div className="absolute inset-0 h-10 w-10 rounded-full border-2 border-transparent border-t-primary animate-spin"></div>
+            </div>
+            <div className="text-sm font-medium text-foreground">Loading logs...</div>
           </div>
         </div>
       )}

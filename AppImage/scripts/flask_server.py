@@ -5160,7 +5160,9 @@ def api_logs():
                 days = int(since_days)
                 # Cap at 90 days to prevent excessive queries
                 days = min(days, 90)
-                cmd = ['journalctl', '--since', f'{days} days ago', '-n', '10000', '--output', 'json', '--no-pager']
+                # No -n limit when using --since: the time range already bounds the query.
+                # A hard -n 10000 was masking differences between date ranges on busy servers.
+                cmd = ['journalctl', '--since', f'{days} days ago', '--output', 'json', '--no-pager']
             except ValueError:
                 cmd = ['journalctl', '-n', limit, '--output', 'json', '--no-pager']
         else:
@@ -5174,7 +5176,9 @@ def api_logs():
         # We filter after fetching since journalctl doesn't have a direct SYSLOG_IDENTIFIER flag
         service_filter = service
         
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        # Longer timeout for date-range queries which may return many entries
+        query_timeout = 60 if since_days else 30
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=query_timeout)
 
         if result.returncode == 0:
             logs = []
@@ -6719,6 +6723,40 @@ if __name__ == '__main__':
     # Silence Flask CLI banner
     cli = sys.modules['flask.cli']
     cli.show_server_banner = lambda *x: None
+    
+    # ── Ensure journald stores info-level messages ──
+    # Proxmox defaults MaxLevelStore=warning which drops info/notice entries.
+    # This causes System Logs to show almost identical counts across date ranges
+    # (since most log activity is info-level and gets silently discarded).
+    # We create a drop-in to raise the level to info so logs are properly stored.
+    try:
+        journald_conf = "/etc/systemd/journald.conf"
+        dropin_dir = "/etc/systemd/journald.conf.d"
+        dropin_file = f"{dropin_dir}/proxmenux-loglevel.conf"
+        
+        if os.path.isfile(journald_conf) and not os.path.isfile(dropin_file):
+            # Read current MaxLevelStore
+            current_max = ""
+            with open(journald_conf, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("MaxLevelStore="):
+                        current_max = line.split("=", 1)[1].strip().lower()
+            
+            restrictive_levels = {"emerg", "alert", "crit", "err", "warning"}
+            if current_max in restrictive_levels:
+                os.makedirs(dropin_dir, exist_ok=True)
+                with open(dropin_file, 'w') as f:
+                    f.write("# ProxMenux: Allow info-level messages for proper log display\n")
+                    f.write("# Proxmox default MaxLevelStore=warning drops most system logs\n")
+                    f.write("[Journal]\n")
+                    f.write("MaxLevelStore=info\n")
+                    f.write("MaxLevelSyslog=info\n")
+                subprocess.run(["systemctl", "restart", "systemd-journald"], 
+                             capture_output=True, timeout=10)
+                print("[ProxMenux] Fixed journald MaxLevelStore (was too restrictive for log display)")
+    except Exception as e:
+        print(f"[ProxMenux] journald check skipped: {e}")
     
     # Check for SSL configuration
     ssl_ctx = None
