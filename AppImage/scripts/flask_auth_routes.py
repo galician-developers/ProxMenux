@@ -178,9 +178,29 @@ def auth_login():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
+@auth_bp.route('/api/auth/setup', methods=['POST'])
+def auth_setup():
+    """Set up authentication with username and password (create user + enable auth)"""
+    try:
+        data = request.json
+        username = data.get('username')
+        password = data.get('password')
+
+        success, message = auth_manager.setup_auth(username, password)
+
+        if success:
+            # Generate a token so the user is logged in immediately
+            token = auth_manager.generate_token(username)
+            return jsonify({"success": True, "token": token, "message": message})
+        else:
+            return jsonify({"success": False, "error": message}), 400
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @auth_bp.route('/api/auth/enable', methods=['POST'])
 def auth_enable():
-    """Enable authentication"""
+    """Enable authentication (must already be configured)"""
     try:
         success, message = auth_manager.enable_auth()
         
