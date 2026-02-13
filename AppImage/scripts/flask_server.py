@@ -16,9 +16,11 @@ import re
 import select
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
+import threading
 import urllib.parse
 import hardware_monitor
 import xml.etree.ElementTree as ET
@@ -347,6 +349,160 @@ def get_cpu_temperature():
         # print(f"Warning: Error reading temperature sensors: {e}")
         pass
     return temp
+
+# ── Temperature History (SQLite) ──────────────────────────────────────────────
+# Stores CPU temperature readings every 60s in a lightweight SQLite database.
+# Data is persisted in /usr/local/share/proxmenux/ alongside config.json.
+# Retention: 30 days max, cleaned up every hour.
+
+TEMP_DB_DIR = "/usr/local/share/proxmenux"
+TEMP_DB_PATH = os.path.join(TEMP_DB_DIR, "monitor.db")
+
+def _get_temp_db():
+    """Get a SQLite connection with WAL mode for concurrent reads."""
+    conn = sqlite3.connect(TEMP_DB_PATH, timeout=5)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    return conn
+
+def init_temperature_db():
+    """Create the temperature_history table if it doesn't exist."""
+    try:
+        os.makedirs(TEMP_DB_DIR, exist_ok=True)
+        conn = _get_temp_db()
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS temperature_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp INTEGER NOT NULL,
+                value REAL NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_temp_timestamp 
+            ON temperature_history(timestamp)
+        """)
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"[ProxMenux] Temperature DB init failed: {e}")
+        return False
+
+def _record_temperature():
+    """Insert a single temperature reading into the DB."""
+    try:
+        temp = get_cpu_temperature()
+        if temp and temp > 0:
+            conn = _get_temp_db()
+            conn.execute(
+                "INSERT INTO temperature_history (timestamp, value) VALUES (?, ?)",
+                (int(time.time()), round(temp, 1))
+            )
+            conn.commit()
+            conn.close()
+    except Exception:
+        pass
+
+def _cleanup_old_temperature_data():
+    """Remove temperature records older than 30 days."""
+    try:
+        cutoff = int(time.time()) - (30 * 24 * 3600)
+        conn = _get_temp_db()
+        conn.execute("DELETE FROM temperature_history WHERE timestamp < ?", (cutoff,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+def get_temperature_sparkline(minutes=60):
+    """Get recent temperature data for the overview sparkline."""
+    try:
+        since = int(time.time()) - (minutes * 60)
+        conn = _get_temp_db()
+        cursor = conn.execute(
+            "SELECT timestamp, value FROM temperature_history WHERE timestamp >= ? ORDER BY timestamp ASC",
+            (since,)
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [{"timestamp": r[0], "value": r[1]} for r in rows]
+    except Exception:
+        return []
+
+def get_temperature_history(timeframe="hour"):
+    """Get temperature history with downsampling for longer timeframes."""
+    try:
+        now = int(time.time())
+        if timeframe == "hour":
+            since = now - 3600
+            interval = None  # All points (~60)
+        elif timeframe == "day":
+            since = now - 86400
+            interval = 300  # 5 min avg (288 points)
+        elif timeframe == "week":
+            since = now - 7 * 86400
+            interval = 1800  # 30 min avg (336 points)
+        elif timeframe == "month":
+            since = now - 30 * 86400
+            interval = 7200  # 2h avg (360 points)
+        else:
+            since = now - 3600
+            interval = None
+        
+        conn = _get_temp_db()
+        
+        if interval is None:
+            cursor = conn.execute(
+                "SELECT timestamp, value FROM temperature_history WHERE timestamp >= ? ORDER BY timestamp ASC",
+                (since,)
+            )
+            rows = cursor.fetchall()
+            data = [{"timestamp": r[0], "value": r[1]} for r in rows]
+        else:
+            # Downsample: average value per interval bucket
+            cursor = conn.execute(
+                """SELECT (timestamp / ?) * ? as bucket, 
+                          ROUND(AVG(value), 1) as avg_val,
+                          ROUND(MIN(value), 1) as min_val,
+                          ROUND(MAX(value), 1) as max_val
+                   FROM temperature_history 
+                   WHERE timestamp >= ? 
+                   GROUP BY bucket 
+                   ORDER BY bucket ASC""",
+                (interval, interval, since)
+            )
+            rows = cursor.fetchall()
+            data = [{"timestamp": r[0], "value": r[1], "min": r[2], "max": r[3]} for r in rows]
+        
+        conn.close()
+        
+        # Compute stats
+        if data:
+            values = [d["value"] for d in data]
+            stats = {
+                "min": round(min(values), 1),
+                "max": round(max(values), 1),
+                "avg": round(sum(values) / len(values), 1),
+                "current": values[-1]
+            }
+        else:
+            stats = {"min": 0, "max": 0, "avg": 0, "current": 0}
+        
+        return {"data": data, "stats": stats}
+    except Exception as e:
+        return {"data": [], "stats": {"min": 0, "max": 0, "avg": 0, "current": 0}}
+
+def _temperature_collector_loop():
+    """Background thread: collect temperature every 60s, cleanup every hour."""
+    cleanup_counter = 0
+    while True:
+        _record_temperature()
+        cleanup_counter += 1
+        if cleanup_counter >= 60:  # Every 60 iterations = 60 minutes
+            _cleanup_old_temperature_data()
+            cleanup_counter = 0
+        time.sleep(60)
+
 
 def get_uptime():
     """Get system uptime in a human-readable format."""
@@ -4803,12 +4959,16 @@ def api_system():
         # Get available updates
         available_updates = get_available_updates()
         
+        # Get temperature sparkline (last 1h) for overview mini chart
+        temp_sparkline = get_temperature_sparkline(60)
+
         return jsonify({
             'cpu_usage': round(cpu_usage, 1),
             'memory_usage': round(memory_usage_percent, 1),
             'memory_total': round(memory_total_gb, 1),
             'memory_used': round(memory_used_gb, 1),
             'temperature': temp,
+            'temperature_sparkline': temp_sparkline,
             'uptime': uptime,
             'load_average': list(load_avg),
             'hostname': socket.gethostname(),
@@ -4825,6 +4985,20 @@ def api_system():
         # print(f"Error getting system info: {e}")
         pass
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/temperature/history', methods=['GET'])
+@require_auth
+def api_temperature_history():
+    """Get temperature history for charts. Timeframe: hour, day, week, month"""
+    try:
+        timeframe = request.args.get('timeframe', 'hour')
+        if timeframe not in ('hour', 'day', 'week', 'month'):
+            timeframe = 'hour'
+        result = get_temperature_history(timeframe)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'data': [], 'stats': {'min': 0, 'max': 0, 'avg': 0, 'current': 0}}), 500
+
 
 @app.route('/api/storage', methods=['GET'])
 @require_auth
@@ -6758,6 +6932,18 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"[ProxMenux] journald check skipped: {e}")
     
+    # ── Temperature history collector ──
+    # Initialize SQLite DB and start background thread to record CPU temp every 60s
+    if init_temperature_db():
+        # Record initial reading immediately
+        _record_temperature()
+        # Start background collector thread
+        temp_thread = threading.Thread(target=_temperature_collector_loop, daemon=True)
+        temp_thread.start()
+        print("[ProxMenux] Temperature history collector started (60s interval, 30d retention)")
+    else:
+        print("[ProxMenux] Temperature history disabled (DB init failed)")
+
     # Check for SSL configuration
     ssl_ctx = None
     try:
