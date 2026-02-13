@@ -238,8 +238,12 @@ Seal=no
 Compress=yes
 SystemMaxUse=64M
 RuntimeMaxUse=60M
-MaxLevelStore=warning
-MaxLevelSyslog=warning
+# MaxLevelStore=info allows ProxMenux Monitor to display system logs correctly.
+# Using "warning" causes the log viewer to show nearly identical entries across
+# all date ranges (1d/3d/7d) because most activity is info-level.
+# It also prevents Fail2Ban from detecting SSH/Proxmox auth failures via journal.
+MaxLevelStore=info
+MaxLevelSyslog=info
 MaxLevelKMsg=warning
 MaxLevelConsole=notice
 MaxLevelWall=crit
@@ -787,8 +791,10 @@ Compress=yes
 SystemMaxUse=${USE_MB}M
 SystemKeepFree=${KEEP_MB}M
 RuntimeMaxUse=${RUNTIME_MB}M
-MaxLevelStore=warning
-MaxLevelSyslog=warning
+# MaxLevelStore=info: required for ProxMenux Monitor log display and Fail2Ban detection.
+# Using "warning" silently discards most system logs making date filters useless.
+MaxLevelStore=info
+MaxLevelSyslog=info
 MaxLevelKMsg=warning
 MaxLevelConsole=notice
 MaxLevelWall=crit
