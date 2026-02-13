@@ -468,7 +468,7 @@ export function SystemOverview() {
         </Card>
 
         <Card 
-          className={`bg-card border-border ${systemData.temperature > 0 ? "cursor-pointer hover:border-primary/50 transition-colors" : ""}`}
+          className={`bg-card border-border ${systemData.temperature > 0 ? "cursor-pointer hover:bg-white/5 transition-colors" : ""}`}
           onClick={() => systemData.temperature > 0 && setTempModalOpen(true)}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
