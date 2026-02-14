@@ -174,6 +174,7 @@ export function Security() {
   const [proxmoxCertInfo, setProxmoxCertInfo] = useState<{subject?: string; expires?: string; issuer?: string; is_self_signed?: boolean} | null>(null)
   const [loadingSsl, setLoadingSsl] = useState(true)
   const [configuringSsl, setConfiguringSsl] = useState(false)
+  const [sslRestarting, setSslRestarting] = useState(false)
   const [showCustomCertForm, setShowCustomCertForm] = useState(false)
   const [customCertPath, setCustomCertPath] = useState("")
   const [customKeyPath, setCustomKeyPath] = useState("")
@@ -1256,13 +1257,49 @@ ${(report.sections && report.sections.length > 0) ? `
     }
   }
 
+  // Wait for the monitor service to come back on the new protocol, then redirect
+  const waitForServiceAndRedirect = async (newProtocol: "https" | "http") => {
+    const host = window.location.hostname
+    const port = window.location.port || "8008"
+    const newUrl = `${newProtocol}://${host}:${port}${window.location.pathname}`
+    
+    // Wait for service to restart (try up to 30 seconds)
+    const maxAttempts = 15
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise(r => setTimeout(r, 2000))
+      try {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 3000)
+        const resp = await fetch(`${newProtocol}://${host}:${port}/api/ssl/status`, {
+          signal: controller.signal,
+          // For self-signed certs, we need to handle rejection
+          mode: "no-cors"
+        }).catch(() => null)
+        clearTimeout(timeout)
+        
+        // For HTTPS with self-signed certs, even a failed CORS request means the server is up
+        if (resp || newProtocol === "https") {
+          // Give it one more second to fully stabilize
+          await new Promise(r => setTimeout(r, 1000))
+          window.location.href = newUrl
+          return
+        }
+      } catch {
+        // Server not ready yet, keep waiting
+      }
+    }
+    
+    // Fallback: redirect anyway after timeout
+    window.location.href = newUrl
+  }
+
   const handleEnableSsl = async (source: "proxmox" | "custom", certPath?: string, keyPath?: string) => {
     setConfiguringSsl(true)
     setError("")
     setSuccess("")
 
     try {
-      const body: Record<string, string> = { source }
+      const body: Record<string, string | boolean> = { source, auto_restart: true }
       if (source === "custom" && certPath && keyPath) {
         body.cert_path = certPath
         body.key_path = keyPath
@@ -1275,25 +1312,27 @@ ${(report.sections && report.sections.length > 0) ? `
       })
 
       if (data.success) {
-        setSuccess(data.message || "SSL configured successfully. Restart the monitor service to apply.")
         setSslEnabled(true)
         setSslSource(source)
         setShowCustomCertForm(false)
         setCustomCertPath("")
         setCustomKeyPath("")
-        loadSslStatus()
+        setConfiguringSsl(false)
+        setSslRestarting(true)
+        setSuccess("SSL enabled. Restarting service and switching to HTTPS...")
+        await waitForServiceAndRedirect("https")
       } else {
         setError(data.message || "Failed to configure SSL")
+        setConfiguringSsl(false)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to configure SSL")
-    } finally {
       setConfiguringSsl(false)
     }
   }
 
   const handleDisableSsl = async () => {
-    if (!confirm("Are you sure you want to disable HTTPS? The monitor will revert to HTTP after restart.")) {
+    if (!confirm("Are you sure you want to disable HTTPS? The monitor will switch to HTTP.")) {
       return
     }
 
@@ -1302,21 +1341,27 @@ ${(report.sections && report.sections.length > 0) ? `
     setSuccess("")
 
     try {
-      const data = await fetchApi("/api/ssl/disable", { method: "POST" })
+      const data = await fetchApi("/api/ssl/disable", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auto_restart: true }),
+      })
 
       if (data.success) {
-        setSuccess(data.message || "SSL disabled. Restart the monitor service to apply.")
         setSslEnabled(false)
         setSslSource("none")
         setSslCertPath("")
         setSslKeyPath("")
-        loadSslStatus()
+        setConfiguringSsl(false)
+        setSslRestarting(true)
+        setSuccess("SSL disabled. Restarting service and switching to HTTP...")
+        await waitForServiceAndRedirect("http")
       } else {
         setError(data.message || "Failed to disable SSL")
+        setConfiguringSsl(false)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to disable SSL")
-    } finally {
       setConfiguringSsl(false)
     }
   }
@@ -1683,10 +1728,10 @@ ${(report.sections && report.sections.length > 0) ? `
                     onClick={handleDisableSsl}
                     variant="outline"
                     size="sm"
-                    disabled={configuringSsl}
+                    disabled={configuringSsl || sslRestarting}
                     className="mt-2 text-red-500 border-red-500/30 hover:bg-red-500/10 bg-transparent"
                   >
-                    {configuringSsl ? "Disabling..." : "Disable HTTPS"}
+                    {configuringSsl ? "Disabling..." : sslRestarting ? "Restarting..." : "Disable HTTPS"}
                   </Button>
                 </div>
               )}
@@ -1722,7 +1767,7 @@ ${(report.sections && report.sections.length > 0) ? `
                   <Button
                     onClick={() => handleEnableSsl("proxmox")}
                     className="w-full bg-green-600 hover:bg-green-700 text-white"
-                    disabled={configuringSsl}
+                    disabled={configuringSsl || sslRestarting}
                   >
                     {configuringSsl ? (
                       <div className="flex items-center gap-2">
@@ -1793,9 +1838,9 @@ ${(report.sections && report.sections.length > 0) ? `
 
                       <div className="flex gap-2">
                         <Button
-                          onClick={() => handleEnableSsl("custom", customCertPath, customKeyPath)}
-                          className="flex-1 bg-green-600 hover:bg-green-700 text-white"
-                          disabled={configuringSsl || !customCertPath || !customKeyPath}
+                        onClick={() => handleEnableSsl("custom", customCertPath, customKeyPath)}
+                        className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                        disabled={configuringSsl || sslRestarting || !customCertPath || !customKeyPath}
                         >
                           {configuringSsl ? "Configuring..." : "Enable HTTPS"}
                         </Button>
@@ -1817,14 +1862,27 @@ ${(report.sections && report.sections.length > 0) ? `
                 </div>
               )}
 
-              {/* Info note about restart */}
-              <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 flex items-start gap-2">
-                <Info className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-blue-500">
-                  Changes to SSL configuration require a monitor service restart to take effect.
-                  The service will automatically use HTTPS on port 8008 when enabled.
-                </p>
-              </div>
+              {/* Restarting overlay or info note */}
+              {sslRestarting ? (
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 flex items-center gap-3">
+                  <div className="h-5 w-5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-500">
+                      Restarting monitor service...
+                    </p>
+                    <p className="text-xs text-amber-400 mt-0.5">
+                      The page will automatically redirect to the new address.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 flex items-start gap-2">
+                  <Info className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-blue-500">
+                    SSL changes will automatically restart the monitor service and redirect to the new address.
+                  </p>
+                </div>
+              )}
             </>
           )}
         </CardContent>
