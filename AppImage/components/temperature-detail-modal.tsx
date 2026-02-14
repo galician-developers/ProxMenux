@@ -120,15 +120,13 @@ export function TemperatureDetailModal({ open, onOpenChange, liveTemperature }: 
   const currentStatus = getStatusInfo(currentTemp)
   const chartColor = getStatusColor(currentTemp)
 
-  // Calculate Y axis domain including the real min/max stats (not just plotted averages)
-  // This ensures the axis always covers the actual recorded extremes
+  // Calculate Y axis domain based on plotted data values only.
+  // Stats cards already show the real historical min/max separately.
+  // Using only graphed values keeps the chart readable and avoids
+  // large empty gaps caused by momentary spikes that get averaged out.
   const values = data.map((d) => d.value)
-  const dataMin = values.length > 0 ? Math.min(...values) : 0
-  const dataMax = values.length > 0 ? Math.max(...values) : 100
-  const realMin = stats.min > 0 ? Math.min(dataMin, stats.min) : dataMin
-  const realMax = stats.max > 0 ? Math.max(dataMax, stats.max) : dataMax
-  const yMin = Math.max(0, Math.floor(realMin - 3))
-  const yMax = Math.ceil(realMax + 3)
+  const yMin = values.length > 0 ? Math.max(0, Math.floor(Math.min(...values) - 3)) : 0
+  const yMax = values.length > 0 ? Math.ceil(Math.max(...values) + 3) : 100
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
