@@ -2452,7 +2452,7 @@ ${(report.sections && report.sections.length > 0) ? `
                       </div>
                     </div>
                     {/* Scope breakdown */}
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1.5">
                         <Globe className="h-3 w-3 text-blue-400" /> Cluster: {clusterCount}
                       </span>
@@ -2698,12 +2698,19 @@ ${(report.sections && report.sections.length > 0) ? `
                               }`}>
                                 {rule.action || "?"}
                               </span>
-                              {/* Mobile: combined info */}
-                              <div className="sm:hidden flex items-center gap-1.5 min-w-0">
-                                <span className="text-xs text-blue-400 font-mono">{rule.p || "*"}</span>
-                                <span className="text-xs text-muted-foreground">/</span>
-                                <span className="text-xs text-foreground font-mono font-medium truncate">{rule.dport || "*"}</span>
-                                {comment && <span className="text-[10px] text-muted-foreground truncate ml-1">- {comment}</span>}
+                              {/* Mobile: combined info on two lines */}
+                              <div className="sm:hidden min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs text-blue-400 font-mono flex-shrink-0">{rule.p || "*"}</span>
+                                  <span className="text-xs text-muted-foreground flex-shrink-0">:</span>
+                                  <span className="text-xs text-foreground font-mono font-medium">{rule.dport || "*"}</span>
+                                  <span className={`text-[10px] px-1 py-0 rounded flex-shrink-0 ${
+                                    rule.source_file === "cluster" ? "bg-blue-500/10 text-blue-400" : "bg-purple-500/10 text-purple-400"
+                                  }`}>{rule.source_file}</span>
+                                </div>
+                                {comment && (
+                                  <p className="text-[10px] text-muted-foreground truncate mt-0.5">{comment}</p>
+                                )}
                               </div>
                               {/* Desktop: direction label */}
                               <span className="hidden sm:block text-xs text-muted-foreground font-mono">{direction}</span>
