@@ -5,8 +5,7 @@ Provides REST API endpoints for authentication management
 
 import logging
 import os
-import signal
-import sys
+import subprocess
 import threading
 import time
 from flask import Blueprint, jsonify, request
@@ -79,16 +78,23 @@ def ssl_status():
 
 
 def _schedule_service_restart(delay=1.5):
-    """Schedule a self-restart of the Flask server after a short delay.
-    This gives time for the HTTP response to reach the client before the process exits.
-    The process will be restarted by the parent (systemd, AppRun, or manual)."""
+    """Schedule a restart of the monitor service via systemctl after a short delay.
+    This gives time for the HTTP response to reach the client before the process restarts."""
     def _do_restart():
         time.sleep(delay)
         print("[ProxMenux] Restarting monitor service to apply SSL changes...")
-        # Send SIGTERM to our own process - this triggers a clean shutdown.
-        # If running under systemd with Restart=always, it will auto-restart.
-        # If running directly, the process exits (user must restart manually as fallback).
-        os.kill(os.getpid(), signal.SIGTERM)
+        # Use systemctl restart which properly stops and starts the service.
+        # This works because systemd manages proxmenux-monitor.service.
+        try:
+            subprocess.Popen(
+                ["systemctl", "restart", "proxmenux-monitor"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        except Exception as e:
+            print(f"[ProxMenux] Failed to restart via systemctl: {e}")
+            # Fallback: try to restart the process directly
+            os.kill(os.getpid(), 15)  # SIGTERM
     
     t = threading.Thread(target=_do_restart, daemon=True)
     t.start()
