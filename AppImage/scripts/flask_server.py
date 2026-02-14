@@ -479,9 +479,17 @@ def get_temperature_history(timeframe="hour"):
         # Compute stats
         if data:
             values = [d["value"] for d in data]
+            # For downsampled data, use actual min/max from each bucket
+            # (not min/max of the averages, which would be wrong)
+            if interval is not None and "min" in data[0]:
+                actual_min = min(d["min"] for d in data)
+                actual_max = max(d["max"] for d in data)
+            else:
+                actual_min = min(values)
+                actual_max = max(values)
             stats = {
-                "min": round(min(values), 1),
-                "max": round(max(values), 1),
+                "min": round(actual_min, 1),
+                "max": round(actual_max, 1),
                 "avg": round(sum(values) / len(values), 1),
                 "current": values[-1]
             }
