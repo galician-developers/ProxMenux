@@ -221,19 +221,17 @@ export function Security() {
 
   const loadNetworkInterfaces = async () => {
     try {
-      console.log("[v0] Loading network interfaces...")
       const data = await fetchApi("/api/network")
-      console.log("[v0] Network API response:", JSON.stringify(data?.interfaces?.length), "interfaces found")
-      if (data.interfaces) {
-        console.log("[v0] Interface types:", data.interfaces.map((i: any) => `${i.name}(${i.type})`).join(", "))
-        const relevant = data.interfaces
-          .filter((i: any) => ["physical", "bridge", "bond", "vlan"].includes(i.type))
-          .sort((a: any, b: any) => a.name.localeCompare(b.name))
-        console.log("[v0] Filtered interfaces:", relevant.map((i: any) => i.name).join(", "))
-        setNetworkInterfaces(relevant)
-      }
-    } catch (err) {
-      console.log("[v0] Error loading network interfaces:", err)
+      // The API returns interfaces in separate arrays: physical_interfaces, bridge_interfaces, etc.
+      // The generic "interfaces" array only holds uncategorized types and is usually empty.
+      const all = [
+        ...(data.physical_interfaces || []),
+        ...(data.bridge_interfaces || []),
+        ...(data.interfaces || []),
+      ].sort((a: any, b: any) => a.name.localeCompare(b.name))
+      setNetworkInterfaces(all)
+    } catch {
+      // Silently fail - select will just show "Any interface"
     }
   }
 
