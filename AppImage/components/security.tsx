@@ -193,6 +193,7 @@ export function Security() {
     loadApiTokens()
     loadSslStatus()
     loadFirewallStatus()
+    loadNetworkInterfaces()
     loadSecurityTools()
   }, [])
 
@@ -220,16 +221,19 @@ export function Security() {
 
   const loadNetworkInterfaces = async () => {
     try {
+      console.log("[v0] Loading network interfaces...")
       const data = await fetchApi("/api/network")
+      console.log("[v0] Network API response:", JSON.stringify(data?.interfaces?.length), "interfaces found")
       if (data.interfaces) {
-        // Get physical + bridge + bond interfaces (exclude vm_lxc virtual taps)
+        console.log("[v0] Interface types:", data.interfaces.map((i: any) => `${i.name}(${i.type})`).join(", "))
         const relevant = data.interfaces
           .filter((i: any) => ["physical", "bridge", "bond", "vlan"].includes(i.type))
           .sort((a: any, b: any) => a.name.localeCompare(b.name))
+        console.log("[v0] Filtered interfaces:", relevant.map((i: any) => i.name).join(", "))
         setNetworkInterfaces(relevant)
       }
-    } catch {
-      // Silently fail - user can still type manually if needed
+    } catch (err) {
+      console.log("[v0] Error loading network interfaces:", err)
     }
   }
 
@@ -2619,12 +2623,18 @@ ${(report.sections && report.sections.length > 0) ? `
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">Interface (optional)</Label>
-                        <Input
-                          placeholder="e.g. vmbr0"
+                        <select
                           value={newRule.iface}
                           onChange={(e) => setNewRule({...newRule, iface: e.target.value})}
-                          className="h-9 text-sm"
-                        />
+                          className="w-full h-9 rounded-md border border-border bg-card px-3 text-sm"
+                        >
+                          <option value="">Any interface</option>
+                          {networkInterfaces.map((iface) => (
+                            <option key={iface.name} value={iface.name}>
+                              {iface.name} ({iface.type}{iface.status === "up" ? ", up" : ", down"})
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">Apply to</Label>
@@ -2802,8 +2812,15 @@ ${(report.sections && report.sections.length > 0) ? `
                                       </div>
                                       <div>
                                         <Label className="text-[10px] text-muted-foreground uppercase">Interface</Label>
-                                        <Input value={editRule.iface} onChange={(e) => setEditRule({ ...editRule, iface: e.target.value })}
-                                          placeholder="e.g. vmbr0" className="h-8 text-xs mt-0.5" />
+                                        <select value={editRule.iface} onChange={(e) => setEditRule({ ...editRule, iface: e.target.value })}
+                                          className="w-full h-8 text-xs rounded-md border border-border bg-background px-2 mt-0.5">
+                                          <option value="">Any</option>
+                                          {networkInterfaces.map((iface) => (
+                                            <option key={iface.name} value={iface.name}>
+                                              {iface.name} ({iface.type})
+                                            </option>
+                                          ))}
+                                        </select>
                                       </div>
                                       <div className="col-span-2 sm:col-span-1">
                                         <Label className="text-[10px] text-muted-foreground uppercase">Comment</Label>
