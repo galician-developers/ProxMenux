@@ -479,6 +479,51 @@ export function Security() {
     }
   }
 
+  const startEditRule = (rule: any) => {
+    const ruleKey = `${rule.source_file}-${rule.rule_index}`
+    const comment = rule.raw?.includes("#") ? rule.raw.split("#").slice(1).join("#").trim() : ""
+    setEditingRuleKey(ruleKey)
+    setEditRule({
+      direction: rule.direction || "IN",
+      action: rule.action || "ACCEPT",
+      protocol: rule.p || "tcp",
+      dport: rule.dport || "",
+      sport: "",
+      source: rule.source || "",
+      iface: rule.i || "",
+      comment,
+      level: rule.source_file || "host",
+    })
+  }
+
+  const handleSaveEditRule = async (oldRuleIndex: number, oldLevel: string) => {
+    setSavingRule(true)
+    setError("")
+    setSuccess("")
+    try {
+      const data = await fetchApi("/api/security/firewall/rules/edit", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rule_index: oldRuleIndex,
+          level: oldLevel,
+          new_rule: editRule,
+        }),
+      })
+      if (data.success) {
+        setSuccess(data.message || "Rule updated successfully")
+        setEditingRuleKey(null)
+        loadFirewallStatus()
+      } else {
+        setError(data.message || "Failed to update rule")
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update rule")
+    } finally {
+      setSavingRule(false)
+    }
+  }
+
   const handleFirewallToggle = async (level: "host" | "cluster", enable: boolean) => {
     setFirewallAction(true)
     setError("")
@@ -2633,7 +2678,7 @@ ${(report.sections && report.sections.length > 0) ? `
                           <div key={ruleKey}>
                             {/* Main row */}
                             <div
-                              className="grid grid-cols-[2rem_4.5rem_1fr_2rem] sm:grid-cols-[2rem_4.5rem_2rem_3rem_5rem_1fr_3.5rem_2rem] gap-2 px-3 py-2.5 items-center hover:bg-muted/20 transition-colors cursor-pointer"
+                              className="grid grid-cols-[2rem_4.5rem_1fr_2rem] sm:grid-cols-[2rem_4.5rem_2rem_3rem_5rem_1fr_3.5rem_2rem] gap-2 px-3 py-2.5 items-center hover:bg-white/5 transition-colors cursor-pointer"
                               onClick={() => setExpandedRuleKey(isExpanded ? null : ruleKey)}
                             >
                               {/* Direction icon */}
@@ -2683,63 +2728,151 @@ ${(report.sections && report.sections.length > 0) ? `
                             {/* Expanded details */}
                             {isExpanded && (
                               <div className="px-3 pb-3 pt-0 border-t border-border/50 bg-muted/10">
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-3">
-                                  <div>
-                                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Direction</p>
-                                    <p className="text-xs font-medium flex items-center gap-1">
-                                      {direction === "IN" ? <ArrowDownLeft className="h-3 w-3 text-blue-400" /> : <ArrowUpRight className="h-3 w-3 text-amber-400" />}
-                                      {direction === "IN" ? "Incoming" : "Outgoing"}
-                                    </p>
-                                  </div>
-                                  <div>
-                                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Protocol</p>
-                                    <p className="text-xs font-medium font-mono">{rule.p || "any"}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Port</p>
-                                    <p className="text-xs font-medium font-mono">{rule.dport || "any"}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Source</p>
-                                    <p className="text-xs font-medium font-mono">{rule.source || "any"}</p>
-                                  </div>
-                                  {rule.i && (
-                                    <div>
-                                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Interface</p>
-                                      <p className="text-xs font-medium font-mono">{rule.i}</p>
+                                {editingRuleKey === ruleKey ? (
+                                  /* ── Inline Edit Form ── */
+                                  <div className="py-3 space-y-3">
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                      <div>
+                                        <Label className="text-[10px] text-muted-foreground uppercase">Direction</Label>
+                                        <select value={editRule.direction} onChange={(e) => setEditRule({ ...editRule, direction: e.target.value })}
+                                          className="w-full h-8 text-xs rounded-md border border-border bg-background px-2 mt-0.5">
+                                          <option value="IN">IN</option>
+                                          <option value="OUT">OUT</option>
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <Label className="text-[10px] text-muted-foreground uppercase">Action</Label>
+                                        <select value={editRule.action} onChange={(e) => setEditRule({ ...editRule, action: e.target.value })}
+                                          className="w-full h-8 text-xs rounded-md border border-border bg-background px-2 mt-0.5">
+                                          <option value="ACCEPT">ACCEPT</option>
+                                          <option value="DROP">DROP</option>
+                                          <option value="REJECT">REJECT</option>
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <Label className="text-[10px] text-muted-foreground uppercase">Protocol</Label>
+                                        <select value={editRule.protocol} onChange={(e) => setEditRule({ ...editRule, protocol: e.target.value })}
+                                          className="w-full h-8 text-xs rounded-md border border-border bg-background px-2 mt-0.5">
+                                          <option value="tcp">TCP</option>
+                                          <option value="udp">UDP</option>
+                                          <option value="icmp">ICMP</option>
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <Label className="text-[10px] text-muted-foreground uppercase">Port</Label>
+                                        <Input value={editRule.dport} onChange={(e) => setEditRule({ ...editRule, dport: e.target.value })}
+                                          placeholder="e.g. 80,443" className="h-8 text-xs mt-0.5" />
+                                      </div>
                                     </div>
-                                  )}
-                                  <div>
-                                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Scope</p>
-                                    <p className="text-xs font-medium flex items-center gap-1">
-                                      {rule.source_file === "cluster" ? <Globe className="h-3 w-3 text-blue-400" /> : <Shield className="h-3 w-3 text-purple-400" />}
-                                      {rule.source_file === "cluster" ? "Cluster" : "Host"}
-                                    </p>
-                                  </div>
-                                  {comment && (
-                                    <div className="col-span-2">
-                                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Comment</p>
-                                      <p className="text-xs text-muted-foreground">{comment}</p>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                      <div>
+                                        <Label className="text-[10px] text-muted-foreground uppercase">Source</Label>
+                                        <Input value={editRule.source} onChange={(e) => setEditRule({ ...editRule, source: e.target.value })}
+                                          placeholder="IP or CIDR" className="h-8 text-xs mt-0.5" />
+                                      </div>
+                                      <div>
+                                        <Label className="text-[10px] text-muted-foreground uppercase">Interface</Label>
+                                        <Input value={editRule.iface} onChange={(e) => setEditRule({ ...editRule, iface: e.target.value })}
+                                          placeholder="e.g. vmbr0" className="h-8 text-xs mt-0.5" />
+                                      </div>
+                                      <div className="col-span-2 sm:col-span-1">
+                                        <Label className="text-[10px] text-muted-foreground uppercase">Comment</Label>
+                                        <Input value={editRule.comment} onChange={(e) => setEditRule({ ...editRule, comment: e.target.value })}
+                                          placeholder="Description" className="h-8 text-xs mt-0.5" />
+                                      </div>
                                     </div>
-                                  )}
-                                </div>
-                                <div className="flex items-center justify-between pt-2 border-t border-border/50">
-                                  <code className="text-[10px] text-muted-foreground/60 font-mono truncate max-w-[70%]">{rule.raw}</code>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={(e) => { e.stopPropagation(); handleDeleteRule(rule.rule_index, rule.source_file) }}
-                                    disabled={deletingRuleIdx === rule.rule_index}
-                                    className="h-7 text-xs text-red-500 border-red-500/30 hover:bg-red-500/10 bg-transparent"
-                                  >
-                                    {deletingRuleIdx === rule.rule_index ? (
-                                      <div className="animate-spin h-3 w-3 border-2 border-red-500 border-t-transparent rounded-full mr-1" />
-                                    ) : (
-                                      <Trash2 className="h-3 w-3 mr-1" />
-                                    )}
-                                    Delete Rule
-                                  </Button>
-                                </div>
+                                    <div className="flex items-center justify-end gap-2 pt-1">
+                                      <Button variant="ghost" size="sm"
+                                        onClick={(e) => { e.stopPropagation(); setEditingRuleKey(null) }}
+                                        className="h-7 text-xs text-muted-foreground">
+                                        <X className="h-3 w-3 mr-1" /> Cancel
+                                      </Button>
+                                      <Button variant="outline" size="sm"
+                                        onClick={(e) => { e.stopPropagation(); handleSaveEditRule(rule.rule_index, rule.source_file || "host") }}
+                                        disabled={savingRule}
+                                        className="h-7 text-xs text-green-500 border-green-500/30 hover:bg-green-500/10 bg-transparent">
+                                        {savingRule ? (
+                                          <div className="animate-spin h-3 w-3 border-2 border-green-500 border-t-transparent rounded-full mr-1" />
+                                        ) : (
+                                          <Check className="h-3 w-3 mr-1" />
+                                        )}
+                                        Save Changes
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  /* ── Read-only Details ── */
+                                  <>
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-3">
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Direction</p>
+                                        <p className="text-xs font-medium flex items-center gap-1">
+                                          {direction === "IN" ? <ArrowDownLeft className="h-3 w-3 text-blue-400" /> : <ArrowUpRight className="h-3 w-3 text-amber-400" />}
+                                          {direction === "IN" ? "Incoming" : "Outgoing"}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Protocol</p>
+                                        <p className="text-xs font-medium font-mono">{rule.p || "any"}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Port</p>
+                                        <p className="text-xs font-medium font-mono">{rule.dport || "any"}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Source</p>
+                                        <p className="text-xs font-medium font-mono">{rule.source || "any"}</p>
+                                      </div>
+                                      {rule.i && (
+                                        <div>
+                                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Interface</p>
+                                          <p className="text-xs font-medium font-mono">{rule.i}</p>
+                                        </div>
+                                      )}
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Scope</p>
+                                        <p className="text-xs font-medium flex items-center gap-1">
+                                          {rule.source_file === "cluster" ? <Globe className="h-3 w-3 text-blue-400" /> : <Shield className="h-3 w-3 text-purple-400" />}
+                                          {rule.source_file === "cluster" ? "Cluster" : "Host"}
+                                        </p>
+                                      </div>
+                                      {comment && (
+                                        <div className="col-span-2">
+                                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Comment</p>
+                                          <p className="text-xs text-muted-foreground">{comment}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                                      <code className="text-[10px] text-muted-foreground/60 font-mono truncate max-w-[50%]">{rule.raw}</code>
+                                      <div className="flex items-center gap-2">
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={(e) => { e.stopPropagation(); startEditRule(rule) }}
+                                          className="h-7 text-xs text-blue-400 border-blue-400/30 hover:bg-blue-400/10 bg-transparent"
+                                        >
+                                          <Pencil className="h-3 w-3 mr-1" />
+                                          Edit
+                                        </Button>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={(e) => { e.stopPropagation(); handleDeleteRule(rule.rule_index, rule.source_file) }}
+                                          disabled={deletingRuleIdx === rule.rule_index}
+                                          className="h-7 text-xs text-red-500 border-red-500/30 hover:bg-red-500/10 bg-transparent"
+                                        >
+                                          {deletingRuleIdx === rule.rule_index ? (
+                                            <div className="animate-spin h-3 w-3 border-2 border-red-500 border-t-transparent rounded-full mr-1" />
+                                          ) : (
+                                            <Trash2 className="h-3 w-3 mr-1" />
+                                          )}
+                                          Delete
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </>
+                                )}
                               </div>
                             )}
                           </div>

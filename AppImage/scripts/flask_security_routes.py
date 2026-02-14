@@ -106,6 +106,39 @@ def firewall_delete_rule():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
+@security_bp.route('/api/security/firewall/rules/edit', methods=['PUT'])
+def firewall_edit_rule():
+    """Edit an existing firewall rule (delete old + insert new at same position)"""
+    if not security_manager:
+        return jsonify({"success": False, "message": "Security manager not available"}), 500
+    try:
+        data = request.json or {}
+        rule_index = data.get("rule_index")
+        level = data.get("level", "host")
+        new_rule = data.get("new_rule", {})
+        if rule_index is None:
+            return jsonify({"success": False, "message": "rule_index is required"}), 400
+
+        success, message = security_manager.edit_firewall_rule(
+            rule_index=int(rule_index),
+            level=level,
+            direction=new_rule.get("direction", "IN"),
+            action=new_rule.get("action", "ACCEPT"),
+            protocol=new_rule.get("protocol", "tcp"),
+            dport=new_rule.get("dport", ""),
+            sport=new_rule.get("sport", ""),
+            source=new_rule.get("source", ""),
+            iface=new_rule.get("iface", ""),
+            comment=new_rule.get("comment", ""),
+        )
+        if success:
+            return jsonify({"success": True, "message": message})
+        else:
+            return jsonify({"success": False, "message": message}), 400
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
 @security_bp.route('/api/security/firewall/monitor-port', methods=['POST'])
 def firewall_add_monitor_port():
     """Add firewall rule to allow port 8008 for ProxMenux Monitor"""
