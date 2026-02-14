@@ -9,7 +9,8 @@ import {
   Shield, Lock, User, AlertCircle, CheckCircle, Info, LogOut, Key, Copy, Eye, EyeOff,
   Trash2, RefreshCw, Clock, ShieldCheck, Globe, FileKey, AlertTriangle,
   Flame, Bug, Search, Download, Power, PowerOff, Plus, Minus, Activity, Settings, Ban,
-  FileText, Printer, Play, BarChart3, TriangleAlert, ChevronDown,
+  FileText, Printer, Play, BarChart3, TriangleAlert, ChevronDown, ArrowDownLeft, ArrowUpRight,
+  ChevronRight, Network, Zap,
 } from "lucide-react"
 import { getApiUrl, fetchApi } from "../lib/api-config"
 import { TwoFactorSetup } from "./two-factor-setup"
@@ -88,6 +89,7 @@ export function Security() {
   })
   const [addingRule, setAddingRule] = useState(false)
   const [deletingRuleIdx, setDeletingRuleIdx] = useState<number | null>(null)
+  const [expandedRuleKey, setExpandedRuleKey] = useState<string | null>(null)
 
   // Security Tools state
   const [toolsLoading, setToolsLoading] = useState(true)
@@ -2341,6 +2343,83 @@ ${(report.sections && report.sections.length > 0) ? `
                 )}
               </div>
 
+              {/* Rules Summary Dashboard */}
+              {firewallData.rules.length > 0 && (() => {
+                const acceptCount = firewallData.rules.filter(r => r.action === "ACCEPT").length
+                const dropCount = firewallData.rules.filter(r => r.action === "DROP").length
+                const rejectCount = firewallData.rules.filter(r => r.action === "REJECT").length
+                const blockCount = dropCount + rejectCount
+                const total = firewallData.rules.length
+                const clusterCount = firewallData.rules.filter(r => r.source_file === "cluster").length
+                const hostCount = firewallData.rules.filter(r => r.source_file === "host").length
+                const inCount = firewallData.rules.filter(r => (r.direction || "IN") === "IN").length
+                const outCount = firewallData.rules.filter(r => r.direction === "OUT").length
+                // Collect unique protected ports
+                const protectedPorts = new Set<string>()
+                firewallData.rules.forEach(r => {
+                  if (r.dport) r.dport.split(",").forEach(p => protectedPorts.add(p.trim()))
+                })
+
+                return (
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-semibold text-muted-foreground">Rules Overview</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="p-3 bg-muted/50 rounded-lg border border-border text-center">
+                        <p className="text-lg font-bold text-foreground">{total}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Rules</p>
+                      </div>
+                      <div className="p-3 bg-green-500/5 rounded-lg border border-green-500/20 text-center">
+                        <p className="text-lg font-bold text-green-500">{acceptCount}</p>
+                        <p className="text-[10px] text-green-500/70 uppercase tracking-wider">Accept</p>
+                      </div>
+                      <div className="p-3 bg-red-500/5 rounded-lg border border-red-500/20 text-center">
+                        <p className="text-lg font-bold text-red-500">{blockCount}</p>
+                        <p className="text-[10px] text-red-500/70 uppercase tracking-wider">Block / Reject</p>
+                      </div>
+                      <div className="p-3 bg-muted/50 rounded-lg border border-border text-center">
+                        <p className="text-lg font-bold text-foreground">{protectedPorts.size}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Ports Covered</p>
+                      </div>
+                    </div>
+                    {/* Visual bar */}
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden flex">
+                        {acceptCount > 0 && (
+                          <div className="h-full bg-green-500 transition-all" style={{ width: `${(acceptCount / total) * 100}%` }} />
+                        )}
+                        {dropCount > 0 && (
+                          <div className="h-full bg-red-500 transition-all" style={{ width: `${(dropCount / total) * 100}%` }} />
+                        )}
+                        {rejectCount > 0 && (
+                          <div className="h-full bg-orange-500 transition-all" style={{ width: `${(rejectCount / total) * 100}%` }} />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 text-[10px] text-muted-foreground flex-shrink-0">
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500" />Accept</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" />Drop</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-500" />Reject</span>
+                      </div>
+                    </div>
+                    {/* Scope breakdown */}
+                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1.5">
+                        <Globe className="h-3 w-3 text-blue-400" /> Cluster: {clusterCount}
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <Shield className="h-3 w-3 text-purple-400" /> Host: {hostCount}
+                      </span>
+                      <span className="text-border">|</span>
+                      <span className="flex items-center gap-1.5">
+                        <ArrowDownLeft className="h-3 w-3" /> IN: {inCount}
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <ArrowUpRight className="h-3 w-3" /> OUT: {outCount}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })()}
+
               {/* Firewall Rules */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -2364,6 +2443,42 @@ ${(report.sections && report.sections.length > 0) ? `
                     <div className="flex items-center gap-2 mb-1">
                       <Plus className="h-4 w-4 text-orange-500" />
                       <p className="text-sm font-semibold text-orange-500">New Firewall Rule</p>
+                    </div>
+
+                    {/* Service Presets */}
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Quick Presets</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { label: "HTTP", port: "80", proto: "tcp", comment: "HTTP Web" },
+                          { label: "HTTPS", port: "443", proto: "tcp", comment: "HTTPS Web" },
+                          { label: "SSH", port: "22", proto: "tcp", comment: "SSH Remote Access" },
+                          { label: "DNS", port: "53", proto: "udp", comment: "DNS" },
+                          { label: "SMTP", port: "25", proto: "tcp", comment: "SMTP Mail" },
+                          { label: "NFS", port: "2049", proto: "tcp", comment: "NFS" },
+                          { label: "SMB", port: "445", proto: "tcp", comment: "SMB/CIFS" },
+                          { label: "Ping", port: "", proto: "icmp", comment: "ICMP Ping" },
+                        ].map((preset) => (
+                          <Button
+                            key={preset.label}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setNewRule({
+                              ...newRule,
+                              dport: preset.port,
+                              protocol: preset.proto,
+                              comment: preset.comment,
+                              direction: "IN",
+                              action: "ACCEPT",
+                            })}
+                            className="h-6 text-[10px] px-2 text-muted-foreground border-border hover:text-orange-500 hover:border-orange-500/30 bg-transparent"
+                          >
+                            <Zap className="h-2.5 w-2.5 mr-1" />
+                            {preset.label}
+                          </Button>
+                        ))}
+                      </div>
                     </div>
 
                     <div className="grid gap-3 sm:grid-cols-3">
@@ -2490,51 +2605,140 @@ ${(report.sections && report.sections.length > 0) ? `
                 {firewallData.rules.length > 0 ? (
                   <div className="border border-border rounded-lg overflow-hidden">
                     {/* Table header */}
-                    <div className="grid grid-cols-[auto_1fr_auto_auto_auto_auto_auto] gap-2 p-2.5 bg-muted/50 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                      <span className="w-14">Action</span>
-                      <span>Direction</span>
-                      <span className="w-12">Proto</span>
-                      <span className="w-20">Port</span>
-                      <span className="w-28 hidden sm:block">Source</span>
-                      <span className="w-14">Level</span>
-                      <span className="w-8" />
+                    <div className="hidden sm:grid grid-cols-[2rem_4.5rem_2rem_3rem_5rem_1fr_3.5rem_2rem] gap-2 px-3 py-2 bg-muted/50 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider items-center">
+                      <span />
+                      <span>Action</span>
+                      <span />
+                      <span>Proto</span>
+                      <span>Port</span>
+                      <span>Source</span>
+                      <span>Level</span>
+                      <span />
                     </div>
 
-                    <div className="divide-y divide-border max-h-64 overflow-y-auto">
-                      {firewallData.rules.map((rule, idx) => (
-                        <div key={idx} className="grid grid-cols-[auto_1fr_auto_auto_auto_auto_auto] gap-2 p-2.5 items-center hover:bg-muted/20 transition-colors">
-                          <span className={`w-14 px-1.5 py-0.5 rounded text-[10px] font-bold text-center ${
-                            rule.action === "ACCEPT" ? "bg-green-500/10 text-green-500" :
-                            rule.action === "DROP" ? "bg-red-500/10 text-red-500" :
-                            rule.action === "REJECT" ? "bg-orange-500/10 text-orange-500" :
-                            "bg-gray-500/10 text-gray-500"
-                          }`}>
-                            {rule.action || "?"}
-                          </span>
-                          <span className="text-xs text-muted-foreground font-mono">{rule.direction || "IN"}</span>
-                          <span className="w-12 text-xs text-blue-400 font-mono">{rule.p || "-"}</span>
-                          <span className="w-20 text-xs text-foreground font-mono">{rule.dport || "-"}</span>
-                          <span className="w-28 text-xs text-muted-foreground font-mono hidden sm:block truncate">{rule.source || "any"}</span>
-                          <span className={`w-14 text-[10px] px-1.5 py-0.5 rounded text-center ${
-                            rule.source_file === "cluster" ? "bg-blue-500/10 text-blue-400" : "bg-purple-500/10 text-purple-400"
-                          }`}>
-                            {rule.source_file}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteRule(rule.rule_index, rule.source_file)}
-                            disabled={deletingRuleIdx === rule.rule_index}
-                            className="w-8 h-7 p-0 text-red-500/50 hover:text-red-500 hover:bg-red-500/10"
-                          >
-                            {deletingRuleIdx === rule.rule_index ? (
-                              <div className="animate-spin h-3 w-3 border-2 border-red-500 border-t-transparent rounded-full" />
-                            ) : (
-                              <Trash2 className="h-3.5 w-3.5" />
+                    <div className="divide-y divide-border max-h-80 overflow-y-auto">
+                      {firewallData.rules.map((rule, idx) => {
+                        const ruleKey = `${rule.source_file}-${rule.rule_index}`
+                        const isExpanded = expandedRuleKey === ruleKey
+                        const direction = rule.direction || "IN"
+                        const comment = rule.raw?.includes("#") ? rule.raw.split("#").slice(1).join("#").trim() : ""
+                        
+                        return (
+                          <div key={ruleKey}>
+                            {/* Main row */}
+                            <div
+                              className="grid grid-cols-[2rem_4.5rem_1fr_2rem] sm:grid-cols-[2rem_4.5rem_2rem_3rem_5rem_1fr_3.5rem_2rem] gap-2 px-3 py-2.5 items-center hover:bg-muted/20 transition-colors cursor-pointer"
+                              onClick={() => setExpandedRuleKey(isExpanded ? null : ruleKey)}
+                            >
+                              {/* Direction icon */}
+                              <div className="flex items-center justify-center">
+                                {direction === "IN" ? (
+                                  <ArrowDownLeft className="h-4 w-4 text-blue-400" />
+                                ) : (
+                                  <ArrowUpRight className="h-4 w-4 text-amber-400" />
+                                )}
+                              </div>
+                              {/* Action badge */}
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold text-center ${
+                                rule.action === "ACCEPT" ? "bg-green-500/10 text-green-500" :
+                                rule.action === "DROP" ? "bg-red-500/10 text-red-500" :
+                                rule.action === "REJECT" ? "bg-orange-500/10 text-orange-500" :
+                                "bg-gray-500/10 text-gray-500"
+                              }`}>
+                                {rule.action || "?"}
+                              </span>
+                              {/* Mobile: combined info */}
+                              <div className="sm:hidden flex items-center gap-1.5 min-w-0">
+                                <span className="text-xs text-blue-400 font-mono">{rule.p || "*"}</span>
+                                <span className="text-xs text-muted-foreground">/</span>
+                                <span className="text-xs text-foreground font-mono font-medium truncate">{rule.dport || "*"}</span>
+                                {comment && <span className="text-[10px] text-muted-foreground truncate ml-1">- {comment}</span>}
+                              </div>
+                              {/* Desktop: direction label */}
+                              <span className="hidden sm:block text-xs text-muted-foreground font-mono">{direction}</span>
+                              {/* Protocol */}
+                              <span className="hidden sm:block text-xs text-blue-400 font-mono">{rule.p || "*"}</span>
+                              {/* Port */}
+                              <span className="hidden sm:block text-xs text-foreground font-mono font-medium">{rule.dport || "*"}</span>
+                              {/* Source */}
+                              <span className="hidden sm:block text-xs text-muted-foreground font-mono truncate">{rule.source || "any"}</span>
+                              {/* Level badge */}
+                              <span className={`hidden sm:block text-[10px] px-1.5 py-0.5 rounded text-center ${
+                                rule.source_file === "cluster" ? "bg-blue-500/10 text-blue-400" : "bg-purple-500/10 text-purple-400"
+                              }`}>
+                                {rule.source_file}
+                              </span>
+                              {/* Expand/Delete */}
+                              <div className="flex items-center justify-end">
+                                <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                              </div>
+                            </div>
+                            
+                            {/* Expanded details */}
+                            {isExpanded && (
+                              <div className="px-3 pb-3 pt-0 border-t border-border/50 bg-muted/10">
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-3">
+                                  <div>
+                                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Direction</p>
+                                    <p className="text-xs font-medium flex items-center gap-1">
+                                      {direction === "IN" ? <ArrowDownLeft className="h-3 w-3 text-blue-400" /> : <ArrowUpRight className="h-3 w-3 text-amber-400" />}
+                                      {direction === "IN" ? "Incoming" : "Outgoing"}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Protocol</p>
+                                    <p className="text-xs font-medium font-mono">{rule.p || "any"}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Port</p>
+                                    <p className="text-xs font-medium font-mono">{rule.dport || "any"}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Source</p>
+                                    <p className="text-xs font-medium font-mono">{rule.source || "any"}</p>
+                                  </div>
+                                  {rule.i && (
+                                    <div>
+                                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Interface</p>
+                                      <p className="text-xs font-medium font-mono">{rule.i}</p>
+                                    </div>
+                                  )}
+                                  <div>
+                                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Scope</p>
+                                    <p className="text-xs font-medium flex items-center gap-1">
+                                      {rule.source_file === "cluster" ? <Globe className="h-3 w-3 text-blue-400" /> : <Shield className="h-3 w-3 text-purple-400" />}
+                                      {rule.source_file === "cluster" ? "Cluster" : "Host"}
+                                    </p>
+                                  </div>
+                                  {comment && (
+                                    <div className="col-span-2">
+                                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Comment</p>
+                                      <p className="text-xs text-muted-foreground">{comment}</p>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                                  <code className="text-[10px] text-muted-foreground/60 font-mono truncate max-w-[70%]">{rule.raw}</code>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteRule(rule.rule_index, rule.source_file) }}
+                                    disabled={deletingRuleIdx === rule.rule_index}
+                                    className="h-7 text-xs text-red-500 border-red-500/30 hover:bg-red-500/10 bg-transparent"
+                                  >
+                                    {deletingRuleIdx === rule.rule_index ? (
+                                      <div className="animate-spin h-3 w-3 border-2 border-red-500 border-t-transparent rounded-full mr-1" />
+                                    ) : (
+                                      <Trash2 className="h-3 w-3 mr-1" />
+                                    )}
+                                    Delete Rule
+                                  </Button>
+                                </div>
+                              </div>
                             )}
-                          </Button>
-                        </div>
-                      ))}
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 ) : (
