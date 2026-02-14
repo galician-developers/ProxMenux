@@ -2433,19 +2433,26 @@ ${(report.sections && report.sections.length > 0) ? `
                       </div>
                     </div>
                     {/* Visual bar */}
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden flex">
-                        {acceptCount > 0 && (
-                          <div className="h-full bg-green-500 transition-all" style={{ width: `${(acceptCount / total) * 100}%` }} />
-                        )}
-                        {dropCount > 0 && (
-                          <div className="h-full bg-red-500 transition-all" style={{ width: `${(dropCount / total) * 100}%` }} />
-                        )}
-                        {rejectCount > 0 && (
-                          <div className="h-full bg-orange-500 transition-all" style={{ width: `${(rejectCount / total) * 100}%` }} />
-                        )}
+                    <div className="space-y-1.5 sm:space-y-0">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden flex">
+                          {acceptCount > 0 && (
+                            <div className="h-full bg-green-500 transition-all" style={{ width: `${(acceptCount / total) * 100}%` }} />
+                          )}
+                          {dropCount > 0 && (
+                            <div className="h-full bg-red-500 transition-all" style={{ width: `${(dropCount / total) * 100}%` }} />
+                          )}
+                          {rejectCount > 0 && (
+                            <div className="h-full bg-orange-500 transition-all" style={{ width: `${(rejectCount / total) * 100}%` }} />
+                          )}
+                        </div>
+                        <div className="hidden sm:flex items-center gap-3 text-[10px] text-muted-foreground flex-shrink-0">
+                          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500" />Accept</span>
+                          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" />Drop</span>
+                          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-500" />Reject</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3 text-[10px] text-muted-foreground flex-shrink-0">
+                      <div className="flex sm:hidden items-center gap-3 text-[10px] text-muted-foreground">
                         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500" />Accept</span>
                         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" />Drop</span>
                         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-500" />Reject</span>
