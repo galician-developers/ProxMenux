@@ -125,6 +125,63 @@ app.register_blueprint(security_bp)
 init_terminal_routes(app)
 
 
+# -------------------------------------------------------------------
+# Fail2Ban application-level ban check (for reverse proxy scenarios)
+# -------------------------------------------------------------------
+# When users access via a reverse proxy, iptables/nftables cannot block
+# the real client IP because the TCP connection comes from the proxy.
+# This middleware checks if the client's real IP (from X-Forwarded-For)
+# is banned in the 'proxmenux' fail2ban jail and blocks at app level.
+import subprocess as _f2b_subprocess
+import time as _f2b_time
+
+# Cache banned IPs for 30 seconds to avoid calling fail2ban-client on every request
+_f2b_banned_cache = {"ips": set(), "ts": 0, "ttl": 30}
+
+def _f2b_get_banned_ips():
+    """Get currently banned IPs from the proxmenux jail, with caching."""
+    now = _f2b_time.time()
+    if now - _f2b_banned_cache["ts"] < _f2b_banned_cache["ttl"]:
+        return _f2b_banned_cache["ips"]
+    try:
+        result = _f2b_subprocess.run(
+            ["fail2ban-client", "status", "proxmenux"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                if "Banned IP list:" in line:
+                    ip_str = line.split(":", 1)[1].strip()
+                    banned = set(ip.strip() for ip in ip_str.split() if ip.strip())
+                    _f2b_banned_cache["ips"] = banned
+                    _f2b_banned_cache["ts"] = now
+                    return banned
+    except Exception:
+        pass
+    return _f2b_banned_cache["ips"]
+
+def _f2b_get_client_ip():
+    """Get the real client IP, supporting reverse proxies."""
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    real_ip = request.headers.get("X-Real-IP", "")
+    if real_ip:
+        return real_ip.strip()
+    return request.remote_addr or "unknown"
+
+@app.before_request
+def check_fail2ban_ban():
+    """Block requests from IPs banned by fail2ban (works with reverse proxies)."""
+    client_ip = _f2b_get_client_ip()
+    banned_ips = _f2b_get_banned_ips()
+    if client_ip in banned_ips:
+        return jsonify({
+            "success": False,
+            "message": "Access denied. Your IP has been temporarily banned due to too many failed login attempts."
+        }), 403
+
+
 def identify_gpu_type(name, vendor=None, bus=None, driver=None):
     """
     Returns: 'Integrated' or 'PCI' (discrete)
