@@ -96,6 +96,7 @@ export function Security() {
     dport: "", sport: "", source: "", iface: "", comment: "", level: "host",
   })
   const [savingRule, setSavingRule] = useState(false)
+  const [networkInterfaces, setNetworkInterfaces] = useState<{name: string, type: string, status: string}[]>([])
 
   // Security Tools state
   const [toolsLoading, setToolsLoading] = useState(true)
@@ -214,6 +215,21 @@ export function Security() {
       // Silently fail
     } finally {
       setFirewallLoading(false)
+    }
+  }
+
+  const loadNetworkInterfaces = async () => {
+    try {
+      const data = await fetchApi("/api/network")
+      if (data.interfaces) {
+        // Get physical + bridge + bond interfaces (exclude vm_lxc virtual taps)
+        const relevant = data.interfaces
+          .filter((i: any) => ["physical", "bridge", "bond", "vlan"].includes(i.type))
+          .sort((a: any, b: any) => a.name.localeCompare(b.name))
+        setNetworkInterfaces(relevant)
+      }
+    } catch {
+      // Silently fail - user can still type manually if needed
     }
   }
 
