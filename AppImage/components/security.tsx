@@ -10,7 +10,7 @@ import {
   Trash2, RefreshCw, Clock, ShieldCheck, Globe, FileKey, AlertTriangle,
   Flame, Bug, Search, Download, Power, PowerOff, Plus, Minus, Activity, Settings, Ban,
   FileText, Printer, Play, BarChart3, TriangleAlert, ChevronDown, ArrowDownLeft, ArrowUpRight,
-  ChevronRight, Network, Zap,
+  ChevronRight, Network, Zap, Pencil, Check, X,
 } from "lucide-react"
 import { getApiUrl, fetchApi } from "../lib/api-config"
 import { TwoFactorSetup } from "./two-factor-setup"
@@ -90,6 +90,12 @@ export function Security() {
   const [addingRule, setAddingRule] = useState(false)
   const [deletingRuleIdx, setDeletingRuleIdx] = useState<number | null>(null)
   const [expandedRuleKey, setExpandedRuleKey] = useState<string | null>(null)
+  const [editingRuleKey, setEditingRuleKey] = useState<string | null>(null)
+  const [editRule, setEditRule] = useState({
+    direction: "IN", action: "ACCEPT", protocol: "tcp",
+    dport: "", sport: "", source: "", iface: "", comment: "", level: "host",
+  })
+  const [savingRule, setSavingRule] = useState(false)
 
   // Security Tools state
   const [toolsLoading, setToolsLoading] = useState(true)
