@@ -587,7 +587,7 @@ class HealthMonitor:
                         
                         # Record non-dismissable error
                         health_persistence.record_error(
-                            error_key='cpu_temp_high',
+                            error_key='cpu_temperature',
                             category='temperature',
                             severity='WARNING',
                             reason=reason,
@@ -597,11 +597,11 @@ class HealthMonitor:
                         # Temperature has been ≤80°C for 30 seconds - clear the error
                         status = 'OK'
                         reason = None
-                        health_persistence.resolve_error('cpu_temp_high', 'Temperature recovered')
+                        health_persistence.resolve_error('cpu_temperature', 'Temperature recovered')
                     else:
                         # Temperature is elevated but not long enough, or recovering but not yet cleared
                         # Check if we already have an active error
-                        if health_persistence.is_error_active('cpu_temp_high', category='temperature'):
+                        if health_persistence.is_error_active('cpu_temperature', category='temperature'):
                             # Keep the warning active
                             status = 'WARNING'
                             reason = f'CPU temperature {max_temp}°C still elevated'
@@ -1988,6 +1988,7 @@ class HealthMonitor:
             update_count = 0
             security_updates_packages = []
             kernel_pve_updates_packages = []
+            sec_result = None
             
             if result.returncode == 0:
                 lines = result.stdout.strip().split('\n')
@@ -2012,30 +2013,34 @@ class HealthMonitor:
                     status = 'WARNING'
                     reason = f'{len(security_updates_packages)} security update(s) available'
                     # Record persistent error for security updates to ensure it's visible
-                    health_persistence.record_error(
-                        error_key='updates_security',
+                    sec_result = health_persistence.record_error(
+                        error_key='security_updates',
                         category='updates',
                         severity='WARNING',
                         reason=reason,
-                        details={'count': len(security_updates_packages), 'packages': security_updates_packages[:5]}
+                        details={'count': len(security_updates_packages), 'packages': security_updates_packages[:5], 'dismissable': True}
                     )
+                    # If previously dismissed, downgrade to INFO
+                    if sec_result and sec_result.get('type') == 'skipped_acknowledged':
+                        status = 'INFO'
+                        reason = None
                 elif last_update_days and last_update_days >= 548:
                     # 18+ months without updates - CRITICAL
                     status = 'CRITICAL'
                     reason = f'System not updated in {last_update_days} days (>18 months)'
                     health_persistence.record_error(
-                        error_key='updates_548days',
+                        error_key='system_age',
                         category='updates',
                         severity='CRITICAL',
                         reason=reason,
-                        details={'days': last_update_days, 'update_count': update_count}
+                        details={'days': last_update_days, 'update_count': update_count, 'dismissable': False}
                     )
                 elif last_update_days and last_update_days >= 365:
                     # 1+ year without updates - WARNING
                     status = 'WARNING'
                     reason = f'System not updated in {last_update_days} days (>1 year)'
                     health_persistence.record_error(
-                        error_key='updates_365days',
+                        error_key='system_age',
                         category='updates',
                         severity='WARNING',
                         reason=reason,
@@ -2057,14 +2062,16 @@ class HealthMonitor:
 
             # Build checks dict for updates sub-items
             update_age_status = 'CRITICAL' if (last_update_days and last_update_days >= 548) else ('WARNING' if (last_update_days and last_update_days >= 365) else 'OK')
-            sec_status = 'WARNING' if security_updates_packages else 'OK'
+            sec_dismissed = security_updates_packages and sec_result and sec_result.get('type') == 'skipped_acknowledged'
+            sec_status = 'INFO' if sec_dismissed else ('WARNING' if security_updates_packages else 'OK')
             kernel_status = 'INFO' if kernel_pve_updates_packages else 'OK'
             
             checks = {
                 'security_updates': {
                     'status': sec_status,
                     'detail': f'{len(security_updates_packages)} security update(s) pending' if security_updates_packages else 'No security updates pending',
-                    'dismissable': True if sec_status != 'OK' else False
+                    'dismissable': True if security_updates_packages and not sec_dismissed else False,
+                    'dismissed': bool(sec_dismissed)
                 },
                 'system_age': {
                     'status': update_age_status,
@@ -2206,7 +2213,7 @@ class HealthMonitor:
                 
                 # Record in persistence (dismissable)
                 health_persistence.record_error(
-                    error_key='security_fail2ban_ban',
+                    error_key='fail2ban',
                     category='security',
                     severity='WARNING',
                     reason=msg,
@@ -2220,8 +2227,8 @@ class HealthMonitor:
             else:
                 result['detail'] = f'Fail2Ban active ({len(jails)} jail(s), no current bans)'
                 # Auto-resolve if previously banned IPs are now gone
-                if health_persistence.is_error_active('security_fail2ban_ban'):
-                    health_persistence.clear_error('security_fail2ban_ban')
+                if health_persistence.is_error_active('fail2ban'):
+                    health_persistence.clear_error('fail2ban')
             
         except Exception as e:
             result['detail'] = f'Unable to check Fail2Ban: {str(e)[:50]}'

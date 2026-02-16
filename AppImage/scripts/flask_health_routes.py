@@ -66,16 +66,22 @@ def acknowledge_error():
         
         if result.get('success'):
             # Invalidate cached health results so next fetch reflects the dismiss
-            # Clear category-specific caches based on the error_key prefix
-            if error_key.startswith('log_'):
-                health_monitor.last_check_times.pop('system_logs', None)
-                health_monitor.cached_results.pop('system_logs', None)
-            elif error_key.startswith('pve_service_'):
-                health_monitor.last_check_times.pop('pve_services', None)
-                health_monitor.cached_results.pop('pve_services', None)
-            elif error_key.startswith('updates_'):
-                health_monitor.last_check_times.pop('updates_check', None)
-                health_monitor.cached_results.pop('updates_check', None)
+            # Use the error's category to clear the correct cache
+            category = result.get('category', '')
+            cache_key_map = {
+                'logs': 'system_logs',
+                'pve_services': 'pve_services',
+                'updates': 'updates_check',
+                'security': 'security_check',
+                'temperature': 'cpu_check',
+                'network': 'network_check',
+                'disks': 'storage_check',
+                'vms': 'vms_check',
+            }
+            cache_key = cache_key_map.get(category)
+            if cache_key:
+                health_monitor.last_check_times.pop(cache_key, None)
+                health_monitor.cached_results.pop(cache_key, None)
             
             # Determine suppression period for the response
             category = result.get('category', '')
