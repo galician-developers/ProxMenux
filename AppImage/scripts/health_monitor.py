@@ -993,22 +993,22 @@ class HealthMonitor:
                     if error_count >= 3:
                         error_key = f'disk_{disk}'
                         severity = 'CRITICAL'
-    reason = f'{error_count} I/O errors in 5 minutes'
-    
-    health_persistence.record_error(
-    error_key=error_key,
-    category='disks',
-    severity=severity,
-    reason=reason,
-    details={'disk': disk, 'error_count': error_count, 'dismissable': False}
-    )
-    
-    disk_details[disk] = {
-    'status': severity,
-    'reason': reason,
-    'dismissable': False
-    }
-    elif error_count >= 1:
+                        reason = f'{error_count} I/O errors in 5 minutes'
+                        
+                        health_persistence.record_error(
+                            error_key=error_key,
+                            category='disks',
+                            severity=severity,
+                            reason=reason,
+                            details={'disk': disk, 'error_count': error_count, 'dismissable': False}
+                        )
+                        
+                        disk_details[disk] = {
+                            'status': severity,
+                            'reason': reason,
+                            'dismissable': False
+                        }
+                    elif error_count >= 1:
                         error_key = f'disk_{disk}'
                         severity = 'WARNING'
                         reason = f'{error_count} I/O error(s) in 5 minutes'
@@ -1116,14 +1116,14 @@ class HealthMonitor:
                             category='network',
                             severity='CRITICAL',
                             reason=alert_reason or 'Interface DOWN',
-    details={'interface': interface, 'dismissable': False}
-    )
-    
-    interface_details[interface] = {
-    'status': 'CRITICAL',
-    'reason': alert_reason or 'Interface DOWN',
-    'dismissable': False
-    }
+                            details={'interface': interface, 'dismissable': False}
+                        )
+                        
+                        interface_details[interface] = {
+                            'status': 'CRITICAL',
+                            'reason': alert_reason or 'Interface DOWN',
+                            'dismissable': False
+                        }
                 else:
                     active_interfaces.add(interface)
                     if interface.startswith('vmbr') or interface.startswith(('eth', 'ens', 'enp', 'eno')):
