@@ -201,17 +201,25 @@ class HealthMonitor:
     def get_cached_health_status(self) -> Dict[str, str]:
         """
         Get cached health status without running expensive checks.
-        Returns the last calculated status or triggers a check if too old.
+        The background health collector keeps '_bg_overall' always fresh (every 5 min).
+        Falls back to calculating on demand if background data is stale or unavailable.
         """
-        cache_key = 'overall_health'
         current_time = time.time()
         
-        # If cache exists and is less than 60 seconds old, return it
+        # 1. Check background collector cache (updated every 5 min by _health_collector_loop)
+        bg_key = '_bg_overall'
+        if bg_key in self.last_check_times:
+            age = current_time - self.last_check_times[bg_key]
+            if age < 360:  # 6 min (5 min interval + 1 min tolerance)
+                return self.cached_results.get(bg_key, {'status': 'OK', 'summary': 'System operational'})
+        
+        # 2. Check regular cache (updated by modal fetches or on-demand)
+        cache_key = 'overall_health'
         if cache_key in self.last_check_times:
             if current_time - self.last_check_times[cache_key] < 60:
                 return self.cached_results.get(cache_key, {'status': 'OK', 'summary': 'System operational'})
         
-        # Otherwise, calculate and cache
+        # 3. No fresh cache - calculate on demand (happens only on first load before bg thread runs)
         status = self.get_overall_status()
         self.cached_results[cache_key] = {
             'status': status['status'],

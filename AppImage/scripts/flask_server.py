@@ -569,6 +569,34 @@ def _temperature_collector_loop():
         time.sleep(60)
 
 
+def _health_collector_loop():
+    """Background thread: run full health checks every 5 minutes.
+    Keeps the health cache always fresh and records events/errors in the DB
+    so the future notification service can consume them."""
+    from health_monitor import health_monitor
+    
+    # Wait 30s after startup to let other services initialize
+    time.sleep(30)
+    
+    while True:
+        try:
+            # Run full health check (results get cached internally + recorded in DB)
+            result = health_monitor.get_detailed_status()
+            
+            # Update the quick-status cache so the header stays fresh without extra work
+            overall = result.get('overall', 'OK')
+            summary = result.get('summary', 'All systems operational')
+            health_monitor.cached_results['_bg_overall'] = {
+                'status': overall,
+                'summary': summary
+            }
+            health_monitor.last_check_times['_bg_overall'] = time.time()
+        except Exception as e:
+            print(f"[ProxMenux] Health collector error: {e}")
+        
+        time.sleep(300)  # Every 5 minutes
+
+
 def get_uptime():
     """Get system uptime in a human-readable format."""
     try:
@@ -7005,6 +7033,15 @@ if __name__ == '__main__':
         print("[ProxMenux] Temperature history collector started (60s interval, 30d retention)")
     else:
         print("[ProxMenux] Temperature history disabled (DB init failed)")
+
+    # ── Background Health Monitor ──
+    # Run full health checks every 5 min, keeping cache fresh and recording events for notifications
+    try:
+        health_thread = threading.Thread(target=_health_collector_loop, daemon=True)
+        health_thread.start()
+        print("[ProxMenux] Background health monitor started (5 min interval)")
+    except Exception as e:
+        print(f"[ProxMenux] Background health monitor failed to start: {e}")
 
     # Check for SSL configuration
     ssl_ctx = None

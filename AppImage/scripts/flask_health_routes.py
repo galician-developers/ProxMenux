@@ -83,6 +83,12 @@ def acknowledge_error():
                 health_monitor.last_check_times.pop(cache_key, None)
                 health_monitor.cached_results.pop(cache_key, None)
             
+            # Also invalidate overall status caches so header updates immediately
+            health_monitor.last_check_times.pop('_bg_overall', None)
+            health_monitor.cached_results.pop('_bg_overall', None)
+            health_monitor.last_check_times.pop('overall_health', None)
+            health_monitor.cached_results.pop('overall_health', None)
+            
             # Determine suppression period for the response
             category = result.get('category', '')
             if category == 'updates':

@@ -105,6 +105,8 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
     setError(null)
 
     try {
+      let newOverallStatus = "OK"
+      
       // Use the new combined endpoint for fewer round-trips
       const response = await fetch(getApiUrl("/api/health/full"))
       if (!response.ok) {
@@ -114,14 +116,17 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
         const data = await legacyResponse.json()
         setHealthData(data)
         setDismissedItems([])
+        newOverallStatus = data?.overall || "OK"
       } else {
         const fullData: FullHealthData = await response.json()
         setHealthData(fullData.health)
         setDismissedItems(fullData.dismissed || [])
+        newOverallStatus = fullData.health?.overall || "OK"
       }
 
+      // Emit event with the FRESH data from the response, not the stale state
       const event = new CustomEvent("healthStatusUpdated", {
-        detail: { status: healthData?.overall || "OK" },
+        detail: { status: newOverallStatus },
       })
       window.dispatchEvent(event)
     } catch (err) {
@@ -129,7 +134,7 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
     } finally {
       setLoading(false)
     }
-  }, [getApiUrl, healthData?.overall])
+  }, [getApiUrl])
 
   useEffect(() => {
     if (open) {
