@@ -4,6 +4,10 @@ Provides REST API endpoints for authentication management
 """
 
 import logging
+import os
+import subprocess
+import threading
+import time
 from flask import Blueprint, jsonify, request
 import auth_manager
 import jwt
@@ -73,12 +77,36 @@ def ssl_status():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
+def _schedule_service_restart(delay=1.5):
+    """Schedule a restart of the monitor service via systemctl after a short delay.
+    This gives time for the HTTP response to reach the client before the process restarts."""
+    def _do_restart():
+        time.sleep(delay)
+        print("[ProxMenux] Restarting monitor service to apply SSL changes...")
+        # Use systemctl restart which properly stops and starts the service.
+        # This works because systemd manages proxmenux-monitor.service.
+        try:
+            subprocess.Popen(
+                ["systemctl", "restart", "proxmenux-monitor"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        except Exception as e:
+            print(f"[ProxMenux] Failed to restart via systemctl: {e}")
+            # Fallback: try to restart the process directly
+            os.kill(os.getpid(), 15)  # SIGTERM
+    
+    t = threading.Thread(target=_do_restart, daemon=True)
+    t.start()
+
+
 @auth_bp.route('/api/ssl/configure', methods=['POST'])
 def ssl_configure():
     """Configure SSL with Proxmox or custom certificates"""
     try:
         data = request.json or {}
         source = data.get("source", "proxmox")
+        auto_restart = data.get("auto_restart", True)
         
         if source == "proxmox":
             cert_path = auth_manager.PROXMOX_CERT_PATH
@@ -92,7 +120,14 @@ def ssl_configure():
         success, message = auth_manager.configure_ssl(cert_path, key_path, source)
         
         if success:
-            return jsonify({"success": True, "message": message, "requires_restart": True})
+            if auto_restart:
+                _schedule_service_restart()
+            return jsonify({
+                "success": True,
+                "message": "SSL enabled. The service is restarting...",
+                "restarting": auto_restart,
+                "new_protocol": "https"
+            })
         else:
             return jsonify({"success": False, "message": message}), 400
     except Exception as e:
@@ -103,10 +138,20 @@ def ssl_configure():
 def ssl_disable():
     """Disable SSL and return to HTTP"""
     try:
+        data = request.json or {}
+        auto_restart = data.get("auto_restart", True)
+        
         success, message = auth_manager.disable_ssl()
         
         if success:
-            return jsonify({"success": True, "message": message, "requires_restart": True})
+            if auto_restart:
+                _schedule_service_restart()
+            return jsonify({
+                "success": True,
+                "message": "SSL disabled. The service is restarting...",
+                "restarting": auto_restart,
+                "new_protocol": "http"
+            })
         else:
             return jsonify({"success": False, "message": message}), 400
     except Exception as e:

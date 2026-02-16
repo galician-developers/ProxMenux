@@ -158,21 +158,15 @@ export function SystemLogs() {
 
   const fetchSystemLogs = async (): Promise<SystemLog[]> => {
     try {
-      let apiUrl = "/api/logs"
-      const params = new URLSearchParams()
-
       const daysAgo = dateFilter === "custom" ? Number.parseInt(customDays) : Number.parseInt(dateFilter)
-      // Clamp days to valid range
       const clampedDays = Math.max(1, Math.min(daysAgo || 1, 90))
-      params.append("since_days", clampedDays.toString())
-      params.append("limit", "5000")
+      // Only send since_days - no limit param, so the backend returns ALL logs for the period
+      const apiUrl = `/api/logs?since_days=${clampedDays}`
 
-      if (params.toString()) {
-        apiUrl += `?${params.toString()}`
-      }
-
+      console.log(`[v0] Fetching logs for ${clampedDays} days...`)
       const data = await fetchApi(apiUrl)
       const logsArray = Array.isArray(data) ? data : data.logs || []
+      console.log(`[v0] Logs: parsed=${logsArray.length}, journal_total=${data.journal_total || 'N/A'}, skipped=${data.skipped || 0} for ${clampedDays} day(s)`)
       return logsArray
     } catch {
       setError("Failed to load logs. Please try again.")
@@ -550,8 +544,13 @@ export function SystemLogs() {
 
   if (loading && logs.length === 0 && events.length === 0) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <div className="relative">
+          <div className="h-12 w-12 rounded-full border-2 border-muted"></div>
+          <div className="absolute inset-0 h-12 w-12 rounded-full border-2 border-transparent border-t-primary animate-spin"></div>
+        </div>
+        <div className="text-sm font-medium text-foreground">Loading logs...</div>
+        <p className="text-xs text-muted-foreground">Fetching system logs and events</p>
       </div>
     )
   }
@@ -559,11 +558,13 @@ export function SystemLogs() {
   return (
     <div className="space-y-6">
       {loading && (logs.length > 0 || events.length > 0) && (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-4 p-8 rounded-lg bg-card border border-border shadow-lg">
-            <RefreshCw className="h-12 w-12 animate-spin text-primary" />
-            <div className="text-lg font-medium text-foreground">Loading logs selected...</div>
-            <div className="text-sm text-muted-foreground">Please wait while we fetch the logs</div>
+        <div className="fixed inset-0 bg-background/60 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3 p-6 rounded-xl bg-card border border-border shadow-xl">
+            <div className="relative">
+              <div className="h-10 w-10 rounded-full border-2 border-muted"></div>
+              <div className="absolute inset-0 h-10 w-10 rounded-full border-2 border-transparent border-t-primary animate-spin"></div>
+            </div>
+            <div className="text-sm font-medium text-foreground">Loading logs...</div>
           </div>
         </div>
       )}

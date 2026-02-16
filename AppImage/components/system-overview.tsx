@@ -7,10 +7,17 @@ import { Badge } from "./ui/badge"
 import { Cpu, MemoryStick, Thermometer, Server, Zap, AlertCircle, HardDrive, Network } from "lucide-react"
 import { NodeMetricsCharts } from "./node-metrics-charts"
 import { NetworkTrafficChart } from "./network-traffic-chart"
+import { TemperatureDetailModal } from "./temperature-detail-modal"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
 import { fetchApi } from "../lib/api-config"
 import { formatNetworkTraffic, getNetworkUnit } from "../lib/format-network"
 import { formatStorage } from "../lib/utils"
+import { Area, AreaChart, ResponsiveContainer } from "recharts"
+
+interface TempDataPoint {
+  timestamp: number
+  value: number
+}
 
 interface SystemData {
   cpu_usage: number
@@ -18,6 +25,7 @@ interface SystemData {
   memory_total: number
   memory_used: number
   temperature: number
+  temperature_sparkline?: TempDataPoint[]
   uptime: string
   load_average: number[]
   hostname: string
@@ -178,6 +186,7 @@ export function SystemOverview() {
   const [networkTimeframe, setNetworkTimeframe] = useState("day")
   const [networkTotals, setNetworkTotals] = useState<{ received: number; sent: number }>({ received: 0, sent: 0 })
   const [networkUnit, setNetworkUnit] = useState<"Bytes" | "Bits">("Bytes") // Added networkUnit state
+  const [tempModalOpen, setTempModalOpen] = useState(false)
 
   useEffect(() => {
     const fetchAllData = async () => {
@@ -458,26 +467,59 @@ export function SystemOverview() {
           </CardContent>
         </Card>
 
-        <Card className="bg-card border-border">
+        <Card 
+          className={`bg-card border-border ${systemData.temperature > 0 ? "cursor-pointer hover:bg-white/5 transition-colors" : ""}`}
+          onClick={() => systemData.temperature > 0 && setTempModalOpen(true)}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Temperature</CardTitle>
             <Thermometer className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-xl lg:text-2xl font-bold text-foreground">
-              {systemData.temperature === 0 ? "N/A" : `${systemData.temperature}°C`}
-            </div>
-            <div className="flex items-center mt-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xl lg:text-2xl font-bold text-foreground">
+                {systemData.temperature === 0 ? "N/A" : `${Math.round(systemData.temperature * 10) / 10}°C`}
+              </span>
               <Badge variant="outline" className={tempStatus.color}>
                 {tempStatus.status}
               </Badge>
             </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              {systemData.temperature === 0 ? "No sensor available" : "Live temperature reading"}
-            </p>
+            {systemData.temperature > 0 && systemData.temperature_sparkline && systemData.temperature_sparkline.length > 1 ? (
+              <div className="mt-2 h-10">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={systemData.temperature_sparkline} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="tempSparkGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={systemData.temperature >= 75 ? "#ef4444" : systemData.temperature >= 60 ? "#f59e0b" : "#22c55e"} stopOpacity={0.3} />
+                        <stop offset="100%" stopColor={systemData.temperature >= 75 ? "#ef4444" : systemData.temperature >= 60 ? "#f59e0b" : "#22c55e"} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <Area
+                      type="monotone"
+                      dataKey="value"
+                      stroke={systemData.temperature >= 75 ? "#ef4444" : systemData.temperature >= 60 ? "#f59e0b" : "#22c55e"}
+                      strokeWidth={1.5}
+                      fill="url(#tempSparkGradient)"
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground mt-2">
+                {systemData.temperature === 0 ? "No sensor available" : "Collecting data..."}
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
+
+      <TemperatureDetailModal 
+        open={tempModalOpen} 
+        onOpenChange={setTempModalOpen}
+        liveTemperature={systemData.temperature}
+      />
 
       <NodeMetricsCharts />
 

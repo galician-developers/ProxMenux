@@ -9,7 +9,8 @@ import {
   Shield, Lock, User, AlertCircle, CheckCircle, Info, LogOut, Key, Copy, Eye, EyeOff,
   Trash2, RefreshCw, Clock, ShieldCheck, Globe, FileKey, AlertTriangle,
   Flame, Bug, Search, Download, Power, PowerOff, Plus, Minus, Activity, Settings, Ban,
-  FileText, Printer, Play, BarChart3, TriangleAlert, ChevronDown,
+  FileText, Printer, Play, BarChart3, TriangleAlert, ChevronDown, ArrowDownLeft, ArrowUpRight,
+  ChevronRight, Network, Zap, Pencil, Check, X,
 } from "lucide-react"
 import { getApiUrl, fetchApi } from "../lib/api-config"
 import { TwoFactorSetup } from "./two-factor-setup"
@@ -88,6 +89,14 @@ export function Security() {
   })
   const [addingRule, setAddingRule] = useState(false)
   const [deletingRuleIdx, setDeletingRuleIdx] = useState<number | null>(null)
+  const [expandedRuleKey, setExpandedRuleKey] = useState<string | null>(null)
+  const [editingRuleKey, setEditingRuleKey] = useState<string | null>(null)
+  const [editRule, setEditRule] = useState({
+    direction: "IN", action: "ACCEPT", protocol: "tcp",
+    dport: "", sport: "", source: "", iface: "", comment: "", level: "host",
+  })
+  const [savingRule, setSavingRule] = useState(false)
+  const [networkInterfaces, setNetworkInterfaces] = useState<{name: string, type: string, status: string}[]>([])
 
   // Security Tools state
   const [toolsLoading, setToolsLoading] = useState(true)
@@ -174,6 +183,7 @@ export function Security() {
   const [proxmoxCertInfo, setProxmoxCertInfo] = useState<{subject?: string; expires?: string; issuer?: string; is_self_signed?: boolean} | null>(null)
   const [loadingSsl, setLoadingSsl] = useState(true)
   const [configuringSsl, setConfiguringSsl] = useState(false)
+  const [sslRestarting, setSslRestarting] = useState(false)
   const [showCustomCertForm, setShowCustomCertForm] = useState(false)
   const [customCertPath, setCustomCertPath] = useState("")
   const [customKeyPath, setCustomKeyPath] = useState("")
@@ -183,6 +193,7 @@ export function Security() {
     loadApiTokens()
     loadSslStatus()
     loadFirewallStatus()
+    loadNetworkInterfaces()
     loadSecurityTools()
   }, [])
 
@@ -205,6 +216,22 @@ export function Security() {
       // Silently fail
     } finally {
       setFirewallLoading(false)
+    }
+  }
+
+  const loadNetworkInterfaces = async () => {
+    try {
+      const data = await fetchApi("/api/network")
+      // The API returns interfaces in separate arrays: physical_interfaces, bridge_interfaces, etc.
+      // The generic "interfaces" array only holds uncategorized types and is usually empty.
+      const all = [
+        ...(data.physical_interfaces || []),
+        ...(data.bridge_interfaces || []),
+        ...(data.interfaces || []),
+      ].sort((a: any, b: any) => a.name.localeCompare(b.name))
+      setNetworkInterfaces(all)
+    } catch {
+      // Silently fail - select will just show "Any interface"
     }
   }
 
@@ -467,6 +494,51 @@ export function Security() {
       setError(err instanceof Error ? err.message : "Failed to delete rule")
     } finally {
       setDeletingRuleIdx(null)
+    }
+  }
+
+  const startEditRule = (rule: any) => {
+    const ruleKey = `${rule.source_file}-${rule.rule_index}`
+    const comment = rule.raw?.includes("#") ? rule.raw.split("#").slice(1).join("#").trim() : ""
+    setEditingRuleKey(ruleKey)
+    setEditRule({
+      direction: rule.direction || "IN",
+      action: rule.action || "ACCEPT",
+      protocol: rule.p || "tcp",
+      dport: rule.dport || "",
+      sport: "",
+      source: rule.source || "",
+      iface: rule.i || "",
+      comment,
+      level: rule.source_file || "host",
+    })
+  }
+
+  const handleSaveEditRule = async (oldRuleIndex: number, oldLevel: string) => {
+    setSavingRule(true)
+    setError("")
+    setSuccess("")
+    try {
+      const data = await fetchApi("/api/security/firewall/rules/edit", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rule_index: oldRuleIndex,
+          level: oldLevel,
+          new_rule: editRule,
+        }),
+      })
+      if (data.success) {
+        setSuccess(data.message || "Rule updated successfully")
+        setEditingRuleKey(null)
+        loadFirewallStatus()
+      } else {
+        setError(data.message || "Failed to update rule")
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update rule")
+    } finally {
+      setSavingRule(false)
     }
   }
 
@@ -1256,13 +1328,49 @@ ${(report.sections && report.sections.length > 0) ? `
     }
   }
 
+  // Wait for the monitor service to come back on the new protocol, then redirect
+  const waitForServiceAndRedirect = async (newProtocol: "https" | "http") => {
+    const host = window.location.hostname
+    const port = window.location.port || "8008"
+    const newUrl = `${newProtocol}://${host}:${port}${window.location.pathname}`
+    
+    // Wait for service to restart (try up to 30 seconds)
+    const maxAttempts = 15
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise(r => setTimeout(r, 2000))
+      try {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 3000)
+        const resp = await fetch(`${newProtocol}://${host}:${port}/api/ssl/status`, {
+          signal: controller.signal,
+          // For self-signed certs, we need to handle rejection
+          mode: "no-cors"
+        }).catch(() => null)
+        clearTimeout(timeout)
+        
+        // For HTTPS with self-signed certs, even a failed CORS request means the server is up
+        if (resp || newProtocol === "https") {
+          // Give it one more second to fully stabilize
+          await new Promise(r => setTimeout(r, 1000))
+          window.location.href = newUrl
+          return
+        }
+      } catch {
+        // Server not ready yet, keep waiting
+      }
+    }
+    
+    // Fallback: redirect anyway after timeout
+    window.location.href = newUrl
+  }
+
   const handleEnableSsl = async (source: "proxmox" | "custom", certPath?: string, keyPath?: string) => {
     setConfiguringSsl(true)
     setError("")
     setSuccess("")
 
     try {
-      const body: Record<string, string> = { source }
+      const body: Record<string, string | boolean> = { source, auto_restart: true }
       if (source === "custom" && certPath && keyPath) {
         body.cert_path = certPath
         body.key_path = keyPath
@@ -1275,25 +1383,27 @@ ${(report.sections && report.sections.length > 0) ? `
       })
 
       if (data.success) {
-        setSuccess(data.message || "SSL configured successfully. Restart the monitor service to apply.")
         setSslEnabled(true)
         setSslSource(source)
         setShowCustomCertForm(false)
         setCustomCertPath("")
         setCustomKeyPath("")
-        loadSslStatus()
+        setConfiguringSsl(false)
+        setSslRestarting(true)
+        setSuccess("SSL enabled. Restarting service and switching to HTTPS...")
+        await waitForServiceAndRedirect("https")
       } else {
         setError(data.message || "Failed to configure SSL")
+        setConfiguringSsl(false)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to configure SSL")
-    } finally {
       setConfiguringSsl(false)
     }
   }
 
   const handleDisableSsl = async () => {
-    if (!confirm("Are you sure you want to disable HTTPS? The monitor will revert to HTTP after restart.")) {
+    if (!confirm("Are you sure you want to disable HTTPS? The monitor will switch to HTTP.")) {
       return
     }
 
@@ -1302,21 +1412,27 @@ ${(report.sections && report.sections.length > 0) ? `
     setSuccess("")
 
     try {
-      const data = await fetchApi("/api/ssl/disable", { method: "POST" })
+      const data = await fetchApi("/api/ssl/disable", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auto_restart: true }),
+      })
 
       if (data.success) {
-        setSuccess(data.message || "SSL disabled. Restart the monitor service to apply.")
         setSslEnabled(false)
         setSslSource("none")
         setSslCertPath("")
         setSslKeyPath("")
-        loadSslStatus()
+        setConfiguringSsl(false)
+        setSslRestarting(true)
+        setSuccess("SSL disabled. Restarting service and switching to HTTP...")
+        await waitForServiceAndRedirect("http")
       } else {
         setError(data.message || "Failed to disable SSL")
+        setConfiguringSsl(false)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to disable SSL")
-    } finally {
       setConfiguringSsl(false)
     }
   }
@@ -1683,10 +1799,10 @@ ${(report.sections && report.sections.length > 0) ? `
                     onClick={handleDisableSsl}
                     variant="outline"
                     size="sm"
-                    disabled={configuringSsl}
+                    disabled={configuringSsl || sslRestarting}
                     className="mt-2 text-red-500 border-red-500/30 hover:bg-red-500/10 bg-transparent"
                   >
-                    {configuringSsl ? "Disabling..." : "Disable HTTPS"}
+                    {configuringSsl ? "Disabling..." : sslRestarting ? "Restarting..." : "Disable HTTPS"}
                   </Button>
                 </div>
               )}
@@ -1722,7 +1838,7 @@ ${(report.sections && report.sections.length > 0) ? `
                   <Button
                     onClick={() => handleEnableSsl("proxmox")}
                     className="w-full bg-green-600 hover:bg-green-700 text-white"
-                    disabled={configuringSsl}
+                    disabled={configuringSsl || sslRestarting}
                   >
                     {configuringSsl ? (
                       <div className="flex items-center gap-2">
@@ -1793,9 +1909,9 @@ ${(report.sections && report.sections.length > 0) ? `
 
                       <div className="flex gap-2">
                         <Button
-                          onClick={() => handleEnableSsl("custom", customCertPath, customKeyPath)}
-                          className="flex-1 bg-green-600 hover:bg-green-700 text-white"
-                          disabled={configuringSsl || !customCertPath || !customKeyPath}
+                        onClick={() => handleEnableSsl("custom", customCertPath, customKeyPath)}
+                        className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                        disabled={configuringSsl || sslRestarting || !customCertPath || !customKeyPath}
                         >
                           {configuringSsl ? "Configuring..." : "Enable HTTPS"}
                         </Button>
@@ -1817,14 +1933,27 @@ ${(report.sections && report.sections.length > 0) ? `
                 </div>
               )}
 
-              {/* Info note about restart */}
-              <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 flex items-start gap-2">
-                <Info className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-blue-500">
-                  Changes to SSL configuration require a monitor service restart to take effect.
-                  The service will automatically use HTTPS on port 8008 when enabled.
-                </p>
-              </div>
+              {/* Restarting overlay or info note */}
+              {sslRestarting ? (
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 flex items-center gap-3">
+                  <div className="h-5 w-5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-500">
+                      Restarting monitor service...
+                    </p>
+                    <p className="text-xs text-amber-400 mt-0.5">
+                      The page will automatically redirect to the new address.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 flex items-start gap-2">
+                  <Info className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-blue-500">
+                    SSL changes will automatically restart the monitor service and redirect to the new address.
+                  </p>
+                </div>
+              )}
             </>
           )}
         </CardContent>
@@ -2283,6 +2412,90 @@ ${(report.sections && report.sections.length > 0) ? `
                 )}
               </div>
 
+              {/* Rules Summary Dashboard */}
+              {firewallData.rules.length > 0 && (() => {
+                const acceptCount = firewallData.rules.filter(r => r.action === "ACCEPT").length
+                const dropCount = firewallData.rules.filter(r => r.action === "DROP").length
+                const rejectCount = firewallData.rules.filter(r => r.action === "REJECT").length
+                const blockCount = dropCount + rejectCount
+                const total = firewallData.rules.length
+                const clusterCount = firewallData.rules.filter(r => r.source_file === "cluster").length
+                const hostCount = firewallData.rules.filter(r => r.source_file === "host").length
+                const inCount = firewallData.rules.filter(r => (r.direction || "IN") === "IN").length
+                const outCount = firewallData.rules.filter(r => r.direction === "OUT").length
+                // Collect unique protected ports
+                const protectedPorts = new Set<string>()
+                firewallData.rules.forEach(r => {
+                  if (r.dport) r.dport.split(",").forEach(p => protectedPorts.add(p.trim()))
+                })
+
+                return (
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-semibold text-muted-foreground">Rules Overview</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="p-3 bg-muted/50 rounded-lg border border-border text-center">
+                        <p className="text-lg font-bold text-foreground">{total}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Rules</p>
+                      </div>
+                      <div className="p-3 bg-green-500/5 rounded-lg border border-green-500/20 text-center">
+                        <p className="text-lg font-bold text-green-500">{acceptCount}</p>
+                        <p className="text-[10px] text-green-500/70 uppercase tracking-wider">Accept</p>
+                      </div>
+                      <div className="p-3 bg-red-500/5 rounded-lg border border-red-500/20 text-center">
+                        <p className="text-lg font-bold text-red-500">{blockCount}</p>
+                        <p className="text-[10px] text-red-500/70 uppercase tracking-wider">Block / Reject</p>
+                      </div>
+                      <div className="p-3 bg-muted/50 rounded-lg border border-border text-center">
+                        <p className="text-lg font-bold text-foreground">{protectedPorts.size}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Ports Covered</p>
+                      </div>
+                    </div>
+                    {/* Visual bar */}
+                    <div className="space-y-1.5 sm:space-y-0">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden flex">
+                          {acceptCount > 0 && (
+                            <div className="h-full bg-green-500 transition-all" style={{ width: `${(acceptCount / total) * 100}%` }} />
+                          )}
+                          {dropCount > 0 && (
+                            <div className="h-full bg-red-500 transition-all" style={{ width: `${(dropCount / total) * 100}%` }} />
+                          )}
+                          {rejectCount > 0 && (
+                            <div className="h-full bg-orange-500 transition-all" style={{ width: `${(rejectCount / total) * 100}%` }} />
+                          )}
+                        </div>
+                        <div className="hidden sm:flex items-center gap-3 text-[10px] text-muted-foreground flex-shrink-0">
+                          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500" />Accept</span>
+                          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" />Drop</span>
+                          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-500" />Reject</span>
+                        </div>
+                      </div>
+                      <div className="flex sm:hidden items-center gap-3 text-[10px] text-muted-foreground">
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500" />Accept</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" />Drop</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-500" />Reject</span>
+                      </div>
+                    </div>
+                    {/* Scope breakdown */}
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1.5">
+                        <Globe className="h-3 w-3 text-blue-400" /> Cluster: {clusterCount}
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <Shield className="h-3 w-3 text-purple-400" /> Host: {hostCount}
+                      </span>
+                      <span className="text-border">|</span>
+                      <span className="flex items-center gap-1.5">
+                        <ArrowDownLeft className="h-3 w-3" /> IN: {inCount}
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <ArrowUpRight className="h-3 w-3" /> OUT: {outCount}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })()}
+
               {/* Firewall Rules */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -2306,6 +2519,42 @@ ${(report.sections && report.sections.length > 0) ? `
                     <div className="flex items-center gap-2 mb-1">
                       <Plus className="h-4 w-4 text-orange-500" />
                       <p className="text-sm font-semibold text-orange-500">New Firewall Rule</p>
+                    </div>
+
+                    {/* Service Presets */}
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Quick Presets</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { label: "HTTP", port: "80", proto: "tcp", comment: "HTTP Web" },
+                          { label: "HTTPS", port: "443", proto: "tcp", comment: "HTTPS Web" },
+                          { label: "SSH", port: "22", proto: "tcp", comment: "SSH Remote Access" },
+                          { label: "DNS", port: "53", proto: "udp", comment: "DNS" },
+                          { label: "SMTP", port: "25", proto: "tcp", comment: "SMTP Mail" },
+                          { label: "NFS", port: "2049", proto: "tcp", comment: "NFS" },
+                          { label: "SMB", port: "445", proto: "tcp", comment: "SMB/CIFS" },
+                          { label: "Ping", port: "", proto: "icmp", comment: "ICMP Ping" },
+                        ].map((preset) => (
+                          <Button
+                            key={preset.label}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setNewRule({
+                              ...newRule,
+                              dport: preset.port,
+                              protocol: preset.proto,
+                              comment: preset.comment,
+                              direction: "IN",
+                              action: "ACCEPT",
+                            })}
+                            className="h-6 text-[10px] px-2 text-muted-foreground border-border hover:text-orange-500 hover:border-orange-500/30 bg-transparent"
+                          >
+                            <Zap className="h-2.5 w-2.5 mr-1" />
+                            {preset.label}
+                          </Button>
+                        ))}
+                      </div>
                     </div>
 
                     <div className="grid gap-3 sm:grid-cols-3">
@@ -2372,12 +2621,18 @@ ${(report.sections && report.sections.length > 0) ? `
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">Interface (optional)</Label>
-                        <Input
-                          placeholder="e.g. vmbr0"
+                        <select
                           value={newRule.iface}
                           onChange={(e) => setNewRule({...newRule, iface: e.target.value})}
-                          className="h-9 text-sm"
-                        />
+                          className="w-full h-9 rounded-md border border-border bg-card px-3 text-sm"
+                        >
+                          <option value="">Any interface</option>
+                          {networkInterfaces.map((iface) => (
+                            <option key={iface.name} value={iface.name}>
+                              {iface.name} ({iface.type}{iface.status === "up" ? ", up" : ", down"})
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">Apply to</Label>
@@ -2432,51 +2687,242 @@ ${(report.sections && report.sections.length > 0) ? `
                 {firewallData.rules.length > 0 ? (
                   <div className="border border-border rounded-lg overflow-hidden">
                     {/* Table header */}
-                    <div className="grid grid-cols-[auto_1fr_auto_auto_auto_auto_auto] gap-2 p-2.5 bg-muted/50 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                      <span className="w-14">Action</span>
-                      <span>Direction</span>
-                      <span className="w-12">Proto</span>
-                      <span className="w-20">Port</span>
-                      <span className="w-28 hidden sm:block">Source</span>
-                      <span className="w-14">Level</span>
-                      <span className="w-8" />
+                    <div className="hidden sm:grid grid-cols-[2rem_4.5rem_2rem_3rem_5rem_1fr_3.5rem_2rem] gap-2 px-3 py-2 bg-muted/50 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider items-center">
+                      <span />
+                      <span>Action</span>
+                      <span />
+                      <span>Proto</span>
+                      <span>Port</span>
+                      <span>Source</span>
+                      <span>Level</span>
+                      <span />
                     </div>
 
-                    <div className="divide-y divide-border max-h-64 overflow-y-auto">
-                      {firewallData.rules.map((rule, idx) => (
-                        <div key={idx} className="grid grid-cols-[auto_1fr_auto_auto_auto_auto_auto] gap-2 p-2.5 items-center hover:bg-muted/20 transition-colors">
-                          <span className={`w-14 px-1.5 py-0.5 rounded text-[10px] font-bold text-center ${
-                            rule.action === "ACCEPT" ? "bg-green-500/10 text-green-500" :
-                            rule.action === "DROP" ? "bg-red-500/10 text-red-500" :
-                            rule.action === "REJECT" ? "bg-orange-500/10 text-orange-500" :
-                            "bg-gray-500/10 text-gray-500"
-                          }`}>
-                            {rule.action || "?"}
-                          </span>
-                          <span className="text-xs text-muted-foreground font-mono">{rule.direction || "IN"}</span>
-                          <span className="w-12 text-xs text-blue-400 font-mono">{rule.p || "-"}</span>
-                          <span className="w-20 text-xs text-foreground font-mono">{rule.dport || "-"}</span>
-                          <span className="w-28 text-xs text-muted-foreground font-mono hidden sm:block truncate">{rule.source || "any"}</span>
-                          <span className={`w-14 text-[10px] px-1.5 py-0.5 rounded text-center ${
-                            rule.source_file === "cluster" ? "bg-blue-500/10 text-blue-400" : "bg-purple-500/10 text-purple-400"
-                          }`}>
-                            {rule.source_file}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteRule(rule.rule_index, rule.source_file)}
-                            disabled={deletingRuleIdx === rule.rule_index}
-                            className="w-8 h-7 p-0 text-red-500/50 hover:text-red-500 hover:bg-red-500/10"
-                          >
-                            {deletingRuleIdx === rule.rule_index ? (
-                              <div className="animate-spin h-3 w-3 border-2 border-red-500 border-t-transparent rounded-full" />
-                            ) : (
-                              <Trash2 className="h-3.5 w-3.5" />
+                    <div className="divide-y divide-border max-h-80 overflow-y-auto">
+                      {firewallData.rules.map((rule, idx) => {
+                        const ruleKey = `${rule.source_file}-${rule.rule_index}`
+                        const isExpanded = expandedRuleKey === ruleKey
+                        const direction = rule.direction || "IN"
+                        const comment = rule.raw?.includes("#") ? rule.raw.split("#").slice(1).join("#").trim() : ""
+                        
+                        return (
+                          <div key={ruleKey}>
+                            {/* Main row */}
+                            <div
+                              className="grid grid-cols-[2rem_4.5rem_1fr_2rem] sm:grid-cols-[2rem_4.5rem_2rem_3rem_5rem_1fr_3.5rem_2rem] gap-2 px-3 py-2.5 items-center hover:bg-white/5 transition-colors cursor-pointer"
+                              onClick={() => setExpandedRuleKey(isExpanded ? null : ruleKey)}
+                            >
+                              {/* Direction icon */}
+                              <div className="flex items-center justify-center">
+                                {direction === "IN" ? (
+                                  <ArrowDownLeft className="h-4 w-4 text-blue-400" />
+                                ) : (
+                                  <ArrowUpRight className="h-4 w-4 text-amber-400" />
+                                )}
+                              </div>
+                              {/* Action badge */}
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold text-center ${
+                                rule.action === "ACCEPT" ? "bg-green-500/10 text-green-500" :
+                                rule.action === "DROP" ? "bg-red-500/10 text-red-500" :
+                                rule.action === "REJECT" ? "bg-orange-500/10 text-orange-500" :
+                                "bg-gray-500/10 text-gray-500"
+                              }`}>
+                                {rule.action || "?"}
+                              </span>
+                              {/* Mobile: combined info on two lines */}
+                              <div className="sm:hidden min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs text-blue-400 font-mono flex-shrink-0">{rule.p || "*"}</span>
+                                  <span className="text-xs text-muted-foreground flex-shrink-0">:</span>
+                                  <span className="text-xs text-foreground font-mono font-medium">{rule.dport || "*"}</span>
+                                  <span className={`text-[10px] px-1 py-0 rounded flex-shrink-0 ${
+                                    rule.source_file === "cluster" ? "bg-blue-500/10 text-blue-400" : "bg-purple-500/10 text-purple-400"
+                                  }`}>{rule.source_file}</span>
+                                </div>
+                                {comment && (
+                                  <p className="text-[10px] text-muted-foreground truncate mt-0.5">{comment}</p>
+                                )}
+                              </div>
+                              {/* Desktop: direction label */}
+                              <span className="hidden sm:block text-xs text-muted-foreground font-mono">{direction}</span>
+                              {/* Protocol */}
+                              <span className="hidden sm:block text-xs text-blue-400 font-mono">{rule.p || "*"}</span>
+                              {/* Port */}
+                              <span className="hidden sm:block text-xs text-foreground font-mono font-medium">{rule.dport || "*"}</span>
+                              {/* Source */}
+                              <span className="hidden sm:block text-xs text-muted-foreground font-mono truncate">{rule.source || "any"}</span>
+                              {/* Level badge */}
+                              <span className={`hidden sm:block text-[10px] px-1.5 py-0.5 rounded text-center ${
+                                rule.source_file === "cluster" ? "bg-blue-500/10 text-blue-400" : "bg-purple-500/10 text-purple-400"
+                              }`}>
+                                {rule.source_file}
+                              </span>
+                              {/* Expand/Delete */}
+                              <div className="flex items-center justify-end">
+                                <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                              </div>
+                            </div>
+                            
+                            {/* Expanded details */}
+                            {isExpanded && (
+                              <div className="px-3 pb-3 pt-0 border-t border-border/50 bg-muted/10">
+                                {editingRuleKey === ruleKey ? (
+                                  /* ── Inline Edit Form ── */
+                                  <div className="py-3 space-y-3">
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                      <div>
+                                        <Label className="text-[10px] text-muted-foreground uppercase">Direction</Label>
+                                        <select value={editRule.direction} onChange={(e) => setEditRule({ ...editRule, direction: e.target.value })}
+                                          className="w-full h-8 text-xs rounded-md border border-border bg-background px-2 mt-0.5">
+                                          <option value="IN">IN</option>
+                                          <option value="OUT">OUT</option>
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <Label className="text-[10px] text-muted-foreground uppercase">Action</Label>
+                                        <select value={editRule.action} onChange={(e) => setEditRule({ ...editRule, action: e.target.value })}
+                                          className="w-full h-8 text-xs rounded-md border border-border bg-background px-2 mt-0.5">
+                                          <option value="ACCEPT">ACCEPT</option>
+                                          <option value="DROP">DROP</option>
+                                          <option value="REJECT">REJECT</option>
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <Label className="text-[10px] text-muted-foreground uppercase">Protocol</Label>
+                                        <select value={editRule.protocol} onChange={(e) => setEditRule({ ...editRule, protocol: e.target.value })}
+                                          className="w-full h-8 text-xs rounded-md border border-border bg-background px-2 mt-0.5">
+                                          <option value="tcp">TCP</option>
+                                          <option value="udp">UDP</option>
+                                          <option value="icmp">ICMP</option>
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <Label className="text-[10px] text-muted-foreground uppercase">Port</Label>
+                                        <Input value={editRule.dport} onChange={(e) => setEditRule({ ...editRule, dport: e.target.value })}
+                                          placeholder="e.g. 80,443" className="h-8 text-xs mt-0.5" />
+                                      </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                      <div>
+                                        <Label className="text-[10px] text-muted-foreground uppercase">Source</Label>
+                                        <Input value={editRule.source} onChange={(e) => setEditRule({ ...editRule, source: e.target.value })}
+                                          placeholder="IP or CIDR" className="h-8 text-xs mt-0.5" />
+                                      </div>
+                                      <div>
+                                        <Label className="text-[10px] text-muted-foreground uppercase">Interface</Label>
+                                        <select value={editRule.iface} onChange={(e) => setEditRule({ ...editRule, iface: e.target.value })}
+                                          className="w-full h-8 text-xs rounded-md border border-border bg-background px-2 mt-0.5">
+                                          <option value="">Any</option>
+                                          {networkInterfaces.map((iface) => (
+                                            <option key={iface.name} value={iface.name}>
+                                              {iface.name} ({iface.type})
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                      <div className="col-span-2 sm:col-span-1">
+                                        <Label className="text-[10px] text-muted-foreground uppercase">Comment</Label>
+                                        <Input value={editRule.comment} onChange={(e) => setEditRule({ ...editRule, comment: e.target.value })}
+                                          placeholder="Description" className="h-8 text-xs mt-0.5" />
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center justify-end gap-2 pt-1">
+                                      <Button variant="ghost" size="sm"
+                                        onClick={(e) => { e.stopPropagation(); setEditingRuleKey(null) }}
+                                        className="h-7 text-xs text-muted-foreground">
+                                        <X className="h-3 w-3 mr-1" /> Cancel
+                                      </Button>
+                                      <Button variant="outline" size="sm"
+                                        onClick={(e) => { e.stopPropagation(); handleSaveEditRule(rule.rule_index, rule.source_file || "host") }}
+                                        disabled={savingRule}
+                                        className="h-7 text-xs text-green-500 border-green-500/30 hover:bg-green-500/10 bg-transparent">
+                                        {savingRule ? (
+                                          <div className="animate-spin h-3 w-3 border-2 border-green-500 border-t-transparent rounded-full mr-1" />
+                                        ) : (
+                                          <Check className="h-3 w-3 mr-1" />
+                                        )}
+                                        Save Changes
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  /* ── Read-only Details ── */
+                                  <>
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-3">
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Direction</p>
+                                        <p className="text-xs font-medium flex items-center gap-1">
+                                          {direction === "IN" ? <ArrowDownLeft className="h-3 w-3 text-blue-400" /> : <ArrowUpRight className="h-3 w-3 text-amber-400" />}
+                                          {direction === "IN" ? "Incoming" : "Outgoing"}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Protocol</p>
+                                        <p className="text-xs font-medium font-mono">{rule.p || "any"}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Port</p>
+                                        <p className="text-xs font-medium font-mono">{rule.dport || "any"}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Source</p>
+                                        <p className="text-xs font-medium font-mono">{rule.source || "any"}</p>
+                                      </div>
+                                      {rule.i && (
+                                        <div>
+                                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Interface</p>
+                                          <p className="text-xs font-medium font-mono">{rule.i}</p>
+                                        </div>
+                                      )}
+                                      <div>
+                                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Scope</p>
+                                        <p className="text-xs font-medium flex items-center gap-1">
+                                          {rule.source_file === "cluster" ? <Globe className="h-3 w-3 text-blue-400" /> : <Shield className="h-3 w-3 text-purple-400" />}
+                                          {rule.source_file === "cluster" ? "Cluster" : "Host"}
+                                        </p>
+                                      </div>
+                                      {comment && (
+                                        <div className="col-span-2">
+                                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Comment</p>
+                                          <p className="text-xs text-muted-foreground">{comment}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                                      <code className="text-[10px] text-muted-foreground/60 font-mono truncate max-w-[50%]">{rule.raw}</code>
+                                      <div className="flex items-center gap-2">
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={(e) => { e.stopPropagation(); startEditRule(rule) }}
+                                          className="h-7 text-xs text-blue-400 border-blue-400/30 hover:bg-blue-400/10 bg-transparent"
+                                        >
+                                          <Pencil className="h-3 w-3 mr-1" />
+                                          Edit
+                                        </Button>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={(e) => { e.stopPropagation(); handleDeleteRule(rule.rule_index, rule.source_file) }}
+                                          disabled={deletingRuleIdx === rule.rule_index}
+                                          className="h-7 text-xs text-red-500 border-red-500/30 hover:bg-red-500/10 bg-transparent"
+                                        >
+                                          {deletingRuleIdx === rule.rule_index ? (
+                                            <div className="animate-spin h-3 w-3 border-2 border-red-500 border-t-transparent rounded-full mr-1" />
+                                          ) : (
+                                            <Trash2 className="h-3 w-3 mr-1" />
+                                          )}
+                                          Delete
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
                             )}
-                          </Button>
-                        </div>
-                      ))}
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 ) : (
