@@ -162,10 +162,8 @@ export function SystemLogs() {
       const clampedDays = Math.max(1, Math.min(daysAgo || 1, 90))
       const apiUrl = `/api/logs?since_days=${clampedDays}`
 
-      console.log(`[v0] Fetching logs for ${clampedDays} days...`)
       const data = await fetchApi(apiUrl)
       const logsArray = Array.isArray(data) ? data : data.logs || []
-      console.log(`[v0] Logs: parsed=${logsArray.length}, journal_total=${data.journal_total || 'N/A'}, skipped=${data.skipped || 0} for ${clampedDays} day(s)`)
       return logsArray
     } catch {
       setError("Failed to load logs. Please try again.")

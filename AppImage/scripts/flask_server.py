@@ -5418,30 +5418,10 @@ def api_logs():
         # Longer timeout for date-range queries which may return many entries
         query_timeout = 120 if since_days else 30
         
-        # First, get a quick count of how many lines the journal has for this period
-        # This helps diagnose if the journal itself has fewer entries than expected
-        real_count = 0
-        try:
-            count_cmd = cmd[:] # clone
-            # Replace --output json with a simpler format for counting
-            if '--output' in count_cmd:
-                idx = count_cmd.index('--output')
-                count_cmd[idx + 1] = 'cat'
-            count_result = subprocess.run(
-                count_cmd, capture_output=True, text=True, timeout=30
-            )
-            if count_result.returncode == 0:
-                real_count = count_result.stdout.count('\n')
-        except Exception:
-            pass  # counting is optional, continue with the real fetch
-        
-        app.logger.info(f"[Logs API] Fetching logs: cmd={' '.join(cmd)}, journal_real_count={real_count}")
-        
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=query_timeout)
 
         if result.returncode == 0:
             logs = []
-            skipped = 0
             priority_map = {
                 '0': 'emergency', '1': 'alert', '2': 'critical', '3': 'error',
                 '4': 'warning', '5': 'notice', '6': 'info', '7': 'debug'
@@ -5474,11 +5454,9 @@ def api_logs():
                             'hostname': log_entry.get('_HOSTNAME', '')
                         })
                     except (json.JSONDecodeError, ValueError):
-                        skipped += 1
                         continue
             
-            app.logger.info(f"[Logs API] Parsed {len(logs)} logs, skipped {skipped} unparseable, journal_real={real_count}")
-            return jsonify({'logs': logs, 'total': len(logs), 'journal_total': real_count, 'skipped': skipped})
+            return jsonify({'logs': logs, 'total': len(logs)})
         else:
             return jsonify({
                 'error': 'journalctl not available or failed',
