@@ -71,6 +71,15 @@ class HealthPersistence:
             )
         ''')
         
+        # System capabilities table (detected once, cached forever)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS system_capabilities (
+                cap_key TEXT PRIMARY KEY,
+                cap_value TEXT NOT NULL,
+                detected_at TEXT NOT NULL
+            )
+        ''')
+        
         # Indexes for performance
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_error_key ON errors(error_key)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_category ON errors(category)')
@@ -572,6 +581,48 @@ class HealthPersistence:
         
         conn.commit()
         conn.close()
+    
+    # ─── System Capabilities Cache ───────────────────────────────
+    
+    def get_capability(self, cap_key: str) -> Optional[str]:
+        """
+        Get a cached system capability value.
+        Returns None if not yet detected.
+        """
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT cap_value FROM system_capabilities WHERE cap_key = ?',
+            (cap_key,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else None
+    
+    def set_capability(self, cap_key: str, cap_value: str):
+        """Store a system capability value (detected once, cached forever)."""
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO system_capabilities (cap_key, cap_value, detected_at)
+            VALUES (?, ?, ?)
+        ''', (cap_key, cap_value, datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+    
+    def get_all_capabilities(self) -> Dict[str, str]:
+        """Get all cached system capabilities as a dict."""
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        cursor.execute('SELECT cap_key, cap_value FROM system_capabilities')
+        rows = cursor.fetchall()
+        conn.close()
+        return {row[0]: row[1] for row in rows}
+    
+    # Note: System capabilities (has_zfs, has_lvm) are now derived at runtime
+    # from Proxmox storage types in health_monitor.get_detailed_status()
+    # This avoids redundant subprocess calls and ensures immediate detection
+    # when the user adds new ZFS/LVM storage via Proxmox.
 
 
 # Global instance

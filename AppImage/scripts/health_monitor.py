@@ -143,6 +143,11 @@ class HealthMonitor:
         self.failed_vm_history = set()  # Track VMs that failed to start
         self.persistent_log_patterns = defaultdict(lambda: {'count': 0, 'first_seen': 0, 'last_seen': 0})
         
+        # System capabilities - derived from Proxmox storage types at runtime (Priority 1.5)
+        # SMART detection still uses filesystem check on init (lightweight)
+        has_smart = os.path.exists('/usr/sbin/smartctl') or os.path.exists('/usr/bin/smartctl')
+        self.capabilities = {'has_zfs': False, 'has_lvm': False, 'has_smart': has_smart}
+        
         try:
             health_persistence.cleanup_old_errors()
         except Exception as e:
@@ -291,6 +296,12 @@ class HealthMonitor:
                 critical_issues.append(proxmox_storage_result.get('reason', 'Proxmox storage unavailable'))
             elif proxmox_storage_result.get('status') == 'WARNING':
                 warning_issues.append(proxmox_storage_result.get('reason', 'Proxmox storage issue'))
+            
+            # Derive capabilities from Proxmox storage types (immediate, no extra checks)
+            storage_checks = proxmox_storage_result.get('checks', {})
+            storage_types = {v.get('detail', '').split(' ')[0].lower() for v in storage_checks.values() if isinstance(v, dict)}
+            self.capabilities['has_zfs'] = any(t in ('zfspool', 'zfs') for t in storage_types)
+            self.capabilities['has_lvm'] = any(t in ('lvm', 'lvmthin') for t in storage_types)
         
         # Priority 2: Disk/Filesystem Health (Internal checks: usage, ZFS, SMART, IO errors)
         storage_status = self._check_storage_optimized()
@@ -802,15 +813,14 @@ class HealthMonitor:
             }
         
         if not issues:
-            # Add descriptive OK entries for what we monitor
+            # Add descriptive OK entries only for capabilities this server actually has
             checks['root_filesystem'] = checks.get('/', {'status': 'OK', 'detail': 'Mounted read-write, space OK'})
-            checks['smart_health'] = {'status': 'OK', 'detail': 'No SMART warnings in journal'}
             checks['io_errors'] = {'status': 'OK', 'detail': 'No I/O errors in dmesg'}
-            # Check if ZFS is present
-            if os.path.exists('/sbin/zpool') or os.path.exists('/usr/sbin/zpool'):
+            if self.capabilities.get('has_smart'):
+                checks['smart_health'] = {'status': 'OK', 'detail': 'No SMART warnings in journal'}
+            if self.capabilities.get('has_zfs'):
                 checks['zfs_pools'] = {'status': 'OK', 'detail': 'ZFS pools healthy'}
-            # Check if LVM is present
-            if os.path.exists('/sbin/lvm') or os.path.exists('/usr/sbin/lvm'):
+            if self.capabilities.get('has_lvm'):
                 checks['lvm_volumes'] = {'status': 'OK', 'detail': 'LVM volumes OK'}
             return {'status': 'OK', 'checks': checks}
         
@@ -1666,24 +1676,16 @@ class HealthMonitor:
         # Cache the result for 5 minutes to avoid excessive journalctl calls
         if cache_key in self.last_check_times:
             if current_time - self.last_check_times[cache_key] < self.LOG_CHECK_INTERVAL:
-                # Check persistent log errors recorded by health_persistence
-                persistent_errors = health_persistence.get_active_errors('logs')
-                if persistent_errors:
-                    # Find the highest severity among persistent errors to set overall status
-                    max_severity = 'OK'
-                    reasons = []
-                    for error in persistent_errors:
-                        if error['severity'] == 'CRITICAL':
-                            max_severity = 'CRITICAL'
-                        elif error['severity'] == 'WARNING' and max_severity != 'CRITICAL':
-                            max_severity = 'WARNING'
-                        reasons.append(error['reason'])
-                    
-                    return {
-                        'status': max_severity,
-                        'reason': '; '.join(reasons[:3]) # Show up to 3 persistent reasons
-                    }
-                return self.cached_results.get(cache_key, {'status': 'OK'})
+                # Return the full cached result (which includes 'checks' dict)
+                cached = self.cached_results.get(cache_key)
+                if cached:
+                    return cached
+                return {'status': 'OK', 'checks': {
+                    'log_error_cascade': {'status': 'OK', 'detail': 'No cascading errors'},
+                    'log_error_spike': {'status': 'OK', 'detail': 'No error spikes'},
+                    'log_persistent_errors': {'status': 'OK', 'detail': 'No persistent patterns'},
+                    'log_critical_errors': {'status': 'OK', 'detail': 'No critical errors'}
+                }}
         
         try:
             # Fetch logs from the last 3 minutes for immediate issue detection

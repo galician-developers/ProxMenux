@@ -409,7 +409,7 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
+      <DialogContent className="max-w-3xl w-[95vw] max-h-[85vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
           <div className="flex items-center justify-between gap-3">
             <DialogTitle className="flex items-center gap-2 flex-1">
@@ -471,8 +471,8 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
             </div>
 
             {healthData.summary && healthData.summary !== "All systems operational" && (
-              <div className="text-sm p-3 rounded-lg bg-muted/20 border overflow-hidden">
-                <p className="font-medium text-foreground truncate">{healthData.summary}</p>
+              <div className="text-sm p-3 rounded-lg bg-muted/20 border overflow-hidden max-w-full">
+                <p className="font-medium text-foreground truncate" title={healthData.summary}>{healthData.summary}</p>
               </div>
             )}
 
@@ -510,7 +510,7 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
                           )}
                         </div>
                         {reason && !isExpanded && (
-                          <p className="text-xs text-muted-foreground mt-0.5 truncate">{reason}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5 truncate" title={reason}>{reason}</p>
                         )}
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
