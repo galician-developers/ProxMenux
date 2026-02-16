@@ -16,9 +16,11 @@ import re
 import select
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
+import threading
 import urllib.parse
 import hardware_monitor
 import xml.etree.ElementTree as ET
@@ -121,6 +123,63 @@ app.register_blueprint(security_bp)
 
 # Initialize terminal / WebSocket routes
 init_terminal_routes(app)
+
+
+# -------------------------------------------------------------------
+# Fail2Ban application-level ban check (for reverse proxy scenarios)
+# -------------------------------------------------------------------
+# When users access via a reverse proxy, iptables/nftables cannot block
+# the real client IP because the TCP connection comes from the proxy.
+# This middleware checks if the client's real IP (from X-Forwarded-For)
+# is banned in the 'proxmenux' fail2ban jail and blocks at app level.
+import subprocess as _f2b_subprocess
+import time as _f2b_time
+
+# Cache banned IPs for 30 seconds to avoid calling fail2ban-client on every request
+_f2b_banned_cache = {"ips": set(), "ts": 0, "ttl": 30}
+
+def _f2b_get_banned_ips():
+    """Get currently banned IPs from the proxmenux jail, with caching."""
+    now = _f2b_time.time()
+    if now - _f2b_banned_cache["ts"] < _f2b_banned_cache["ttl"]:
+        return _f2b_banned_cache["ips"]
+    try:
+        result = _f2b_subprocess.run(
+            ["fail2ban-client", "status", "proxmenux"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                if "Banned IP list:" in line:
+                    ip_str = line.split(":", 1)[1].strip()
+                    banned = set(ip.strip() for ip in ip_str.split() if ip.strip())
+                    _f2b_banned_cache["ips"] = banned
+                    _f2b_banned_cache["ts"] = now
+                    return banned
+    except Exception:
+        pass
+    return _f2b_banned_cache["ips"]
+
+def _f2b_get_client_ip():
+    """Get the real client IP, supporting reverse proxies."""
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    real_ip = request.headers.get("X-Real-IP", "")
+    if real_ip:
+        return real_ip.strip()
+    return request.remote_addr or "unknown"
+
+@app.before_request
+def check_fail2ban_ban():
+    """Block requests from IPs banned by fail2ban (works with reverse proxies)."""
+    client_ip = _f2b_get_client_ip()
+    banned_ips = _f2b_get_banned_ips()
+    if client_ip in banned_ips:
+        return jsonify({
+            "success": False,
+            "message": "Access denied. Your IP has been temporarily banned due to too many failed login attempts."
+        }), 403
 
 
 def identify_gpu_type(name, vendor=None, bus=None, driver=None):
@@ -347,6 +406,168 @@ def get_cpu_temperature():
         # print(f"Warning: Error reading temperature sensors: {e}")
         pass
     return temp
+
+# ── Temperature History (SQLite) ──────────────────────────────────────────────
+# Stores CPU temperature readings every 60s in a lightweight SQLite database.
+# Data is persisted in /usr/local/share/proxmenux/ alongside config.json.
+# Retention: 30 days max, cleaned up every hour.
+
+TEMP_DB_DIR = "/usr/local/share/proxmenux"
+TEMP_DB_PATH = os.path.join(TEMP_DB_DIR, "monitor.db")
+
+def _get_temp_db():
+    """Get a SQLite connection with WAL mode for concurrent reads."""
+    conn = sqlite3.connect(TEMP_DB_PATH, timeout=5)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    return conn
+
+def init_temperature_db():
+    """Create the temperature_history table if it doesn't exist."""
+    try:
+        os.makedirs(TEMP_DB_DIR, exist_ok=True)
+        conn = _get_temp_db()
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS temperature_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp INTEGER NOT NULL,
+                value REAL NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_temp_timestamp 
+            ON temperature_history(timestamp)
+        """)
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"[ProxMenux] Temperature DB init failed: {e}")
+        return False
+
+def _record_temperature():
+    """Insert a single temperature reading into the DB."""
+    try:
+        temp = get_cpu_temperature()
+        if temp and temp > 0:
+            conn = _get_temp_db()
+            conn.execute(
+                "INSERT INTO temperature_history (timestamp, value) VALUES (?, ?)",
+                (int(time.time()), round(temp, 1))
+            )
+            conn.commit()
+            conn.close()
+    except Exception:
+        pass
+
+def _cleanup_old_temperature_data():
+    """Remove temperature records older than 30 days."""
+    try:
+        cutoff = int(time.time()) - (30 * 24 * 3600)
+        conn = _get_temp_db()
+        conn.execute("DELETE FROM temperature_history WHERE timestamp < ?", (cutoff,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+def get_temperature_sparkline(minutes=60):
+    """Get recent temperature data for the overview sparkline."""
+    try:
+        since = int(time.time()) - (minutes * 60)
+        conn = _get_temp_db()
+        cursor = conn.execute(
+            "SELECT timestamp, value FROM temperature_history WHERE timestamp >= ? ORDER BY timestamp ASC",
+            (since,)
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [{"timestamp": r[0], "value": r[1]} for r in rows]
+    except Exception:
+        return []
+
+def get_temperature_history(timeframe="hour"):
+    """Get temperature history with downsampling for longer timeframes."""
+    try:
+        now = int(time.time())
+        if timeframe == "hour":
+            since = now - 3600
+            interval = None  # All points (~60)
+        elif timeframe == "day":
+            since = now - 86400
+            interval = 300  # 5 min avg (288 points)
+        elif timeframe == "week":
+            since = now - 7 * 86400
+            interval = 1800  # 30 min avg (336 points)
+        elif timeframe == "month":
+            since = now - 30 * 86400
+            interval = 7200  # 2h avg (360 points)
+        else:
+            since = now - 3600
+            interval = None
+        
+        conn = _get_temp_db()
+        
+        if interval is None:
+            cursor = conn.execute(
+                "SELECT timestamp, value FROM temperature_history WHERE timestamp >= ? ORDER BY timestamp ASC",
+                (since,)
+            )
+            rows = cursor.fetchall()
+            data = [{"timestamp": r[0], "value": r[1]} for r in rows]
+        else:
+            # Downsample: average value per interval bucket
+            cursor = conn.execute(
+                """SELECT (timestamp / ?) * ? as bucket, 
+                          ROUND(AVG(value), 1) as avg_val,
+                          ROUND(MIN(value), 1) as min_val,
+                          ROUND(MAX(value), 1) as max_val
+                   FROM temperature_history 
+                   WHERE timestamp >= ? 
+                   GROUP BY bucket 
+                   ORDER BY bucket ASC""",
+                (interval, interval, since)
+            )
+            rows = cursor.fetchall()
+            data = [{"timestamp": r[0], "value": r[1], "min": r[2], "max": r[3]} for r in rows]
+        
+        conn.close()
+        
+        # Compute stats
+        if data:
+            values = [d["value"] for d in data]
+            # For downsampled data, use actual min/max from each bucket
+            # (not min/max of the averages, which would be wrong)
+            if interval is not None and "min" in data[0]:
+                actual_min = min(d["min"] for d in data)
+                actual_max = max(d["max"] for d in data)
+            else:
+                actual_min = min(values)
+                actual_max = max(values)
+            stats = {
+                "min": round(actual_min, 1),
+                "max": round(actual_max, 1),
+                "avg": round(sum(values) / len(values), 1),
+                "current": values[-1]
+            }
+        else:
+            stats = {"min": 0, "max": 0, "avg": 0, "current": 0}
+        
+        return {"data": data, "stats": stats}
+    except Exception as e:
+        return {"data": [], "stats": {"min": 0, "max": 0, "avg": 0, "current": 0}}
+
+def _temperature_collector_loop():
+    """Background thread: collect temperature every 60s, cleanup every hour."""
+    cleanup_counter = 0
+    while True:
+        _record_temperature()
+        cleanup_counter += 1
+        if cleanup_counter >= 60:  # Every 60 iterations = 60 minutes
+            _cleanup_old_temperature_data()
+            cleanup_counter = 0
+        time.sleep(60)
+
 
 def get_uptime():
     """Get system uptime in a human-readable format."""
@@ -4803,12 +5024,16 @@ def api_system():
         # Get available updates
         available_updates = get_available_updates()
         
+        # Get temperature sparkline (last 1h) for overview mini chart
+        temp_sparkline = get_temperature_sparkline(60)
+
         return jsonify({
             'cpu_usage': round(cpu_usage, 1),
             'memory_usage': round(memory_usage_percent, 1),
             'memory_total': round(memory_total_gb, 1),
             'memory_used': round(memory_used_gb, 1),
             'temperature': temp,
+            'temperature_sparkline': temp_sparkline,
             'uptime': uptime,
             'load_average': list(load_avg),
             'hostname': socket.gethostname(),
@@ -4825,6 +5050,20 @@ def api_system():
         # print(f"Error getting system info: {e}")
         pass
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/temperature/history', methods=['GET'])
+@require_auth
+def api_temperature_history():
+    """Get temperature history for charts. Timeframe: hour, day, week, month"""
+    try:
+        timeframe = request.args.get('timeframe', 'hour')
+        if timeframe not in ('hour', 'day', 'week', 'month'):
+            timeframe = 'hour'
+        result = get_temperature_history(timeframe)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'data': [], 'stats': {'min': 0, 'max': 0, 'avg': 0, 'current': 0}}), 500
+
 
 @app.route('/api/storage', methods=['GET'])
 @require_auth
@@ -5160,7 +5399,9 @@ def api_logs():
                 days = int(since_days)
                 # Cap at 90 days to prevent excessive queries
                 days = min(days, 90)
-                cmd = ['journalctl', '--since', f'{days} days ago', '-n', '10000', '--output', 'json', '--no-pager']
+                # No -n limit when using --since: the time range already bounds the query.
+                # A hard -n 10000 was masking differences between date ranges on busy servers.
+                cmd = ['journalctl', '--since', f'{days} days ago', '--output', 'json', '--no-pager']
             except ValueError:
                 cmd = ['journalctl', '-n', limit, '--output', 'json', '--no-pager']
         else:
@@ -5174,33 +5415,51 @@ def api_logs():
         # We filter after fetching since journalctl doesn't have a direct SYSLOG_IDENTIFIER flag
         service_filter = service
         
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        # Longer timeout for date-range queries which may return many entries
+        query_timeout = 120 if since_days else 30
+        
+        # First, get a quick count of how many lines the journal has for this period
+        # This helps diagnose if the journal itself has fewer entries than expected
+        real_count = 0
+        try:
+            count_cmd = cmd[:] # clone
+            # Replace --output json with a simpler format for counting
+            if '--output' in count_cmd:
+                idx = count_cmd.index('--output')
+                count_cmd[idx + 1] = 'cat'
+            count_result = subprocess.run(
+                count_cmd, capture_output=True, text=True, timeout=30
+            )
+            if count_result.returncode == 0:
+                real_count = count_result.stdout.count('\n')
+        except Exception:
+            pass  # counting is optional, continue with the real fetch
+        
+        app.logger.info(f"[Logs API] Fetching logs: cmd={' '.join(cmd)}, journal_real_count={real_count}")
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=query_timeout)
 
         if result.returncode == 0:
             logs = []
+            skipped = 0
+            priority_map = {
+                '0': 'emergency', '1': 'alert', '2': 'critical', '3': 'error',
+                '4': 'warning', '5': 'notice', '6': 'info', '7': 'debug'
+            }
             for line in result.stdout.strip().split('\n'):
                 if line:
                     try:
                         log_entry = json.loads(line)
-                        # Convert timestamp from microseconds to readable format
                         timestamp_us = int(log_entry.get('__REALTIME_TIMESTAMP', '0'))
                         timestamp = datetime.fromtimestamp(timestamp_us / 1000000).strftime('%Y-%m-%d %H:%M:%S')
                         
-                        # Map priority to level name
-                        priority_map = {
-                            '0': 'emergency', '1': 'alert', '2': 'critical', '3': 'error',
-                            '4': 'warning', '5': 'notice', '6': 'info', '7': 'debug'
-                        }
                         priority_num = str(log_entry.get('PRIORITY', '6'))
                         level = priority_map.get(priority_num, 'info')
                         
-                        # Use SYSLOG_IDENTIFIER as primary (matches Proxmox native GUI behavior)
-                        # Fall back to _SYSTEMD_UNIT only if SYSLOG_IDENTIFIER is missing
                         syslog_id = log_entry.get('SYSLOG_IDENTIFIER', '')
                         systemd_unit = log_entry.get('_SYSTEMD_UNIT', '')
                         service_name = syslog_id or systemd_unit or 'system'
                         
-                        # Apply service filter on the resolved service name
                         if service_filter and service_name != service_filter:
                             continue
                         
@@ -5215,8 +5474,11 @@ def api_logs():
                             'hostname': log_entry.get('_HOSTNAME', '')
                         })
                     except (json.JSONDecodeError, ValueError):
+                        skipped += 1
                         continue
-            return jsonify({'logs': logs, 'total': len(logs)})
+            
+            app.logger.info(f"[Logs API] Parsed {len(logs)} logs, skipped {skipped} unparseable, journal_real={real_count}")
+            return jsonify({'logs': logs, 'total': len(logs), 'journal_total': real_count, 'skipped': skipped})
         else:
             return jsonify({
                 'error': 'journalctl not available or failed',
@@ -6720,6 +6982,52 @@ if __name__ == '__main__':
     cli = sys.modules['flask.cli']
     cli.show_server_banner = lambda *x: None
     
+    # ── Ensure journald stores info-level messages ──
+    # Proxmox defaults MaxLevelStore=warning which drops info/notice entries.
+    # This causes System Logs to show almost identical counts across date ranges
+    # (since most log activity is info-level and gets silently discarded).
+    # We create a drop-in to raise the level to info so logs are properly stored.
+    try:
+        journald_conf = "/etc/systemd/journald.conf"
+        dropin_dir = "/etc/systemd/journald.conf.d"
+        dropin_file = f"{dropin_dir}/proxmenux-loglevel.conf"
+        
+        if os.path.isfile(journald_conf) and not os.path.isfile(dropin_file):
+            # Read current MaxLevelStore
+            current_max = ""
+            with open(journald_conf, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("MaxLevelStore="):
+                        current_max = line.split("=", 1)[1].strip().lower()
+            
+            restrictive_levels = {"emerg", "alert", "crit", "err", "warning"}
+            if current_max in restrictive_levels:
+                os.makedirs(dropin_dir, exist_ok=True)
+                with open(dropin_file, 'w') as f:
+                    f.write("# ProxMenux: Allow info-level messages for proper log display\n")
+                    f.write("# Proxmox default MaxLevelStore=warning drops most system logs\n")
+                    f.write("[Journal]\n")
+                    f.write("MaxLevelStore=info\n")
+                    f.write("MaxLevelSyslog=info\n")
+                subprocess.run(["systemctl", "restart", "systemd-journald"], 
+                             capture_output=True, timeout=10)
+                print("[ProxMenux] Fixed journald MaxLevelStore (was too restrictive for log display)")
+    except Exception as e:
+        print(f"[ProxMenux] journald check skipped: {e}")
+    
+    # ── Temperature history collector ──
+    # Initialize SQLite DB and start background thread to record CPU temp every 60s
+    if init_temperature_db():
+        # Record initial reading immediately
+        _record_temperature()
+        # Start background collector thread
+        temp_thread = threading.Thread(target=_temperature_collector_loop, daemon=True)
+        temp_thread.start()
+        print("[ProxMenux] Temperature history collector started (60s interval, 30d retention)")
+    else:
+        print("[ProxMenux] Temperature history disabled (DB init failed)")
+
     # Check for SSL configuration
     ssl_ctx = None
     try:
