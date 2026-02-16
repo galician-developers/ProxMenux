@@ -1,7 +1,8 @@
 """
 Health Monitor Persistence Module
 Manages persistent error tracking across AppImage updates using SQLite.
-Stores errors in /root/.config/proxmenux-monitor/health_monitor.db
+Stores errors in /usr/local/share/proxmenux/health_monitor.db
+(same directory as monitor.db for temperature history)
 
 Features:
 - Persistent error storage (survives AppImage updates)
@@ -10,7 +11,7 @@ Features:
 - Manual acknowledgment support
 
 Author: MacRimi
-Version: 1.0
+Version: 1.1
 """
 
 import sqlite3
@@ -30,8 +31,8 @@ class HealthPersistence:
     UPDATES_SUPPRESSION = 180 * 24 * 3600  # 180 days (6 months)
     
     def __init__(self):
-        """Initialize persistence with database in config directory"""
-        self.data_dir = Path('/root/.config/proxmenux-monitor')
+        """Initialize persistence with database in shared ProxMenux data directory"""
+        self.data_dir = Path('/usr/local/share/proxmenux')
         self.data_dir.mkdir(parents=True, exist_ok=True)
         
         self.db_path = self.data_dir / 'health_monitor.db'
@@ -186,10 +187,36 @@ class HealthPersistence:
         conn.commit()
         conn.close()
     
-    def acknowledge_error(self, error_key: str):
+    def is_error_active(self, error_key: str, category: Optional[str] = None) -> bool:
         """
-        Manually acknowledge an error (won't notify again or re-appear for 24h).
-        Also marks as resolved so it disappears from active errors.
+        Check if an error is currently active (unresolved and not acknowledged).
+        Used by checks to avoid re-recording errors that are already tracked.
+        """
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        
+        if category:
+            cursor.execute('''
+                SELECT COUNT(*) FROM errors 
+                WHERE error_key = ? AND category = ?
+                  AND resolved_at IS NULL AND acknowledged = 0
+            ''', (error_key, category))
+        else:
+            cursor.execute('''
+                SELECT COUNT(*) FROM errors 
+                WHERE error_key = ? 
+                  AND resolved_at IS NULL AND acknowledged = 0
+            ''', (error_key,))
+        
+        count = cursor.fetchone()[0]
+        conn.close()
+        return count > 0
+    
+    def clear_error(self, error_key: str):
+        """
+        Remove/resolve a specific error immediately.
+        Used when the condition that caused the error no longer exists
+        (e.g., storage became available again).
         """
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
@@ -198,14 +225,66 @@ class HealthPersistence:
         
         cursor.execute('''
             UPDATE errors 
-            SET acknowledged = 1, resolved_at = ?
-            WHERE error_key = ?
+            SET resolved_at = ?
+            WHERE error_key = ? AND resolved_at IS NULL
         ''', (now, error_key))
         
-        self._record_event(cursor, 'acknowledged', error_key, {})
+        if cursor.rowcount > 0:
+            self._record_event(cursor, 'cleared', error_key, {'reason': 'condition_resolved'})
         
         conn.commit()
         conn.close()
+    
+    def acknowledge_error(self, error_key: str) -> Dict[str, Any]:
+        """
+        Manually acknowledge an error (dismiss).
+        - Marks as acknowledged so it won't re-appear during the suppression period
+        - Stores the original severity for reference
+        - Returns info about the acknowledged error
+        
+        Suppression periods:
+        - updates category: 180 days (6 months)
+        - other categories: 24 hours
+        """
+        conn = sqlite3.connect(str(self.db_path))
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        now = datetime.now().isoformat()
+        
+        # Get current error info before acknowledging
+        cursor.execute('SELECT * FROM errors WHERE error_key = ?', (error_key,))
+        row = cursor.fetchone()
+        
+        result = {'success': False, 'error_key': error_key}
+        
+        if row:
+            error_dict = dict(row)
+            original_severity = error_dict.get('severity', 'WARNING')
+            category = error_dict.get('category', '')
+            
+            cursor.execute('''
+                UPDATE errors 
+                SET acknowledged = 1, resolved_at = ?
+                WHERE error_key = ?
+            ''', (now, error_key))
+            
+            self._record_event(cursor, 'acknowledged', error_key, {
+                'original_severity': original_severity,
+                'category': category
+            })
+            
+            result = {
+                'success': True,
+                'error_key': error_key,
+                'original_severity': original_severity,
+                'category': category,
+                'acknowledged_at': now
+            }
+        
+        conn.commit()
+        conn.close()
+        return result
     
     def get_active_errors(self, category: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get all active (unresolved) errors, optionally filtered by category"""
@@ -314,6 +393,138 @@ class HealthPersistence:
             
         except Exception:
             return False
+    
+    def get_dismissed_errors(self) -> List[Dict[str, Any]]:
+        """
+        Get errors that were acknowledged/dismissed but still within suppression period.
+        These are shown as INFO in the frontend with a 'Dismissed' badge.
+        """
+        conn = sqlite3.connect(str(self.db_path))
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM errors 
+            WHERE acknowledged = 1 AND resolved_at IS NOT NULL
+            ORDER BY resolved_at DESC
+        ''')
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        dismissed = []
+        now = datetime.now()
+        
+        for row in rows:
+            error_dict = dict(row)
+            if error_dict.get('details'):
+                try:
+                    error_dict['details'] = json.loads(error_dict['details'])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            
+            # Check if still within suppression period
+            try:
+                resolved_dt = datetime.fromisoformat(error_dict['resolved_at'])
+                elapsed_seconds = (now - resolved_dt).total_seconds()
+                
+                if error_dict.get('category') == 'updates':
+                    suppression = self.UPDATES_SUPPRESSION
+                else:
+                    suppression = 24 * 3600  # 24 hours
+                
+                if elapsed_seconds < suppression:
+                    error_dict['dismissed'] = True
+                    error_dict['suppression_remaining_hours'] = round(
+                        (suppression - elapsed_seconds) / 3600, 1
+                    )
+                    dismissed.append(error_dict)
+            except (ValueError, TypeError):
+                pass
+        
+        return dismissed
+    
+    def emit_event(self, event_type: str, category: str, severity: str, 
+                   data: Optional[Dict] = None) -> int:
+        """
+        Emit a health event for the notification system.
+        Returns the event ID.
+        
+        Event types: 
+        - 'state_change': severity changed (OK->WARNING, WARNING->CRITICAL, etc.)
+        - 'new_error': new error detected
+        - 'resolved': error resolved
+        - 'escalated': severity increased
+        """
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        
+        event_data = data or {}
+        event_data['category'] = category
+        event_data['severity'] = severity
+        event_data['needs_notification'] = True
+        
+        cursor.execute('''
+            INSERT INTO events (event_type, error_key, timestamp, data)
+            VALUES (?, ?, ?, ?)
+        ''', (event_type, f'{category}_{severity}', datetime.now().isoformat(), 
+              json.dumps(event_data)))
+        
+        event_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return event_id
+    
+    def get_pending_notifications(self) -> List[Dict[str, Any]]:
+        """
+        Get events that need notification (for future Telegram/Gotify integration).
+        Groups by severity for batch notification sending.
+        """
+        conn = sqlite3.connect(str(self.db_path))
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT e.*, err.category as error_category, err.reason as error_reason
+            FROM events e
+            LEFT JOIN errors err ON e.error_key = err.error_key
+            WHERE json_extract(e.data, '$.needs_notification') = 1
+            ORDER BY e.timestamp DESC
+            LIMIT 100
+        ''')
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        events = []
+        for row in rows:
+            event_dict = dict(row)
+            if event_dict.get('data'):
+                try:
+                    event_dict['data'] = json.loads(event_dict['data'])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            events.append(event_dict)
+        
+        return events
+    
+    def mark_events_notified(self, event_ids: List[int]):
+        """Mark events as notified (notification was sent successfully)"""
+        if not event_ids:
+            return
+        
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        
+        for event_id in event_ids:
+            cursor.execute('''
+                UPDATE events 
+                SET data = json_set(COALESCE(data, '{}'), '$.needs_notification', 0, '$.notified_at', ?)
+                WHERE id = ?
+            ''', (datetime.now().isoformat(), event_id))
+        
+        conn.commit()
+        conn.close()
     
     def _record_event(self, cursor, event_type: str, error_key: str, data: Dict):
         """Internal: Record an event"""

@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   XCircle,
+  Info,
   Activity,
   Cpu,
   MemoryStick,
@@ -23,14 +24,28 @@ import {
   RefreshCw,
   Shield,
   X,
+  Clock,
+  BellOff,
+  ChevronRight,
 } from "lucide-react"
 
 interface CategoryCheck {
   status: string
   reason?: string
   details?: any
+  checks?: Record<string, { status: string; detail: string; [key: string]: any }>
   dismissable?: boolean
   [key: string]: any
+}
+
+interface DismissedError {
+  error_key: string
+  category: string
+  severity: string
+  reason: string
+  dismissed: boolean
+  suppression_remaining_hours: number
+  resolved_at: string
 }
 
 interface HealthDetails {
@@ -48,6 +63,13 @@ interface HealthDetails {
     updates: CategoryCheck
     security: CategoryCheck
   }
+  timestamp: string
+}
+
+interface FullHealthData {
+  health: HealthDetails
+  active_errors: any[]
+  dismissed: DismissedError[]
   timestamp: string
 }
 
@@ -73,7 +95,41 @@ const CATEGORIES = [
 export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatusModalProps) {
   const [loading, setLoading] = useState(true)
   const [healthData, setHealthData] = useState<HealthDetails | null>(null)
+  const [dismissedItems, setDismissedItems] = useState<DismissedError[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [dismissingKey, setDismissingKey] = useState<string | null>(null)
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
+
+  const fetchHealthDetails = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+
+    try {
+      // Use the new combined endpoint for fewer round-trips
+      const response = await fetch(getApiUrl("/api/health/full"))
+      if (!response.ok) {
+        // Fallback to legacy endpoint
+        const legacyResponse = await fetch(getApiUrl("/api/health/details"))
+        if (!legacyResponse.ok) throw new Error("Failed to fetch health details")
+        const data = await legacyResponse.json()
+        setHealthData(data)
+        setDismissedItems([])
+      } else {
+        const fullData: FullHealthData = await response.json()
+        setHealthData(fullData.health)
+        setDismissedItems(fullData.dismissed || [])
+      }
+
+      const event = new CustomEvent("healthStatusUpdated", {
+        detail: { status: healthData?.overall || "OK" },
+      })
+      window.dispatchEvent(event)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error")
+    } finally {
+      setLoading(false)
+    }
+  }, [getApiUrl, healthData?.overall])
 
   useEffect(() => {
     if (open) {
@@ -81,42 +137,46 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
     }
   }, [open])
 
-  const fetchHealthDetails = async () => {
-    setLoading(true)
-    setError(null)
-
-    try {
-      const response = await fetch(getApiUrl("/api/health/details"))
-      if (!response.ok) {
-        throw new Error("Failed to fetch health details")
-      }
-      const data = await response.json()
-      console.log("[v0] Health data received:", data)
-      setHealthData(data)
-
-      const event = new CustomEvent("healthStatusUpdated", {
-        detail: { status: data.overall },
+  // Auto-expand non-OK categories when data loads
+  useEffect(() => {
+    if (healthData?.details) {
+      const nonOkCategories = new Set<string>()
+      CATEGORIES.forEach(({ key }) => {
+        const cat = healthData.details[key as keyof typeof healthData.details]
+        if (cat && cat.status?.toUpperCase() !== "OK") {
+          nonOkCategories.add(key)
+        }
       })
-      window.dispatchEvent(event)
-    } catch (err) {
-      console.error("[v0] Error fetching health data:", err)
-      setError(err instanceof Error ? err.message : "Unknown error")
-    } finally {
-      setLoading(false)
+      setExpandedCategories(nonOkCategories)
     }
+  }, [healthData])
+
+  const toggleCategory = (key: string) => {
+    setExpandedCategories(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
   }
 
-  const getStatusIcon = (status: string) => {
+  const getStatusIcon = (status: string, size: "sm" | "md" = "md") => {
     const statusUpper = status?.toUpperCase()
+    const cls = size === "sm" ? "h-4 w-4" : "h-5 w-5"
     switch (statusUpper) {
       case "OK":
-        return <CheckCircle2 className="h-5 w-5 text-green-500" />
+        return <CheckCircle2 className={`${cls} text-green-500`} />
+      case "INFO":
+        return <Info className={`${cls} text-blue-500`} />
       case "WARNING":
-        return <AlertTriangle className="h-5 w-5 text-yellow-500" />
+        return <AlertTriangle className={`${cls} text-yellow-500`} />
       case "CRITICAL":
-        return <XCircle className="h-5 w-5 text-red-500" />
+        return <XCircle className={`${cls} text-red-500`} />
       default:
-        return <Activity className="h-5 w-5 text-gray-500" />
+        return <Activity className={`${cls} text-muted-foreground`} />
     }
   }
 
@@ -125,6 +185,8 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
     switch (statusUpper) {
       case "OK":
         return <Badge className="bg-green-500 text-white hover:bg-green-500">OK</Badge>
+      case "INFO":
+        return <Badge className="bg-blue-500 text-white hover:bg-blue-500">Info</Badge>
       case "WARNING":
         return <Badge className="bg-yellow-500 text-white hover:bg-yellow-500">Warning</Badge>
       case "CRITICAL":
@@ -136,10 +198,11 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
 
   const getHealthStats = () => {
     if (!healthData?.details) {
-      return { total: 0, healthy: 0, warnings: 0, critical: 0 }
+      return { total: 0, healthy: 0, info: 0, warnings: 0, critical: 0 }
     }
 
     let healthy = 0
+    let info = 0
     let warnings = 0
     let critical = 0
 
@@ -148,22 +211,22 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
       if (categoryData) {
         const status = categoryData.status?.toUpperCase()
         if (status === "OK") healthy++
+        else if (status === "INFO") info++
         else if (status === "WARNING") warnings++
         else if (status === "CRITICAL") critical++
       }
     })
 
-    return { total: CATEGORIES.length, healthy, warnings, critical }
+    return { total: CATEGORIES.length, healthy, info, warnings, critical }
   }
 
   const stats = getHealthStats()
 
   const handleCategoryClick = (categoryKey: string, status: string) => {
-    if (status === "OK") return // No navegar si está OK
+    if (status === "OK" || status === "INFO") return
 
-    onOpenChange(false) // Cerrar el modal
+    onOpenChange(false)
 
-    // Mapear categorías a tabs
     const categoryToTab: Record<string, string> = {
       storage: "storage",
       disks: "storage",
@@ -176,42 +239,155 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
 
     const targetTab = categoryToTab[categoryKey]
     if (targetTab) {
-      // Disparar evento para cambiar tab
       const event = new CustomEvent("changeTab", { detail: { tab: targetTab } })
       window.dispatchEvent(event)
     }
   }
 
   const handleAcknowledge = async (errorKey: string, e: React.MouseEvent) => {
-    e.stopPropagation() // Prevent navigation
-
-    console.log("[v0] Dismissing error:", errorKey)
+    e.stopPropagation()
+    setDismissingKey(errorKey)
 
     try {
       const response = await fetch(getApiUrl("/api/health/acknowledge"), {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ error_key: errorKey }),
       })
 
       if (!response.ok) {
         const errorData = await response.json()
-        console.error("[v0] Acknowledge failed:", errorData)
-        throw new Error(errorData.error || "Failed to acknowledge error")
+        throw new Error(errorData.error || "Failed to dismiss error")
       }
 
-      const result = await response.json()
-      console.log("[v0] Acknowledge success:", result)
-
-      // Refresh health data
       await fetchHealthDetails()
     } catch (err) {
-      console.error("[v0] Error acknowledging:", err)
-      alert("Failed to dismiss error. Please try again.")
+      console.error("Error dismissing:", err)
+    } finally {
+      setDismissingKey(null)
     }
   }
+
+  const getTimeSinceCheck = () => {
+    if (!healthData?.timestamp) return null
+    const checkTime = new Date(healthData.timestamp)
+    const now = new Date()
+    const diffMs = now.getTime() - checkTime.getTime()
+    const diffMin = Math.floor(diffMs / 60000)
+    if (diffMin < 1) return "just now"
+    if (diffMin === 1) return "1 minute ago"
+    if (diffMin < 60) return `${diffMin} minutes ago`
+    const diffHours = Math.floor(diffMin / 60)
+    return `${diffHours}h ${diffMin % 60}m ago`
+  }
+
+  const getCategoryRowStyle = (status: string) => {
+    const s = status?.toUpperCase()
+    if (s === "CRITICAL") return "bg-red-500/5 border-red-500/20 hover:bg-red-500/10 cursor-pointer"
+    if (s === "WARNING") return "bg-yellow-500/5 border-yellow-500/20 hover:bg-yellow-500/10 cursor-pointer"
+    if (s === "INFO") return "bg-blue-500/5 border-blue-500/20 hover:bg-blue-500/10"
+    return "bg-card border-border hover:bg-muted/30"
+  }
+
+  const getOutlineBadgeStyle = (status: string) => {
+    const s = status?.toUpperCase()
+    if (s === "OK") return "border-green-500 text-green-500 bg-transparent"
+    if (s === "INFO") return "border-blue-500 text-blue-500 bg-blue-500/5"
+    if (s === "WARNING") return "border-yellow-500 text-yellow-500 bg-yellow-500/5"
+    if (s === "CRITICAL") return "border-red-500 text-red-500 bg-red-500/5"
+    return ""
+  }
+
+  const formatCheckLabel = (key: string): string => {
+    const labels: Record<string, string> = {
+      cpu_usage: "CPU Usage",
+      cpu_temperature: "Temperature",
+      ram_usage: "RAM Usage",
+      swap_usage: "Swap Usage",
+      root_filesystem: "Root Filesystem",
+      lvm_check: "LVM Status",
+      connectivity: "Connectivity",
+      all_vms_cts: "VMs & Containers",
+      cluster_mode: "Cluster Mode",
+      error_cascade: "Error Cascade",
+      error_spike: "Error Spike",
+      persistent_errors: "Persistent Errors",
+      critical_errors: "Critical Errors",
+      security_updates: "Security Updates",
+      system_age: "System Age",
+      pending_updates: "Pending Updates",
+      kernel_pve: "Kernel / PVE",
+      uptime: "Uptime",
+      certificates: "Certificates",
+      login_attempts: "Login Attempts",
+      fail2ban: "Fail2Ban",
+    }
+    if (labels[key]) return labels[key]
+    // Convert snake_case or camelCase to Title Case
+    return key
+      .replace(/_/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+  }
+
+  const renderChecks = (
+    checks: Record<string, { status: string; detail: string; dismissable?: boolean; thresholds?: string; [key: string]: any }>,
+    categoryKey: string
+  ) => {
+    if (!checks || Object.keys(checks).length === 0) return null
+
+    return (
+      <div className="mt-2 space-y-0.5">
+        {Object.entries(checks).map(([checkKey, checkData]) => {
+          const isDismissable = checkData.dismissable === true
+          const checkStatus = checkData.status?.toUpperCase() || "OK"
+
+          return (
+            <div
+              key={checkKey}
+              className="flex items-center justify-between gap-2 text-xs py-1.5 px-3 rounded-md hover:bg-muted/40 transition-colors"
+            >
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                {getStatusIcon(checkData.status, "sm")}
+                <span className="font-medium shrink-0">{formatCheckLabel(checkKey)}</span>
+                <span className="text-muted-foreground truncate">{checkData.detail}</span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {checkData.thresholds && (
+                  <span className="text-[10px] text-muted-foreground/60 hidden sm:inline">
+                    ({checkData.thresholds})
+                  </span>
+                )}
+                {(checkStatus === "WARNING" || checkStatus === "CRITICAL") && isDismissable && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-5 px-1.5 shrink-0 hover:bg-red-500/10 hover:border-red-500/50 bg-transparent text-[10px]"
+                    disabled={dismissingKey === checkKey}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleAcknowledge(checkKey, e)
+                    }}
+                  >
+                    {dismissingKey === checkKey ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <>
+                        <X className="h-3 w-3 mr-0.5" />
+                        Dismiss
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -224,7 +400,15 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
               {healthData && <div className="ml-2">{getStatusBadge(healthData.overall)}</div>}
             </DialogTitle>
           </div>
-          <DialogDescription>Detailed health checks for all system components</DialogDescription>
+          <DialogDescription className="flex items-center gap-2">
+            Detailed health checks for all system components
+            {getTimeSinceCheck() && (
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                <Clock className="h-3 w-3" />
+                Last check: {getTimeSinceCheck()}
+              </span>
+            )}
+          </DialogDescription>
         </DialogHeader>
 
         {loading && (
@@ -243,15 +427,21 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
         {healthData && !loading && (
           <div className="space-y-4">
             {/* Overall Stats Summary */}
-            <div className="grid grid-cols-4 gap-3 p-4 rounded-lg bg-muted/30 border">
+            <div className={`grid gap-3 p-4 rounded-lg bg-muted/30 border ${stats.info > 0 ? "grid-cols-5" : "grid-cols-4"}`}>
               <div className="text-center">
                 <div className="text-2xl font-bold">{stats.total}</div>
-                <div className="text-xs text-muted-foreground">Total Checks</div>
+                <div className="text-xs text-muted-foreground">Total</div>
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-green-500">{stats.healthy}</div>
                 <div className="text-xs text-muted-foreground">Healthy</div>
               </div>
+              {stats.info > 0 && (
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-blue-500">{stats.info}</div>
+                  <div className="text-xs text-muted-foreground">Info</div>
+                </div>
+              )}
               <div className="text-center">
                 <div className="text-2xl font-bold text-yellow-500">{stats.warnings}</div>
                 <div className="text-xs text-muted-foreground">Warnings</div>
@@ -268,90 +458,116 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
               </div>
             )}
 
+            {/* Category List */}
             <div className="space-y-2">
               {CATEGORIES.map(({ key, label, Icon }) => {
                 const categoryData = healthData.details[key as keyof typeof healthData.details]
                 const status = categoryData?.status || "UNKNOWN"
                 const reason = categoryData?.reason
-                const details = categoryData?.details
+                const checks = categoryData?.checks
+                const isExpanded = expandedCategories.has(key)
+                const hasChecks = checks && Object.keys(checks).length > 0
 
                 return (
                   <div
                     key={key}
-                    onClick={() => handleCategoryClick(key, status)}
-                    className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${
-                      status === "OK"
-                        ? "bg-card border-border hover:bg-muted/30"
-                        : status === "WARNING"
-                          ? "bg-yellow-500/5 border-yellow-500/20 hover:bg-yellow-500/10 cursor-pointer"
-                          : status === "CRITICAL"
-                            ? "bg-red-500/5 border-red-500/20 hover:bg-red-500/10 cursor-pointer"
-                            : "bg-muted/30 hover:bg-muted/50"
-                    }`}
+                    className={`rounded-lg border transition-colors overflow-hidden ${getCategoryRowStyle(status)}`}
                   >
-                    <div className="mt-0.5 flex-shrink-0 flex items-center gap-2">
-                      <Icon className="h-4 w-4 text-blue-500" />
-                      {getStatusIcon(status)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <p className="font-medium text-sm">{label}</p>
-                        <Badge
-                          variant="outline"
-                          className={`shrink-0 text-xs ${
-                            status === "OK"
-                              ? "border-green-500 text-green-500 bg-transparent"
-                              : status === "WARNING"
-                                ? "border-yellow-500 text-yellow-500 bg-yellow-500/5"
-                                : status === "CRITICAL"
-                                  ? "border-red-500 text-red-500 bg-red-500/5"
-                                  : ""
-                          }`}
-                        >
+                    {/* Clickable header row */}
+                    <div
+                      className="flex items-center gap-3 p-3 cursor-pointer select-none"
+                      onClick={() => toggleCategory(key)}
+                    >
+                      <div className="flex-shrink-0 flex items-center gap-2">
+                        <Icon className="h-4 w-4 text-blue-500" />
+                        {getStatusIcon(status)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-sm">{label}</p>
+                          {hasChecks && (
+                            <span className="text-[10px] text-muted-foreground">
+                              ({Object.keys(checks).length} checks)
+                            </span>
+                          )}
+                        </div>
+                        {reason && !isExpanded && (
+                          <p className="text-xs text-muted-foreground mt-0.5 truncate">{reason}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Badge variant="outline" className={`text-xs ${getOutlineBadgeStyle(status)}`}>
                           {status}
                         </Badge>
+                        <ChevronRight
+                          className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${
+                            isExpanded ? "rotate-90" : ""
+                          }`}
+                        />
                       </div>
-                      {reason && <p className="text-xs text-muted-foreground mt-1">{reason}</p>}
-                      {details && typeof details === "object" && (
-                        <div className="mt-2 space-y-1">
-                          {Object.entries(details).map(([detailKey, detailValue]: [string, any]) => {
-                            if (typeof detailValue === "object" && detailValue !== null) {
-                              const isDismissable = detailValue.dismissable !== false
-
-                              return (
-                                <div
-                                  key={detailKey}
-                                  className="flex items-start justify-between gap-2 text-xs pl-3 border-l-2 border-muted py-1"
-                                >
-                                  <div className="flex-1">
-                                    <span className="font-medium">{detailKey}:</span>
-                                    {detailValue.reason && (
-                                      <span className="ml-1 text-muted-foreground">{detailValue.reason}</span>
-                                    )}
-                                  </div>
-                                  {(status === "WARNING" || status === "CRITICAL") && isDismissable && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-6 px-2 shrink-0 hover:bg-red-500/10 hover:border-red-500/50 bg-transparent"
-                                      onClick={(e) => handleAcknowledge(detailKey, e)}
-                                    >
-                                      <X className="h-3 w-3 mr-1" />
-                                      <span className="text-xs">Dismiss</span>
-                                    </Button>
-                                  )}
-                                </div>
-                              )
-                            }
-                            return null
-                          })}
-                        </div>
-                      )}
                     </div>
+
+                    {/* Expandable checks section */}
+                    {isExpanded && (
+                      <div className="border-t border-border/50 bg-muted/5 px-2 py-1.5">
+                        {reason && (
+                          <p className="text-xs text-muted-foreground px-3 py-1.5 mb-1">{reason}</p>
+                        )}
+                        {hasChecks ? (
+                          renderChecks(checks, key)
+                        ) : (
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground px-3 py-2">
+                            <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                            No issues detected
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )
               })}
             </div>
+
+            {/* Dismissed Items Section */}
+            {dismissedItems.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground pt-2">
+                  <BellOff className="h-4 w-4" />
+                  Dismissed Items ({dismissedItems.length})
+                </div>
+                {dismissedItems.map((item) => (
+                  <div
+                    key={item.error_key}
+                    className="flex items-start gap-3 p-3 rounded-lg border bg-muted/10 border-muted opacity-75"
+                  >
+                    <div className="mt-0.5 flex-shrink-0 flex items-center gap-2">
+                      <BellOff className="h-4 w-4 text-muted-foreground" />
+                      {getStatusIcon("INFO")}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <p className="font-medium text-sm text-muted-foreground">{item.reason}</p>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Badge variant="outline" className="text-xs border-blue-500/50 text-blue-500/70 bg-transparent">
+                            Dismissed
+                          </Badge>
+                          <Badge variant="outline" className={`text-xs ${getOutlineBadgeStyle(item.severity)}`}>
+                            was {item.severity}
+                          </Badge>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        Suppressed for {item.suppression_remaining_hours < 24
+                          ? `${Math.round(item.suppression_remaining_hours)}h`
+                          : `${Math.round(item.suppression_remaining_hours / 24)} days`
+                        } more
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {healthData.timestamp && (
               <div className="text-xs text-muted-foreground text-center pt-2">

@@ -40,7 +40,7 @@ export default function Home() {
         authenticated,
       })
     } catch (error) {
-      console.error("[v0] Failed to check auth status:", error)
+      console.error("Failed to check auth status:", error)
       setAuthStatus({
         loading: false,
         authEnabled: false,
