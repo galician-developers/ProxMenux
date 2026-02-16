@@ -487,18 +487,14 @@ class HealthMonitor:
             checks = {
                 'cpu_usage': {
                     'status': status,
-                    'detail': f'{round(cpu_percent, 1)}% ({psutil.cpu_count()} cores)',
-                    'value': round(cpu_percent, 1),
-                    'thresholds': f'Warning >{self.CPU_WARNING}%, Critical >{self.CPU_CRITICAL}%'
+                    'detail': 'Sustained high CPU usage' if status != 'OK' else 'Normal'
                 }
             }
             if temp_status and temp_status.get('status') != 'UNKNOWN':
-                temp_val = temp_status.get('value', 'N/A')
+                t_status = temp_status.get('status', 'OK')
                 checks['cpu_temperature'] = {
-                    'status': temp_status.get('status', 'OK'),
-                    'detail': f'{temp_val}°C' if isinstance(temp_val, (int, float)) else str(temp_val),
-                    'value': temp_val,
-                    'thresholds': 'Warning >80°C sustained >3min'
+                    'status': t_status,
+                    'detail': 'Temperature elevated' if t_status != 'OK' else 'Normal'
                 }
             else:
                 checks['cpu_temperature'] = {
@@ -697,15 +693,11 @@ class HealthMonitor:
                 'checks': {
                     'ram_usage': {
                         'status': ram_status,
-                        'detail': f'{round(mem_percent, 1)}% used ({ram_avail_gb} GB free of {ram_total_gb} GB)',
-                        'value': round(mem_percent, 1),
-                        'thresholds': f'Warning >{self.MEMORY_WARNING}%, Critical >90%'
+                        'detail': 'High RAM usage sustained' if ram_status != 'OK' else 'Normal'
                     },
                     'swap_usage': {
                         'status': swap_status,
-                        'detail': f'{round(swap_percent, 1)}% used ({swap_used_gb} GB of {swap_total_gb} GB)' if swap.total > 0 else 'No swap configured',
-                        'value': round(swap_percent, 1),
-                        'thresholds': 'Critical when swap >20% of RAM'
+                        'detail': 'Excessive swap usage' if swap_status != 'OK' else ('Normal' if swap.total > 0 else 'No swap configured')
                     }
                 }
             }
@@ -810,8 +802,16 @@ class HealthMonitor:
             }
         
         if not issues:
-            # Add a summary OK entry if nothing specific
-            checks['root_filesystem'] = checks.get('/', {'status': 'OK', 'detail': 'Root filesystem healthy'})
+            # Add descriptive OK entries for what we monitor
+            checks['root_filesystem'] = checks.get('/', {'status': 'OK', 'detail': 'Mounted read-write, space OK'})
+            checks['smart_health'] = {'status': 'OK', 'detail': 'No SMART warnings in journal'}
+            checks['io_errors'] = {'status': 'OK', 'detail': 'No I/O errors in dmesg'}
+            # Check if ZFS is present
+            if os.path.exists('/sbin/zpool') or os.path.exists('/usr/sbin/zpool'):
+                checks['zfs_pools'] = {'status': 'OK', 'detail': 'ZFS pools healthy'}
+            # Check if LVM is present
+            if os.path.exists('/sbin/lvm') or os.path.exists('/usr/sbin/lvm'):
+                checks['lvm_volumes'] = {'status': 'OK', 'detail': 'LVM volumes OK'}
             return {'status': 'OK', 'checks': checks}
         
         # Determine overall status
@@ -993,22 +993,22 @@ class HealthMonitor:
                     if error_count >= 3:
                         error_key = f'disk_{disk}'
                         severity = 'CRITICAL'
-                        reason = f'{error_count} I/O errors in 5 minutes'
-                        
-                        health_persistence.record_error(
-                            error_key=error_key,
-                            category='disks',
-                            severity=severity,
-                            reason=reason,
-                            details={'disk': disk, 'error_count': error_count, 'dismissable': True}
-                        )
-                        
-                        disk_issues[f'/dev/{disk}'] = {
-                            'status': severity,
-                            'reason': reason,
-                            'dismissable': True
-                        }
-                    elif error_count >= 1:
+    reason = f'{error_count} I/O errors in 5 minutes'
+    
+    health_persistence.record_error(
+    error_key=error_key,
+    category='disks',
+    severity=severity,
+    reason=reason,
+    details={'disk': disk, 'error_count': error_count, 'dismissable': False}
+    )
+    
+    disk_details[disk] = {
+    'status': severity,
+    'reason': reason,
+    'dismissable': False
+    }
+    elif error_count >= 1:
                         error_key = f'disk_{disk}'
                         severity = 'WARNING'
                         reason = f'{error_count} I/O error(s) in 5 minutes'
@@ -1116,14 +1116,14 @@ class HealthMonitor:
                             category='network',
                             severity='CRITICAL',
                             reason=alert_reason or 'Interface DOWN',
-                            details={'interface': interface, 'dismissable': True}
-                        )
-                        
-                        interface_details[interface] = {
-                            'status': 'CRITICAL',
-                            'reason': alert_reason or 'Interface DOWN',
-                            'dismissable': True
-                        }
+    details={'interface': interface, 'dismissable': False}
+    )
+    
+    interface_details[interface] = {
+    'status': 'CRITICAL',
+    'reason': alert_reason or 'Interface DOWN',
+    'dismissable': False
+    }
                 else:
                     active_interfaces.add(interface)
                     if interface.startswith('vmbr') or interface.startswith(('eth', 'ens', 'enp', 'eno')):
@@ -1488,7 +1488,10 @@ class HealthMonitor:
                 }
             
             if not issues:
-                checks['all_vms_cts'] = {'status': 'OK', 'detail': 'No issues detected in logs'}
+                checks['qmp_communication'] = {'status': 'OK', 'detail': 'No QMP timeouts detected'}
+                checks['container_startup'] = {'status': 'OK', 'detail': 'No container startup errors'}
+                checks['vm_startup'] = {'status': 'OK', 'detail': 'No VM startup failures'}
+                checks['oom_killer'] = {'status': 'OK', 'detail': 'No OOM events detected'}
                 return {'status': 'OK', 'checks': checks}
             
             has_critical = any(d.get('status') == 'CRITICAL' for d in vm_details.values())
@@ -1830,29 +1833,74 @@ class HealthMonitor:
                     status = 'OK'
                     reason = None
                 
-                # Build checks dict for log sub-items
+                # Record/clear persistent errors for each log sub-check so Dismiss works
+                log_sub_checks = {
+                    'log_error_cascade': {'active': cascade_count > 0, 'severity': 'WARNING',
+                        'reason': f'{cascade_count} pattern(s) repeating >=15 times'},
+                    'log_error_spike': {'active': spike_count > 0, 'severity': 'WARNING',
+                        'reason': f'{spike_count} pattern(s) with 4x increase'},
+                    'log_persistent_errors': {'active': persistent_count > 0, 'severity': 'WARNING',
+                        'reason': f'{persistent_count} recurring pattern(s) over 15+ min'},
+                    'log_critical_errors': {'active': unique_critical_count > 0, 'severity': 'CRITICAL',
+                        'reason': f'{unique_critical_count} critical error(s) found', 'dismissable': False},
+                }
+                
+                # Track which sub-checks were dismissed
+                dismissed_keys = set()
+                for err_key, info in log_sub_checks.items():
+                    if info['active']:
+                        is_dismissable = info.get('dismissable', True)
+                        result = health_persistence.record_error(
+                            error_key=err_key,
+                            category='logs',
+                            severity=info['severity'],
+                            reason=info['reason'],
+                            details={'dismissable': is_dismissable}
+                        )
+                        if result and result.get('type') == 'skipped_acknowledged':
+                            dismissed_keys.add(err_key)
+                    elif health_persistence.is_error_active(err_key):
+                        health_persistence.clear_error(err_key)
+                
+                # Build checks dict - downgrade dismissed items to INFO
+                def _log_check_status(key, active, severity):
+                    if not active:
+                        return 'OK'
+                    if key in dismissed_keys:
+                        return 'INFO'
+                    return severity
+                
                 log_checks = {
-                    'error_cascade': {
-                        'status': 'WARNING' if cascade_count > 0 else 'OK',
+                    'log_error_cascade': {
+                        'status': _log_check_status('log_error_cascade', cascade_count > 0, 'WARNING'),
                         'detail': f'{cascade_count} pattern(s) repeating >=15 times' if cascade_count > 0 else 'No cascading errors',
-                        'dismissable': True
+                        'dismissable': True,
+                        'dismissed': 'log_error_cascade' in dismissed_keys
                     },
-                    'error_spike': {
-                        'status': 'WARNING' if spike_count > 0 else 'OK',
+                    'log_error_spike': {
+                        'status': _log_check_status('log_error_spike', spike_count > 0, 'WARNING'),
                         'detail': f'{spike_count} pattern(s) with 4x increase' if spike_count > 0 else 'No error spikes',
-                        'dismissable': True
+                        'dismissable': True,
+                        'dismissed': 'log_error_spike' in dismissed_keys
                     },
-                    'persistent_errors': {
-                        'status': 'WARNING' if persistent_count > 0 else 'OK',
+                    'log_persistent_errors': {
+                        'status': _log_check_status('log_persistent_errors', persistent_count > 0, 'WARNING'),
                         'detail': f'{persistent_count} recurring pattern(s) over 15+ min' if persistent_count > 0 else 'No persistent patterns',
-                        'dismissable': True
+                        'dismissable': True,
+                        'dismissed': 'log_persistent_errors' in dismissed_keys
                     },
-                    'critical_errors': {
-                        'status': 'CRITICAL' if unique_critical_count > 0 else 'OK',
+                    'log_critical_errors': {
+                        'status': _log_check_status('log_critical_errors', unique_critical_count > 0, 'CRITICAL'),
                         'detail': f'{unique_critical_count} critical error(s) found' if unique_critical_count > 0 else 'No critical errors',
-                        'dismissable': True
+                        'dismissable': False
                     }
                 }
+                
+                # Recalculate overall status considering dismissed items
+                active_issues = [k for k, v in log_checks.items() if v['status'] in ('WARNING', 'CRITICAL')]
+                if not active_issues:
+                    status = 'OK'
+                    reason = None
                 
                 log_result = {'status': status, 'checks': log_checks}
                 if reason:
@@ -1864,10 +1912,10 @@ class HealthMonitor:
             
             # If journalctl command failed or returned no data
             ok_result = {'status': 'OK', 'checks': {
-                'error_cascade': {'status': 'OK', 'detail': 'No cascading errors'},
-                'error_spike': {'status': 'OK', 'detail': 'No error spikes'},
-                'persistent_errors': {'status': 'OK', 'detail': 'No persistent patterns'},
-                'critical_errors': {'status': 'OK', 'detail': 'No critical errors'}
+                'log_error_cascade': {'status': 'OK', 'detail': 'No cascading errors'},
+                'log_error_spike': {'status': 'OK', 'detail': 'No error spikes'},
+                'log_persistent_errors': {'status': 'OK', 'detail': 'No persistent patterns'},
+                'log_critical_errors': {'status': 'OK', 'detail': 'No critical errors'}
             }}
             self.cached_results[cache_key] = ok_result
             self.last_check_times[cache_key] = current_time
@@ -2014,11 +2062,12 @@ class HealthMonitor:
                 'security_updates': {
                     'status': sec_status,
                     'detail': f'{len(security_updates_packages)} security update(s) pending' if security_updates_packages else 'No security updates pending',
+                    'dismissable': True if sec_status != 'OK' else False
                 },
                 'system_age': {
                     'status': update_age_status,
                     'detail': f'Last updated {last_update_days} day(s) ago' if last_update_days is not None else 'Unknown',
-                    'thresholds': 'Warning >365 days, Critical >548 days'
+                    'dismissable': False if update_age_status == 'CRITICAL' else True if update_age_status == 'WARNING' else False
                 },
                 'pending_updates': {
                     'status': 'INFO' if update_count > 50 else 'OK',
@@ -2208,7 +2257,7 @@ class HealthMonitor:
                     if updates_data and updates_data.get('days_since_update', 9999) > 365:
                         msg = f'Uptime {int(uptime_days)} days (>1 year, consider updating kernel/system)'
                         issues.append(msg)
-                        checks['uptime'] = {'status': 'WARNING', 'detail': msg, 'days': int(uptime_days)}
+                        checks['uptime'] = {'status': 'WARNING', 'detail': msg, 'days': int(uptime_days), 'dismissable': True}
                     else:
                         checks['uptime'] = {'status': 'OK', 'detail': f'Uptime {int(uptime_days)} days, system recently updated'}
                 else:
@@ -2223,7 +2272,8 @@ class HealthMonitor:
                 cert_reason = cert_status.get('reason', '')
                 checks['certificates'] = {
                     'status': cert_sev,
-                    'detail': cert_reason if cert_reason else 'Certificate valid'
+                    'detail': cert_reason if cert_reason else 'Certificate valid',
+                    'dismissable': True if cert_sev not in ['OK', 'INFO'] else False
                 }
                 if cert_sev not in ['OK', 'INFO']:
                     issues.append(cert_reason or 'Certificate issue')
@@ -2247,7 +2297,7 @@ class HealthMonitor:
                     if failed_logins > 50:
                         msg = f'{failed_logins} failed login attempts in 24h'
                         issues.append(msg)
-                        checks['login_attempts'] = {'status': 'WARNING', 'detail': msg, 'count': failed_logins}
+                        checks['login_attempts'] = {'status': 'WARNING', 'detail': msg, 'count': failed_logins, 'dismissable': True}
                     elif failed_logins > 0:
                         checks['login_attempts'] = {'status': 'OK', 'detail': f'{failed_logins} failed attempts in 24h (within threshold)', 'count': failed_logins}
                     else:
@@ -2258,8 +2308,10 @@ class HealthMonitor:
             # Sub-check 4: Fail2Ban ban detection
             try:
                 f2b = self._check_fail2ban_bans()
+                f2b_status = f2b.get('status', 'OK')
                 checks['fail2ban'] = {
-                    'status': f2b.get('status', 'OK'),
+                    'status': f2b_status,
+                    'dismissable': True if f2b_status not in ['OK'] else False,
                     'detail': f2b.get('detail', ''),
                     'installed': f2b.get('installed', False),
                     'banned_count': f2b.get('banned_count', 0)
@@ -2511,10 +2563,22 @@ class HealthMonitor:
                 # All storages are available. We should also clear any previously recorded storage errors.
                 active_errors = health_persistence.get_active_errors()
                 for error in active_errors:
-                    # Target errors related to storage unavailability
                     if error.get('category') == 'storage' and error.get('error_key', '').startswith('storage_unavailable_'):
                         health_persistence.clear_error(error['error_key'])
-                return {'status': 'OK'}
+                
+                # Build checks from all configured storages for descriptive display
+                available_storages = storage_status.get('available', [])
+                checks = {}
+                for st in available_storages:
+                    st_name = st.get('name', 'unknown')
+                    st_type = st.get('type', 'unknown')
+                    checks[st_name] = {
+                        'status': 'OK',
+                        'detail': f'{st_type} storage available'
+                    }
+                if not checks:
+                    checks['proxmox_storages'] = {'status': 'OK', 'detail': 'All storages available'}
+                return {'status': 'OK', 'checks': checks}
             
             storage_details = {}
             for storage in unavailable_storages:
@@ -2552,10 +2616,29 @@ class HealthMonitor:
                     'dismissable': False
                 }
             
+            # Build checks from storage_details
+            checks = {}
+            for st_name, st_info in storage_details.items():
+                checks[st_name] = {
+                    'status': 'CRITICAL',
+                    'detail': st_info.get('reason', 'Unavailable'),
+                    'dismissable': False
+                }
+            # Also add available storages
+            available_list = storage_status.get('available', [])
+            unavail_names = {s['name'] for s in unavailable_storages}
+            for st in available_list:
+                if st.get('name') not in unavail_names and st.get('name') not in checks:
+                    checks[st['name']] = {
+                        'status': 'OK',
+                        'detail': f'{st.get("type", "unknown")} storage available'
+                    }
+            
             return {
                 'status': 'CRITICAL',
                 'reason': f'{len(unavailable_storages)} Proxmox storage(s) unavailable',
-                'details': storage_details
+                'details': storage_details,
+                'checks': checks
             }
         
         except Exception as e:

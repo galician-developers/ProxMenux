@@ -300,27 +300,45 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
 
   const formatCheckLabel = (key: string): string => {
     const labels: Record<string, string> = {
+      // CPU
       cpu_usage: "CPU Usage",
       cpu_temperature: "Temperature",
+      // Memory
       ram_usage: "RAM Usage",
       swap_usage: "Swap Usage",
+      // Disk I/O
       root_filesystem: "Root Filesystem",
+      smart_health: "SMART Health",
+      io_errors: "I/O Errors",
+      zfs_pools: "ZFS Pools",
+      lvm_volumes: "LVM Volumes",
       lvm_check: "LVM Status",
+      // Network
       connectivity: "Connectivity",
-      all_vms_cts: "VMs & Containers",
+      // VMs & CTs
+      qmp_communication: "QMP Communication",
+      container_startup: "Container Startup",
+      vm_startup: "VM Startup",
+      oom_killer: "OOM Killer",
+      // Services
       cluster_mode: "Cluster Mode",
-      error_cascade: "Error Cascade",
-      error_spike: "Error Spike",
-      persistent_errors: "Persistent Errors",
-      critical_errors: "Critical Errors",
+      // Logs (prefixed with log_)
+      log_error_cascade: "Error Cascade",
+      log_error_spike: "Error Spike",
+      log_persistent_errors: "Persistent Errors",
+      log_critical_errors: "Critical Errors",
+      // Updates
       security_updates: "Security Updates",
       system_age: "System Age",
       pending_updates: "Pending Updates",
       kernel_pve: "Kernel / PVE",
+      // Security
       uptime: "Uptime",
       certificates: "Certificates",
       login_attempts: "Login Attempts",
       fail2ban: "Fail2Ban",
+      // Storage (Proxmox)
+      proxmox_storages: "Proxmox Storages",
     }
     if (labels[key]) return labels[key]
     // Convert snake_case or camelCase to Title Case
@@ -331,7 +349,7 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
   }
 
   const renderChecks = (
-    checks: Record<string, { status: string; detail: string; dismissable?: boolean; thresholds?: string; [key: string]: any }>,
+    checks: Record<string, { status: string; detail: string; dismissable?: boolean; [key: string]: any }>,
     categoryKey: string
   ) => {
     if (!checks || Object.keys(checks).length === 0) return null
@@ -347,18 +365,18 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
               key={checkKey}
               className="flex items-center justify-between gap-2 text-xs py-1.5 px-3 rounded-md hover:bg-muted/40 transition-colors"
             >
-              <div className="flex items-center gap-2 min-w-0 flex-1">
+              <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                 {getStatusIcon(checkData.status, "sm")}
                 <span className="font-medium shrink-0">{formatCheckLabel(checkKey)}</span>
-                <span className="text-muted-foreground truncate">{checkData.detail}</span>
+                <span className="text-muted-foreground truncate block">{checkData.detail}</span>
+                {checkData.dismissed && (
+                  <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 shrink-0 text-blue-400 border-blue-400/30">
+                    Dismissed
+                  </Badge>
+                )}
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
-                {checkData.thresholds && (
-                  <span className="text-[10px] text-muted-foreground/60 hidden sm:inline">
-                    ({checkData.thresholds})
-                  </span>
-                )}
-                {(checkStatus === "WARNING" || checkStatus === "CRITICAL") && isDismissable && (
+                {(checkStatus === "WARNING" || checkStatus === "CRITICAL") && isDismissable && !checkData.dismissed && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -391,7 +409,7 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
           <div className="flex items-center justify-between gap-3">
             <DialogTitle className="flex items-center gap-2 flex-1">
@@ -453,8 +471,8 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
             </div>
 
             {healthData.summary && healthData.summary !== "All systems operational" && (
-              <div className="text-sm p-3 rounded-lg bg-muted/20 border">
-                <span className="font-medium text-foreground">{healthData.summary}</span>
+              <div className="text-sm p-3 rounded-lg bg-muted/20 border overflow-hidden">
+                <p className="font-medium text-foreground truncate">{healthData.summary}</p>
               </div>
             )}
 
@@ -475,18 +493,18 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
                   >
                     {/* Clickable header row */}
                     <div
-                      className="flex items-center gap-3 p-3 cursor-pointer select-none"
+                      className="flex items-center gap-3 p-3 cursor-pointer select-none overflow-hidden"
                       onClick={() => toggleCategory(key)}
                     >
-                      <div className="flex-shrink-0 flex items-center gap-2">
+                      <div className="shrink-0 flex items-center gap-2">
                         <Icon className="h-4 w-4 text-blue-500" />
                         {getStatusIcon(status)}
                       </div>
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-0 overflow-hidden">
                         <div className="flex items-center gap-2">
-                          <p className="font-medium text-sm">{label}</p>
+                          <p className="font-medium text-sm truncate">{label}</p>
                           {hasChecks && (
-                            <span className="text-[10px] text-muted-foreground">
+                            <span className="text-[10px] text-muted-foreground shrink-0">
                               ({Object.keys(checks).length} checks)
                             </span>
                           )}
@@ -509,9 +527,9 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
 
                     {/* Expandable checks section */}
                     {isExpanded && (
-                      <div className="border-t border-border/50 bg-muted/5 px-2 py-1.5">
+                      <div className="border-t border-border/50 bg-muted/5 px-2 py-1.5 overflow-hidden">
                         {reason && (
-                          <p className="text-xs text-muted-foreground px-3 py-1.5 mb-1">{reason}</p>
+                          <p className="text-xs text-muted-foreground px-3 py-1.5 mb-1 break-words">{reason}</p>
                         )}
                         {hasChecks ? (
                           renderChecks(checks, key)
@@ -546,7 +564,7 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2 mb-1">
-                        <p className="font-medium text-sm text-muted-foreground">{item.reason}</p>
+                        <p className="font-medium text-sm text-muted-foreground truncate">{item.reason}</p>
                         <div className="flex items-center gap-1.5 shrink-0">
                           <Badge variant="outline" className="text-xs border-blue-500/50 text-blue-500/70 bg-transparent">
                             Dismissed
