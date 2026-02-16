@@ -126,7 +126,7 @@ export function SystemLogs() {
       setError(null)
       try {
         const [logsRes, backupsRes, eventsRes, notificationsRes] = await Promise.all([
-          fetchSystemLogs(),
+          fetchSystemLogs(dateFilter, customDays),
           fetchApi("/api/backups"),
           fetchApi("/api/events?limit=50"),
           fetchApi("/api/notifications"),
@@ -156,11 +156,10 @@ export function SystemLogs() {
     setRefreshCounter((prev) => prev + 1)
   }
 
-  const fetchSystemLogs = async (): Promise<SystemLog[]> => {
+  const fetchSystemLogs = async (filterDays: string, filterCustom: string): Promise<SystemLog[]> => {
     try {
-      const daysAgo = dateFilter === "custom" ? Number.parseInt(customDays) : Number.parseInt(dateFilter)
+      const daysAgo = filterDays === "custom" ? Number.parseInt(filterCustom) : Number.parseInt(filterDays)
       const clampedDays = Math.max(1, Math.min(daysAgo || 1, 90))
-      // Only send since_days - no limit param, so the backend returns ALL logs for the period
       const apiUrl = `/api/logs?since_days=${clampedDays}`
 
       console.log(`[v0] Fetching logs for ${clampedDays} days...`)
