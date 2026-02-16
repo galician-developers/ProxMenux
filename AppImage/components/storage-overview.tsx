@@ -476,8 +476,13 @@ export function StorageOverview() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">Loading storage information...</div>
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <div className="relative">
+          <div className="h-12 w-12 rounded-full border-2 border-muted"></div>
+          <div className="absolute inset-0 h-12 w-12 rounded-full border-2 border-transparent border-t-primary animate-spin"></div>
+        </div>
+        <div className="text-sm font-medium text-foreground">Loading storage data...</div>
+        <p className="text-xs text-muted-foreground">Scanning disks, partitions and storage pools</p>
       </div>
     )
   }

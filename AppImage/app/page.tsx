@@ -31,8 +31,6 @@ export default function Home() {
       })
       const data = await response.json()
 
-      console.log("[v0] Auth status:", data)
-
       const authenticated = data.auth_enabled ? data.authenticated : true
 
       setAuthStatus({
@@ -63,9 +61,13 @@ export default function Home() {
   if (authStatus.loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="text-muted-foreground">Loading...</p>
+        <div className="flex flex-col items-center gap-4">
+          <div className="relative">
+            <div className="h-12 w-12 rounded-full border-2 border-muted"></div>
+            <div className="absolute inset-0 h-12 w-12 rounded-full border-2 border-transparent border-t-primary animate-spin"></div>
+          </div>
+          <div className="text-sm font-medium text-foreground">Loading...</div>
+          <p className="text-xs text-muted-foreground">Connecting to ProxMenux Monitor</p>
         </div>
       </div>
     )

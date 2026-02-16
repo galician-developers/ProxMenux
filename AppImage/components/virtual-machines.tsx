@@ -651,8 +651,13 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
-        <div className="text-center py-8 text-muted-foreground">Loading virtual machines...</div>
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <div className="relative">
+          <div className="h-12 w-12 rounded-full border-2 border-muted"></div>
+          <div className="absolute inset-0 h-12 w-12 rounded-full border-2 border-transparent border-t-primary animate-spin"></div>
+        </div>
+        <div className="text-sm font-medium text-foreground">Loading virtual machines...</div>
+        <p className="text-xs text-muted-foreground">Fetching VM and LXC container status</p>
       </div>
     )
   }
