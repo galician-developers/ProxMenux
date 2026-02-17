@@ -221,6 +221,36 @@ class HealthPersistence:
             event_info['type'] = 'new'
             event_info['needs_notification'] = True
         
+        # ─── Auto-suppress: if the category has a non-default setting, ───
+        # auto-dismiss immediately so the user never sees it as active.
+        # Exception: CRITICAL CPU temperature is never auto-suppressed.
+        if not (error_key == 'cpu_temperature' and severity == 'CRITICAL'):
+            setting_key = self.CATEGORY_SETTING_MAP.get(category, '')
+            if setting_key:
+                stored = self.get_setting(setting_key)
+                if stored is not None:
+                    configured_hours = int(stored)
+                    if configured_hours != self.DEFAULT_SUPPRESSION_HOURS:
+                        # Non-default setting found: auto-acknowledge
+                        cursor.execute('''
+                            UPDATE errors 
+                            SET acknowledged = 1, resolved_at = ?, suppression_hours = ?
+                            WHERE error_key = ? AND acknowledged = 0
+                        ''', (now, configured_hours, error_key))
+                        
+                        if cursor.rowcount > 0:
+                            self._record_event(cursor, 'auto_suppressed', error_key, {
+                                'severity': severity,
+                                'reason': reason,
+                                'suppression_hours': configured_hours,
+                                'note': 'Auto-suppressed by user settings'
+                            })
+                            event_info['type'] = 'auto_suppressed'
+                            event_info['needs_notification'] = False
+                            conn.commit()
+                            conn.close()
+                            return event_info
+        
         # Record event
         self._record_event(cursor, event_info['type'], error_key, 
                           {'severity': severity, 'reason': reason})
@@ -844,6 +874,14 @@ class HealthPersistence:
             })
         
         return result
+    
+    def get_custom_suppressions(self) -> List[Dict[str, Any]]:
+        """
+        Get only categories with non-default suppression settings.
+        Used by the health modal to show a summary of custom suppressions.
+        """
+        all_cats = self.get_suppression_categories()
+        return [c for c in all_cats if c['hours'] != self.DEFAULT_SUPPRESSION_HOURS]
 
 
 # Global instance

@@ -27,6 +27,7 @@ import {
   Clock,
   BellOff,
   ChevronRight,
+  Settings2,
 } from "lucide-react"
 
 interface CategoryCheck {
@@ -50,6 +51,14 @@ interface CategoryCheck {
   resolved_at: string
   }
 
+  interface CustomSuppression {
+  key: string
+  label: string
+  category: string
+  icon: string
+  hours: number
+  }
+
 interface HealthDetails {
   overall: string
   summary: string
@@ -68,12 +77,13 @@ interface HealthDetails {
   timestamp: string
 }
 
-interface FullHealthData {
+ interface FullHealthData {
   health: HealthDetails
   active_errors: any[]
   dismissed: DismissedError[]
+  custom_suppressions: CustomSuppression[]
   timestamp: string
-}
+  }
 
 interface HealthStatusModalProps {
   open: boolean
@@ -82,22 +92,23 @@ interface HealthStatusModalProps {
 }
 
 const CATEGORIES = [
-  { key: "cpu", label: "CPU Usage & Temperature", Icon: Cpu },
-  { key: "memory", label: "Memory & Swap", Icon: MemoryStick },
-  { key: "storage", label: "Storage Mounts & Space", Icon: HardDrive },
-  { key: "disks", label: "Disk I/O & Errors", Icon: Disc },
-  { key: "network", label: "Network Interfaces", Icon: Network },
-  { key: "vms", label: "VMs & Containers", Icon: Box },
-  { key: "services", label: "PVE Services", Icon: Settings },
-  { key: "logs", label: "System Logs", Icon: FileText },
-  { key: "updates", label: "System Updates", Icon: RefreshCw },
-  { key: "security", label: "Security & Certificates", Icon: Shield },
+  { key: "cpu", category: "temperature", label: "CPU Usage & Temperature", Icon: Cpu },
+  { key: "memory", category: "memory", label: "Memory & Swap", Icon: MemoryStick },
+  { key: "storage", category: "storage", label: "Storage Mounts & Space", Icon: HardDrive },
+  { key: "disks", category: "disks", label: "Disk I/O & Errors", Icon: Disc },
+  { key: "network", category: "network", label: "Network Interfaces", Icon: Network },
+  { key: "vms", category: "vms", label: "VMs & Containers", Icon: Box },
+  { key: "services", category: "pve_services", label: "PVE Services", Icon: Settings },
+  { key: "logs", category: "logs", label: "System Logs", Icon: FileText },
+  { key: "updates", category: "updates", label: "System Updates", Icon: RefreshCw },
+  { key: "security", category: "security", label: "Security & Certificates", Icon: Shield },
 ]
 
 export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatusModalProps) {
   const [loading, setLoading] = useState(true)
   const [healthData, setHealthData] = useState<HealthDetails | null>(null)
   const [dismissedItems, setDismissedItems] = useState<DismissedError[]>([])
+  const [customSuppressions, setCustomSuppressions] = useState<CustomSuppression[]>([])
   const [error, setError] = useState<string | null>(null)
   const [dismissingKey, setDismissingKey] = useState<string | null>(null)
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
@@ -118,11 +129,13 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
         const data = await legacyResponse.json()
         setHealthData(data)
         setDismissedItems([])
+        setCustomSuppressions([])
         newOverallStatus = data?.overall || "OK"
       } else {
         const fullData: FullHealthData = await response.json()
         setHealthData(fullData.health)
         setDismissedItems(fullData.dismissed || [])
+        setCustomSuppressions(fullData.custom_suppressions || [])
         newOverallStatus = fullData.health?.overall || "OK"
       }
 
@@ -614,6 +627,50 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
                     </div>
                   )
                 })}
+              </div>
+            )}
+
+            {/* Custom Suppression Settings Summary */}
+            {customSuppressions.length > 0 && (
+              <div className="space-y-2 pt-2">
+                <div className="flex items-center gap-2 text-xs sm:text-sm font-medium text-muted-foreground">
+                  <Settings2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  Custom Suppression Settings
+                </div>
+                <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-2.5 sm:p-3">
+                  <div className="space-y-1.5">
+                    {customSuppressions.map((cs) => {
+                      const catMeta = CATEGORIES.find(c => c.category === cs.category || c.key === cs.category || c.label === cs.label)
+                      const CatIcon = catMeta?.Icon || Settings2
+                      const durationLabel = cs.hours === -1
+                        ? "Permanent"
+                        : cs.hours >= 8760
+                          ? `${Math.floor(cs.hours / 8760)} year(s)`
+                          : cs.hours >= 720
+                            ? `${Math.floor(cs.hours / 720)} month(s)`
+                            : cs.hours >= 168
+                              ? `${Math.floor(cs.hours / 168)} week(s)`
+                              : cs.hours >= 72
+                                ? `${Math.floor(cs.hours / 24)} days`
+                                : `${cs.hours}h`
+                      
+                      return (
+                        <div key={cs.key} className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <CatIcon className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-blue-400/70 shrink-0" />
+                            <span className="text-[11px] sm:text-xs text-blue-400/80 truncate">{cs.label}</span>
+                          </div>
+                          <Badge variant="outline" className="text-[9px] sm:text-[10px] border-blue-500/30 text-blue-400/80 bg-transparent shrink-0">
+                            {durationLabel}
+                          </Badge>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground/60 mt-2 pt-1.5 border-t border-blue-500/10">
+                    Alerts in these categories are auto-suppressed when detected.
+                  </p>
+                </div>
               </div>
             )}
 

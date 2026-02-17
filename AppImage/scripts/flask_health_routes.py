@@ -155,11 +155,13 @@ def get_full_health():
         details = health_monitor.get_detailed_status()
         active_errors = health_persistence.get_active_errors()
         dismissed = health_persistence.get_dismissed_errors()
+        custom_suppressions = health_persistence.get_custom_suppressions()
         
         return jsonify({
             'health': details,
             'active_errors': active_errors,
             'dismissed': dismissed,
+            'custom_suppressions': custom_suppressions,
             'timestamp': details.get('timestamp')
         })
     except Exception as e:
