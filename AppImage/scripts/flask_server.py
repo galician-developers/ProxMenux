@@ -590,7 +590,10 @@ def _health_collector_loop():
                 'status': overall,
                 'summary': summary
             }
+            # Cache the full detailed result so the modal can return it instantly
+            health_monitor.cached_results['_bg_detailed'] = result
             health_monitor.last_check_times['_bg_overall'] = time.time()
+            health_monitor.last_check_times['_bg_detailed'] = time.time()
         except Exception as e:
             print(f"[ProxMenux] Health collector error: {e}")
         

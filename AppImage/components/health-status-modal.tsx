@@ -151,9 +151,21 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
     }
   }, [getApiUrl])
 
+  // Tick counter to force re-render every 30s so "X minutes ago" stays current
+  const [, setTick] = useState(0)
+  
+  useEffect(() => {
+    if (!open) return
+    const tickInterval = setInterval(() => setTick(t => t + 1), 30000)
+    return () => clearInterval(tickInterval)
+  }, [open])
+
   useEffect(() => {
     if (open) {
       fetchHealthDetails()
+      // Auto-refresh every 5 minutes while modal is open
+      const refreshInterval = setInterval(fetchHealthDetails, 300000)
+      return () => clearInterval(refreshInterval)
     }
   }, [open])
 

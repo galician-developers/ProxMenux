@@ -149,10 +149,23 @@ def get_dismissed_errors():
 def get_full_health():
     """
     Get complete health data in a single request: detailed status + active errors + dismissed.
-    Reduces frontend round-trips.
+    Uses background-cached results if fresh (< 6 min) for instant response,
+    otherwise runs a fresh check.
     """
+    import time as _time
     try:
-        details = health_monitor.get_detailed_status()
+        # Try to use the background-cached detailed result for instant response
+        bg_key = '_bg_detailed'
+        bg_last = health_monitor.last_check_times.get(bg_key, 0)
+        bg_age = _time.time() - bg_last
+        
+        if bg_age < 360 and bg_key in health_monitor.cached_results:
+            # Use cached result (at most ~5 min old)
+            details = health_monitor.cached_results[bg_key]
+        else:
+            # No fresh cache, run live (first load or cache expired)
+            details = health_monitor.get_detailed_status()
+        
         active_errors = health_persistence.get_active_errors()
         dismissed = health_persistence.get_dismissed_errors()
         custom_suppressions = health_persistence.get_custom_suppressions()
