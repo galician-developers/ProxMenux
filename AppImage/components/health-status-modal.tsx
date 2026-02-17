@@ -28,6 +28,7 @@ import {
   BellOff,
   ChevronRight,
   Settings2,
+  HelpCircle,
 } from "lucide-react"
 
 interface CategoryCheck {
@@ -207,6 +208,8 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
         return <AlertTriangle className={`${cls} text-yellow-500`} />
       case "CRITICAL":
         return <XCircle className={`${cls} text-red-500`} />
+      case "UNKNOWN":
+        return <HelpCircle className={`${cls} text-amber-400`} />
       default:
         return <Activity className={`${cls} text-muted-foreground`} />
     }
@@ -223,6 +226,8 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
         return <Badge className="bg-yellow-500 text-white hover:bg-yellow-500">Warning</Badge>
       case "CRITICAL":
         return <Badge className="bg-red-500 text-white hover:bg-red-500">Critical</Badge>
+      case "UNKNOWN":
+        return <Badge className="bg-amber-500 text-white hover:bg-amber-500">UNKNOWN</Badge>
       default:
         return <Badge>Unknown</Badge>
     }
@@ -230,13 +235,14 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
 
   const getHealthStats = () => {
     if (!healthData?.details) {
-      return { total: 0, healthy: 0, info: 0, warnings: 0, critical: 0 }
+      return { total: 0, healthy: 0, info: 0, warnings: 0, critical: 0, unknown: 0 }
     }
 
     let healthy = 0
     let info = 0
     let warnings = 0
     let critical = 0
+    let unknown = 0
 
     CATEGORIES.forEach(({ key }) => {
       const categoryData = healthData.details[key as keyof typeof healthData.details]
@@ -246,10 +252,11 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
         else if (status === "INFO") info++
         else if (status === "WARNING") warnings++
         else if (status === "CRITICAL") critical++
+        else if (status === "UNKNOWN") unknown++
       }
     })
 
-    return { total: CATEGORIES.length, healthy, info, warnings, critical }
+    return { total: CATEGORIES.length, healthy, info, warnings, critical, unknown }
   }
 
   const stats = getHealthStats()
@@ -317,16 +324,18 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
     const s = status?.toUpperCase()
     if (s === "CRITICAL") return "bg-red-500/5 border-red-500/20 hover:bg-red-500/10 cursor-pointer"
     if (s === "WARNING") return "bg-yellow-500/5 border-yellow-500/20 hover:bg-yellow-500/10 cursor-pointer"
+    if (s === "UNKNOWN") return "bg-amber-500/5 border-amber-500/20 hover:bg-amber-500/10 cursor-pointer"
     if (s === "INFO") return "bg-blue-500/5 border-blue-500/20 hover:bg-blue-500/10"
     return "bg-card border-border hover:bg-muted/30"
   }
-
+  
   const getOutlineBadgeStyle = (status: string) => {
     const s = status?.toUpperCase()
     if (s === "OK") return "border-green-500 text-green-500 bg-transparent"
     if (s === "INFO") return "border-blue-500 text-blue-500 bg-blue-500/5"
     if (s === "WARNING") return "border-yellow-500 text-yellow-500 bg-yellow-500/5"
     if (s === "CRITICAL") return "border-red-500 text-red-500 bg-red-500/5"
+    if (s === "UNKNOWN") return "border-amber-400 text-amber-400 bg-amber-500/5"
     return ""
   }
 
@@ -502,6 +511,12 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
                 <div className="text-lg sm:text-2xl font-bold text-red-500">{stats.critical}</div>
                 <div className="text-[10px] sm:text-xs text-muted-foreground">Critical</div>
               </div>
+              {stats.unknown > 0 && (
+              <div className="text-center">
+                <div className="text-lg sm:text-2xl font-bold text-amber-400">{stats.unknown}</div>
+                <div className="text-[10px] sm:text-xs text-muted-foreground">Unknown</div>
+              </div>
+              )}
             </div>
 
             {healthData.summary && healthData.summary !== "All systems operational" && (

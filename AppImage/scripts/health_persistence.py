@@ -17,6 +17,7 @@ Version: 1.1
 import sqlite3
 import json
 import os
+import threading
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from pathlib import Path
@@ -52,11 +53,19 @@ class HealthPersistence:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         
         self.db_path = self.data_dir / 'health_monitor.db'
+        self._db_lock = threading.Lock()
         self._init_database()
+    
+    def _get_conn(self) -> sqlite3.Connection:
+        """Get a SQLite connection with timeout and WAL mode for safe concurrency."""
+        conn = sqlite3.connect(str(self.db_path), timeout=10)
+        conn.execute('PRAGMA journal_mode=WAL')
+        conn.execute('PRAGMA busy_timeout=5000')
+        return conn
     
     def _init_database(self):
         """Initialize SQLite database with required tables"""
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._get_conn()
         cursor = conn.cursor()
         
         # Errors table
@@ -126,7 +135,11 @@ class HealthPersistence:
         Record or update an error.
         Returns event info (new_error, updated, etc.)
         """
-        conn = sqlite3.connect(str(self.db_path))
+        with self._db_lock:
+            return self._record_error_impl(error_key, category, severity, reason, details)
+    
+    def _record_error_impl(self, error_key, category, severity, reason, details):
+        conn = self._get_conn()
         cursor = conn.cursor()
         
         now = datetime.now().isoformat()
@@ -262,7 +275,11 @@ class HealthPersistence:
     
     def resolve_error(self, error_key: str, reason: str = 'auto-resolved'):
         """Mark an error as resolved"""
-        conn = sqlite3.connect(str(self.db_path))
+        with self._db_lock:
+            return self._resolve_error_impl(error_key, reason)
+    
+    def _resolve_error_impl(self, error_key, reason):
+        conn = self._get_conn()
         cursor = conn.cursor()
         
         now = datetime.now().isoformat()
@@ -284,7 +301,7 @@ class HealthPersistence:
         Check if an error is currently active (unresolved and not acknowledged).
         Used by checks to avoid re-recording errors that are already tracked.
         """
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._get_conn()
         cursor = conn.cursor()
         
         if category:
@@ -314,7 +331,7 @@ class HealthPersistence:
         we delete the record entirely so it can re-trigger as a fresh
         event if the condition returns later.
         """
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._get_conn()
         cursor = conn.cursor()
         
         now = datetime.now().isoformat()
@@ -353,7 +370,11 @@ class HealthPersistence:
         - Stores suppression_hours on the error record (snapshot at dismiss time)
         - Marks as acknowledged so it won't re-appear during the suppression period
         """
-        conn = sqlite3.connect(str(self.db_path))
+        with self._db_lock:
+            return self._acknowledge_error_impl(error_key)
+    
+    def _acknowledge_error_impl(self, error_key):
+        conn = self._get_conn()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -408,7 +429,7 @@ class HealthPersistence:
     
     def get_active_errors(self, category: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get all active (unresolved) errors, optionally filtered by category"""
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._get_conn()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -439,7 +460,11 @@ class HealthPersistence:
     
     def cleanup_old_errors(self):
         """Clean up old resolved errors and auto-resolve stale errors"""
-        conn = sqlite3.connect(str(self.db_path))
+        with self._db_lock:
+            return self._cleanup_old_errors_impl()
+    
+    def _cleanup_old_errors_impl(self):
+        conn = self._get_conn()
         cursor = conn.cursor()
         
         now = datetime.now()
@@ -519,7 +544,7 @@ class HealthPersistence:
         Get errors that were acknowledged/dismissed but still within suppression period.
         These are shown as INFO in the frontend with a 'Dismissed' badge.
         """
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._get_conn()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -584,7 +609,7 @@ class HealthPersistence:
         - 'resolved': error resolved
         - 'escalated': severity increased
         """
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._get_conn()
         cursor = conn.cursor()
         
         event_data = data or {}
@@ -608,7 +633,7 @@ class HealthPersistence:
         Get events that need notification (for future Telegram/Gotify integration).
         Groups by severity for batch notification sending.
         """
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._get_conn()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -641,7 +666,7 @@ class HealthPersistence:
         if not event_ids:
             return
         
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._get_conn()
         cursor = conn.cursor()
         
         for event_id in event_ids:
@@ -663,7 +688,7 @@ class HealthPersistence:
     
     def get_unnotified_errors(self) -> List[Dict[str, Any]]:
         """Get errors that need Telegram notification"""
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._get_conn()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -689,7 +714,7 @@ class HealthPersistence:
     
     def mark_notified(self, error_key: str):
         """Mark error as notified"""
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._get_conn()
         cursor = conn.cursor()
         
         cursor.execute('''
@@ -708,7 +733,7 @@ class HealthPersistence:
         Get a cached system capability value.
         Returns None if not yet detected.
         """
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._get_conn()
         cursor = conn.cursor()
         cursor.execute(
             'SELECT cap_value FROM system_capabilities WHERE cap_key = ?',
@@ -720,7 +745,7 @@ class HealthPersistence:
     
     def set_capability(self, cap_key: str, cap_value: str):
         """Store a system capability value (detected once, cached forever)."""
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._get_conn()
         cursor = conn.cursor()
         cursor.execute('''
             INSERT OR REPLACE INTO system_capabilities (cap_key, cap_value, detected_at)
@@ -731,7 +756,7 @@ class HealthPersistence:
     
     def get_all_capabilities(self) -> Dict[str, str]:
         """Get all cached system capabilities as a dict."""
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._get_conn()
         cursor = conn.cursor()
         cursor.execute('SELECT cap_key, cap_value FROM system_capabilities')
         rows = cursor.fetchall()
@@ -747,7 +772,7 @@ class HealthPersistence:
     
     def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
         """Get a user setting value by key."""
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._get_conn()
         cursor = conn.cursor()
         cursor.execute(
             'SELECT setting_value FROM user_settings WHERE setting_key = ?', (key,)
@@ -758,18 +783,19 @@ class HealthPersistence:
     
     def set_setting(self, key: str, value: str):
         """Store a user setting value."""
-        conn = sqlite3.connect(str(self.db_path))
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT OR REPLACE INTO user_settings (setting_key, setting_value, updated_at)
-            VALUES (?, ?, ?)
-        ''', (key, value, datetime.now().isoformat()))
-        conn.commit()
-        conn.close()
+        with self._db_lock:
+            conn = self._get_conn()
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO user_settings (setting_key, setting_value, updated_at)
+                VALUES (?, ?, ?)
+            ''', (key, value, datetime.now().isoformat()))
+            conn.commit()
+            conn.close()
     
     def get_all_settings(self, prefix: Optional[str] = None) -> Dict[str, str]:
         """Get all user settings, optionally filtered by key prefix."""
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._get_conn()
         cursor = conn.cursor()
         if prefix:
             cursor.execute(
@@ -791,7 +817,7 @@ class HealthPersistence:
         For each dismissed error, looks up its category's configured hours
         and updates the suppression_hours column to match.
         """
-        conn = sqlite3.connect(str(self.db_path))
+        conn = self._get_conn()
         cursor = conn.cursor()
         
         # Build reverse map: category -> setting_key
@@ -882,6 +908,51 @@ class HealthPersistence:
         """
         all_cats = self.get_suppression_categories()
         return [c for c in all_cats if c['hours'] != self.DEFAULT_SUPPRESSION_HOURS]
+    
+    def record_unknown_persistent(self, category: str, reason: str):
+        """
+        Record a persistent UNKNOWN event when a health check has been
+        unable to verify for >= 3 consecutive cycles (~15 min).
+        Avoids duplicates by only recording once per 30 min per category.
+        """
+        with self._db_lock:
+            self._record_unknown_persistent_impl(category, reason)
+    
+    def _record_unknown_persistent_impl(self, category, reason):
+        try:
+            event_key = f'unknown_persistent_{category}'
+            now = datetime.now().isoformat()
+            
+            conn = self._get_conn()
+            cursor = conn.cursor()
+            
+            # Check if we already recorded this within the last 30 minutes
+            # Note: events table has columns (id, event_type, error_key, timestamp, data)
+            # We use error_key for deduplication since it contains the category
+            cursor.execute('''
+                SELECT MAX(timestamp) FROM events 
+                WHERE event_type = ? AND error_key = ?
+            ''', ('unknown_persistent', event_key))
+            row = cursor.fetchone()
+            if row and row[0]:
+                try:
+                    last_recorded = datetime.fromisoformat(row[0])
+                    if (datetime.now() - last_recorded).total_seconds() < 1800:
+                        conn.close()
+                        return  # Already recorded recently
+                except (ValueError, TypeError):
+                    pass  # If timestamp is malformed, proceed with recording
+            
+            cursor.execute('''
+                INSERT INTO events (event_type, error_key, timestamp, data)
+                VALUES (?, ?, ?, ?)
+            ''', ('unknown_persistent', event_key, now, 
+                  json.dumps({'category': category, 'reason': reason})))
+            
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[HealthPersistence] Error recording UNKNOWN persistent: {e}")
 
 
 # Global instance

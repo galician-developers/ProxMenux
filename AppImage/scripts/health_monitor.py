@@ -60,7 +60,7 @@ class HealthMonitor:
     # Network Thresholds
     NETWORK_LATENCY_WARNING = 100
     NETWORK_LATENCY_CRITICAL = 300
-    NETWORK_TIMEOUT = 0.9
+    NETWORK_TIMEOUT = 2
     NETWORK_INACTIVE_DURATION = 600
     
     # Log Thresholds
@@ -142,6 +142,7 @@ class HealthMonitor:
         self.io_error_history = defaultdict(list)
         self.failed_vm_history = set()  # Track VMs that failed to start
         self.persistent_log_patterns = defaultdict(lambda: {'count': 0, 'first_seen': 0, 'last_seen': 0})
+        self._unknown_counts = {}  # Track consecutive UNKNOWN cycles per category
         
         # System capabilities - derived from Proxmox storage types at runtime (Priority 1.5)
         # SMART detection still uses filesystem check on init (lightweight)
@@ -152,6 +153,63 @@ class HealthMonitor:
             health_persistence.cleanup_old_errors()
         except Exception as e:
             print(f"[HealthMonitor] Cleanup warning: {e}")
+    
+    # ─── Lightweight sampling methods for the dedicated vital-signs thread ───
+    # These ONLY append data to state_history without triggering evaluation,
+    # persistence, or subprocess-heavy operations.
+    
+    def _sample_cpu_usage(self):
+        """Lightweight CPU sample: read usage % and append to history. ~30ms cost."""
+        try:
+            cpu_percent = psutil.cpu_percent(interval=0)
+            current_time = time.time()
+            state_key = 'cpu_usage'
+            self.state_history[state_key].append({
+                'value': cpu_percent,
+                'time': current_time
+            })
+            # Prune entries older than 6 minutes
+            self.state_history[state_key] = [
+                e for e in self.state_history[state_key]
+                if current_time - e['time'] < 360
+            ]
+        except Exception:
+            pass  # Sampling must never crash the thread
+    
+    def _sample_cpu_temperature(self):
+        """Lightweight temperature sample: read sensor and append to history. ~50ms cost."""
+        try:
+            result = subprocess.run(
+                ['sensors', '-A', '-u'],
+                capture_output=True, text=True, timeout=2
+            )
+            if result.returncode != 0:
+                return
+            
+            temps = []
+            for line in result.stdout.split('\n'):
+                if 'temp' in line.lower() and '_input' in line:
+                    try:
+                        temp = float(line.split(':')[1].strip())
+                        temps.append(temp)
+                    except Exception:
+                        continue
+            
+            if temps:
+                max_temp = max(temps)
+                current_time = time.time()
+                state_key = 'cpu_temp_history'
+                self.state_history[state_key].append({
+                    'value': max_temp,
+                    'time': current_time
+                })
+                # Prune entries older than 4 minutes
+                self.state_history[state_key] = [
+                    e for e in self.state_history[state_key]
+                    if current_time - e['time'] < 240
+                ]
+        except Exception:
+            pass  # Sampling must never crash the thread
     
     def get_system_info(self) -> Dict[str, Any]:
         """
@@ -377,14 +435,34 @@ class HealthMonitor:
         elif security_status.get('status') == 'INFO':
             info_issues.append(f"Security: {security_status.get('reason', 'Security information')}")
         
+        # --- Track UNKNOWN counts and persist if >= 3 consecutive cycles ---
+        unknown_issues = []
+        for cat_key, cat_data in details.items():
+            cat_status = cat_data.get('status', 'OK')
+            if cat_status == 'UNKNOWN':
+                count = self._unknown_counts.get(cat_key, 0) + 1
+                self._unknown_counts[cat_key] = min(count, 10)  # Cap to avoid unbounded growth
+                unknown_issues.append(f"{cat_key}: {cat_data.get('reason', 'Check unavailable')}")
+                if count == 3:  # Only persist on the exact 3rd cycle, not every cycle after
+                    try:
+                        health_persistence.record_unknown_persistent(
+                            cat_key, cat_data.get('reason', 'Check unavailable'))
+                    except Exception:
+                        pass
+            else:
+                self._unknown_counts[cat_key] = 0
+        
         # --- Determine Overall Status ---
-        # Use a fixed order of severity: CRITICAL > WARNING > INFO > OK
+        # Severity: CRITICAL > WARNING > UNKNOWN (capped at WARNING) > INFO > OK
         if critical_issues:
             overall = 'CRITICAL'
-            summary = '; '.join(critical_issues[:3]) # Limit summary to 3 issues
+            summary = '; '.join(critical_issues[:3])
         elif warning_issues:
             overall = 'WARNING'
             summary = '; '.join(warning_issues[:3])
+        elif unknown_issues:
+            overall = 'WARNING'  # UNKNOWN caps at WARNING, never escalates to CRITICAL
+            summary = '; '.join(unknown_issues[:3])
         elif info_issues:
             overall = 'OK'  # INFO statuses don't degrade overall health
             summary = '; '.join(info_issues[:3])
@@ -444,13 +522,17 @@ class HealthMonitor:
             current_time = time.time()
             
             state_key = 'cpu_usage'
+            # Add this reading as well (supplements the sampler thread)
             self.state_history[state_key].append({
                 'value': cpu_percent,
                 'time': current_time
             })
             
+            # Snapshot the list for thread-safe reading (sampler may append concurrently)
+            cpu_snapshot = list(self.state_history[state_key])
+            # Prune old entries via snapshot replacement (atomic assignment)
             self.state_history[state_key] = [
-                entry for entry in self.state_history[state_key]
+                entry for entry in cpu_snapshot
                 if current_time - entry['time'] < 360
             ]
             
@@ -517,8 +599,8 @@ class HealthMonitor:
                 }
             else:
                 checks['cpu_temperature'] = {
-                    'status': 'OK',
-                    'detail': 'Sensor not available',
+                    'status': 'INFO',
+                    'detail': 'No temperature sensor detected - install lm-sensors if hardware supports it',
                 }
             
             result['checks'] = checks
@@ -564,14 +646,16 @@ class HealthMonitor:
                     max_temp = max(temps)
                     
                     state_key = 'cpu_temp_history'
+                    # Add this reading (supplements the sampler thread)
                     self.state_history[state_key].append({
                         'value': max_temp,
                         'time': current_time
                     })
                     
-                    # Keep last 4 minutes of data (240 seconds)
+                    # Snapshot for thread-safe reading, then atomic prune
+                    temp_snapshot = list(self.state_history[state_key])
                     self.state_history[state_key] = [
-                        entry for entry in self.state_history[state_key]
+                        entry for entry in temp_snapshot
                         if current_time - entry['time'] < 240
                     ]
                     
@@ -1058,9 +1142,10 @@ class HealthMonitor:
                 'reason': f"{len(disk_issues)} disk(s) with recent errors",
                 'details': disk_issues
             }
-            
-        except Exception:
-            return {'status': 'OK'}
+        
+        except Exception as e:
+            print(f"[HealthMonitor] Disk/IO check failed: {e}")
+            return {'status': 'UNKNOWN', 'reason': f'Disk check unavailable: {str(e)}', 'checks': {}}
     
     def _check_network_optimized(self) -> Dict[str, Any]:
         """
@@ -1186,9 +1271,10 @@ class HealthMonitor:
                 'details': interface_details,
                 'checks': checks
             }
-            
-        except Exception:
-            return {'status': 'OK'}
+        
+        except Exception as e:
+            print(f"[HealthMonitor] Network check failed: {e}")
+            return {'status': 'UNKNOWN', 'reason': f'Network check unavailable: {str(e)}', 'checks': {}}
     
     def _check_network_latency(self) -> Optional[Dict[str, Any]]:
         """Check network latency to 1.1.1.1 (cached)"""
@@ -1237,15 +1323,31 @@ class HealthMonitor:
                         except:
                             pass
             
-            # If ping failed (timeout, unreachable)
+            # If ping failed (timeout, unreachable) - distinguish the reason
+            stderr_lower = (result.stderr or '').lower() if hasattr(result, 'stderr') else ''
+            if 'unreachable' in stderr_lower or 'network is unreachable' in stderr_lower:
+                fail_reason = 'Network unreachable - no route to 1.1.1.1'
+            elif result.returncode == 1:
+                fail_reason = 'Packet loss to 1.1.1.1 (100% loss)'
+            else:
+                fail_reason = f'Ping failed (exit code {result.returncode})'
+            
             packet_loss_result = {
                 'status': 'CRITICAL',
-                'reason': 'Packet loss or timeout to 1.1.1.1'
+                'reason': fail_reason
             }
             self.cached_results[cache_key] = packet_loss_result
             self.last_check_times[cache_key] = current_time
             return packet_loss_result
             
+        except subprocess.TimeoutExpired:
+            timeout_result = {
+                'status': 'WARNING',
+                'reason': f'Ping timeout (>{self.NETWORK_TIMEOUT}s) - possible high latency'
+            }
+            self.cached_results[cache_key] = timeout_result
+            self.last_check_times[cache_key] = current_time
+            return timeout_result
         except Exception:
             return {'status': 'UNKNOWN', 'reason': 'Ping command failed'}
     
@@ -1356,9 +1458,10 @@ class HealthMonitor:
                 'reason': '; '.join(issues[:3]),
                 'details': vm_details
             }
-            
-        except Exception:
-            return {'status': 'OK'}
+        
+        except Exception as e:
+            print(f"[HealthMonitor] VMs/CTs check failed: {e}")
+            return {'status': 'UNKNOWN', 'reason': f'VM/CT check unavailable: {str(e)}', 'checks': {}}
     
     # Modified to use persistence
     def _check_vms_cts_with_persistence(self) -> Dict[str, Any]:
@@ -1462,7 +1565,12 @@ class HealthMonitor:
                     
                     # Generic failed to start for VMs and CTs
                     if any(keyword in line_lower for keyword in ['failed to start', 'cannot start', 'activation failed', 'start error']):
-                        id_match = re.search(r'\b(\d{3,5})\b', line) # Increased digit count for wider match
+                        # Try contextual VMID patterns first (more precise), then fallback to generic
+                        id_match = (
+                            re.search(r'(?:VMID|vmid|VM|CT|qemu|lxc|pct|qm)[:\s=/]+(\d{3,5})\b', line) or
+                            re.search(r'\b(\d{3,5})\.conf\b', line) or
+                            re.search(r'\b(\d{3,5})\b', line)
+                        )
                         if id_match:
                             vmid_ctid = id_match.group(1)
                             # Determine if it's a VM or CT based on context, if possible
@@ -1521,8 +1629,9 @@ class HealthMonitor:
                 'checks': checks
             }
             
-        except Exception:
-            return {'status': 'OK', 'checks': {}}
+        except Exception as e:
+            print(f"[HealthMonitor] VMs/CTs persistence check failed: {e}")
+            return {'status': 'UNKNOWN', 'reason': f'VM/CT check unavailable: {str(e)}', 'checks': {}}
     
     def _check_pve_services(self) -> Dict[str, Any]:
         """
@@ -1588,7 +1697,7 @@ class HealthMonitor:
                     error_key = f'pve_service_{svc}'
                     health_persistence.record_error(
                         error_key=error_key,
-                        category='services',
+                        category='pve_services',
                         severity='CRITICAL',
                         reason=f'PVE service {svc} is {service_details.get(svc, "inactive")}',
                         details={'service': svc, 'state': service_details.get(svc, 'inactive')}
@@ -1932,9 +2041,8 @@ class HealthMonitor:
             return ok_result
             
         except Exception as e:
-            # Log the exception but return OK to avoid alert storms on check failure
-            print(f"[HealthMonitor] Error checking logs: {e}")
-            return {'status': 'OK'}
+            print(f"[HealthMonitor] Log check failed: {e}")
+            return {'status': 'UNKNOWN', 'reason': f'Log check unavailable: {str(e)}', 'checks': {}}
     
     def _normalize_log_pattern(self, line: str) -> str:
         """
@@ -1984,12 +2092,21 @@ class HealthMonitor:
                     pass # Ignore if mtime fails
             
             # Perform a dry run of apt-get upgrade to see pending packages
-            result = subprocess.run(
-                ['apt-get', 'upgrade', '--dry-run'],
-                capture_output=True,
-                text=True,
-                timeout=5 # Increased timeout for safety
-            )
+            try:
+                result = subprocess.run(
+                    ['apt-get', 'upgrade', '--dry-run'],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+            except subprocess.TimeoutExpired:
+                print("[HealthMonitor] apt-get upgrade --dry-run timed out")
+                return {
+                    'status': 'UNKNOWN',
+                    'reason': 'apt-get timed out - repository may be unreachable',
+                    'count': 0,
+                    'checks': {}
+                }
             
             status = 'OK'
             reason = None
@@ -2112,8 +2229,8 @@ class HealthMonitor:
             return update_result
             
         except Exception as e:
-            print(f"[HealthMonitor] Error checking updates: {e}")
-            return {'status': 'OK', 'count': 0, 'checks': {}}
+            print(f"[HealthMonitor] Updates check failed: {e}")
+            return {'status': 'UNKNOWN', 'reason': f'Updates check unavailable: {str(e)}', 'count': 0, 'checks': {}}
     
     def _check_fail2ban_bans(self) -> Dict[str, Any]:
         """
@@ -2356,8 +2473,8 @@ class HealthMonitor:
             }
             
         except Exception as e:
-            print(f"[HealthMonitor] Error checking security: {e}")
-            return {'status': 'OK', 'checks': {}}
+            print(f"[HealthMonitor] Security check failed: {e}")
+            return {'status': 'UNKNOWN', 'reason': f'Security check unavailable: {str(e)}', 'checks': {}}
     
     def _check_certificates(self) -> Optional[Dict[str, Any]]:
         """

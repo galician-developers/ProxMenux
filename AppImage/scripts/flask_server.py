@@ -600,6 +600,47 @@ def _health_collector_loop():
         time.sleep(300)  # Every 5 minutes
 
 
+def _vital_signs_sampler():
+    """Dedicated thread for rapid CPU & temperature sampling.
+    
+    Runs independently of the 5-min health collector loop.
+    - CPU usage:   sampled every 30s  (3 samples in 1.5 min for hysteresis)
+    - Temperature:  sampled every 10s  (18 samples in 3 min for temporal logic)
+    Uses time.monotonic() to avoid drift.
+    """
+    from health_monitor import health_monitor
+    
+    # Wait 15s after startup for sensors to be ready
+    time.sleep(15)
+    
+    TEMP_INTERVAL = 10   # seconds
+    CPU_INTERVAL  = 30   # seconds
+    
+    next_temp = time.monotonic()
+    next_cpu  = time.monotonic()
+    
+    print("[ProxMenux] Vital signs sampler started (CPU: 30s, Temp: 10s)")
+    
+    while True:
+        try:
+            now = time.monotonic()
+            
+            if now >= next_temp:
+                health_monitor._sample_cpu_temperature()
+                next_temp = now + TEMP_INTERVAL
+            
+            if now >= next_cpu:
+                health_monitor._sample_cpu_usage()
+                next_cpu = now + CPU_INTERVAL
+            
+            # Sleep until the next earliest event (with 0.5s min to avoid busy-loop)
+            sleep_until = min(next_temp, next_cpu) - time.monotonic()
+            time.sleep(max(sleep_until, 0.5))
+        except Exception as e:
+            print(f"[ProxMenux] Vital signs sampler error: {e}")
+            time.sleep(10)
+
+
 def get_uptime():
     """Get system uptime in a human-readable format."""
     try:
@@ -7045,6 +7086,13 @@ if __name__ == '__main__':
         print("[ProxMenux] Background health monitor started (5 min interval)")
     except Exception as e:
         print(f"[ProxMenux] Background health monitor failed to start: {e}")
+
+    # ── Vital Signs Sampler (rapid CPU + Temperature) ──
+    try:
+        vital_thread = threading.Thread(target=_vital_signs_sampler, daemon=True)
+        vital_thread.start()
+    except Exception as e:
+        print(f"[ProxMenux] Vital signs sampler failed to start: {e}")
 
     # Check for SSL configuration
     ssl_ctx = None
