@@ -568,14 +568,18 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
               })}
             </div>
 
-            {/* Dismissed Items Section */}
-            {dismissedItems.length > 0 && (
+            {/* Dismissed Items Section -- hide items whose category has custom suppression */}
+            {(() => {
+              const customCats = new Set(customSuppressions.map(cs => cs.category))
+              const filteredDismissed = dismissedItems.filter(item => !customCats.has(item.category))
+              if (filteredDismissed.length === 0) return null
+              return (
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-xs sm:text-sm font-medium text-muted-foreground pt-2">
                   <BellOff className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                  Dismissed Items ({dismissedItems.length})
+                  Dismissed Items ({filteredDismissed.length})
                 </div>
-                {dismissedItems.map((item) => {
+                {filteredDismissed.map((item) => {
                   const catMeta = CATEGORIES.find(c => c.category === item.category || c.key === item.category)
                   const CatIcon = catMeta?.Icon || BellOff
                   const catLabel = catMeta?.label || item.category
@@ -628,7 +632,8 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
                   )
                 })}
               </div>
-            )}
+              )
+            })()}
 
             {/* Custom Suppression Settings Summary */}
             {customSuppressions.length > 0 && (
