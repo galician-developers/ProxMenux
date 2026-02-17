@@ -28,7 +28,23 @@ class HealthPersistence:
     VM_ERROR_RETENTION = 48 * 3600  # 48 hours
     LOG_ERROR_RETENTION = 24 * 3600  # 24 hours
     DISK_ERROR_RETENTION = 48 * 3600  # 48 hours
-    UPDATES_SUPPRESSION = 180 * 24 * 3600  # 180 days (6 months)
+    
+    # Default suppression: 24 hours (user can change per-category in settings)
+    DEFAULT_SUPPRESSION_HOURS = 24
+    
+    # Mapping from error categories to settings keys
+    CATEGORY_SETTING_MAP = {
+        'temperature': 'suppress_cpu',
+        'memory': 'suppress_memory',
+        'storage': 'suppress_storage',
+        'disks': 'suppress_disks',
+        'network': 'suppress_network',
+        'vms': 'suppress_vms',
+        'pve_services': 'suppress_pve_services',
+        'logs': 'suppress_logs',
+        'updates': 'suppress_updates',
+        'security': 'suppress_security',
+    }
     
     def __init__(self):
         """Initialize persistence with database in shared ProxMenux data directory"""
@@ -80,6 +96,21 @@ class HealthPersistence:
             )
         ''')
         
+        # User settings table (per-category suppression durations, etc.)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_settings (
+                setting_key TEXT PRIMARY KEY,
+                setting_value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        ''')
+        
+        # Migration: add suppression_hours column to errors if not present
+        cursor.execute("PRAGMA table_info(errors)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'suppression_hours' not in columns:
+            cursor.execute('ALTER TABLE errors ADD COLUMN suppression_hours INTEGER DEFAULT 24')
+        
         # Indexes for performance
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_error_key ON errors(error_key)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_category ON errors(category)')
@@ -102,33 +133,8 @@ class HealthPersistence:
         details_json = json.dumps(details) if details else None
         
         cursor.execute('''
-            SELECT acknowledged, resolved_at 
-            FROM errors 
-            WHERE error_key = ? AND acknowledged = 1
-        ''', (error_key,))
-        ack_check = cursor.fetchone()
-        
-        if ack_check and ack_check[1]:  # Has resolved_at timestamp
-            try:
-                resolved_dt = datetime.fromisoformat(ack_check[1])
-                hours_since_ack = (datetime.now() - resolved_dt).total_seconds() / 3600
-                
-                if category == 'updates':
-                    # Updates: suppress for 180 days (6 months)
-                    suppression_hours = self.UPDATES_SUPPRESSION / 3600
-                else:
-                    # Other errors: suppress for 24 hours
-                    suppression_hours = 24
-                
-                if hours_since_ack < suppression_hours:
-                    # Skip re-adding recently acknowledged errors
-                    conn.close()
-                    return {'type': 'skipped_acknowledged', 'needs_notification': False}
-            except Exception:
-                pass
-        
-        cursor.execute('''
-            SELECT id, first_seen, notification_sent, acknowledged, resolved_at 
+            SELECT id, acknowledged, resolved_at, category, severity, first_seen, 
+                   notification_sent, suppression_hours
             FROM errors WHERE error_key = ?
         ''', (error_key,))
         existing = cursor.fetchone()
@@ -136,13 +142,64 @@ class HealthPersistence:
         event_info = {'type': 'updated', 'needs_notification': False}
         
         if existing:
-            error_id, first_seen, notif_sent, acknowledged, resolved_at = existing
+            err_id, ack, resolved_at, old_cat, old_severity, first_seen, notif_sent, stored_suppression = existing
             
-            if acknowledged == 1:
-                conn.close()
-                return {'type': 'skipped_acknowledged', 'needs_notification': False}
+            if ack == 1:
+                # SAFETY OVERRIDE: Critical CPU temperature ALWAYS re-triggers
+                # regardless of any dismiss/permanent setting (hardware protection)
+                if error_key == 'cpu_temperature' and severity == 'CRITICAL':
+                    cursor.execute('DELETE FROM errors WHERE error_key = ?', (error_key,))
+                    cursor.execute('''
+                        INSERT INTO errors 
+                        (error_key, category, severity, reason, details, first_seen, last_seen)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (error_key, category, severity, reason, details_json, now, now))
+                    event_info = {'type': 'new', 'needs_notification': True}
+                    self._record_event(cursor, 'new', error_key, 
+                                      {'severity': severity, 'reason': reason,
+                                       'note': 'CRITICAL temperature override - safety alert'})
+                    conn.commit()
+                    conn.close()
+                    return event_info
+                
+                # Check suppression: use per-record stored hours (set at dismiss time)
+                sup_hours = stored_suppression if stored_suppression is not None else self.DEFAULT_SUPPRESSION_HOURS
+                
+                # Permanent dismiss (sup_hours == -1): always suppress
+                if sup_hours == -1:
+                    conn.close()
+                    return {'type': 'skipped_acknowledged', 'needs_notification': False}
+                
+                # Time-limited suppression
+                still_suppressed = False
+                if resolved_at:
+                    try:
+                        resolved_dt = datetime.fromisoformat(resolved_at)
+                        elapsed_hours = (datetime.now() - resolved_dt).total_seconds() / 3600
+                        still_suppressed = elapsed_hours < sup_hours
+                    except Exception:
+                        pass
+                
+                if still_suppressed:
+                    conn.close()
+                    return {'type': 'skipped_acknowledged', 'needs_notification': False}
+                else:
+                    # Suppression expired - reset as a NEW event
+                    cursor.execute('DELETE FROM errors WHERE error_key = ?', (error_key,))
+                    cursor.execute('''
+                        INSERT INTO errors 
+                        (error_key, category, severity, reason, details, first_seen, last_seen)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (error_key, category, severity, reason, details_json, now, now))
+                    event_info = {'type': 'new', 'needs_notification': True}
+                    self._record_event(cursor, 'new', error_key, 
+                                      {'severity': severity, 'reason': reason,
+                                       'note': 'Re-triggered after suppression expired'})
+                    conn.commit()
+                    conn.close()
+                    return event_info
             
-            # Update existing error (only if NOT acknowledged)
+            # Not acknowledged - update existing active error
             cursor.execute('''
                 UPDATE errors 
                 SET last_seen = ?, severity = ?, reason = ?, details = ?
@@ -150,13 +207,9 @@ class HealthPersistence:
             ''', (now, severity, reason, details_json, error_key))
             
             # Check if severity escalated
-            cursor.execute('SELECT severity FROM errors WHERE error_key = ?', (error_key,))
-            old_severity_row = cursor.fetchone()
-            if old_severity_row:
-                old_severity = old_severity_row[0]
-                if old_severity == 'WARNING' and severity == 'CRITICAL':
-                    event_info['type'] = 'escalated'
-                    event_info['needs_notification'] = True
+            if old_severity == 'WARNING' and severity == 'CRITICAL':
+                event_info['type'] = 'escalated'
+                event_info['needs_notification'] = True
         else:
             # Insert new error
             cursor.execute('''
@@ -225,21 +278,40 @@ class HealthPersistence:
         """
         Remove/resolve a specific error immediately.
         Used when the condition that caused the error no longer exists
-        (e.g., storage became available again).
+        (e.g., storage became available again, CPU temp recovered).
+        
+        For acknowledged errors: if the condition resolved on its own,
+        we delete the record entirely so it can re-trigger as a fresh
+        event if the condition returns later.
         """
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
         
         now = datetime.now().isoformat()
         
+        # Check if this error was acknowledged (dismissed)
         cursor.execute('''
-            UPDATE errors 
-            SET resolved_at = ?
-            WHERE error_key = ? AND resolved_at IS NULL
-        ''', (now, error_key))
+            SELECT acknowledged FROM errors WHERE error_key = ?
+        ''', (error_key,))
+        row = cursor.fetchone()
         
-        if cursor.rowcount > 0:
-            self._record_event(cursor, 'cleared', error_key, {'reason': 'condition_resolved'})
+        if row and row[0] == 1:
+            # Dismissed error that naturally resolved - delete entirely
+            # so it can re-trigger as a new event if it happens again
+            cursor.execute('DELETE FROM errors WHERE error_key = ?', (error_key,))
+            if cursor.rowcount > 0:
+                self._record_event(cursor, 'cleared', error_key, 
+                                  {'reason': 'condition_resolved_after_dismiss'})
+        else:
+            # Normal active error - mark as resolved
+            cursor.execute('''
+                UPDATE errors 
+                SET resolved_at = ?
+                WHERE error_key = ? AND resolved_at IS NULL
+            ''', (now, error_key))
+            
+            if cursor.rowcount > 0:
+                self._record_event(cursor, 'cleared', error_key, {'reason': 'condition_resolved'})
         
         conn.commit()
         conn.close()
@@ -247,13 +319,9 @@ class HealthPersistence:
     def acknowledge_error(self, error_key: str) -> Dict[str, Any]:
         """
         Manually acknowledge an error (dismiss).
+        - Looks up the category's configured suppression duration from user settings
+        - Stores suppression_hours on the error record (snapshot at dismiss time)
         - Marks as acknowledged so it won't re-appear during the suppression period
-        - Stores the original severity for reference
-        - Returns info about the acknowledged error
-        
-        Suppression periods:
-        - updates category: 180 days (6 months)
-        - other categories: 24 hours
         """
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
@@ -272,15 +340,27 @@ class HealthPersistence:
             original_severity = error_dict.get('severity', 'WARNING')
             category = error_dict.get('category', '')
             
+            # Look up the user's configured suppression for this category
+            setting_key = self.CATEGORY_SETTING_MAP.get(category, '')
+            sup_hours = self.DEFAULT_SUPPRESSION_HOURS
+            if setting_key:
+                stored = self.get_setting(setting_key)
+                if stored is not None:
+                    try:
+                        sup_hours = int(stored)
+                    except (ValueError, TypeError):
+                        pass
+            
             cursor.execute('''
                 UPDATE errors 
-                SET acknowledged = 1, resolved_at = ?
+                SET acknowledged = 1, resolved_at = ?, suppression_hours = ?
                 WHERE error_key = ?
-            ''', (now, error_key))
+            ''', (now, sup_hours, error_key))
             
             self._record_event(cursor, 'acknowledged', error_key, {
                 'original_severity': original_severity,
-                'category': category
+                'category': category,
+                'suppression_hours': sup_hours
             })
             
             result = {
@@ -288,7 +368,8 @@ class HealthPersistence:
                 'error_key': error_key,
                 'original_severity': original_severity,
                 'category': category,
-                'acknowledged_at': now
+                'acknowledged_at': now,
+                'suppression_hours': sup_hours
             }
         
         conn.commit()
@@ -432,22 +513,30 @@ class HealthPersistence:
                 except (json.JSONDecodeError, TypeError):
                     pass
             
-            # Check if still within suppression period
+            # Check if still within suppression period using per-record hours
             try:
                 resolved_dt = datetime.fromisoformat(error_dict['resolved_at'])
-                elapsed_seconds = (now - resolved_dt).total_seconds()
+                sup_hours = error_dict.get('suppression_hours')
+                if sup_hours is None:
+                    sup_hours = self.DEFAULT_SUPPRESSION_HOURS
                 
-                if error_dict.get('category') == 'updates':
-                    suppression = self.UPDATES_SUPPRESSION
-                else:
-                    suppression = 24 * 3600  # 24 hours
+                error_dict['dismissed'] = True
                 
-                if elapsed_seconds < suppression:
-                    error_dict['dismissed'] = True
-                    error_dict['suppression_remaining_hours'] = round(
-                        (suppression - elapsed_seconds) / 3600, 1
-                    )
+                if sup_hours == -1:
+                    # Permanent dismiss
+                    error_dict['suppression_remaining_hours'] = -1
+                    error_dict['permanent'] = True
                     dismissed.append(error_dict)
+                else:
+                    elapsed_seconds = (now - resolved_dt).total_seconds()
+                    suppression_seconds = sup_hours * 3600
+                    
+                    if elapsed_seconds < suppression_seconds:
+                        error_dict['suppression_remaining_hours'] = round(
+                            (suppression_seconds - elapsed_seconds) / 3600, 1
+                        )
+                        error_dict['permanent'] = False
+                        dismissed.append(error_dict)
             except (ValueError, TypeError):
                 pass
         
@@ -623,6 +712,79 @@ class HealthPersistence:
     # from Proxmox storage types in health_monitor.get_detailed_status()
     # This avoids redundant subprocess calls and ensures immediate detection
     # when the user adds new ZFS/LVM storage via Proxmox.
+    
+    # ─── User Settings ──────────────────────────────────────────
+    
+    def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        """Get a user setting value by key."""
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT setting_value FROM user_settings WHERE setting_key = ?', (key,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else default
+    
+    def set_setting(self, key: str, value: str):
+        """Store a user setting value."""
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO user_settings (setting_key, setting_value, updated_at)
+            VALUES (?, ?, ?)
+        ''', (key, value, datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+    
+    def get_all_settings(self, prefix: Optional[str] = None) -> Dict[str, str]:
+        """Get all user settings, optionally filtered by key prefix."""
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        if prefix:
+            cursor.execute(
+                'SELECT setting_key, setting_value FROM user_settings WHERE setting_key LIKE ?',
+                (f'{prefix}%',)
+            )
+        else:
+            cursor.execute('SELECT setting_key, setting_value FROM user_settings')
+        rows = cursor.fetchall()
+        conn.close()
+        return {row[0]: row[1] for row in rows}
+    
+    def get_suppression_categories(self) -> List[Dict[str, Any]]:
+        """
+        Get all health categories with their current suppression settings.
+        Used by the settings page to render the per-category configuration.
+        """
+        category_labels = {
+            'suppress_cpu': {'label': 'CPU Usage & Temperature', 'category': 'temperature', 'icon': 'cpu'},
+            'suppress_memory': {'label': 'Memory & Swap', 'category': 'memory', 'icon': 'memory'},
+            'suppress_storage': {'label': 'Storage Mounts & Space', 'category': 'storage', 'icon': 'storage'},
+            'suppress_disks': {'label': 'Disk I/O & Errors', 'category': 'disks', 'icon': 'disk'},
+            'suppress_network': {'label': 'Network Interfaces', 'category': 'network', 'icon': 'network'},
+            'suppress_vms': {'label': 'VMs & Containers', 'category': 'vms', 'icon': 'vms'},
+            'suppress_pve_services': {'label': 'PVE Services', 'category': 'pve_services', 'icon': 'services'},
+            'suppress_logs': {'label': 'System Logs', 'category': 'logs', 'icon': 'logs'},
+            'suppress_updates': {'label': 'System Updates', 'category': 'updates', 'icon': 'updates'},
+            'suppress_security': {'label': 'Security & Certificates', 'category': 'security', 'icon': 'security'},
+        }
+        
+        current_settings = self.get_all_settings('suppress_')
+        
+        result = []
+        for key, meta in category_labels.items():
+            stored = current_settings.get(key)
+            hours = int(stored) if stored else self.DEFAULT_SUPPRESSION_HOURS
+            result.append({
+                'key': key,
+                'label': meta['label'],
+                'category': meta['category'],
+                'icon': meta['icon'],
+                'hours': hours,
+            })
+        
+        return result
 
 
 # Global instance

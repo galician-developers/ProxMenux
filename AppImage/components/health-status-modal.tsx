@@ -38,15 +38,17 @@ interface CategoryCheck {
   [key: string]: any
 }
 
-interface DismissedError {
+  interface DismissedError {
   error_key: string
   category: string
   severity: string
   reason: string
   dismissed: boolean
+  permanent?: boolean
   suppression_remaining_hours: number
+  suppression_hours?: number
   resolved_at: string
-}
+  }
 
 interface HealthDetails {
   overall: string
@@ -361,31 +363,33 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
 
     return (
       <div className="mt-2 space-y-0.5">
-        {Object.entries(checks).map(([checkKey, checkData]) => {
+        {Object.entries(checks)
+          .filter(([, checkData]) => checkData.installed !== false)
+          .map(([checkKey, checkData]) => {
           const isDismissable = checkData.dismissable === true
           const checkStatus = checkData.status?.toUpperCase() || "OK"
 
           return (
             <div
               key={checkKey}
-              className="flex items-center justify-between gap-2 text-xs py-1.5 px-3 rounded-md hover:bg-muted/40 transition-colors"
+              className="flex items-center justify-between gap-1.5 sm:gap-2 text-[10px] sm:text-xs py-1.5 px-2 sm:px-3 rounded-md hover:bg-muted/40 transition-colors"
             >
-              <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 overflow-hidden">
                 {getStatusIcon(checkData.status, "sm")}
                 <span className="font-medium shrink-0">{formatCheckLabel(checkKey)}</span>
                 <span className="text-muted-foreground truncate block">{checkData.detail}</span>
                 {checkData.dismissed && (
-                  <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 shrink-0 text-blue-400 border-blue-400/30">
+                  <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 shrink-0 text-blue-400 border-blue-400/30">
                     Dismissed
                   </Badge>
                 )}
               </div>
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                 {(checkStatus === "WARNING" || checkStatus === "CRITICAL") && isDismissable && !checkData.dismissed && (
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-5 px-1.5 shrink-0 hover:bg-red-500/10 hover:border-red-500/50 bg-transparent text-[10px]"
+                    className="h-5 px-1 sm:px-1.5 shrink-0 hover:bg-red-500/10 hover:border-red-500/50 bg-transparent text-[10px]"
                     disabled={dismissingKey === checkKey}
                     onClick={(e) => {
                       e.stopPropagation()
@@ -396,8 +400,8 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
                       <Loader2 className="h-3 w-3 animate-spin" />
                     ) : (
                       <>
-                        <X className="h-3 w-3 mr-0.5" />
-                        Dismiss
+                        <X className="h-3 w-3 sm:mr-0.5" />
+                        <span className="hidden sm:inline">Dismiss</span>
                       </>
                     )}
                   </Button>
@@ -414,21 +418,21 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl w-[95vw] max-h-[85vh] overflow-y-auto overflow-x-hidden">
+      <DialogContent className="max-w-3xl w-[calc(100vw-2rem)] sm:w-[95vw] max-h-[85vh] overflow-y-auto overflow-x-hidden p-4 sm:p-6">
         <DialogHeader>
           <div className="flex items-center justify-between gap-3">
-            <DialogTitle className="flex items-center gap-2 flex-1">
-              <Activity className="h-6 w-6" />
-              System Health Status
-              {healthData && <div className="ml-2">{getStatusBadge(healthData.overall)}</div>}
+            <DialogTitle className="flex items-center gap-2 flex-1 min-w-0">
+              <Activity className="h-5 w-5 sm:h-6 sm:w-6 shrink-0" />
+              <span className="truncate text-base sm:text-lg">System Health Status</span>
+              {healthData && <div className="shrink-0">{getStatusBadge(healthData.overall)}</div>}
             </DialogTitle>
           </div>
-          <DialogDescription className="flex items-center gap-2">
-            Detailed health checks for all system components
+          <DialogDescription className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs sm:text-sm">
+            <span>Detailed health checks for all system components</span>
             {getTimeSinceCheck() && (
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                 <Clock className="h-3 w-3" />
-                Last check: {getTimeSinceCheck()}
+                {getTimeSinceCheck()}
               </span>
             )}
           </DialogDescription>
@@ -450,28 +454,28 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
         {healthData && !loading && (
           <div className="space-y-4">
             {/* Overall Stats Summary */}
-            <div className={`grid gap-3 p-4 rounded-lg bg-muted/30 border ${stats.info > 0 ? "grid-cols-5" : "grid-cols-4"}`}>
+            <div className={`grid gap-2 sm:gap-3 p-3 sm:p-4 rounded-lg bg-muted/30 border ${stats.info > 0 ? "grid-cols-5" : "grid-cols-4"}`}>
               <div className="text-center">
-                <div className="text-2xl font-bold">{stats.total}</div>
-                <div className="text-xs text-muted-foreground">Total</div>
+                <div className="text-lg sm:text-2xl font-bold">{stats.total}</div>
+                <div className="text-[10px] sm:text-xs text-muted-foreground">Total</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-green-500">{stats.healthy}</div>
-                <div className="text-xs text-muted-foreground">Healthy</div>
+                <div className="text-lg sm:text-2xl font-bold text-green-500">{stats.healthy}</div>
+                <div className="text-[10px] sm:text-xs text-muted-foreground">Healthy</div>
               </div>
               {stats.info > 0 && (
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-500">{stats.info}</div>
-                  <div className="text-xs text-muted-foreground">Info</div>
+                  <div className="text-lg sm:text-2xl font-bold text-blue-500">{stats.info}</div>
+                  <div className="text-[10px] sm:text-xs text-muted-foreground">Info</div>
                 </div>
               )}
               <div className="text-center">
-                <div className="text-2xl font-bold text-yellow-500">{stats.warnings}</div>
-                <div className="text-xs text-muted-foreground">Warnings</div>
+                <div className="text-lg sm:text-2xl font-bold text-yellow-500">{stats.warnings}</div>
+                <div className="text-[10px] sm:text-xs text-muted-foreground">Warn</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-red-500">{stats.critical}</div>
-                <div className="text-xs text-muted-foreground">Critical</div>
+                <div className="text-lg sm:text-2xl font-bold text-red-500">{stats.critical}</div>
+                <div className="text-[10px] sm:text-xs text-muted-foreground">Critical</div>
               </div>
             </div>
 
@@ -498,32 +502,32 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
                   >
                     {/* Clickable header row */}
                     <div
-                      className="flex items-center gap-3 p-3 cursor-pointer select-none overflow-hidden"
+                      className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 cursor-pointer select-none overflow-hidden"
                       onClick={() => toggleCategory(key)}
                     >
-                      <div className="shrink-0 flex items-center gap-2">
-                        <Icon className="h-4 w-4 text-blue-500" />
+                      <div className="shrink-0 flex items-center gap-1.5 sm:gap-2">
+                        <Icon className="h-4 w-4 text-blue-500 hidden sm:block" />
                         {getStatusIcon(status)}
                       </div>
                       <div className="flex-1 min-w-0 overflow-hidden">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-sm truncate">{label}</p>
+                        <div className="flex items-center gap-1.5 sm:gap-2">
+                          <p className="font-medium text-xs sm:text-sm truncate">{label}</p>
                           {hasChecks && (
                             <span className="text-[10px] text-muted-foreground shrink-0">
-                              ({Object.keys(checks).length} checks)
+                              ({Object.values(checks).filter(c => c.installed !== false).length})
                             </span>
                           )}
                         </div>
                         {reason && !isExpanded && (
-                          <p className="text-xs text-muted-foreground mt-0.5 truncate" title={reason}>{reason}</p>
+                          <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 truncate" title={reason}>{reason}</p>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <Badge variant="outline" className={`text-xs ${getOutlineBadgeStyle(status)}`}>
+                      <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                        <Badge variant="outline" className={`text-[10px] sm:text-xs px-1.5 sm:px-2.5 ${getOutlineBadgeStyle(status)}`}>
                           {status}
                         </Badge>
                         <ChevronRight
-                          className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${
+                          className={`h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground transition-transform duration-200 ${
                             isExpanded ? "rotate-90" : ""
                           }`}
                         />
@@ -532,7 +536,7 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
 
                     {/* Expandable checks section */}
                     {isExpanded && (
-                      <div className="border-t border-border/50 bg-muted/5 px-2 py-1.5 overflow-hidden">
+                      <div className="border-t border-border/50 bg-muted/5 px-1.5 sm:px-2 py-1.5 overflow-hidden">
                         {reason && (
                           <p className="text-xs text-muted-foreground px-3 py-1.5 mb-1 break-words">{reason}</p>
                         )}
@@ -554,41 +558,62 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
             {/* Dismissed Items Section */}
             {dismissedItems.length > 0 && (
               <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground pt-2">
-                  <BellOff className="h-4 w-4" />
+                <div className="flex items-center gap-2 text-xs sm:text-sm font-medium text-muted-foreground pt-2">
+                  <BellOff className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                   Dismissed Items ({dismissedItems.length})
                 </div>
-                {dismissedItems.map((item) => (
-                  <div
-                    key={item.error_key}
-                    className="flex items-start gap-3 p-3 rounded-lg border bg-muted/10 border-muted opacity-75"
-                  >
-                    <div className="mt-0.5 flex-shrink-0 flex items-center gap-2">
-                      <BellOff className="h-4 w-4 text-muted-foreground" />
-                      {getStatusIcon("INFO")}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <p className="font-medium text-sm text-muted-foreground truncate">{item.reason}</p>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <Badge variant="outline" className="text-xs border-blue-500/50 text-blue-500/70 bg-transparent">
-                            Dismissed
-                          </Badge>
-                          <Badge variant="outline" className={`text-xs ${getOutlineBadgeStyle(item.severity)}`}>
-                            was {item.severity}
-                          </Badge>
-                        </div>
+                {dismissedItems.map((item) => {
+                  const catMeta = CATEGORIES.find(c => c.category === item.category || c.key === item.category)
+                  const CatIcon = catMeta?.Icon || BellOff
+                  const catLabel = catMeta?.label || item.category
+                  const isPermanent = item.permanent || item.suppression_remaining_hours === -1
+                  
+                  return (
+                    <div
+                      key={item.error_key}
+                      className="flex items-start gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg border bg-muted/10 border-muted opacity-75"
+                    >
+                      <div className="mt-0.5 shrink-0 flex items-center gap-1.5 sm:gap-2">
+                        <CatIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground" />
                       </div>
-                      <p className="text-xs text-muted-foreground flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        Suppressed for {item.suppression_remaining_hours < 24
-                          ? `${Math.round(item.suppression_remaining_hours)}h`
-                          : `${Math.round(item.suppression_remaining_hours / 24)} days`
-                        } more
-                      </p>
+                      <div className="flex-1 min-w-0 overflow-hidden">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2 mb-1">
+                          <div className="min-w-0">
+                            <p className="font-medium text-xs sm:text-sm text-muted-foreground truncate">{catLabel}</p>
+                            <p className="text-[10px] sm:text-xs text-muted-foreground/70 truncate">{item.reason}</p>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {isPermanent ? (
+                              <Badge variant="outline" className="text-[9px] sm:text-xs border-amber-500/50 text-amber-500/70 bg-transparent">
+                                Permanent
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[9px] sm:text-xs border-blue-500/50 text-blue-500/70 bg-transparent">
+                                Dismissed
+                              </Badge>
+                            )}
+                            <Badge variant="outline" className={`text-[9px] sm:text-xs ${getOutlineBadgeStyle(item.severity)}`}>
+                              was {item.severity}
+                            </Badge>
+                          </div>
+                        </div>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {isPermanent
+                            ? "Permanently suppressed"
+                            : `Suppressed for ${
+                                item.suppression_remaining_hours < 24
+                                  ? `${Math.round(item.suppression_remaining_hours)}h`
+                                  : item.suppression_remaining_hours < 720
+                                    ? `${Math.round(item.suppression_remaining_hours / 24)} days`
+                                    : `${Math.round(item.suppression_remaining_hours / 720)} month(s)`
+                              } more`
+                          }
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
 

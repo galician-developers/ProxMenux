@@ -2258,10 +2258,9 @@ class HealthMonitor:
         try:
             issues = []
             checks = {
-                'uptime': {'status': 'OK', 'detail': ''},
-                'certificates': {'status': 'OK', 'detail': ''},
-                'login_attempts': {'status': 'OK', 'detail': ''},
-                'fail2ban': {'status': 'OK', 'detail': 'Not installed'}
+            'uptime': {'status': 'OK', 'detail': ''},
+            'certificates': {'status': 'OK', 'detail': ''},
+            'login_attempts': {'status': 'OK', 'detail': ''},
             }
             
             # Sub-check 1: Uptime for potential kernel vulnerabilities
@@ -2322,21 +2321,23 @@ class HealthMonitor:
             except Exception:
                 checks['login_attempts'] = {'status': 'OK', 'detail': 'Unable to check login attempts'}
             
-            # Sub-check 4: Fail2Ban ban detection
+            # Sub-check 4: Fail2Ban ban detection (only show if installed)
             try:
                 f2b = self._check_fail2ban_bans()
-                f2b_status = f2b.get('status', 'OK')
-                checks['fail2ban'] = {
-                    'status': f2b_status,
-                    'dismissable': True if f2b_status not in ['OK'] else False,
-                    'detail': f2b.get('detail', ''),
-                    'installed': f2b.get('installed', False),
-                    'banned_count': f2b.get('banned_count', 0)
-                }
-                if f2b.get('status') == 'WARNING':
-                    issues.append(f2b.get('detail', 'Fail2Ban bans detected'))
+                if f2b.get('installed', False):
+                    f2b_status = f2b.get('status', 'OK')
+                    checks['fail2ban'] = {
+                        'status': f2b_status,
+                        'dismissable': True if f2b_status not in ['OK'] else False,
+                        'detail': f2b.get('detail', ''),
+                        'installed': True,
+                        'banned_count': f2b.get('banned_count', 0)
+                    }
+                    if f2b.get('status') == 'WARNING':
+                        issues.append(f2b.get('detail', 'Fail2Ban bans detected'))
+                # If not installed, simply don't add it to checks
             except Exception:
-                checks['fail2ban'] = {'status': 'OK', 'detail': 'Unable to check Fail2Ban'}
+                pass
             
             # Determine overall security status
             if issues:

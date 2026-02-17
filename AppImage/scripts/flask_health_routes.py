@@ -89,14 +89,20 @@ def acknowledge_error():
             health_monitor.last_check_times.pop('overall_health', None)
             health_monitor.cached_results.pop('overall_health', None)
             
-            # Determine suppression period for the response
-            category = result.get('category', '')
-            if category == 'updates':
-                suppression_hours = 180 * 24  # 180 days in hours
-                suppression_label = '6 months'
+            # Use the per-record suppression hours from acknowledge_error()
+            sup_hours = result.get('suppression_hours', 24)
+            if sup_hours == -1:
+                suppression_label = 'permanently'
+            elif sup_hours >= 8760:
+                suppression_label = f'{sup_hours // 8760} year(s)'
+            elif sup_hours >= 720:
+                suppression_label = f'{sup_hours // 720} month(s)'
+            elif sup_hours >= 168:
+                suppression_label = f'{sup_hours // 168} week(s)'
+            elif sup_hours >= 72:
+                suppression_label = f'{sup_hours // 24} day(s)'
             else:
-                suppression_hours = 24
-                suppression_label = '24 hours'
+                suppression_label = f'{sup_hours} hours'
             
             return jsonify({
                 'success': True,
@@ -104,7 +110,7 @@ def acknowledge_error():
                 'error_key': error_key,
                 'original_severity': result.get('original_severity', 'WARNING'),
                 'category': category,
-                'suppression_hours': suppression_hours,
+                'suppression_hours': sup_hours,
                 'suppression_label': suppression_label,
                 'acknowledged_at': result.get('acknowledged_at')
             })
@@ -188,5 +194,56 @@ def mark_events_notified():
         
         health_persistence.mark_events_notified(event_ids)
         return jsonify({'success': True, 'marked_count': len(event_ids)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@health_bp.route('/api/health/settings', methods=['GET'])
+def get_health_settings():
+    """
+    Get per-category suppression duration settings.
+    Returns all health categories with their current configured hours.
+    """
+    try:
+        categories = health_persistence.get_suppression_categories()
+        return jsonify({'categories': categories})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@health_bp.route('/api/health/settings', methods=['POST'])
+def save_health_settings():
+    """
+    Save per-category suppression duration settings.
+    Expects JSON body with key-value pairs like: {"suppress_cpu": "168", "suppress_memory": "-1"}
+    Valid values: 24, 72, 168, 720, 8760, -1 (permanent), or any positive integer for custom.
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No settings provided'}), 400
+        
+        valid_keys = set(health_persistence.CATEGORY_SETTING_MAP.values())
+        updated = []
+        
+        for key, value in data.items():
+            if key not in valid_keys:
+                continue
+            
+            try:
+                hours = int(value)
+                # Validate: must be -1 (permanent) or positive
+                if hours != -1 and hours < 1:
+                    continue
+                health_persistence.set_setting(key, str(hours))
+                updated.append(key)
+            except (ValueError, TypeError):
+                continue
+        
+        return jsonify({
+            'success': True,
+            'updated': updated,
+            'count': len(updated)
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
