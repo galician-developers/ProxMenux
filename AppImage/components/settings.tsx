@@ -55,8 +55,10 @@ export function Settings() {
   // Health Monitor suppression settings
   const [suppressionCategories, setSuppressionCategories] = useState<SuppressionCategory[]>([])
   const [loadingHealth, setLoadingHealth] = useState(true)
-  const [savingHealth, setSavingHealth] = useState<string | null>(null)
-  const [savedHealth, setSavedHealth] = useState<string | null>(null)
+  const [healthEditMode, setHealthEditMode] = useState(false)
+  const [savingAllHealth, setSavingAllHealth] = useState(false)
+  const [savedAllHealth, setSavedAllHealth] = useState(false)
+  const [pendingChanges, setPendingChanges] = useState<Record<string, number>>({})
   const [customValues, setCustomValues] = useState<Record<string, string>>({})
 
   useEffect(() => {
@@ -118,57 +120,97 @@ export function Settings() {
     return "custom"
   }
 
-  const handleSuppressionChange = async (settingKey: string, value: string) => {
+  const getEffectiveHours = (cat: SuppressionCategory): number => {
+    if (cat.key in pendingChanges) return pendingChanges[cat.key]
+    return cat.hours
+  }
+
+  const handleSuppressionChange = (settingKey: string, value: string) => {
     if (value === "custom") {
-      // Show custom input -- don't save yet
       const current = suppressionCategories.find(c => c.key === settingKey)
-      setCustomValues(prev => ({ ...prev, [settingKey]: String(current?.hours || 48) }))
-      // Temporarily mark as custom in state
-      setSuppressionCategories(prev =>
-        prev.map(c => c.key === settingKey ? { ...c, hours: -2 } : c)
-      )
+      const effectiveHours = current ? getEffectiveHours(current) : 48
+      setCustomValues(prev => ({ ...prev, [settingKey]: String(effectiveHours > 0 ? effectiveHours : 48) }))
+      // Mark as custom mode in pending
+      setPendingChanges(prev => ({ ...prev, [settingKey]: -2 }))
       return
     }
 
     const hours = parseInt(value, 10)
     if (isNaN(hours)) return
-    
-    await saveSuppression(settingKey, hours)
+    setPendingChanges(prev => ({ ...prev, [settingKey]: hours }))
+    // Clear custom input if switching away
+    setCustomValues(prev => {
+      const next = { ...prev }
+      delete next[settingKey]
+      return next
+    })
   }
 
-  const handleCustomSave = async (settingKey: string) => {
+  const handleCustomConfirm = (settingKey: string) => {
     const raw = customValues[settingKey]
     const hours = parseInt(raw, 10)
     if (isNaN(hours) || hours < 1) return
-    await saveSuppression(settingKey, hours)
+    setPendingChanges(prev => ({ ...prev, [settingKey]: hours }))
+    setCustomValues(prev => {
+      const next = { ...prev }
+      delete next[settingKey]
+      return next
+    })
   }
 
-  const saveSuppression = async (settingKey: string, hours: number) => {
-    setSavingHealth(settingKey)
+  const handleCancelEdit = () => {
+    setHealthEditMode(false)
+    setPendingChanges({})
+    setCustomValues({})
+  }
+
+  const handleSaveAllHealth = async () => {
+    // Merge pending changes into a payload: only changed categories
+    const payload: Record<string, string> = {}
+    for (const cat of suppressionCategories) {
+      if (cat.key in pendingChanges && pendingChanges[cat.key] !== -2) {
+        payload[cat.key] = String(pendingChanges[cat.key])
+      }
+    }
+
+    if (Object.keys(payload).length === 0) {
+      setHealthEditMode(false)
+      setPendingChanges({})
+      return
+    }
+
+    setSavingAllHealth(true)
     try {
       await fetchApi("/api/health/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [settingKey]: String(hours) }),
+        body: JSON.stringify(payload),
       })
       
+      // Update local state with saved values
       setSuppressionCategories(prev =>
-        prev.map(c => c.key === settingKey ? { ...c, hours } : c)
+        prev.map(c => {
+          if (c.key in pendingChanges && pendingChanges[c.key] !== -2) {
+            return { ...c, hours: pendingChanges[c.key] }
+          }
+          return c
+        })
       )
-      // Remove from custom values
-      setCustomValues(prev => {
-        const next = { ...prev }
-        delete next[settingKey]
-        return next
-      })
-      setSavedHealth(settingKey)
-      setTimeout(() => setSavedHealth(null), 2000)
+      setPendingChanges({})
+      setCustomValues({})
+      setHealthEditMode(false)
+      setSavedAllHealth(true)
+      setTimeout(() => setSavedAllHealth(false), 3000)
     } catch (err) {
-      console.error("Failed to save health setting:", err)
+      console.error("Failed to save health settings:", err)
     } finally {
-      setSavingHealth(null)
+      setSavingAllHealth(false)
     }
   }
+
+  const hasPendingChanges = Object.keys(pendingChanges).some(
+    k => pendingChanges[k] !== -2
+  )
 
   return (
     <div className="space-y-6">
@@ -211,13 +253,56 @@ export function Settings() {
       {/* Health Monitor Settings */}
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <HeartPulse className="h-5 w-5 text-red-500" />
-            <CardTitle>Health Monitor</CardTitle>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <HeartPulse className="h-5 w-5 text-red-500" />
+              <CardTitle>Health Monitor</CardTitle>
+            </div>
+            {!loadingHealth && (
+              <div className="flex items-center gap-2">
+                {savedAllHealth && (
+                  <span className="flex items-center gap-1 text-xs text-green-500">
+                    <Check className="h-3.5 w-3.5" />
+                    Saved
+                  </span>
+                )}
+                {healthEditMode ? (
+                  <>
+                    <button
+                      className="h-7 px-3 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors text-muted-foreground"
+                      onClick={handleCancelEdit}
+                      disabled={savingAllHealth}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="h-7 px-3 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                      onClick={handleSaveAllHealth}
+                      disabled={savingAllHealth || !hasPendingChanges}
+                    >
+                      {savingAllHealth ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Check className="h-3 w-3" />
+                      )}
+                      Save
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    className="h-7 px-3 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors flex items-center gap-1.5"
+                    onClick={() => setHealthEditMode(true)}
+                  >
+                    <Settings2 className="h-3 w-3" />
+                    Edit
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           <CardDescription>
             Configure how long dismissed alerts stay suppressed for each category.
-            When you dismiss a warning, it will not reappear until the suppression period expires.
+            Changes apply immediately to both existing and future dismissed alerts.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -226,116 +311,124 @@ export function Settings() {
               <div className="animate-spin h-8 w-8 border-4 border-red-500 border-t-transparent rounded-full" />
             </div>
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-0">
               {/* Header */}
-              <div className="flex items-center justify-between mb-3 pb-2 border-b border-border">
-                <span className="text-sm font-medium text-muted-foreground">Category</span>
-                <span className="text-sm font-medium text-muted-foreground">Suppression Duration</span>
+              <div className="flex items-center justify-between pb-2 mb-1 border-b border-border">
+                <span className="text-xs font-medium text-muted-foreground">Category</span>
+                <span className="text-xs font-medium text-muted-foreground">Suppression Duration</span>
               </div>
               
               {/* Per-category rows */}
-              {suppressionCategories.map((cat) => {
-                const IconComp = CATEGORY_ICONS[cat.icon] || HeartPulse
-                const isCustomMode = cat.hours === -2 || (cat.key in customValues)
-                const isPermanent = cat.hours === -1
-                const isLong = cat.hours >= 720 && cat.hours !== -1
-                const selectVal = isCustomMode ? "custom" : getSelectValue(cat.hours, cat.key)
-                
-                return (
-                  <div key={cat.key} className="space-y-0">
-                    <div className="flex items-center justify-between gap-3 py-2.5 px-2 rounded-lg hover:bg-muted/30 transition-colors">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <IconComp className="h-4 w-4 text-muted-foreground shrink-0" />
-                        <span className="text-sm font-medium truncate">{cat.label}</span>
-                        {savingHealth === cat.key && (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground shrink-0" />
-                        )}
-                        {savedHealth === cat.key && (
-                          <Check className="h-3.5 w-3.5 text-green-500 shrink-0" />
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {isCustomMode ? (
-                          <div className="flex items-center gap-1.5">
-                            <Input
-                              type="number"
-                              min={1}
-                              className="w-20 h-8 text-xs"
-                              value={customValues[cat.key] || ""}
-                              onChange={(e) => setCustomValues(prev => ({ ...prev, [cat.key]: e.target.value }))}
-                              placeholder="Hours"
-                            />
-                            <span className="text-xs text-muted-foreground">h</span>
-                            <button
-                              className="h-8 px-2 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors"
-                              onClick={() => handleCustomSave(cat.key)}
-                              disabled={savingHealth === cat.key}
-                            >
-                              Save
-                            </button>
-                            <button
-                              className="h-8 px-2 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors text-muted-foreground"
-                              onClick={() => {
-                                setCustomValues(prev => {
-                                  const next = { ...prev }
-                                  delete next[cat.key]
-                                  return next
-                                })
-                                loadHealthSettings()
-                              }}
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <Select value={selectVal} onValueChange={(v) => handleSuppressionChange(cat.key, v)}>
-                            <SelectTrigger className="w-32 h-8 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {SUPPRESSION_OPTIONS.map((opt) => (
-                                <SelectItem key={opt.value} value={opt.value}>
-                                  {opt.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        )}
-                      </div>
-                    </div>
-                    
-                    {/* Warning for Permanent */}
-                    {isPermanent && (
-                      <div className="flex items-start gap-2 ml-8 mr-2 mb-2 p-2.5 rounded-md bg-amber-500/10 border border-amber-500/20">
-                        <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                        <p className="text-xs text-amber-400/90 leading-relaxed">
-                          Dismissed alerts for <span className="font-semibold">{cat.label}</span> will never reappear.
-                          {cat.category === "temperature" && (
-                            <span className="block mt-1 text-amber-300 font-medium">
-                              Note: Critical CPU temperature alerts will still trigger for hardware safety.
-                            </span>
+              <div className="divide-y divide-border/50">
+                {suppressionCategories.map((cat) => {
+                  const IconComp = CATEGORY_ICONS[cat.icon] || HeartPulse
+                  const effectiveHours = getEffectiveHours(cat)
+                  const isCustomMode = effectiveHours === -2 || (cat.key in customValues)
+                  const isPermanent = effectiveHours === -1
+                  const isLong = effectiveHours >= 720 && effectiveHours !== -1 && effectiveHours !== -2
+                  const hasChanged = cat.key in pendingChanges && pendingChanges[cat.key] !== cat.hours
+                  const selectVal = isCustomMode ? "custom" : getSelectValue(effectiveHours, cat.key)
+                  
+                  return (
+                    <div key={cat.key}>
+                      <div className="flex items-center justify-between gap-2 py-2 sm:py-2.5 px-1 sm:px-2">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <IconComp className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <span className="text-xs sm:text-sm font-medium">{cat.label}</span>
+                          {hasChanged && healthEditMode && (
+                            <span className="h-1.5 w-1.5 rounded-full bg-blue-500 shrink-0" />
                           )}
-                        </p>
+                        </div>
+                        <div className="shrink-0">
+                          {isCustomMode && healthEditMode ? (
+                            <div className="flex items-center gap-1.5">
+                              <Input
+                                type="number"
+                                min={1}
+                                className="w-16 sm:w-20 h-7 text-xs"
+                                value={customValues[cat.key] || ""}
+                                onChange={(e) => setCustomValues(prev => ({ ...prev, [cat.key]: e.target.value }))}
+                                placeholder="Hours"
+                              />
+                              <span className="text-xs text-muted-foreground">h</span>
+                              <button
+                                className="h-7 px-2 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors"
+                                onClick={() => handleCustomConfirm(cat.key)}
+                              >
+                                OK
+                              </button>
+                              <button
+                                className="h-7 px-1.5 text-xs rounded-md text-muted-foreground hover:text-foreground transition-colors"
+                                onClick={() => {
+                                  setCustomValues(prev => {
+                                    const next = { ...prev }
+                                    delete next[cat.key]
+                                    return next
+                                  })
+                                  setPendingChanges(prev => {
+                                    const next = { ...prev }
+                                    delete next[cat.key]
+                                    return next
+                                  })
+                                }}
+                              >
+                                X
+                              </button>
+                            </div>
+                          ) : (
+                            <Select
+                              value={selectVal}
+                              onValueChange={(v) => handleSuppressionChange(cat.key, v)}
+                              disabled={!healthEditMode}
+                            >
+                              <SelectTrigger className={`w-28 sm:w-32 h-7 text-xs ${!healthEditMode ? "opacity-60" : ""}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {SUPPRESSION_OPTIONS.map((opt) => (
+                                  <SelectItem key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
                       </div>
-                    )}
-                    
-                    {/* Warning for long custom duration (> 1 month) */}
-                    {isLong && !isPermanent && (
-                      <div className="flex items-start gap-2 ml-8 mr-2 mb-2 p-2.5 rounded-md bg-amber-500/10 border border-amber-500/20">
-                        <Info className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                        <p className="text-xs text-amber-400/90 leading-relaxed">
-                          Long suppression period. Dismissed alerts for this category will not reappear for an extended time.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
+                      
+                      {/* Notice for Permanent */}
+                      {isPermanent && healthEditMode && (
+                        <div className="flex items-start gap-2 ml-6 sm:ml-8 mr-1 mb-2 p-2 rounded-md bg-blue-500/10 border border-blue-500/20">
+                          <Info className="h-3.5 w-3.5 text-blue-400 shrink-0 mt-0.5" />
+                          <p className="text-[11px] text-blue-400/90 leading-relaxed">
+                            Alerts for <span className="font-semibold">{cat.label}</span> will be permanently suppressed when dismissed.
+                            {cat.category === "temperature" && (
+                              <span className="block mt-0.5 text-blue-300/80">
+                                Critical CPU temperature alerts will still trigger for hardware safety.
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      )}
+                      
+                      {/* Notice for long duration (> 1 month) */}
+                      {isLong && healthEditMode && (
+                        <div className="flex items-start gap-2 ml-6 sm:ml-8 mr-1 mb-2 p-2 rounded-md bg-blue-500/10 border border-blue-500/20">
+                          <Info className="h-3.5 w-3.5 text-blue-400 shrink-0 mt-0.5" />
+                          <p className="text-[11px] text-blue-400/90 leading-relaxed">
+                            Long suppression period. Dismissed alerts for this category will not reappear for an extended time.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
               
               {/* Info footer */}
-              <div className="flex items-start gap-2 mt-4 pt-3 border-t border-border">
-                <Info className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />
-                <p className="text-xs text-muted-foreground leading-relaxed">
+              <div className="flex items-start gap-2 mt-3 pt-3 border-t border-border">
+                <Info className="h-3.5 w-3.5 text-blue-400 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
                   These settings apply when you dismiss a warning from the Health Monitor. 
                   Critical CPU temperature alerts always trigger regardless of settings to protect your hardware.
                 </p>

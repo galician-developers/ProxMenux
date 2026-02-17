@@ -240,10 +240,15 @@ def save_health_settings():
             except (ValueError, TypeError):
                 continue
         
+        # Retroactively sync all existing dismissed errors
+        # so changes are effective immediately, not just on next dismiss
+        synced_count = health_persistence.sync_dismissed_suppression()
+        
         return jsonify({
             'success': True,
             'updated': updated,
-            'count': len(updated)
+            'count': len(updated),
+            'synced_dismissed': synced_count
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500

@@ -752,12 +752,65 @@ class HealthPersistence:
         conn.close()
         return {row[0]: row[1] for row in rows}
     
-    def get_suppression_categories(self) -> List[Dict[str, Any]]:
+    def sync_dismissed_suppression(self):
         """
-        Get all health categories with their current suppression settings.
-        Used by the settings page to render the per-category configuration.
+        Retroactively update all existing dismissed errors to match current
+        user settings. Called when the user saves settings, so changes are
+        effective immediately on already-dismissed items.
+        
+        For each dismissed error, looks up its category's configured hours
+        and updates the suppression_hours column to match.
         """
-        category_labels = {
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        
+        # Build reverse map: category -> setting_key
+        cat_to_setting = {v['category']: k 
+                          for k, v in self._get_category_labels().items()}
+        
+        # Get all current suppression settings
+        current_settings = self.get_all_settings('suppress_')
+        
+        # Get all dismissed (acknowledged) errors
+        cursor.execute('''
+            SELECT id, error_key, category, suppression_hours
+            FROM errors WHERE acknowledged = 1
+        ''')
+        dismissed = cursor.fetchall()
+        
+        updated_count = 0
+        for err_id, error_key, category, old_hours in dismissed:
+            setting_key = None
+            for skey, meta in self._get_category_labels().items():
+                if meta['category'] == category:
+                    setting_key = skey
+                    break
+            
+            if not setting_key:
+                continue
+            
+            stored = current_settings.get(setting_key)
+            new_hours = int(stored) if stored else self.DEFAULT_SUPPRESSION_HOURS
+            
+            if new_hours != old_hours:
+                cursor.execute(
+                    'UPDATE errors SET suppression_hours = ? WHERE id = ?',
+                    (new_hours, err_id)
+                )
+                self._record_event(cursor, 'suppression_updated', error_key, {
+                    'old_hours': old_hours,
+                    'new_hours': new_hours,
+                    'reason': 'settings_sync'
+                })
+                updated_count += 1
+        
+        conn.commit()
+        conn.close()
+        return updated_count
+    
+    def _get_category_labels(self) -> dict:
+        """Internal helper for category label metadata."""
+        return {
             'suppress_cpu': {'label': 'CPU Usage & Temperature', 'category': 'temperature', 'icon': 'cpu'},
             'suppress_memory': {'label': 'Memory & Swap', 'category': 'memory', 'icon': 'memory'},
             'suppress_storage': {'label': 'Storage Mounts & Space', 'category': 'storage', 'icon': 'storage'},
@@ -769,7 +822,13 @@ class HealthPersistence:
             'suppress_updates': {'label': 'System Updates', 'category': 'updates', 'icon': 'updates'},
             'suppress_security': {'label': 'Security & Certificates', 'category': 'security', 'icon': 'security'},
         }
-        
+    
+    def get_suppression_categories(self) -> List[Dict[str, Any]]:
+        """
+        Get all health categories with their current suppression settings.
+        Used by the settings page to render the per-category configuration.
+        """
+        category_labels = self._get_category_labels()
         current_settings = self.get_all_settings('suppress_')
         
         result = []
