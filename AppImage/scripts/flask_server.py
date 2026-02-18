@@ -46,6 +46,8 @@ from flask_health_routes import health_bp  # noqa: E402
 from flask_auth_routes import auth_bp  # noqa: E402
 from flask_proxmenux_routes import proxmenux_bp  # noqa: E402
 from flask_security_routes import security_bp  # noqa: E402
+from flask_notification_routes import notification_bp  # noqa: E402
+from notification_manager import notification_manager  # noqa: E402
 from jwt_middleware import require_auth  # noqa: E402
 import auth_manager  # noqa: E402
 
@@ -120,6 +122,7 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(health_bp)
 app.register_blueprint(proxmenux_bp)
 app.register_blueprint(security_bp)
+app.register_blueprint(notification_bp)
 
 # Initialize terminal / WebSocket routes
 init_terminal_routes(app)
@@ -7093,6 +7096,16 @@ if __name__ == '__main__':
         vital_thread.start()
     except Exception as e:
         print(f"[ProxMenux] Vital signs sampler failed to start: {e}")
+
+    # ── Notification Service ──
+    try:
+        notification_manager.start()
+        if notification_manager._enabled:
+            print(f"[ProxMenux] Notification service started (channels: {list(notification_manager._channels.keys())})")
+        else:
+            print("[ProxMenux] Notification service loaded (disabled - configure in Settings)")
+    except Exception as e:
+        print(f"[ProxMenux] Notification service failed to start: {e}")
 
     # Check for SSL configuration
     ssl_ctx = None
