@@ -244,16 +244,39 @@ export function NotificationSettings() {
     setTesting(channel)
     setTestResult(null)
     try {
-      const data = await fetchApi<{ success: boolean; message: string }>("/api/notifications/test", {
+      const data = await fetchApi<{
+        success: boolean
+        message?: string
+        error?: string
+        results?: Record<string, { success: boolean; error?: string | null }>
+      }>("/api/notifications/test", {
         method: "POST",
         body: JSON.stringify({ channel }),
       })
-      setTestResult({ channel, success: data.success, message: data.message })
+      
+      // Extract message from the results object if present
+      let message = data.message || ""
+      if (!message && data.results) {
+        const channelResult = data.results[channel]
+        if (channelResult) {
+          message = channelResult.success
+            ? "Test notification sent successfully"
+            : channelResult.error || "Test failed"
+        }
+      }
+      if (!message && data.error) {
+        message = data.error
+      }
+      if (!message) {
+        message = data.success ? "Test notification sent successfully" : "Test failed"
+      }
+      
+      setTestResult({ channel, success: data.success, message })
     } catch (err) {
       setTestResult({ channel, success: false, message: String(err) })
     } finally {
       setTesting(null)
-      setTimeout(() => setTestResult(null), 5000)
+      setTimeout(() => setTestResult(null), 8000)
     }
   }
 
@@ -577,6 +600,7 @@ matcher: proxmenux-pbs
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Channels</span>
               </div>
 
+              <div className="rounded-lg border border-border/50 bg-muted/20 p-3">
               <Tabs defaultValue="telegram" className="w-full">
                 <TabsList className="w-full grid grid-cols-4 h-8">
                   <TabsTrigger value="telegram" className="text-xs data-[state=active]:text-blue-500">
@@ -935,7 +959,7 @@ matcher: proxmenux-pbs
 
               {/* Test Result */}
               {testResult && (
-                <div className={`flex items-center gap-2 p-2.5 rounded-md text-xs ${
+                <div className={`flex items-center gap-2 p-2.5 rounded-md text-xs mt-2 ${
                   testResult.success
                     ? "bg-green-500/10 border border-green-500/20 text-green-400"
                     : "bg-red-500/10 border border-red-500/20 text-red-400"
@@ -948,36 +972,38 @@ matcher: proxmenux-pbs
                   <span>{testResult.message}</span>
                 </div>
               )}
+              </div>{/* close bordered channel container */}
             </div>
 
-            {/* ── Severity Filter ── */}
-            <div className="space-y-2 border-t border-border pt-4">
+            {/* ── Filters ── */}
+            <div className="space-y-3 border-t border-border pt-4">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Severity Filter</span>
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Filters & Events</span>
               </div>
-              <Select
-                value={config.severity_filter}
-                onValueChange={v => updateConfig(p => ({ ...p, severity_filter: v }))}
-                disabled={!editMode}
-              >
-                <SelectTrigger className={`h-8 text-xs ${!editMode ? "opacity-60" : ""}`}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SEVERITY_OPTIONS.map(opt => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+              <div className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-4">
+              {/* Severity */}
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-muted-foreground">Severity Filter</Label>
+                <Select
+                  value={config.severity_filter}
+                  onValueChange={v => updateConfig(p => ({ ...p, severity_filter: v }))}
+                  disabled={!editMode}
+                >
+                  <SelectTrigger className={`h-8 text-xs ${!editMode ? "opacity-60" : ""}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SEVERITY_OPTIONS.map(opt => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            {/* ── Event Categories ── */}
-            <div className="space-y-2 border-t border-border pt-4">
-              <div className="flex items-center gap-2">
-                <Send className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Event Categories</span>
-              </div>
+              {/* Event Categories */}
+              <div className="space-y-1.5 border-t border-border/30 pt-3">
+                <Label className="text-[11px] text-muted-foreground">Event Categories</Label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                 {EVENT_CATEGORIES.map(cat => (
                   <label
@@ -1005,14 +1031,20 @@ matcher: proxmenux-pbs
                   </label>
                 ))}
               </div>
+              </div>
+              </div>{/* close bordered filters container */}
             </div>
 
             {/* ── Proxmox Webhook ── */}
-            <div className="space-y-3">
+            <div className="space-y-3 border-t border-border pt-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Webhook className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Proxmox Webhook</span>
+              </div>
+              <div className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Webhook className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Proxmox Webhook</span>
+                  <span className="text-[11px] font-medium">PVE Webhook Configuration</span>
                 </div>
                 {!editMode && (
                   <button
@@ -1101,6 +1133,7 @@ matcher: proxmenux-pbs
                   {"Localhost (127.0.0.1) is always allowed. This restricts remote callers only."}
                 </p>
               </div>
+              </div>{/* close bordered webhook container */}
 
               {/* PBS manual guide (collapsible) */}
               <details className="group">
