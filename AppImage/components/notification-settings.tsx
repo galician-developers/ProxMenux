@@ -12,7 +12,7 @@ import { fetchApi } from "../lib/api-config"
 import {
   Bell, BellOff, Send, CheckCircle2, XCircle, Loader2,
   AlertTriangle, Info, Settings2, Zap, Eye, EyeOff,
-  Trash2, ChevronDown, ChevronUp, TestTube2
+  Trash2, ChevronDown, ChevronUp, TestTube2, Mail, Webhook
 } from "lucide-react"
 
 interface ChannelConfig {
@@ -22,6 +22,15 @@ interface ChannelConfig {
   url?: string
   token?: string
   webhook_url?: string
+  // Email channel fields
+  host?: string
+  port?: string
+  username?: string
+  password?: string
+  tls_mode?: string
+  from_address?: string
+  to_addresses?: string
+  subject_prefix?: string
 }
 
 interface NotificationConfig {
@@ -34,6 +43,8 @@ interface NotificationConfig {
   ai_api_key: string
   ai_model: string
   hostname: string
+  webhook_secret: string
+  webhook_allowed_ips: string
 }
 
 interface ServiceStatus {
@@ -84,6 +95,7 @@ const DEFAULT_CONFIG: NotificationConfig = {
     telegram: { enabled: false },
     gotify: { enabled: false },
     discord: { enabled: false },
+    email: { enabled: false },
   },
   severity_filter: "warning",
   event_categories: {
@@ -95,6 +107,8 @@ const DEFAULT_CONFIG: NotificationConfig = {
   ai_api_key: "",
   ai_model: "",
   hostname: "",
+  webhook_secret: "",
+  webhook_allowed_ips: "",
 }
 
 export function NotificationSettings() {
@@ -112,6 +126,11 @@ export function NotificationSettings() {
   const [editMode, setEditMode] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
   const [originalConfig, setOriginalConfig] = useState<NotificationConfig>(DEFAULT_CONFIG)
+  const [webhookSetup, setWebhookSetup] = useState<{
+    status: "idle" | "running" | "success" | "failed"
+    fallback_commands: string[]
+    error: string
+  }>({ status: "idle", fallback_commands: [], error: "" })
 
   const loadConfig = useCallback(async () => {
     try {
@@ -252,6 +271,184 @@ export function NotificationSettings() {
 
   const activeChannels = Object.entries(config.channels).filter(([, ch]) => ch.enabled).length
 
+  const handleEnable = async () => {
+    setSaving(true)
+    setWebhookSetup({ status: "running", fallback_commands: [], error: "" })
+    try {
+      // 1) Save enabled=true
+      const newConfig = { ...config, enabled: true }
+      await fetchApi("/api/notifications/settings", {
+        method: "POST",
+        body: JSON.stringify(newConfig),
+      })
+      setConfig(newConfig)
+      setOriginalConfig(newConfig)
+
+      // 2) Auto-configure PVE webhook
+      try {
+        const setup = await fetchApi<{
+          configured: boolean
+          secret?: string
+          fallback_commands?: string[]
+          error?: string
+        }>("/api/notifications/proxmox/setup-webhook", { method: "POST" })
+
+        if (setup.configured) {
+          setWebhookSetup({ status: "success", fallback_commands: [], error: "" })
+          // Update secret in local config if one was generated
+          if (setup.secret) {
+            const updated = { ...newConfig, webhook_secret: setup.secret }
+            setConfig(updated)
+            setOriginalConfig(updated)
+          }
+        } else {
+          setWebhookSetup({
+            status: "failed",
+            fallback_commands: setup.fallback_commands || [],
+            error: setup.error || "Unknown error",
+          })
+        }
+      } catch {
+        setWebhookSetup({
+          status: "failed",
+          fallback_commands: [],
+          error: "Could not reach setup endpoint",
+        })
+      }
+
+      setEditMode(true)
+      loadStatus()
+    } catch (err) {
+      console.error("Failed to enable notifications:", err)
+      setWebhookSetup({ status: "idle", fallback_commands: [], error: "" })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // ── Disabled state: show activation card ──
+  if (!config.enabled && !editMode) {
+    return (
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <BellOff className="h-5 w-5 text-muted-foreground" />
+            <CardTitle>Notifications</CardTitle>
+            <Badge variant="outline" className="text-[10px] border-muted-foreground/30 text-muted-foreground">
+              Disabled
+            </Badge>
+          </div>
+          <CardDescription>
+            Get real-time alerts about your Proxmox environment via Telegram, Discord, Gotify, or Email.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="flex flex-col gap-3 p-4 bg-muted/50 rounded-lg border border-border">
+              <div className="flex items-start gap-3">
+                <Bell className="h-5 w-5 text-blue-500 mt-0.5 shrink-0" />
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Enable notification service</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Monitor system health, VM/CT events, backups, security alerts, and cluster status.
+                    PVE webhook integration is configured automatically.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-col sm:flex-row items-start gap-2">
+                <button
+                  className="h-8 px-4 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors w-full sm:w-auto disabled:opacity-50 flex items-center justify-center gap-2"
+                  onClick={handleEnable}
+                  disabled={saving}
+                >
+                  {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bell className="h-3.5 w-3.5" />}
+                  {saving ? "Configuring..." : "Enable Notifications"}
+                </button>
+              </div>
+
+              {/* Webhook setup result */}
+              {webhookSetup.status === "success" && (
+                <div className="flex items-start gap-2 p-2 rounded-md bg-green-500/10 border border-green-500/20">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-green-400 leading-relaxed">
+                    PVE webhook configured automatically. Proxmox will send notifications to ProxMenux.
+                  </p>
+                </div>
+              )}
+              {webhookSetup.status === "failed" && (
+                <div className="space-y-2">
+                  <div className="flex items-start gap-2 p-2 rounded-md bg-amber-500/10 border border-amber-500/20">
+                    <AlertTriangle className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="text-[11px] text-amber-400 leading-relaxed">
+                        Automatic PVE configuration failed: {webhookSetup.error}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        Notifications are enabled. Run the commands below on the PVE host to complete webhook setup.
+                      </p>
+                    </div>
+                  </div>
+                  {webhookSetup.fallback_commands.length > 0 && (
+                    <pre className="text-[11px] bg-background p-2 rounded border border-border overflow-x-auto font-mono">
+{webhookSetup.fallback_commands.join('\n')}
+                    </pre>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* PBS manual section (collapsible) */}
+            <details className="group">
+              <summary className="text-xs font-medium text-muted-foreground cursor-pointer hover:text-foreground transition-colors flex items-center gap-1.5">
+                <ChevronDown className="h-3 w-3 group-open:rotate-180 transition-transform" />
+                <Webhook className="h-3 w-3" />
+                Configure PBS notifications (manual)
+              </summary>
+              <div className="mt-2 p-3 bg-muted/30 rounded-md border border-border space-y-3">
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    PVE backups launched from the PVE interface are covered automatically by the PVE webhook above.
+                  </p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    However, PBS has its own internal jobs (Verify, Prune, GC, Sync) that generate
+                    separate notifications. These must be configured directly on the PBS server.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-medium text-muted-foreground">
+                    Run on the PBS host:
+                  </p>
+                  <pre className="text-[11px] bg-background p-2 rounded border border-border overflow-x-auto font-mono">
+{`# Create webhook endpoint on PBS
+proxmox-backup-manager notification endpoint webhook create proxmenux-webhook \\
+  --url http://<PVE_HOST_IP>:8008/api/notifications/webhook \\
+  --header "X-Webhook-Secret=<YOUR_SECRET>"
+
+# Create matcher to route PBS events
+proxmox-backup-manager notification matcher create proxmenux-pbs \\
+  --target proxmenux-webhook \\
+  --match-severity warning,error`}
+                  </pre>
+                </div>
+                <div className="flex items-start gap-2 p-2 rounded-md bg-blue-500/10 border border-blue-500/20">
+                  <Info className="h-3.5 w-3.5 text-blue-400 shrink-0 mt-0.5" />
+                  <div className="text-[10px] text-blue-400/90 leading-relaxed space-y-1">
+                    <p>
+                      {"Replace <PVE_HOST_IP> with the IP address of this PVE node (not 127.0.0.1, unless PBS runs on the same host)."}
+                    </p>
+                    <p>
+                      {"Replace <YOUR_SECRET> with the webhook secret shown in your notification settings."}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </details>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -302,7 +499,7 @@ export function NotificationSettings() {
           </div>
         </div>
         <CardDescription>
-          Configure notification channels and event filters. Receive alerts via Telegram, Gotify, or Discord.
+          Configure notification channels and event filters. Receive alerts via Telegram, Gotify, Discord, or Email.
         </CardDescription>
       </CardHeader>
 
@@ -369,7 +566,7 @@ export function NotificationSettings() {
               </div>
 
               <Tabs defaultValue="telegram" className="w-full">
-                <TabsList className="w-full grid grid-cols-3 h-8">
+                <TabsList className="w-full grid grid-cols-4 h-8">
                   <TabsTrigger value="telegram" className="text-xs data-[state=active]:text-blue-500">
                     Telegram
                   </TabsTrigger>
@@ -378,6 +575,9 @@ export function NotificationSettings() {
                   </TabsTrigger>
                   <TabsTrigger value="discord" className="text-xs data-[state=active]:text-indigo-500">
                     Discord
+                  </TabsTrigger>
+                  <TabsTrigger value="email" className="text-xs data-[state=active]:text-amber-500">
+                    Email
                   </TabsTrigger>
                 </TabsList>
 
@@ -571,6 +771,151 @@ export function NotificationSettings() {
                     </>
                   )}
                 </TabsContent>
+
+                {/* Email */}
+                <TabsContent value="email" className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium">Enable Email</Label>
+                    <button
+                      className={`relative w-9 h-[18px] rounded-full transition-colors ${
+                        config.channels.email?.enabled ? "bg-amber-600" : "bg-muted-foreground/30"
+                      } ${!editMode ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+                      onClick={() => editMode && updateChannel("email", "enabled", !config.channels.email?.enabled)}
+                      disabled={!editMode}
+                      role="switch"
+                      aria-checked={config.channels.email?.enabled || false}
+                    >
+                      <span className={`absolute top-[1px] left-[1px] h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                        config.channels.email?.enabled ? "translate-x-[18px]" : "translate-x-0"
+                      }`} />
+                    </button>
+                  </div>
+                  {config.channels.email?.enabled && (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="space-y-1.5">
+                          <Label className="text-[11px] text-muted-foreground">SMTP Host</Label>
+                          <Input
+                            className="h-7 text-xs font-mono"
+                            placeholder="smtp.gmail.com"
+                            value={config.channels.email?.host || ""}
+                            onChange={e => updateChannel("email", "host", e.target.value)}
+                            disabled={!editMode}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-[11px] text-muted-foreground">Port</Label>
+                          <Input
+                            className="h-7 text-xs font-mono"
+                            placeholder="587"
+                            value={config.channels.email?.port || ""}
+                            onChange={e => updateChannel("email", "port", e.target.value)}
+                            disabled={!editMode}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] text-muted-foreground">TLS Mode</Label>
+                        <Select
+                          value={config.channels.email?.tls_mode || "starttls"}
+                          onValueChange={v => updateChannel("email", "tls_mode", v)}
+                          disabled={!editMode}
+                        >
+                          <SelectTrigger className={`h-7 text-xs ${!editMode ? "opacity-60" : ""}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="starttls">STARTTLS (port 587)</SelectItem>
+                            <SelectItem value="ssl">SSL/TLS (port 465)</SelectItem>
+                            <SelectItem value="none">None (port 25)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="space-y-1.5">
+                          <Label className="text-[11px] text-muted-foreground">Username</Label>
+                          <Input
+                            className="h-7 text-xs font-mono"
+                            placeholder="user@example.com"
+                            value={config.channels.email?.username || ""}
+                            onChange={e => updateChannel("email", "username", e.target.value)}
+                            disabled={!editMode}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-[11px] text-muted-foreground">Password</Label>
+                          <div className="flex items-center gap-1.5">
+                            <Input
+                              type={showSecrets["em_pass"] ? "text" : "password"}
+                              className="h-7 text-xs font-mono"
+                              placeholder="App password"
+                              value={config.channels.email?.password || ""}
+                              onChange={e => updateChannel("email", "password", e.target.value)}
+                              disabled={!editMode}
+                            />
+                            <button
+                              className="h-7 w-7 flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors shrink-0"
+                              onClick={() => toggleSecret("em_pass")}
+                            >
+                              {showSecrets["em_pass"] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] text-muted-foreground">From Address</Label>
+                        <Input
+                          className="h-7 text-xs font-mono"
+                          placeholder="proxmenux@yourdomain.com"
+                          value={config.channels.email?.from_address || ""}
+                          onChange={e => updateChannel("email", "from_address", e.target.value)}
+                          disabled={!editMode}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] text-muted-foreground">To Addresses (comma-separated)</Label>
+                        <Input
+                          className="h-7 text-xs font-mono"
+                          placeholder="admin@example.com, ops@example.com"
+                          value={config.channels.email?.to_addresses || ""}
+                          onChange={e => updateChannel("email", "to_addresses", e.target.value)}
+                          disabled={!editMode}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] text-muted-foreground">Subject Prefix</Label>
+                        <Input
+                          className="h-7 text-xs font-mono"
+                          placeholder="[ProxMenux]"
+                          value={config.channels.email?.subject_prefix || "[ProxMenux]"}
+                          onChange={e => updateChannel("email", "subject_prefix", e.target.value)}
+                          disabled={!editMode}
+                        />
+                      </div>
+                      <div className="flex items-start gap-2 p-2 rounded-md bg-amber-500/10 border border-amber-500/20">
+                        <Info className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5" />
+                        <p className="text-[10px] text-amber-400/90 leading-relaxed">
+                          Leave SMTP Host empty to use local sendmail (must be installed on the server).
+                          For Gmail, use an App Password instead of your account password.
+                        </p>
+                      </div>
+                      {!editMode && config.channels.email?.to_addresses && (
+                        <button
+                          className="h-7 px-3 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors flex items-center gap-1.5 w-full justify-center"
+                          onClick={() => handleTest("email")}
+                          disabled={testing === "email"}
+                        >
+                          {testing === "email" ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <TestTube2 className="h-3 w-3" />
+                          )}
+                          Test Email
+                        </button>
+                      )}
+                    </>
+                  )}
+                </TabsContent>
               </Tabs>
 
               {/* Test Result */}
@@ -645,6 +990,131 @@ export function NotificationSettings() {
                   </label>
                 ))}
               </div>
+            </div>
+
+            {/* ── Proxmox Webhook ── */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Webhook className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Proxmox Webhook</span>
+                </div>
+                {!editMode && (
+                  <button
+                    className="h-6 px-2.5 text-[10px] rounded-md border border-border bg-background hover:bg-muted transition-colors flex items-center gap-1.5"
+                    onClick={async () => {
+                      try {
+                        setWebhookSetup({ status: "running", fallback_commands: [], error: "" })
+                        const setup = await fetchApi<{
+                          configured: boolean; secret?: string; fallback_commands?: string[]; error?: string
+                        }>("/api/notifications/proxmox/setup-webhook", { method: "POST" })
+                        if (setup.configured) {
+                          setWebhookSetup({ status: "success", fallback_commands: [], error: "" })
+                          if (setup.secret) {
+                            const updated = { ...config, webhook_secret: setup.secret }
+                            setConfig(updated)
+                            setOriginalConfig(updated)
+                          }
+                        } else {
+                          setWebhookSetup({ status: "failed", fallback_commands: setup.fallback_commands || [], error: setup.error || "" })
+                        }
+                      } catch {
+                        setWebhookSetup({ status: "failed", fallback_commands: [], error: "Request failed" })
+                      }
+                    }}
+                    disabled={webhookSetup.status === "running"}
+                  >
+                    {webhookSetup.status === "running" ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Webhook className="h-2.5 w-2.5" />}
+                    Re-configure PVE
+                  </button>
+                )}
+              </div>
+
+              {/* Setup status inline */}
+              {webhookSetup.status === "success" && (
+                <div className="flex items-center gap-2 p-1.5 rounded bg-green-500/10 border border-green-500/20">
+                  <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
+                  <p className="text-[10px] text-green-400">PVE webhook configured successfully.</p>
+                </div>
+              )}
+              {webhookSetup.status === "failed" && (
+                <div className="space-y-1.5">
+                  <div className="flex items-start gap-2 p-1.5 rounded bg-amber-500/10 border border-amber-500/20">
+                    <AlertTriangle className="h-3 w-3 text-amber-400 shrink-0 mt-0.5" />
+                    <p className="text-[10px] text-amber-400">PVE auto-config failed: {webhookSetup.error}</p>
+                  </div>
+                  {webhookSetup.fallback_commands.length > 0 && (
+                    <pre className="text-[10px] bg-background p-1.5 rounded border border-border overflow-x-auto font-mono">
+{webhookSetup.fallback_commands.join('\n')}
+                    </pre>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-muted-foreground">Shared Secret</Label>
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    type={showSecrets["wh_secret"] ? "text" : "password"}
+                    className="h-7 text-xs font-mono"
+                    placeholder="Required for webhook authentication"
+                    value={config.webhook_secret || ""}
+                    onChange={e => updateConfig(p => ({ ...p, webhook_secret: e.target.value }))}
+                    disabled={!editMode}
+                  />
+                  <button
+                    className="h-7 w-7 flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors shrink-0"
+                    onClick={() => toggleSecret("wh_secret")}
+                  >
+                    {showSecrets["wh_secret"] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                  </button>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  {"Proxmox must send this value in the X-Webhook-Secret header. Auto-generated on first enable."}
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-muted-foreground">Allowed IPs (optional, remote only)</Label>
+                <Input
+                  className="h-7 text-xs font-mono"
+                  placeholder="10.0.0.5, 192.168.1.10 (empty = allow all)"
+                  value={config.webhook_allowed_ips || ""}
+                  onChange={e => updateConfig(p => ({ ...p, webhook_allowed_ips: e.target.value }))}
+                  disabled={!editMode}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  {"Localhost (127.0.0.1) is always allowed. This restricts remote callers only."}
+                </p>
+              </div>
+
+              {/* PBS manual guide (collapsible) */}
+              <details className="group">
+                <summary className="text-[11px] font-medium text-muted-foreground cursor-pointer hover:text-foreground transition-colors flex items-center gap-1.5 py-1">
+                  <ChevronDown className="h-3 w-3 group-open:rotate-180 transition-transform" />
+                  Configure PBS notifications (manual)
+                </summary>
+                <div className="mt-1.5 p-2.5 bg-muted/30 rounded-md border border-border space-y-2">
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Backups launched from PVE are covered by the PVE webhook. PBS internal jobs
+                    (Verify, Prune, GC, Sync) require separate configuration on the PBS server.
+                  </p>
+                  <pre className="text-[10px] bg-background p-2 rounded border border-border overflow-x-auto font-mono">
+{`# On the PBS host:
+proxmox-backup-manager notification endpoint webhook \\
+  create proxmenux-webhook \\
+  --url http://<PVE_IP>:8008/api/notifications/webhook \\
+  --header "X-Webhook-Secret=<SECRET>"
+
+proxmox-backup-manager notification matcher \\
+  create proxmenux-pbs \\
+  --target proxmenux-webhook \\
+  --match-severity warning,error`}
+                  </pre>
+                  <p className="text-[10px] text-muted-foreground">
+                    {"Replace <PVE_IP> with this node's IP and <SECRET> with the webhook secret above."}
+                  </p>
+                </div>
+              </details>
             </div>
 
             {/* ── Advanced: AI Enhancement ── */}
@@ -818,7 +1288,7 @@ export function NotificationSettings() {
           <p className="text-[11px] text-muted-foreground leading-relaxed">
             {config.enabled
               ? "Notifications are active. Events matching your severity filter and category selection will be sent to configured channels."
-              : "Enable notifications to receive alerts about system events, health status changes, and security incidents via Telegram, Gotify, or Discord."}
+              : "Enable notifications to receive alerts about system events, health status changes, and security incidents via Telegram, Gotify, Discord, or Email."}
           </p>
         </div>
       </CardContent>

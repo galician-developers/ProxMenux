@@ -16,32 +16,70 @@ import os
 import re
 import json
 import time
+import hashlib
 import socket
 import subprocess
 import threading
 from queue import Queue
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from pathlib import Path
 
 
 # ─── Event Object ─────────────────────────────────────────────────
 
 class NotificationEvent:
-    """Represents a detected event ready for notification dispatch."""
+    """Represents a detected event ready for notification dispatch.
     
-    __slots__ = ('event_type', 'severity', 'data', 'timestamp', 'source')
+    Fields:
+        event_type:   Taxonomy key (e.g. 'vm_fail', 'auth_fail', 'split_brain')
+        severity:     INFO | WARNING | CRITICAL
+        data:         Payload dict with context (hostname, vmid, reason, etc.)
+        source:       Origin: journal | tasks | health | proxmox_hook | cli | api | polling
+        entity:       What is affected: node | vm | ct | storage | disk | network | cluster | user
+        entity_id:    Specific identifier (vmid, IP, device, pool, interface, etc.)
+        raw:          Original payload (webhook JSON or log line), optional
+        fingerprint:  Stable dedup key: hostname:entity:entity_id:event_type
+        event_id:     Short hash of fingerprint for correlation
+        ts_epoch:     time.time() at creation
+        ts_monotonic: time.monotonic() at creation (drift-safe for cooldown)
+    """
+    
+    __slots__ = (
+        'event_type', 'severity', 'data', 'timestamp', 'source',
+        'entity', 'entity_id', 'raw',
+        'fingerprint', 'event_id', 'ts_epoch', 'ts_monotonic',
+    )
     
     def __init__(self, event_type: str, severity: str = 'INFO',
                  data: Optional[Dict[str, Any]] = None,
-                 source: str = 'watcher'):
+                 source: str = 'watcher',
+                 entity: str = 'node', entity_id: str = '',
+                 raw: Any = None):
         self.event_type = event_type
         self.severity = severity
         self.data = data or {}
-        self.timestamp = time.time()
         self.source = source
+        self.entity = entity
+        self.entity_id = entity_id
+        self.raw = raw
+        self.ts_epoch = time.time()
+        self.ts_monotonic = time.monotonic()
+        self.timestamp = self.ts_epoch  # backward compat
+        
+        # Build fingerprint for dedup/cooldown
+        hostname = self.data.get('hostname', _hostname())
+        if entity_id:
+            fp_base = f"{hostname}:{entity}:{entity_id}:{event_type}"
+        else:
+            # When entity_id is empty, include a hash of title/body for uniqueness
+            reason = self.data.get('reason', self.data.get('title', ''))
+            stable_extra = hashlib.md5(reason.encode(errors='replace')).hexdigest()[:8] if reason else ''
+            fp_base = f"{hostname}:{entity}:{event_type}:{stable_extra}"
+        self.fingerprint = fp_base
+        self.event_id = hashlib.md5(fp_base.encode()).hexdigest()[:12]
     
     def __repr__(self):
-        return f"NotificationEvent({self.event_type}, {self.severity})"
+        return f"NotificationEvent({self.event_type}, {self.severity}, fp={self.fingerprint[:40]})"
 
 
 def _hostname() -> str:
@@ -186,7 +224,7 @@ class JournalWatcher:
                     'username': username,
                     'service': service,
                     'hostname': self._hostname,
-                })
+                }, entity='user', entity_id=source_ip)
                 return
     
     def _check_fail2ban(self, msg: str, syslog_id: str):
@@ -206,7 +244,7 @@ class JournalWatcher:
                 'jail': jail,
                 'failures': '',
                 'hostname': self._hostname,
-            })
+            }, entity='user', entity_id=ip)
     
     def _check_kernel_critical(self, msg: str, syslog_id: str, priority: int):
         """Detect kernel panics, OOM, segfaults, hardware errors."""
@@ -227,13 +265,17 @@ class JournalWatcher:
         for pattern, (event_type, severity, reason) in critical_patterns.items():
             if re.search(pattern, msg, re.IGNORECASE):
                 data = {'reason': reason, 'hostname': self._hostname}
+                entity = 'node'
+                entity_id = ''
                 
                 # Try to extract device for disk errors
                 dev_match = re.search(r'dev\s+(\S+)', msg)
                 if dev_match and event_type == 'disk_io_error':
                     data['device'] = dev_match.group(1)
+                    entity = 'disk'
+                    entity_id = dev_match.group(1)
                 
-                self._emit(event_type, severity, data)
+                self._emit(event_type, severity, data, entity=entity, entity_id=entity_id)
                 return
     
     def _check_service_failure(self, msg: str, unit: str):
@@ -252,7 +294,7 @@ class JournalWatcher:
                     'service_name': service_name,
                     'reason': msg[:200],
                     'hostname': self._hostname,
-                })
+                }, entity='node', entity_id=service_name)
                 return
     
     def _check_disk_io(self, msg: str, syslog_id: str, priority: int):
@@ -275,7 +317,7 @@ class JournalWatcher:
                     'device': device,
                     'reason': msg[:200],
                     'hostname': self._hostname,
-                })
+                }, entity='disk', entity_id=device)
                 return
     
     def _check_cluster_events(self, msg: str, syslog_id: str):
@@ -293,7 +335,7 @@ class JournalWatcher:
                 'quorum': quorum,
                 'reason': msg[:200],
                 'hostname': self._hostname,
-            })
+            }, entity='cluster', entity_id=self._hostname)
             return
         
         # Node disconnect
@@ -306,7 +348,7 @@ class JournalWatcher:
             self._emit('node_disconnect', 'CRITICAL', {
                 'node_name': node_name,
                 'hostname': self._hostname,
-            })
+            }, entity='cluster', entity_id=node_name)
     
     def _check_system_shutdown(self, msg: str, syslog_id: str):
         """Detect system shutdown/reboot."""
@@ -315,13 +357,13 @@ class JournalWatcher:
                 self._emit('system_shutdown', 'WARNING', {
                     'reason': 'System journal stopped',
                     'hostname': self._hostname,
-                })
+                }, entity='node', entity_id='')
             elif 'Shutting down' in msg or 'System is rebooting' in msg:
                 event = 'system_reboot' if 'reboot' in msg.lower() else 'system_shutdown'
                 self._emit(event, 'WARNING', {
                     'reason': msg[:200],
                     'hostname': self._hostname,
-                })
+                }, entity='node', entity_id='')
     
     def _check_permission_change(self, msg: str, syslog_id: str):
         """Detect user permission changes in PVE."""
@@ -341,7 +383,7 @@ class JournalWatcher:
                     'username': username,
                     'change_details': action,
                     'hostname': self._hostname,
-                })
+                }, entity='user', entity_id=username)
                 return
     
     def _check_firewall(self, msg: str, syslog_id: str):
@@ -350,20 +392,24 @@ class JournalWatcher:
             self._emit('firewall_issue', 'WARNING', {
                 'reason': msg[:200],
                 'hostname': self._hostname,
-            })
+            }, entity='network', entity_id='')
     
     # ── Emit helper ──
     
-    def _emit(self, event_type: str, severity: str, data: Dict):
-        """Emit event to queue with deduplication."""
-        dedup_key = f"{event_type}:{data.get('source_ip', '')}:{data.get('device', '')}:{data.get('service_name', '')}"
+    def _emit(self, event_type: str, severity: str, data: Dict,
+              entity: str = 'node', entity_id: str = ''):
+        """Emit event to queue with short-term deduplication (30s window)."""
+        event = NotificationEvent(
+            event_type, severity, data, source='journal',
+            entity=entity, entity_id=entity_id,
+        )
         
         now = time.time()
-        last = self._recent_events.get(dedup_key, 0)
+        last = self._recent_events.get(event.fingerprint, 0)
         if now - last < self._dedup_window:
-            return  # Skip duplicate
+            return  # Skip duplicate within 30s window
         
-        self._recent_events[dedup_key] = now
+        self._recent_events[event.fingerprint] = now
         
         # Cleanup old dedup entries periodically
         if len(self._recent_events) > 200:
@@ -372,7 +418,7 @@ class JournalWatcher:
                 k: v for k, v in self._recent_events.items() if v > cutoff
             }
         
-        self._queue.put(NotificationEvent(event_type, severity, data, source='journal'))
+        self._queue.put(event)
 
 
 # ─── Task Watcher (Real-time) ────────────────────────────────────
@@ -522,7 +568,12 @@ class TaskWatcher:
             'snapshot_name': '',
         }
         
-        self._queue.put(NotificationEvent(event_type, severity, data, source='task'))
+        # Determine entity type from task type
+        entity = 'ct' if task_type.startswith('vz') else 'vm'
+        self._queue.put(NotificationEvent(
+            event_type, severity, data, source='tasks',
+            entity=entity, entity_id=vmid,
+        ))
     
     def _get_vm_name(self, vmid: str) -> str:
         """Try to resolve VMID to name via config files."""
@@ -628,8 +679,18 @@ class PollingCollector:
                 data['hostname'] = self._hostname
                 data['error_key'] = evt.get('error_key', '')
                 
+                # Deduce entity from health category
+                category = data.get('category', '')
+                entity_map = {
+                    'cpu': ('node', ''), 'memory': ('node', ''),
+                    'disk': ('storage', ''), 'network': ('network', ''),
+                    'pve_services': ('node', ''), 'security': ('user', ''),
+                    'updates': ('node', ''), 'storage': ('storage', ''),
+                }
+                entity, eid = entity_map.get(category, ('node', ''))
                 self._queue.put(NotificationEvent(
-                    event_type, severity, data, source='health_monitor'
+                    event_type, severity, data, source='health',
+                    entity=entity, entity_id=eid or data.get('error_key', ''),
                 ))
             
             # Mark events as notified
@@ -641,14 +702,18 @@ class PollingCollector:
             # Also check unnotified errors
             unnotified = health_persistence.get_unnotified_errors()
             for error in unnotified:
+                err_cat = error.get('category', '')
+                e_entity, e_eid = entity_map.get(err_cat, ('node', ''))
                 self._queue.put(NotificationEvent(
                     'new_error', error.get('severity', 'WARNING'), {
-                        'category': error.get('category', ''),
+                        'category': err_cat,
                         'reason': error.get('reason', ''),
                         'hostname': self._hostname,
                         'error_key': error.get('error_key', ''),
                     },
-                    source='health_monitor'
+                    source='health',
+                    entity=e_entity,
+                    entity_id=e_eid or error.get('error_key', ''),
                 ))
                 # Mark as notified
                 if 'id' in error:
@@ -692,7 +757,139 @@ class PollingCollector:
                             'details': details,
                             'hostname': self._hostname,
                         },
-                        source='polling'
+                        source='polling',
+                        entity='node', entity_id='',
                     ))
         except Exception:
             pass  # Non-critical, silently skip
+
+
+# ─── Proxmox Webhook Receiver ───────────────────────────────────
+
+class ProxmoxHookWatcher:
+    """Receives native Proxmox VE notifications via local webhook endpoint.
+    
+    Proxmox can be configured to send notifications to a webhook target:
+      pvesh create /cluster/notifications/endpoints/webhook/proxmenux \\
+        --url http://127.0.0.1:8008/api/notifications/webhook \\
+        --method POST
+    
+    Payload varies by source (storage, replication, cluster, PBS, apt).
+    This class normalizes them into NotificationEvent objects.
+    """
+    
+    def __init__(self, event_queue: Queue):
+        self._queue = event_queue
+        self._hostname = _hostname()
+    
+    def process_webhook(self, payload: dict) -> dict:
+        """Process an incoming Proxmox webhook payload.
+        
+        Returns: {'accepted': bool, 'event_type': str, 'event_id': str}
+                 or {'accepted': False, 'error': str}
+        """
+        if not payload:
+            return {'accepted': False, 'error': 'Empty payload'}
+        
+        # Extract common fields from PVE notification payload
+        notification_type = payload.get('type', payload.get('notification-type', ''))
+        severity_raw = payload.get('severity', payload.get('priority', 'info'))
+        title = payload.get('title', payload.get('subject', ''))
+        body = payload.get('body', payload.get('message', ''))
+        source_component = payload.get('component', payload.get('source', ''))
+        
+        # Map to our event taxonomy
+        event_type, entity, entity_id = self._classify(
+            notification_type, source_component, title, body, payload
+        )
+        severity = self._map_severity(severity_raw)
+        
+        data = {
+            'hostname': self._hostname,
+            'reason': body[:500] if body else title,
+            'title': title,
+            'source_component': source_component,
+            'notification_type': notification_type,
+        }
+        # Merge extra fields from payload
+        for key in ('vmid', 'node', 'storage', 'device', 'pool'):
+            if key in payload:
+                data[key] = str(payload[key])
+        
+        event = NotificationEvent(
+            event_type=event_type,
+            severity=severity,
+            data=data,
+            source='proxmox_hook',
+            entity=entity,
+            entity_id=entity_id,
+            raw=payload,
+        )
+        
+        self._queue.put(event)
+        return {'accepted': True, 'event_type': event_type, 'event_id': event.event_id}
+    
+    def _classify(self, ntype: str, component: str, title: str,
+                  body: str, payload: dict) -> tuple:
+        """Classify webhook payload into (event_type, entity, entity_id)."""
+        title_lower = (title or '').lower()
+        body_lower = (body or '').lower()
+        component_lower = (component or '').lower()
+        
+        # Storage / SMART / ZFS / Ceph
+        if any(k in component_lower for k in ('smart', 'disk', 'zfs', 'ceph')):
+            entity_id = payload.get('device', payload.get('pool', ''))
+            if 'smart' in title_lower or 'smart' in body_lower:
+                return 'disk_io_error', 'disk', str(entity_id)
+            if 'zfs' in title_lower:
+                return 'disk_io_error', 'storage', str(entity_id)
+            return 'disk_space_low', 'storage', str(entity_id)
+        
+        # Replication
+        if 'replication' in component_lower or 'replication' in title_lower:
+            vmid = str(payload.get('vmid', ''))
+            if 'fail' in title_lower or 'error' in body_lower:
+                return 'vm_fail', 'vm', vmid
+            return 'migration_complete', 'vm', vmid
+        
+        # PBS (Proxmox Backup Server)
+        if 'pbs' in component_lower or 'backup' in component_lower:
+            vmid = str(payload.get('vmid', ''))
+            if 'fail' in title_lower or 'error' in body_lower:
+                return 'backup_fail', 'vm', vmid
+            if 'complete' in title_lower or 'success' in body_lower:
+                return 'backup_complete', 'vm', vmid
+            return 'backup_start', 'vm', vmid
+        
+        # Cluster / HA / Fencing / Corosync
+        if any(k in component_lower for k in ('cluster', 'ha', 'fencing', 'corosync')):
+            node = str(payload.get('node', ''))
+            if 'quorum' in title_lower or 'split' in body_lower:
+                return 'split_brain', 'cluster', node
+            if 'fencing' in title_lower:
+                return 'node_disconnect', 'cluster', node
+            return 'node_disconnect', 'cluster', node
+        
+        # APT / Updates
+        if 'apt' in component_lower or 'update' in title_lower:
+            return 'update_available', 'node', ''
+        
+        # Network
+        if 'network' in component_lower:
+            return 'network_down', 'network', ''
+        
+        # Security
+        if any(k in component_lower for k in ('auth', 'firewall', 'security')):
+            return 'auth_fail', 'user', ''
+        
+        # Fallback: system_problem generic
+        return 'system_problem', 'node', ''
+    
+    @staticmethod
+    def _map_severity(raw: str) -> str:
+        raw_l = str(raw).lower()
+        if raw_l in ('critical', 'emergency', 'alert', 'crit', 'err', 'error'):
+            return 'CRITICAL'
+        if raw_l in ('warning', 'warn'):
+            return 'WARNING'
+        return 'INFO'

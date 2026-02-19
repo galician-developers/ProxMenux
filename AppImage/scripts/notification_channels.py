@@ -311,7 +311,14 @@ class DiscordChannel(NotificationChannel):
             'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
         }
         
-        if data:
+        # Use structured fields from render_template if available
+        rendered_fields = (data or {}).get('_rendered_fields', [])
+        if rendered_fields:
+            embed['fields'] = [
+                {'name': name, 'value': val[:1024], 'inline': True}
+                for name, val in rendered_fields[:25]  # Discord limit: 25 fields
+            ]
+        elif data:
             fields = []
             if data.get('category'):
                 fields.append({'name': 'Category', 'value': data['category'], 'inline': True})
@@ -351,6 +358,164 @@ class DiscordChannel(NotificationChannel):
         )
 
 
+# ─── Email Channel ──────────────────────────────────────────────
+
+class EmailChannel(NotificationChannel):
+    """Email notification channel using SMTP (smtplib) or sendmail fallback.
+    
+    Config keys:
+      host, port, username, password, tls_mode (none|starttls|ssl),
+      from_address, to_addresses (comma-separated), subject_prefix, timeout
+    """
+    
+    def __init__(self, config: Dict[str, str]):
+        super().__init__()
+        self.host = config.get('host', '')
+        self.port = int(config.get('port', 587) or 587)
+        self.username = config.get('username', '')
+        self.password = config.get('password', '')
+        self.tls_mode = config.get('tls_mode', 'starttls')  # none | starttls | ssl
+        self.from_address = config.get('from_address', '')
+        self.to_addresses = self._parse_recipients(config.get('to_addresses', ''))
+        self.subject_prefix = config.get('subject_prefix', '[ProxMenux]')
+        self.timeout = int(config.get('timeout', 10) or 10)
+    
+    @staticmethod
+    def _parse_recipients(raw) -> list:
+        if isinstance(raw, list):
+            return [a.strip() for a in raw if a.strip()]
+        return [addr.strip() for addr in str(raw).split(',') if addr.strip()]
+    
+    def validate_config(self) -> Tuple[bool, str]:
+        if not self.to_addresses:
+            return False, 'No recipients configured'
+        if not self.from_address:
+            return False, 'No from address configured'
+        # Must have SMTP host OR local sendmail available
+        if not self.host:
+            import os
+            if not os.path.exists('/usr/sbin/sendmail'):
+                return False, 'No SMTP host configured and /usr/sbin/sendmail not found'
+        return True, ''
+    
+    def send(self, title: str, message: str, severity: str = 'INFO',
+             data: Optional[Dict] = None) -> Dict[str, Any]:
+        subject = f"{self.subject_prefix} [{severity}] {title}"
+        
+        def _do_send():
+            if self.host:
+                return self._send_smtp(subject, message, severity)
+            else:
+                return self._send_sendmail(subject, message, severity)
+        
+        return self._send_with_retry(_do_send)
+    
+    def _send_smtp(self, subject: str, body: str, severity: str) -> Tuple[int, str]:
+        import smtplib
+        from email.message import EmailMessage
+        
+        msg = EmailMessage()
+        msg['Subject'] = subject
+        msg['From'] = self.from_address
+        msg['To'] = ', '.join(self.to_addresses)
+        msg.set_content(body)
+        
+        # Add HTML alternative
+        html_body = self._format_html(subject, body, severity)
+        if html_body:
+            msg.add_alternative(html_body, subtype='html')
+        
+        try:
+            if self.tls_mode == 'ssl':
+                server = smtplib.SMTP_SSL(self.host, self.port, timeout=self.timeout)
+            else:
+                server = smtplib.SMTP(self.host, self.port, timeout=self.timeout)
+                if self.tls_mode == 'starttls':
+                    server.starttls()
+            
+            if self.username and self.password:
+                server.login(self.username, self.password)
+            
+            server.send_message(msg)
+            server.quit()
+            return 200, 'OK'
+        except smtplib.SMTPAuthenticationError as e:
+            return 0, f'SMTP authentication failed: {e}'
+        except smtplib.SMTPConnectError as e:
+            return 0, f'SMTP connection failed: {e}'
+        except smtplib.SMTPException as e:
+            return 0, f'SMTP error: {e}'
+        except (OSError, TimeoutError) as e:
+            return 0, f'Connection error: {e}'
+    
+    def _send_sendmail(self, subject: str, body: str, severity: str) -> Tuple[int, str]:
+        import os
+        import subprocess
+        from email.message import EmailMessage
+        
+        sendmail = '/usr/sbin/sendmail'
+        if not os.path.exists(sendmail):
+            return 0, 'sendmail not found at /usr/sbin/sendmail'
+        
+        msg = EmailMessage()
+        msg['Subject'] = subject
+        msg['From'] = self.from_address or 'proxmenux@localhost'
+        msg['To'] = ', '.join(self.to_addresses)
+        msg.set_content(body)
+        
+        try:
+            proc = subprocess.run(
+                [sendmail, '-t', '-oi'],
+                input=msg.as_string(), capture_output=True, text=True, timeout=30
+            )
+            if proc.returncode == 0:
+                return 200, 'OK'
+            return 0, f'sendmail failed (rc={proc.returncode}): {proc.stderr[:200]}'
+        except subprocess.TimeoutExpired:
+            return 0, 'sendmail timed out after 30s'
+        except Exception as e:
+            return 0, f'sendmail error: {e}'
+    
+    @staticmethod
+    def _format_html(subject: str, body: str, severity: str) -> str:
+        """Create professional HTML email."""
+        import html as html_mod
+        
+        severity_colors = {'CRITICAL': '#dc2626', 'WARNING': '#f59e0b', 'INFO': '#3b82f6'}
+        color = severity_colors.get(severity, '#6b7280')
+        
+        body_html = ''.join(
+            f'<p style="margin:4px 0;color:#374151;">{html_mod.escape(line)}</p>'
+            for line in body.split('\n') if line.strip()
+        )
+        
+        return f'''<!DOCTYPE html>
+<html><body style="font-family:-apple-system,Arial,sans-serif;background:#f3f4f6;padding:20px;">
+<div style="max-width:600px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;">
+  <div style="background:{color};padding:16px 24px;">
+    <h2 style="color:#fff;margin:0;font-size:16px;">ProxMenux Monitor</h2>
+    <p style="color:rgba(255,255,255,0.85);margin:4px 0 0;font-size:13px;">{html_mod.escape(severity)} Alert</p>
+  </div>
+  <div style="padding:24px;">
+    <h3 style="margin:0 0 12px;color:#111827;">{html_mod.escape(subject)}</h3>
+    {body_html}
+  </div>
+  <div style="background:#f9fafb;padding:12px 24px;border-top:1px solid #e5e7eb;">
+    <p style="margin:0;font-size:11px;color:#9ca3af;">Sent by ProxMenux Notification Service</p>
+  </div>
+</div>
+</body></html>'''
+    
+    def test(self) -> Tuple[bool, str]:
+        result = self.send(
+            'ProxMenux Test Notification',
+            'This is a test notification from ProxMenux Monitor.\n'
+            'If you received this, your email channel is working correctly.',
+            'INFO'
+        )
+        return result.get('success', False), result.get('error', '')
+
+
 # ─── Channel Factory ─────────────────────────────────────────────
 
 CHANNEL_TYPES = {
@@ -368,6 +533,12 @@ CHANNEL_TYPES = {
         'name': 'Discord',
         'config_keys': ['webhook_url'],
         'class': DiscordChannel,
+    },
+    'email': {
+        'name': 'Email (SMTP)',
+        'config_keys': ['host', 'port', 'username', 'password', 'tls_mode',
+                        'from_address', 'to_addresses', 'subject_prefix'],
+        'class': EmailChannel,
     },
 }
 
@@ -397,6 +568,8 @@ def create_channel(channel_type: str, config: Dict[str, str]) -> Optional[Notifi
             return DiscordChannel(
                 webhook_url=config.get('webhook_url', '')
             )
+        elif channel_type == 'email':
+            return EmailChannel(config)
     except Exception as e:
         print(f"[NotificationChannels] Failed to create {channel_type}: {e}")
     return None

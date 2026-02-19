@@ -313,6 +313,38 @@ TEMPLATES = {
         'group': 'system',
         'default_enabled': False,
     },
+    
+    # ── Burst aggregation summaries ──
+    'burst_auth_fail': {
+        'title': '{hostname}: {count} auth failures in {window}',
+        'body': '{count} authentication failures detected in {window}.\nSources: {entity_list}',
+        'group': 'security',
+        'default_enabled': True,
+    },
+    'burst_ip_block': {
+        'title': '{hostname}: Fail2Ban banned {count} IPs in {window}',
+        'body': '{count} IPs banned by Fail2Ban in {window}.\nIPs: {entity_list}',
+        'group': 'security',
+        'default_enabled': True,
+    },
+    'burst_disk_io': {
+        'title': '{hostname}: {count} disk I/O errors on {entity_list}',
+        'body': '{count} I/O errors detected in {window}.\nDevices: {entity_list}',
+        'group': 'storage',
+        'default_enabled': True,
+    },
+    'burst_cluster': {
+        'title': '{hostname}: Cluster flapping detected ({count} changes)',
+        'body': 'Cluster state changed {count} times in {window}.\nNodes: {entity_list}',
+        'group': 'cluster',
+        'default_enabled': True,
+    },
+    'burst_generic': {
+        'title': '{hostname}: {count} {event_type} events in {window}',
+        'body': '{count} events of type {event_type} in {window}.\n{entity_list}',
+        'group': 'system',
+        'default_enabled': True,
+    },
 }
 
 # ─── Event Groups (for UI filtering) ─────────────────────────────
@@ -339,23 +371,24 @@ def _get_hostname() -> str:
         return 'proxmox'
 
 
-def render_template(event_type: str, data: Dict[str, Any]) -> Dict[str, str]:
-    """Render a template with the given data.
+def render_template(event_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Render a template into a structured notification object.
     
-    Args:
-        event_type: Key from TEMPLATES dict
-        data: Variables to fill into the template
-    
-    Returns:
-        {'title': rendered_title, 'body': rendered_body, 'severity': severity}
+    Returns structured output usable by all channels:
+        title, body (text), body_text, body_html (escaped), fields, tags, severity, group
     """
+    import html as html_mod
+    
     template = TEMPLATES.get(event_type)
     if not template:
-        # Fallback for unknown event types
+        fallback_body = data.get('message', data.get('reason', str(data)))
+        severity = data.get('severity', 'INFO')
         return {
             'title': f"{_get_hostname()}: {event_type}",
-            'body': data.get('message', data.get('reason', str(data))),
-            'severity': data.get('severity', 'INFO'),
+            'body': fallback_body, 'body_text': fallback_body,
+            'body_html': f'<p>{html_mod.escape(str(fallback_body))}</p>',
+            'fields': [], 'tags': [severity, 'system', event_type],
+            'severity': severity, 'group': 'system',
         }
     
     # Ensure hostname is always available
@@ -363,58 +396,65 @@ def render_template(event_type: str, data: Dict[str, Any]) -> Dict[str, str]:
         'hostname': _get_hostname(),
         'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
         'severity': data.get('severity', 'INFO'),
+        # Burst event variables
+        'window': '', 'entity_list': '',
         # Common defaults
-        'vmid': '',
-        'vmname': '',
-        'reason': '',
-        'summary': '',
-        'details': '',
-        'category': '',
-        'previous': '',
-        'current': '',
-        'duration': '',
-        'value': '',
-        'threshold': '',
-        'source_ip': '',
-        'username': '',
-        'service': '',
-        'service_name': '',
-        'node_name': '',
-        'target_node': '',
-        'mount': '',
-        'device': '',
-        'used': '',
-        'total': '',
-        'available': '',
-        'cores': '',
-        'count': '',
-        'size': '',
-        'snapshot_name': '',
-        'jail': '',
-        'failures': '',
-        'quorum': '',
-        'change_details': '',
-        'message': '',
+        'vmid': '', 'vmname': '', 'reason': '', 'summary': '',
+        'details': '', 'category': '', 'previous': '', 'current': '',
+        'duration': '', 'value': '', 'threshold': '',
+        'source_ip': '', 'username': '', 'service': '', 'service_name': '',
+        'node_name': '', 'target_node': '', 'mount': '', 'device': '',
+        'used': '', 'total': '', 'available': '', 'cores': '',
+        'count': '', 'size': '', 'snapshot_name': '', 'jail': '',
+        'failures': '', 'quorum': '', 'change_details': '', 'message': '',
     }
     variables.update(data)
     
     try:
         title = template['title'].format(**variables)
     except (KeyError, ValueError):
-        title = template['title']  # Use raw template if formatting fails
+        title = template['title']
     
     try:
-        body = template['body'].format(**variables)
+        body_text = template['body'].format(**variables)
     except (KeyError, ValueError):
-        body = template['body']
+        body_text = template['body']
     
     # Clean up empty lines from missing optional variables
-    body = '\n'.join(line for line in body.split('\n') if line.strip())
+    body_text = '\n'.join(line for line in body_text.split('\n') if line.strip())
+    
+    severity = variables.get('severity', 'INFO')
+    group = template.get('group', 'system')
+    
+    # Build structured fields for Discord embeds / rich notifications
+    fields = []
+    field_map = [
+        ('vmid', 'VM/CT'), ('vmname', 'Name'), ('device', 'Device'),
+        ('source_ip', 'Source IP'), ('node_name', 'Node'), ('category', 'Category'),
+        ('service_name', 'Service'), ('jail', 'Jail'), ('username', 'User'),
+        ('count', 'Count'), ('window', 'Window'), ('entity_list', 'Affected'),
+    ]
+    for key, label in field_map:
+        val = variables.get(key, '')
+        if val:
+            fields.append((label, str(val)))
+    
+    # Build HTML body with escaped content
+    body_html_parts = []
+    for line in body_text.split('\n'):
+        if line.strip():
+            body_html_parts.append(f'<p>{html_mod.escape(line)}</p>')
+    body_html = '\n'.join(body_html_parts) if body_html_parts else f'<p>{html_mod.escape(body_text)}</p>'
     
     return {
         'title': title,
-        'body': body,
-        'severity': variables.get('severity', 'INFO'),
+        'body': body_text,         # backward compat
+        'body_text': body_text,
+        'body_html': body_html,
+        'fields': fields,
+        'tags': [severity, group, event_type],
+        'severity': severity,
+        'group': group,
     }
 
 

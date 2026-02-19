@@ -130,6 +130,15 @@ class HealthPersistence:
             )
         ''')
         
+        # Notification cooldown persistence (survives restarts)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS notification_last_sent (
+                fingerprint TEXT PRIMARY KEY,
+                last_sent_ts INTEGER NOT NULL,
+                count INTEGER DEFAULT 1
+            )
+        ''')
+        
         # Migration: add suppression_hours column to errors if not present
         cursor.execute("PRAGMA table_info(errors)")
         columns = [col[1] for col in cursor.fetchall()]
@@ -143,6 +152,7 @@ class HealthPersistence:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_events_error ON events(error_key)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_notif_sent_at ON notification_history(sent_at)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_notif_severity ON notification_history(severity)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_nls_ts ON notification_last_sent(last_sent_ts)')
         
         conn.commit()
         conn.close()
