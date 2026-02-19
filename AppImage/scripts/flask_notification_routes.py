@@ -161,15 +161,17 @@ def send_notification():
 def setup_proxmox_webhook():
     """Automatically configure PVE notifications to call our webhook.
     
-    Writes directly to /etc/pve/notifications.cfg (cluster filesystem)
-    instead of using pvesh, which has complex property-string formats
-    for headers and secrets that vary between PVE versions.
+    Strategy: parse existing config into discrete blocks, only add or
+    replace blocks whose name matches our IDs, preserve everything else
+    byte-for-byte.  Creates timestamped backups before any modification.
     
     Idempotent: safe to call multiple times.
-    Only creates/updates ProxMenux-owned objects.
+    Only touches blocks named 'proxmenux-webhook' / 'proxmenux-default'.
     """
-    import re
+    import os
+    import shutil
     import secrets as secrets_mod
+    from datetime import datetime
     
     ENDPOINT_ID = 'proxmenux-webhook'
     MATCHER_ID = 'proxmenux-default'
@@ -189,22 +191,145 @@ def setup_proxmox_webhook():
     def _build_fallback(secret_val):
         """Build manual instructions as fallback."""
         return [
-            "# Add to /etc/pve/notifications.cfg:",
+            "# Add these blocks to /etc/pve/notifications.cfg",
+            "# (append at the end, do NOT delete existing content):",
+            "",
             f"webhook: {ENDPOINT_ID}",
             f"\turl {WEBHOOK_URL}",
             "\tmethod post",
-            f"\theader Content-Type:application/json",
+            "\theader Content-Type:application/json",
             f"\theader X-Webhook-Secret:{{{{ secrets.proxmenux_secret }}}}",
             "",
-            "# Add to /etc/pve/priv/notifications.cfg:",
-            f"webhook: {ENDPOINT_ID}",
-            f"\tsecret proxmenux_secret {secret_val}",
-            "",
-            "# Also add a matcher block to /etc/pve/notifications.cfg:",
             f"matcher: {MATCHER_ID}",
             f"\ttarget {ENDPOINT_ID}",
             "\tmatch-severity warning,error",
+            "",
+            "# Add this block to /etc/pve/priv/notifications.cfg",
+            "# (append at the end, do NOT delete existing content):",
+            "",
+            f"webhook: {ENDPOINT_ID}",
+            f"\tsecret proxmenux_secret {secret_val}",
         ]
+    
+    def _read_file(path):
+        """Read file, return (content, error). Content is '' if missing."""
+        try:
+            with open(path, 'r') as f:
+                return f.read(), None
+        except FileNotFoundError:
+            return '', None
+        except PermissionError:
+            return None, f'Permission denied reading {path}'
+        except Exception as e:
+            return None, str(e)
+    
+    def _backup_file(path):
+        """Create timestamped backup if file exists. Never fails fatally."""
+        try:
+            if os.path.exists(path):
+                ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+                backup = f"{path}.proxmenux_backup_{ts}"
+                shutil.copy2(path, backup)
+        except Exception:
+            pass  # Best-effort backup
+    
+    def _parse_blocks(text):
+        """Parse PVE config into list of (block_type, block_name, block_text).
+        
+        A block starts with a non-whitespace line like 'type: name'
+        and includes all subsequent lines that start with whitespace.
+        Lines between blocks (blank lines, comments) are preserved as
+        anonymous blocks with type=None, name=None.
+        """
+        blocks = []
+        current_header = None
+        current_lines = []
+        gap_lines = []  # blank/comment lines between blocks
+        
+        for line in text.splitlines(keepends=True):
+            stripped = line.strip()
+            
+            # Check if this is a block header (non-whitespace, contains ':')
+            if stripped and not line[0].isspace() and ':' in stripped:
+                # Save previous block
+                if current_header is not None:
+                    blocks.append(current_header + (''.join(current_lines),))
+                    current_lines = []
+                elif current_lines:
+                    blocks.append((None, None, ''.join(current_lines)))
+                    current_lines = []
+                
+                # Save any gap lines as anonymous block
+                if gap_lines:
+                    blocks.append((None, None, ''.join(gap_lines)))
+                    gap_lines = []
+                
+                # Parse header
+                parts = stripped.split(':', 1)
+                btype = parts[0].strip()
+                bname = parts[1].strip() if len(parts) > 1 else ''
+                current_header = (btype, bname)
+                current_lines = [line]
+            
+            elif current_header is not None and line[0:1].isspace():
+                # Continuation line (starts with whitespace)
+                current_lines.append(line)
+            
+            else:
+                # Gap line (blank, comment, or anything between blocks)
+                if current_header is not None:
+                    blocks.append(current_header + (''.join(current_lines),))
+                    current_header = None
+                    current_lines = []
+                gap_lines.append(line)
+        
+        # Flush remaining
+        if current_header is not None:
+            blocks.append(current_header + (''.join(current_lines),))
+        elif current_lines:
+            blocks.append((None, None, ''.join(current_lines)))
+        if gap_lines:
+            blocks.append((None, None, ''.join(gap_lines)))
+        
+        return blocks
+    
+    def _upsert_block(blocks, block_type, block_name, new_text):
+        """Replace block if exists, otherwise append. Returns new list."""
+        found = False
+        result_blocks = []
+        for btype, bname, btext in blocks:
+            if btype == block_type and bname == block_name:
+                result_blocks.append((block_type, block_name, new_text))
+                found = True
+            else:
+                result_blocks.append((btype, bname, btext))
+        if not found:
+            # Append with blank line separator
+            result_blocks.append((None, None, '\n'))
+            result_blocks.append((block_type, block_name, new_text))
+        return result_blocks
+    
+    def _blocks_to_text(blocks):
+        """Reassemble blocks into config text."""
+        return ''.join(btext for _, _, btext in blocks)
+    
+    def _write_safe(path, content, original_content):
+        """Write content to path. On failure, try to restore original."""
+        try:
+            with open(path, 'w') as f:
+                f.write(content)
+            return None
+        except PermissionError:
+            return f'Permission denied writing {path}'
+        except Exception as e:
+            # Try to restore original
+            try:
+                if original_content is not None:
+                    with open(path, 'w') as f:
+                        f.write(original_content)
+            except Exception:
+                pass
+            return str(e)
     
     try:
         # ── Step 1: Ensure webhook secret exists ──
@@ -213,30 +338,29 @@ def setup_proxmox_webhook():
             secret = secrets_mod.token_urlsafe(32)
             notification_manager._save_setting('webhook_secret', secret)
         
-        # ── Step 2: Read current config ──
-        try:
-            with open(NOTIFICATIONS_CFG, 'r') as f:
-                cfg_text = f.read()
-        except FileNotFoundError:
-            cfg_text = ''
-        except PermissionError:
-            result['error'] = f'Permission denied reading {NOTIFICATIONS_CFG}'
+        # ── Step 2: Read both config files ──
+        cfg_text, err = _read_file(NOTIFICATIONS_CFG)
+        if err:
+            result['error'] = err
             result['fallback_commands'] = _build_fallback(secret)
             return jsonify(result), 200
         
-        # Read private config (secrets)
-        try:
-            with open(PRIV_CFG, 'r') as f:
-                priv_text = f.read()
-        except FileNotFoundError:
-            priv_text = ''
-        except PermissionError:
-            result['error'] = f'Permission denied reading {PRIV_CFG}'
+        priv_text, err = _read_file(PRIV_CFG)
+        if err:
+            result['error'] = err
             result['fallback_commands'] = _build_fallback(secret)
             return jsonify(result), 200
         
-        # ── Step 3: Build / replace our endpoint block ──
-        endpoint_block = (
+        # ── Step 3: Create backups ──
+        _backup_file(NOTIFICATIONS_CFG)
+        _backup_file(PRIV_CFG)
+        
+        # ── Step 4: Parse existing blocks ──
+        cfg_blocks = _parse_blocks(cfg_text)
+        priv_blocks = _parse_blocks(priv_text)
+        
+        # ── Step 5: Build our new blocks ──
+        endpoint_text = (
             f"webhook: {ENDPOINT_ID}\n"
             f"\turl {WEBHOOK_URL}\n"
             f"\tmethod post\n"
@@ -244,77 +368,39 @@ def setup_proxmox_webhook():
             f"\theader X-Webhook-Secret:{{{{ secrets.proxmenux_secret }}}}\n"
         )
         
-        # Regex to find existing block: "webhook: proxmenux-webhook\n..." until next block or EOF
-        block_re = re.compile(
-            rf'^webhook:\s+{re.escape(ENDPOINT_ID)}\n(?:\t[^\n]*\n)*',
-            re.MULTILINE
-        )
-        
-        if block_re.search(cfg_text):
-            cfg_text = block_re.sub(endpoint_block, cfg_text)
-        else:
-            # Append with blank line separator
-            if cfg_text and not cfg_text.endswith('\n\n'):
-                cfg_text = cfg_text.rstrip('\n') + '\n\n'
-            cfg_text += endpoint_block
-        
-        # ── Step 4: Build / replace matcher block ──
-        matcher_block = (
+        matcher_text = (
             f"matcher: {MATCHER_ID}\n"
             f"\ttarget {ENDPOINT_ID}\n"
             f"\tmatch-severity warning,error\n"
         )
         
-        matcher_re = re.compile(
-            rf'^matcher:\s+{re.escape(MATCHER_ID)}\n(?:\t[^\n]*\n)*',
-            re.MULTILINE
-        )
-        
-        if matcher_re.search(cfg_text):
-            cfg_text = matcher_re.sub(matcher_block, cfg_text)
-        else:
-            if not cfg_text.endswith('\n\n'):
-                cfg_text = cfg_text.rstrip('\n') + '\n\n'
-            cfg_text += matcher_block
-        
-        # ── Step 5: Build / replace private config (secret) ──
-        priv_block = (
+        priv_secret_text = (
             f"webhook: {ENDPOINT_ID}\n"
             f"\tsecret proxmenux_secret {secret}\n"
         )
         
-        priv_re = re.compile(
-            rf'^webhook:\s+{re.escape(ENDPOINT_ID)}\n(?:\t[^\n]*\n)*',
-            re.MULTILINE
-        )
+        # ── Step 6: Upsert (replace or append) our blocks only ──
+        cfg_blocks = _upsert_block(cfg_blocks, 'webhook', ENDPOINT_ID, endpoint_text)
+        cfg_blocks = _upsert_block(cfg_blocks, 'matcher', MATCHER_ID, matcher_text)
+        priv_blocks = _upsert_block(priv_blocks, 'webhook', ENDPOINT_ID, priv_secret_text)
         
-        if priv_re.search(priv_text):
-            priv_text = priv_re.sub(priv_block, priv_text)
-        else:
-            if priv_text and not priv_text.endswith('\n\n'):
-                priv_text = priv_text.rstrip('\n') + '\n\n'
-            priv_text += priv_block
+        new_cfg = _blocks_to_text(cfg_blocks)
+        new_priv = _blocks_to_text(priv_blocks)
         
-        # ── Step 6: Write back ──
-        try:
-            with open(NOTIFICATIONS_CFG, 'w') as f:
-                f.write(cfg_text)
-        except PermissionError:
-            result['error'] = f'Permission denied writing {NOTIFICATIONS_CFG}'
+        # ── Step 7: Write back (with rollback on error) ──
+        err = _write_safe(NOTIFICATIONS_CFG, new_cfg, cfg_text)
+        if err:
+            result['error'] = err
             result['fallback_commands'] = _build_fallback(secret)
             return jsonify(result), 200
         
-        try:
-            with open(PRIV_CFG, 'w') as f:
-                f.write(priv_text)
-        except PermissionError:
-            # Rollback is complex; just warn
-            result['error'] = (
-                f'Endpoint configured but secret could not be written to {PRIV_CFG}. '
-                f'Add manually: secret proxmenux_secret {secret}'
-            )
+        err = _write_safe(PRIV_CFG, new_priv, priv_text)
+        if err:
+            # Rollback main config
+            _write_safe(NOTIFICATIONS_CFG, cfg_text, None)
+            result['error'] = f'Secret file failed: {err}. Main config rolled back.'
             result['fallback_commands'] = [
-                f"# Add to {PRIV_CFG}:",
+                f"# Add to {PRIV_CFG} (append, don't overwrite):",
                 f"webhook: {ENDPOINT_ID}",
                 f"\tsecret proxmenux_secret {secret}",
             ]
