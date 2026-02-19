@@ -157,6 +157,78 @@ def send_notification():
         return jsonify({'error': str(e)}), 500
 
 
+# ── PVE config constants ──
+_PVE_ENDPOINT_ID = 'proxmenux-webhook'
+_PVE_MATCHER_ID = 'proxmenux-default'
+_PVE_WEBHOOK_URL = 'http://127.0.0.1:8008/api/notifications/webhook'
+_PVE_NOTIFICATIONS_CFG = '/etc/pve/notifications.cfg'
+_PVE_PRIV_CFG = '/etc/pve/priv/notifications.cfg'
+_PVE_OUR_HEADERS = {
+    f'webhook: {_PVE_ENDPOINT_ID}',
+    f'matcher: {_PVE_MATCHER_ID}',
+}
+
+
+def _pve_read_file(path):
+    """Read file, return (content, error). Content is '' if missing."""
+    try:
+        with open(path, 'r') as f:
+            return f.read(), None
+    except FileNotFoundError:
+        return '', None
+    except PermissionError:
+        return None, f'Permission denied reading {path}'
+    except Exception as e:
+        return None, str(e)
+
+
+def _pve_backup_file(path):
+    """Create timestamped backup if file exists. Never fails fatally."""
+    import os, shutil
+    from datetime import datetime
+    try:
+        if os.path.exists(path):
+            ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup = f"{path}.proxmenux_backup_{ts}"
+            shutil.copy2(path, backup)
+    except Exception:
+        pass
+
+
+def _pve_remove_our_blocks(text, headers_to_remove):
+    """Remove only blocks whose header line matches one of ours.
+    
+    Preserves ALL other content byte-for-byte.
+    A block = header line + indented continuation lines + trailing blank line.
+    """
+    lines = text.splitlines(keepends=True)
+    cleaned = []
+    skip_block = False
+    
+    for line in lines:
+        stripped = line.strip()
+        
+        if stripped and not line[0:1].isspace() and ':' in stripped:
+            if stripped in headers_to_remove:
+                skip_block = True
+                continue
+            else:
+                skip_block = False
+        
+        if skip_block:
+            if not stripped:
+                skip_block = False
+                continue
+            elif line[0:1].isspace():
+                continue
+            else:
+                skip_block = False
+        
+        cleaned.append(line)
+    
+    return ''.join(cleaned)
+
+
 @notification_bp.route('/api/notifications/proxmox/setup-webhook', methods=['POST'])
 def setup_proxmox_webhook():
     """Automatically configure PVE notifications to call our webhook.
@@ -168,99 +240,30 @@ def setup_proxmox_webhook():
     Idempotent: safe to call multiple times.
     Only touches blocks named 'proxmenux-webhook' / 'proxmenux-default'.
     """
-    import os
-    import shutil
     import secrets as secrets_mod
-    from datetime import datetime
-    
-    ENDPOINT_ID = 'proxmenux-webhook'
-    MATCHER_ID = 'proxmenux-default'
-    WEBHOOK_URL = 'http://127.0.0.1:8008/api/notifications/webhook'
-    NOTIFICATIONS_CFG = '/etc/pve/notifications.cfg'
-    PRIV_CFG = '/etc/pve/priv/notifications.cfg'
     
     result = {
         'configured': False,
-        'endpoint_id': ENDPOINT_ID,
-        'matcher_id': MATCHER_ID,
-        'url': WEBHOOK_URL,
+        'endpoint_id': _PVE_ENDPOINT_ID,
+        'matcher_id': _PVE_MATCHER_ID,
+        'url': _PVE_WEBHOOK_URL,
         'fallback_commands': [],
         'error': None,
     }
     
     def _build_fallback():
-        """Build manual instructions as fallback."""
         return [
             "# Append to END of /etc/pve/notifications.cfg",
             "# (do NOT delete existing content):",
             "",
-            f"webhook: {ENDPOINT_ID}",
+            f"webhook: {_PVE_ENDPOINT_ID}",
             f"\tmethod post",
-            f"\turl {WEBHOOK_URL}",
+            f"\turl {_PVE_WEBHOOK_URL}",
             "",
-            f"matcher: {MATCHER_ID}",
-            f"\ttarget {ENDPOINT_ID}",
+            f"matcher: {_PVE_MATCHER_ID}",
+            f"\ttarget {_PVE_ENDPOINT_ID}",
             "\tmatch-severity warning,error",
         ]
-    
-    def _read_file(path):
-        """Read file, return (content, error). Content is '' if missing."""
-        try:
-            with open(path, 'r') as f:
-                return f.read(), None
-        except FileNotFoundError:
-            return '', None
-        except PermissionError:
-            return None, f'Permission denied reading {path}'
-        except Exception as e:
-            return None, str(e)
-    
-    def _backup_file(path):
-        """Create timestamped backup if file exists. Never fails fatally."""
-        try:
-            if os.path.exists(path):
-                ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-                backup = f"{path}.proxmenux_backup_{ts}"
-                shutil.copy2(path, backup)
-        except Exception:
-            pass  # Best-effort backup
-    
-    def _remove_our_blocks(text, headers_to_remove):
-        """Remove only blocks whose header line matches one of ours.
-        
-        Preserves ALL other content byte-for-byte.
-        A block = header line + indented continuation lines + trailing blank line.
-        """
-        lines = text.splitlines(keepends=True)
-        cleaned = []
-        skip_block = False
-        
-        for line in lines:
-            stripped = line.strip()
-            
-            # Non-whitespace line with ':' => block header
-            if stripped and not line[0:1].isspace() and ':' in stripped:
-                if stripped in headers_to_remove:
-                    skip_block = True
-                    continue
-                else:
-                    skip_block = False
-            
-            if skip_block:
-                if not stripped:
-                    # Blank line = block separator, consume it and stop skipping
-                    skip_block = False
-                    continue
-                elif line[0:1].isspace():
-                    # Indented = continuation of our block
-                    continue
-                else:
-                    # New block started
-                    skip_block = False
-            
-            cleaned.append(line)
-        
-        return ''.join(cleaned)
     
     try:
         # ── Step 1: Ensure webhook secret exists (for our own internal use) ──
@@ -270,32 +273,27 @@ def setup_proxmox_webhook():
             notification_manager._save_setting('webhook_secret', secret)
         
         # ── Step 2: Read main config ──
-        cfg_text, err = _read_file(NOTIFICATIONS_CFG)
+        cfg_text, err = _pve_read_file(_PVE_NOTIFICATIONS_CFG)
         if err:
             result['error'] = err
             result['fallback_commands'] = _build_fallback()
             return jsonify(result), 200
         
         # ── Step 3: Read priv config (to clean up any broken blocks we wrote before) ──
-        priv_text, err = _read_file(PRIV_CFG)
+        priv_text, err = _pve_read_file(_PVE_PRIV_CFG)
         if err:
-            priv_text = None  # Non-fatal, we just won't clean it
+            priv_text = None
         
         # ── Step 4: Create backups before ANY modification ──
-        _backup_file(NOTIFICATIONS_CFG)
+        _pve_backup_file(_PVE_NOTIFICATIONS_CFG)
         if priv_text is not None:
-            _backup_file(PRIV_CFG)
+            _pve_backup_file(_PVE_PRIV_CFG)
         
         # ── Step 5: Remove any previous proxmenux blocks from BOTH files ──
-        our_headers = {
-            f'webhook: {ENDPOINT_ID}',
-            f'matcher: {MATCHER_ID}',
-        }
-        
-        cleaned_cfg = _remove_our_blocks(cfg_text, our_headers)
+        cleaned_cfg = _pve_remove_our_blocks(cfg_text, _PVE_OUR_HEADERS)
         
         if priv_text is not None:
-            cleaned_priv = _remove_our_blocks(priv_text, our_headers)
+            cleaned_priv = _pve_remove_our_blocks(priv_text, _PVE_OUR_HEADERS)
         
         # ── Step 6: Build new blocks ──
         # Exact format from a real working PVE server:
@@ -309,19 +307,18 @@ def setup_proxmox_webhook():
         # Neither is needed for localhost calls.
         
         endpoint_block = (
-            f"webhook: {ENDPOINT_ID}\n"
+            f"webhook: {_PVE_ENDPOINT_ID}\n"
             f"\tmethod post\n"
-            f"\turl {WEBHOOK_URL}\n"
+            f"\turl {_PVE_WEBHOOK_URL}\n"
         )
         
         matcher_block = (
-            f"matcher: {MATCHER_ID}\n"
-            f"\ttarget {ENDPOINT_ID}\n"
+            f"matcher: {_PVE_MATCHER_ID}\n"
+            f"\ttarget {_PVE_ENDPOINT_ID}\n"
             f"\tmatch-severity warning,error\n"
         )
         
         # ── Step 7: Append our blocks to cleaned main config ──
-        # Ensure existing content ends cleanly
         if cleaned_cfg and not cleaned_cfg.endswith('\n'):
             cleaned_cfg += '\n'
         if cleaned_cfg and not cleaned_cfg.endswith('\n\n'):
@@ -331,16 +328,15 @@ def setup_proxmox_webhook():
         
         # ── Step 8: Write main config ──
         try:
-            with open(NOTIFICATIONS_CFG, 'w') as f:
+            with open(_PVE_NOTIFICATIONS_CFG, 'w') as f:
                 f.write(new_cfg)
         except PermissionError:
-            result['error'] = f'Permission denied writing {NOTIFICATIONS_CFG}'
+            result['error'] = f'Permission denied writing {_PVE_NOTIFICATIONS_CFG}'
             result['fallback_commands'] = _build_fallback()
             return jsonify(result), 200
         except Exception as e:
-            # Rollback
             try:
-                with open(NOTIFICATIONS_CFG, 'w') as f:
+                with open(_PVE_NOTIFICATIONS_CFG, 'w') as f:
                     f.write(cfg_text)
             except Exception:
                 pass
@@ -351,10 +347,10 @@ def setup_proxmox_webhook():
         # ── Step 9: Clean priv config (remove our broken blocks, write nothing new) ──
         if priv_text is not None and cleaned_priv != priv_text:
             try:
-                with open(PRIV_CFG, 'w') as f:
+                with open(_PVE_PRIV_CFG, 'w') as f:
                     f.write(cleaned_priv)
             except Exception:
-                pass  # Non-fatal, priv cleanup is best-effort
+                pass
         
         result['configured'] = True
         result['secret'] = secret
@@ -363,6 +359,78 @@ def setup_proxmox_webhook():
     except Exception as e:
         result['error'] = str(e)
         result['fallback_commands'] = _build_fallback()
+        return jsonify(result), 200
+
+
+@notification_bp.route('/api/notifications/proxmox/cleanup-webhook', methods=['POST'])
+def cleanup_proxmox_webhook():
+    """Remove ProxMenux webhook blocks from PVE notification config.
+    
+    Called when the notification service is disabled.
+    Only removes blocks named 'proxmenux-webhook' / 'proxmenux-default'.
+    All other blocks are preserved byte-for-byte.
+    Creates backups before modification.
+    """
+    result = {'cleaned': False, 'error': None}
+    
+    try:
+        # Read both files
+        cfg_text, err = _pve_read_file(_PVE_NOTIFICATIONS_CFG)
+        if err:
+            result['error'] = err
+            return jsonify(result), 200
+        
+        priv_text, err = _pve_read_file(_PVE_PRIV_CFG)
+        if err:
+            priv_text = None
+        
+        # Check if our blocks actually exist before doing anything
+        has_our_blocks = any(
+            h in cfg_text for h in [f'webhook: {_PVE_ENDPOINT_ID}', f'matcher: {_PVE_MATCHER_ID}']
+        )
+        has_priv_blocks = priv_text and f'webhook: {_PVE_ENDPOINT_ID}' in priv_text
+        
+        if not has_our_blocks and not has_priv_blocks:
+            result['cleaned'] = True
+            return jsonify(result), 200
+        
+        # Backup before modification
+        _pve_backup_file(_PVE_NOTIFICATIONS_CFG)
+        if priv_text is not None:
+            _pve_backup_file(_PVE_PRIV_CFG)
+        
+        # Remove our blocks
+        if has_our_blocks:
+            cleaned_cfg = _pve_remove_our_blocks(cfg_text, _PVE_OUR_HEADERS)
+            try:
+                with open(_PVE_NOTIFICATIONS_CFG, 'w') as f:
+                    f.write(cleaned_cfg)
+            except PermissionError:
+                result['error'] = f'Permission denied writing {_PVE_NOTIFICATIONS_CFG}'
+                return jsonify(result), 200
+            except Exception as e:
+                # Rollback
+                try:
+                    with open(_PVE_NOTIFICATIONS_CFG, 'w') as f:
+                        f.write(cfg_text)
+                except Exception:
+                    pass
+                result['error'] = str(e)
+                return jsonify(result), 200
+        
+        if has_priv_blocks and priv_text is not None:
+            cleaned_priv = _pve_remove_our_blocks(priv_text, _PVE_OUR_HEADERS)
+            try:
+                with open(_PVE_PRIV_CFG, 'w') as f:
+                    f.write(cleaned_priv)
+            except Exception:
+                pass  # Best-effort
+        
+        result['cleaned'] = True
+        return jsonify(result), 200
+    
+    except Exception as e:
+        result['error'] = str(e)
         return jsonify(result), 200
 
 

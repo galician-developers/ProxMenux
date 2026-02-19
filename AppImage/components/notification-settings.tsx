@@ -12,7 +12,8 @@ import { fetchApi } from "../lib/api-config"
 import {
   Bell, BellOff, Send, CheckCircle2, XCircle, Loader2,
   AlertTriangle, Info, Settings2, Zap, Eye, EyeOff,
-  Trash2, ChevronDown, ChevronUp, TestTube2, Mail, Webhook
+  Trash2, ChevronDown, ChevronUp, TestTube2, Mail, Webhook,
+  Copy, Server, Shield
 } from "lucide-react"
 
 interface ChannelConfig {
@@ -45,6 +46,9 @@ interface NotificationConfig {
   hostname: string
   webhook_secret: string
   webhook_allowed_ips: string
+  pbs_host: string
+  pve_host: string
+  pbs_trusted_sources: string
 }
 
 interface ServiceStatus {
@@ -109,6 +113,9 @@ const DEFAULT_CONFIG: NotificationConfig = {
   hostname: "",
   webhook_secret: "",
   webhook_allowed_ips: "",
+  pbs_host: "",
+  pve_host: "",
+  pbs_trusted_sources: "",
 }
 
 export function NotificationSettings() {
@@ -198,6 +205,18 @@ export function NotificationSettings() {
   const handleSave = async () => {
     setSaving(true)
     try {
+      // If notifications are being disabled, clean up PVE webhook first
+      const wasEnabled = originalConfig.enabled
+      const isNowDisabled = !config.enabled
+      
+      if (wasEnabled && isNowDisabled) {
+        try {
+          await fetchApi("/api/notifications/proxmox/cleanup-webhook", { method: "POST" })
+        } catch {
+          // Non-fatal: webhook cleanup failed but we still save settings
+        }
+      }
+      
       await fetchApi("/api/notifications/settings", {
         method: "POST",
         body: JSON.stringify(config),
@@ -581,9 +600,8 @@ matcher: proxmenux-pbs
                     <button
                       className={`relative w-9 h-[18px] rounded-full transition-colors ${
                         config.channels.telegram?.enabled ? "bg-blue-600" : "bg-muted-foreground/30"
-                      } ${!editMode ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
-                      onClick={() => editMode && updateChannel("telegram", "enabled", !config.channels.telegram?.enabled)}
-                      disabled={!editMode}
+                      } cursor-pointer`}
+                      onClick={() => updateChannel("telegram", "enabled", !config.channels.telegram?.enabled)}
                       role="switch"
                       aria-checked={config.channels.telegram?.enabled || false}
                     >
@@ -603,7 +621,6 @@ matcher: proxmenux-pbs
                             placeholder="123456:ABC-DEF1234..."
                             value={config.channels.telegram?.bot_token || ""}
                             onChange={e => updateChannel("telegram", "bot_token", e.target.value)}
-                            disabled={!editMode}
                           />
                           <button
                             className="h-7 w-7 flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors shrink-0"
@@ -620,23 +637,27 @@ matcher: proxmenux-pbs
                           placeholder="-1001234567890"
                           value={config.channels.telegram?.chat_id || ""}
                           onChange={e => updateChannel("telegram", "chat_id", e.target.value)}
-                          disabled={!editMode}
                         />
                       </div>
-                      {!editMode && config.channels.telegram?.bot_token && (
+                      {/* Per-channel action bar */}
+                      <div className="flex items-center gap-2 pt-2 border-t border-border/50">
                         <button
-                          className="h-7 px-3 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors flex items-center gap-1.5 w-full justify-center"
-                          onClick={() => handleTest("telegram")}
-                          disabled={testing === "telegram"}
+                          className="h-7 px-3 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                          onClick={handleSave}
+                          disabled={saving || !hasChanges}
                         >
-                          {testing === "telegram" ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <TestTube2 className="h-3 w-3" />
-                          )}
-                          Test Telegram
+                          {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                          Save
                         </button>
-                      )}
+                        <button
+                          className="h-7 px-3 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                          onClick={() => handleTest("telegram")}
+                          disabled={testing === "telegram" || !config.channels.telegram?.bot_token}
+                        >
+                          {testing === "telegram" ? <Loader2 className="h-3 w-3 animate-spin" /> : <TestTube2 className="h-3 w-3" />}
+                          Send Test
+                        </button>
+                      </div>
                     </>
                   )}
                 </TabsContent>
@@ -648,9 +669,8 @@ matcher: proxmenux-pbs
                     <button
                       className={`relative w-9 h-[18px] rounded-full transition-colors ${
                         config.channels.gotify?.enabled ? "bg-green-600" : "bg-muted-foreground/30"
-                      } ${!editMode ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
-                      onClick={() => editMode && updateChannel("gotify", "enabled", !config.channels.gotify?.enabled)}
-                      disabled={!editMode}
+                      } cursor-pointer`}
+                      onClick={() => updateChannel("gotify", "enabled", !config.channels.gotify?.enabled)}
                       role="switch"
                       aria-checked={config.channels.gotify?.enabled || false}
                     >
@@ -668,7 +688,6 @@ matcher: proxmenux-pbs
                           placeholder="https://gotify.example.com"
                           value={config.channels.gotify?.url || ""}
                           onChange={e => updateChannel("gotify", "url", e.target.value)}
-                          disabled={!editMode}
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -680,7 +699,6 @@ matcher: proxmenux-pbs
                             placeholder="A_valid_gotify_token"
                             value={config.channels.gotify?.token || ""}
                             onChange={e => updateChannel("gotify", "token", e.target.value)}
-                            disabled={!editMode}
                           />
                           <button
                             className="h-7 w-7 flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors shrink-0"
@@ -690,20 +708,25 @@ matcher: proxmenux-pbs
                           </button>
                         </div>
                       </div>
-                      {!editMode && config.channels.gotify?.url && (
+                      {/* Per-channel action bar */}
+                      <div className="flex items-center gap-2 pt-2 border-t border-border/50">
                         <button
-                          className="h-7 px-3 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors flex items-center gap-1.5 w-full justify-center"
-                          onClick={() => handleTest("gotify")}
-                          disabled={testing === "gotify"}
+                          className="h-7 px-3 text-xs rounded-md bg-green-600 hover:bg-green-700 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                          onClick={handleSave}
+                          disabled={saving || !hasChanges}
                         >
-                          {testing === "gotify" ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <TestTube2 className="h-3 w-3" />
-                          )}
-                          Test Gotify
+                          {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                          Save
                         </button>
-                      )}
+                        <button
+                          className="h-7 px-3 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                          onClick={() => handleTest("gotify")}
+                          disabled={testing === "gotify" || !config.channels.gotify?.url}
+                        >
+                          {testing === "gotify" ? <Loader2 className="h-3 w-3 animate-spin" /> : <TestTube2 className="h-3 w-3" />}
+                          Send Test
+                        </button>
+                      </div>
                     </>
                   )}
                 </TabsContent>
@@ -715,9 +738,8 @@ matcher: proxmenux-pbs
                     <button
                       className={`relative w-9 h-[18px] rounded-full transition-colors ${
                         config.channels.discord?.enabled ? "bg-indigo-600" : "bg-muted-foreground/30"
-                      } ${!editMode ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
-                      onClick={() => editMode && updateChannel("discord", "enabled", !config.channels.discord?.enabled)}
-                      disabled={!editMode}
+                      } cursor-pointer`}
+                      onClick={() => updateChannel("discord", "enabled", !config.channels.discord?.enabled)}
                       role="switch"
                       aria-checked={config.channels.discord?.enabled || false}
                     >
@@ -737,7 +759,6 @@ matcher: proxmenux-pbs
                             placeholder="https://discord.com/api/webhooks/..."
                             value={config.channels.discord?.webhook_url || ""}
                             onChange={e => updateChannel("discord", "webhook_url", e.target.value)}
-                            disabled={!editMode}
                           />
                           <button
                             className="h-7 w-7 flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors shrink-0"
@@ -747,20 +768,25 @@ matcher: proxmenux-pbs
                           </button>
                         </div>
                       </div>
-                      {!editMode && config.channels.discord?.webhook_url && (
+                      {/* Per-channel action bar */}
+                      <div className="flex items-center gap-2 pt-2 border-t border-border/50">
                         <button
-                          className="h-7 px-3 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors flex items-center gap-1.5 w-full justify-center"
-                          onClick={() => handleTest("discord")}
-                          disabled={testing === "discord"}
+                          className="h-7 px-3 text-xs rounded-md bg-indigo-600 hover:bg-indigo-700 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                          onClick={handleSave}
+                          disabled={saving || !hasChanges}
                         >
-                          {testing === "discord" ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <TestTube2 className="h-3 w-3" />
-                          )}
-                          Test Discord
+                          {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                          Save
                         </button>
-                      )}
+                        <button
+                          className="h-7 px-3 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                          onClick={() => handleTest("discord")}
+                          disabled={testing === "discord" || !config.channels.discord?.webhook_url}
+                        >
+                          {testing === "discord" ? <Loader2 className="h-3 w-3 animate-spin" /> : <TestTube2 className="h-3 w-3" />}
+                          Send Test
+                        </button>
+                      </div>
                     </>
                   )}
                 </TabsContent>
@@ -772,9 +798,8 @@ matcher: proxmenux-pbs
                     <button
                       className={`relative w-9 h-[18px] rounded-full transition-colors ${
                         config.channels.email?.enabled ? "bg-amber-600" : "bg-muted-foreground/30"
-                      } ${!editMode ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
-                      onClick={() => editMode && updateChannel("email", "enabled", !config.channels.email?.enabled)}
-                      disabled={!editMode}
+                      } cursor-pointer`}
+                      onClick={() => updateChannel("email", "enabled", !config.channels.email?.enabled)}
                       role="switch"
                       aria-checked={config.channels.email?.enabled || false}
                     >
@@ -793,7 +818,6 @@ matcher: proxmenux-pbs
                             placeholder="smtp.gmail.com"
                             value={config.channels.email?.host || ""}
                             onChange={e => updateChannel("email", "host", e.target.value)}
-                            disabled={!editMode}
                           />
                         </div>
                         <div className="space-y-1.5">
@@ -803,7 +827,6 @@ matcher: proxmenux-pbs
                             placeholder="587"
                             value={config.channels.email?.port || ""}
                             onChange={e => updateChannel("email", "port", e.target.value)}
-                            disabled={!editMode}
                           />
                         </div>
                       </div>
@@ -812,9 +835,8 @@ matcher: proxmenux-pbs
                         <Select
                           value={config.channels.email?.tls_mode || "starttls"}
                           onValueChange={v => updateChannel("email", "tls_mode", v)}
-                          disabled={!editMode}
                         >
-                          <SelectTrigger className={`h-7 text-xs ${!editMode ? "opacity-60" : ""}`}>
+                          <SelectTrigger className="h-7 text-xs">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -832,7 +854,6 @@ matcher: proxmenux-pbs
                             placeholder="user@example.com"
                             value={config.channels.email?.username || ""}
                             onChange={e => updateChannel("email", "username", e.target.value)}
-                            disabled={!editMode}
                           />
                         </div>
                         <div className="space-y-1.5">
@@ -844,7 +865,6 @@ matcher: proxmenux-pbs
                               placeholder="App password"
                               value={config.channels.email?.password || ""}
                               onChange={e => updateChannel("email", "password", e.target.value)}
-                              disabled={!editMode}
                             />
                             <button
                               className="h-7 w-7 flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors shrink-0"
@@ -862,7 +882,6 @@ matcher: proxmenux-pbs
                           placeholder="proxmenux@yourdomain.com"
                           value={config.channels.email?.from_address || ""}
                           onChange={e => updateChannel("email", "from_address", e.target.value)}
-                          disabled={!editMode}
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -872,7 +891,6 @@ matcher: proxmenux-pbs
                           placeholder="admin@example.com, ops@example.com"
                           value={config.channels.email?.to_addresses || ""}
                           onChange={e => updateChannel("email", "to_addresses", e.target.value)}
-                          disabled={!editMode}
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -882,7 +900,6 @@ matcher: proxmenux-pbs
                           placeholder="[ProxMenux]"
                           value={config.channels.email?.subject_prefix || "[ProxMenux]"}
                           onChange={e => updateChannel("email", "subject_prefix", e.target.value)}
-                          disabled={!editMode}
                         />
                       </div>
                       <div className="flex items-start gap-2 p-2 rounded-md bg-amber-500/10 border border-amber-500/20">
@@ -892,20 +909,25 @@ matcher: proxmenux-pbs
                           For Gmail, use an App Password instead of your account password.
                         </p>
                       </div>
-                      {!editMode && config.channels.email?.to_addresses && (
+                      {/* Per-channel action bar */}
+                      <div className="flex items-center gap-2 pt-2 border-t border-border/50">
                         <button
-                          className="h-7 px-3 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors flex items-center gap-1.5 w-full justify-center"
-                          onClick={() => handleTest("email")}
-                          disabled={testing === "email"}
+                          className="h-7 px-3 text-xs rounded-md bg-amber-600 hover:bg-amber-700 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                          onClick={handleSave}
+                          disabled={saving || !hasChanges}
                         >
-                          {testing === "email" ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <TestTube2 className="h-3 w-3" />
-                          )}
-                          Test Email
+                          {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                          Save
                         </button>
-                      )}
+                        <button
+                          className="h-7 px-3 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                          onClick={() => handleTest("email")}
+                          disabled={testing === "email" || !config.channels.email?.to_addresses}
+                        >
+                          {testing === "email" ? <Loader2 className="h-3 w-3 animate-spin" /> : <TestTube2 className="h-3 w-3" />}
+                          Send Test
+                        </button>
+                      </div>
                     </>
                   )}
                 </TabsContent>
@@ -929,7 +951,7 @@ matcher: proxmenux-pbs
             </div>
 
             {/* ── Severity Filter ── */}
-            <div className="space-y-2">
+            <div className="space-y-2 border-t border-border pt-4">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Severity Filter</span>
@@ -951,7 +973,7 @@ matcher: proxmenux-pbs
             </div>
 
             {/* ── Event Categories ── */}
-            <div className="space-y-2">
+            <div className="space-y-2 border-t border-border pt-4">
               <div className="flex items-center gap-2">
                 <Send className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Event Categories</span>
