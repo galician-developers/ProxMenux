@@ -133,7 +133,11 @@ class TelegramChannel(NotificationChannel):
     
     def __init__(self, bot_token: str, chat_id: str):
         super().__init__()
-        self.bot_token = bot_token.strip()
+        token = bot_token.strip()
+        # Strip 'bot' prefix if user included it (API_BASE already adds it)
+        if token.lower().startswith('bot') and ':' in token[3:]:
+            token = token[3:]
+        self.bot_token = token
         self.chat_id = chat_id.strip()
     
     def validate_config(self) -> Tuple[bool, str]:

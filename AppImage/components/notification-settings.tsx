@@ -202,6 +202,35 @@ export function NotificationSettings() {
     }))
   }
 
+  /** Flatten the nested NotificationConfig into the flat key-value map the backend expects. */
+  const flattenConfig = (cfg: NotificationConfig): Record<string, string> => {
+    const flat: Record<string, string> = {
+      enabled: String(cfg.enabled),
+      severity_filter: cfg.severity_filter,
+      ai_enabled: String(cfg.ai_enabled),
+      ai_provider: cfg.ai_provider,
+      ai_api_key: cfg.ai_api_key,
+      ai_model: cfg.ai_model,
+      hostname: cfg.hostname,
+      webhook_secret: cfg.webhook_secret,
+      webhook_allowed_ips: cfg.webhook_allowed_ips,
+      pbs_host: cfg.pbs_host,
+      pve_host: cfg.pve_host,
+      pbs_trusted_sources: cfg.pbs_trusted_sources,
+    }
+    // Flatten channels: { telegram: { enabled, bot_token, chat_id } } -> telegram.enabled, telegram.bot_token, ...
+    for (const [chName, chCfg] of Object.entries(cfg.channels)) {
+      for (const [field, value] of Object.entries(chCfg)) {
+        flat[`${chName}.${field}`] = String(value ?? "")
+      }
+    }
+    // Flatten event_categories: { system: true, backups: false } -> events.system, events.backups
+    for (const [cat, enabled] of Object.entries(cfg.event_categories)) {
+      flat[`events.${cat}`] = String(enabled)
+    }
+    return flat
+  }
+
   const handleSave = async () => {
     setSaving(true)
     try {
@@ -217,9 +246,10 @@ export function NotificationSettings() {
         }
       }
       
+      const payload = flattenConfig(config)
       await fetchApi("/api/notifications/settings", {
         method: "POST",
-        body: JSON.stringify(config),
+        body: JSON.stringify(payload),
       })
       setOriginalConfig(config)
       setHasChanges(false)
@@ -244,6 +274,15 @@ export function NotificationSettings() {
     setTesting(channel)
     setTestResult(null)
     try {
+      // Auto-save current config before testing so backend has latest channel data
+      const payload = flattenConfig(config)
+      await fetchApi("/api/notifications/settings", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      })
+      setOriginalConfig(config)
+      setHasChanges(false)
+      
       const data = await fetchApi<{
         success: boolean
         message?: string
@@ -642,7 +681,7 @@ matcher: proxmenux-pbs
                           <Input
                             type={showSecrets["tg_token"] ? "text" : "password"}
                             className="h-7 text-xs font-mono"
-                            placeholder="123456:ABC-DEF1234..."
+                            placeholder="7595377878:AAGE6Fb2cy... (with or without 'bot' prefix)"
                             value={config.channels.telegram?.bot_token || ""}
                             onChange={e => updateChannel("telegram", "bot_token", e.target.value)}
                           />

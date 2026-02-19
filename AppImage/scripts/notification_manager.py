@@ -937,19 +937,50 @@ class NotificationManager:
             return {'success': False, 'error': str(e)}
     
     def get_settings(self) -> Dict[str, Any]:
-        """Get all notification settings for the UI."""
+        """Get all notification settings for the UI.
+        
+        Returns a structure matching the frontend's NotificationConfig shape
+        so the round-trip (GET -> edit -> POST) is seamless.
+        """
         if not self._config:
             self._load_config()
         
-        return {
+        # Build nested channels object matching frontend ChannelConfig
+        channels = {}
+        for ch_type, info in CHANNEL_TYPES.items():
+            ch_cfg: Dict[str, Any] = {
+                'enabled': self._config.get(f'{ch_type}.enabled', 'false') == 'true',
+            }
+            for config_key in info['config_keys']:
+                ch_cfg[config_key] = self._config.get(f'{ch_type}.{config_key}', '')
+            channels[ch_type] = ch_cfg
+        
+        # Build event_categories dict
+        # EVENT_GROUPS is a dict: { 'system': {...}, 'vm_ct': {...}, ... }
+        event_categories = {}
+        for group_key in EVENT_GROUPS:
+            event_categories[group_key] = self._config.get(f'events.{group_key}', 'true') == 'true'
+        
+        config = {
             'enabled': self._enabled,
-            'settings': {f'{SETTINGS_PREFIX}{k}': v for k, v in self._config.items()},
-            'channels': self.list_channels()['channels'],
-            'event_groups': EVENT_GROUPS,
-            'event_types': get_event_types_by_group(),
-            'default_events': get_default_enabled_events(),
+            'channels': channels,
+            'severity_filter': self._config.get('severity_filter', 'warning'),
+            'event_categories': event_categories,
+            'ai_enabled': self._config.get('ai_enabled', 'false') == 'true',
+            'ai_provider': self._config.get('ai_provider', 'openai'),
+            'ai_api_key': self._config.get('ai_api_key', ''),
+            'ai_model': self._config.get('ai_model', ''),
+            'hostname': self._config.get('hostname', ''),
             'webhook_secret': self._config.get('webhook_secret', ''),
             'webhook_allowed_ips': self._config.get('webhook_allowed_ips', ''),
+            'pbs_host': self._config.get('pbs_host', ''),
+            'pve_host': self._config.get('pve_host', ''),
+            'pbs_trusted_sources': self._config.get('pbs_trusted_sources', ''),
+        }
+        
+        return {
+            'success': True,
+            'config': config,
         }
     
     def save_settings(self, settings: Dict[str, str]) -> Dict[str, Any]:
