@@ -769,10 +769,9 @@ class PollingCollector:
 class ProxmoxHookWatcher:
     """Receives native Proxmox VE notifications via local webhook endpoint.
     
-    Proxmox can be configured to send notifications to a webhook target:
-      pvesh create /cluster/notifications/endpoints/webhook/proxmenux \\
-        --url http://127.0.0.1:8008/api/notifications/webhook \\
-        --method POST
+    Configured automatically via /etc/pve/notifications.cfg (endpoint +
+    matcher blocks). The setup-webhook API writes these blocks on first
+    enable. See flask_notification_routes.py for details.
     
     Payload varies by source (storage, replication, cluster, PBS, apt).
     This class normalizes them into NotificationEvent objects.

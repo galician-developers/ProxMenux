@@ -161,16 +161,21 @@ def send_notification():
 def setup_proxmox_webhook():
     """Automatically configure PVE notifications to call our webhook.
     
-    Idempotent: safe to call multiple times. Only creates/updates
-    ProxMenux-owned objects (proxmenux-webhook endpoint, proxmenux-default matcher).
-    Never deletes or overrides user notification targets.
+    Writes directly to /etc/pve/notifications.cfg (cluster filesystem)
+    instead of using pvesh, which has complex property-string formats
+    for headers and secrets that vary between PVE versions.
+    
+    Idempotent: safe to call multiple times.
+    Only creates/updates ProxMenux-owned objects.
     """
-    import subprocess
+    import re
     import secrets as secrets_mod
     
     ENDPOINT_ID = 'proxmenux-webhook'
     MATCHER_ID = 'proxmenux-default'
     WEBHOOK_URL = 'http://127.0.0.1:8008/api/notifications/webhook'
+    NOTIFICATIONS_CFG = '/etc/pve/notifications.cfg'
+    PRIV_CFG = '/etc/pve/priv/notifications.cfg'
     
     result = {
         'configured': False,
@@ -181,111 +186,152 @@ def setup_proxmox_webhook():
         'error': None,
     }
     
-    def _run_pvesh(args: list, check: bool = True) -> tuple:
-        """Run pvesh command. Returns (success, stdout, stderr)."""
-        try:
-            proc = subprocess.run(
-                ['pvesh'] + args,
-                capture_output=True, text=True, timeout=15
-            )
-            return proc.returncode == 0, proc.stdout.strip(), proc.stderr.strip()
-        except FileNotFoundError:
-            return False, '', 'pvesh not found'
-        except subprocess.TimeoutExpired:
-            return False, '', 'pvesh timed out'
-        except Exception as e:
-            return False, '', str(e)
+    def _build_fallback(secret_val):
+        """Build manual instructions as fallback."""
+        return [
+            "# Add to /etc/pve/notifications.cfg:",
+            f"webhook: {ENDPOINT_ID}",
+            f"\turl {WEBHOOK_URL}",
+            "\tmethod post",
+            f"\theader Content-Type:application/json",
+            f"\theader X-Webhook-Secret:{{{{ secrets.proxmenux_secret }}}}",
+            "",
+            "# Add to /etc/pve/priv/notifications.cfg:",
+            f"webhook: {ENDPOINT_ID}",
+            f"\tsecret proxmenux_secret {secret_val}",
+            "",
+            "# Also add a matcher block to /etc/pve/notifications.cfg:",
+            f"matcher: {MATCHER_ID}",
+            f"\ttarget {ENDPOINT_ID}",
+            "\tmatch-severity warning,error",
+        ]
     
     try:
-        # Step 1: Ensure webhook secret exists
+        # ── Step 1: Ensure webhook secret exists ──
         secret = notification_manager.get_webhook_secret()
         if not secret:
             secret = secrets_mod.token_urlsafe(32)
             notification_manager._save_setting('webhook_secret', secret)
         
-        secret_header = f'X-Webhook-Secret={secret}'
-        
-        # Step 2: Check if endpoint already exists
-        exists_ok, _, _ = _run_pvesh([
-            'get', f'/cluster/notifications/endpoints/webhook/{ENDPOINT_ID}',
-            '--output-format', 'json'
-        ])
-        
-        if exists_ok:
-            # Update existing endpoint
-            ok, _, err = _run_pvesh([
-                'set', f'/cluster/notifications/endpoints/webhook/{ENDPOINT_ID}',
-                '--url', WEBHOOK_URL,
-                '--method', 'post',
-                '--header', secret_header,
-            ])
-        else:
-            # Create new endpoint
-            ok, _, err = _run_pvesh([
-                'create', '/cluster/notifications/endpoints/webhook',
-                '--name', ENDPOINT_ID,
-                '--url', WEBHOOK_URL,
-                '--method', 'post',
-                '--header', secret_header,
-            ])
-        
-        if not ok:
-            # Build fallback commands for manual execution
-            result['fallback_commands'] = [
-                f'pvesh create /cluster/notifications/endpoints/webhook '
-                f'--name {ENDPOINT_ID} --url {WEBHOOK_URL} --method post '
-                f'--header "{secret_header}"',
-                f'pvesh create /cluster/notifications/matchers '
-                f'--name {MATCHER_ID} --target {ENDPOINT_ID} '
-                f'--match-severity warning,error',
-            ]
-            result['error'] = f'Failed to configure endpoint: {err}'
+        # ── Step 2: Read current config ──
+        try:
+            with open(NOTIFICATIONS_CFG, 'r') as f:
+                cfg_text = f.read()
+        except FileNotFoundError:
+            cfg_text = ''
+        except PermissionError:
+            result['error'] = f'Permission denied reading {NOTIFICATIONS_CFG}'
+            result['fallback_commands'] = _build_fallback(secret)
             return jsonify(result), 200
         
-        # Step 3: Create or update matcher
-        matcher_exists, _, _ = _run_pvesh([
-            'get', f'/cluster/notifications/matchers/{MATCHER_ID}',
-            '--output-format', 'json'
-        ])
+        # Read private config (secrets)
+        try:
+            with open(PRIV_CFG, 'r') as f:
+                priv_text = f.read()
+        except FileNotFoundError:
+            priv_text = ''
+        except PermissionError:
+            result['error'] = f'Permission denied reading {PRIV_CFG}'
+            result['fallback_commands'] = _build_fallback(secret)
+            return jsonify(result), 200
         
-        if matcher_exists:
-            ok_m, _, err_m = _run_pvesh([
-                'set', f'/cluster/notifications/matchers/{MATCHER_ID}',
-                '--target', ENDPOINT_ID,
-                '--match-severity', 'warning,error',
-            ])
+        # ── Step 3: Build / replace our endpoint block ──
+        endpoint_block = (
+            f"webhook: {ENDPOINT_ID}\n"
+            f"\turl {WEBHOOK_URL}\n"
+            f"\tmethod post\n"
+            f"\theader Content-Type:application/json\n"
+            f"\theader X-Webhook-Secret:{{{{ secrets.proxmenux_secret }}}}\n"
+        )
+        
+        # Regex to find existing block: "webhook: proxmenux-webhook\n..." until next block or EOF
+        block_re = re.compile(
+            rf'^webhook:\s+{re.escape(ENDPOINT_ID)}\n(?:\t[^\n]*\n)*',
+            re.MULTILINE
+        )
+        
+        if block_re.search(cfg_text):
+            cfg_text = block_re.sub(endpoint_block, cfg_text)
         else:
-            ok_m, _, err_m = _run_pvesh([
-                'create', '/cluster/notifications/matchers',
-                '--name', MATCHER_ID,
-                '--target', ENDPOINT_ID,
-                '--match-severity', 'warning,error',
-            ])
+            # Append with blank line separator
+            if cfg_text and not cfg_text.endswith('\n\n'):
+                cfg_text = cfg_text.rstrip('\n') + '\n\n'
+            cfg_text += endpoint_block
         
-        if not ok_m:
+        # ── Step 4: Build / replace matcher block ──
+        matcher_block = (
+            f"matcher: {MATCHER_ID}\n"
+            f"\ttarget {ENDPOINT_ID}\n"
+            f"\tmatch-severity warning,error\n"
+        )
+        
+        matcher_re = re.compile(
+            rf'^matcher:\s+{re.escape(MATCHER_ID)}\n(?:\t[^\n]*\n)*',
+            re.MULTILINE
+        )
+        
+        if matcher_re.search(cfg_text):
+            cfg_text = matcher_re.sub(matcher_block, cfg_text)
+        else:
+            if not cfg_text.endswith('\n\n'):
+                cfg_text = cfg_text.rstrip('\n') + '\n\n'
+            cfg_text += matcher_block
+        
+        # ── Step 5: Build / replace private config (secret) ──
+        priv_block = (
+            f"webhook: {ENDPOINT_ID}\n"
+            f"\tsecret proxmenux_secret {secret}\n"
+        )
+        
+        priv_re = re.compile(
+            rf'^webhook:\s+{re.escape(ENDPOINT_ID)}\n(?:\t[^\n]*\n)*',
+            re.MULTILINE
+        )
+        
+        if priv_re.search(priv_text):
+            priv_text = priv_re.sub(priv_block, priv_text)
+        else:
+            if priv_text and not priv_text.endswith('\n\n'):
+                priv_text = priv_text.rstrip('\n') + '\n\n'
+            priv_text += priv_block
+        
+        # ── Step 6: Write back ──
+        try:
+            with open(NOTIFICATIONS_CFG, 'w') as f:
+                f.write(cfg_text)
+        except PermissionError:
+            result['error'] = f'Permission denied writing {NOTIFICATIONS_CFG}'
+            result['fallback_commands'] = _build_fallback(secret)
+            return jsonify(result), 200
+        
+        try:
+            with open(PRIV_CFG, 'w') as f:
+                f.write(priv_text)
+        except PermissionError:
+            # Rollback is complex; just warn
+            result['error'] = (
+                f'Endpoint configured but secret could not be written to {PRIV_CFG}. '
+                f'Add manually: secret proxmenux_secret {secret}'
+            )
             result['fallback_commands'] = [
-                f'pvesh create /cluster/notifications/matchers '
-                f'--name {MATCHER_ID} --target {ENDPOINT_ID} '
-                f'--match-severity warning,error',
+                f"# Add to {PRIV_CFG}:",
+                f"webhook: {ENDPOINT_ID}",
+                f"\tsecret proxmenux_secret {secret}",
             ]
-            result['error'] = f'Endpoint OK, but matcher failed: {err_m}'
-            result['configured'] = False
             return jsonify(result), 200
         
         result['configured'] = True
-        result['secret'] = secret  # Return so UI can display it
+        result['secret'] = secret
         return jsonify(result), 200
     
     except Exception as e:
         result['error'] = str(e)
-        result['fallback_commands'] = [
-            f'pvesh create /cluster/notifications/endpoints/webhook '
-            f'--name {ENDPOINT_ID} --url {WEBHOOK_URL} --method post '
-            f'--header "X-Webhook-Secret=YOUR_SECRET"',
-            f'pvesh create /cluster/notifications/matchers '
-            f'--name {MATCHER_ID} --target {ENDPOINT_ID} '
-            f'--match-severity warning,error',
-        ]
+        try:
+            result['fallback_commands'] = _build_fallback(
+                notification_manager.get_webhook_secret() or 'YOUR_SECRET'
+            )
+        except Exception:
+            result['fallback_commands'] = _build_fallback('YOUR_SECRET')
         return jsonify(result), 200
 
 

@@ -416,25 +416,34 @@ export function NotificationSettings() {
                 </div>
                 <div className="space-y-1.5">
                   <p className="text-[11px] font-medium text-muted-foreground">
-                    Run on the PBS host:
+                    Add to /etc/proxmox-backup/notifications.cfg on the PBS host:
                   </p>
                   <pre className="text-[11px] bg-background p-2 rounded border border-border overflow-x-auto font-mono">
-{`# Create webhook endpoint on PBS
-proxmox-backup-manager notification endpoint webhook create proxmenux-webhook \\
-  --url http://<PVE_HOST_IP>:8008/api/notifications/webhook \\
-  --header "X-Webhook-Secret=<YOUR_SECRET>"
+{`webhook: proxmenux-webhook
+\turl http://<PVE_IP>:8008/api/notifications/webhook
+\tmethod post
+\theader Content-Type:application/json
+\theader X-Webhook-Secret:{{ secrets.proxmenux_secret }}
 
-# Create matcher to route PBS events
-proxmox-backup-manager notification matcher create proxmenux-pbs \\
-  --target proxmenux-webhook \\
-  --match-severity warning,error`}
+matcher: proxmenux-pbs
+\ttarget proxmenux-webhook
+\tmatch-severity warning,error`}
+                  </pre>
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-medium text-muted-foreground">
+                    Add to /etc/proxmox-backup/notifications-priv.cfg:
+                  </p>
+                  <pre className="text-[11px] bg-background p-2 rounded border border-border overflow-x-auto font-mono">
+{`webhook: proxmenux-webhook
+\tsecret proxmenux_secret <YOUR_SECRET>`}
                   </pre>
                 </div>
                 <div className="flex items-start gap-2 p-2 rounded-md bg-blue-500/10 border border-blue-500/20">
                   <Info className="h-3.5 w-3.5 text-blue-400 shrink-0 mt-0.5" />
                   <div className="text-[10px] text-blue-400/90 leading-relaxed space-y-1">
                     <p>
-                      {"Replace <PVE_HOST_IP> with the IP address of this PVE node (not 127.0.0.1, unless PBS runs on the same host)."}
+                      {"Replace <PVE_IP> with the IP of this PVE node (not 127.0.0.1, unless PBS runs on the same host)."}
                     </p>
                     <p>
                       {"Replace <YOUR_SECRET> with the webhook secret shown in your notification settings."}
@@ -1098,17 +1107,26 @@ proxmox-backup-manager notification matcher create proxmenux-pbs \\
                     Backups launched from PVE are covered by the PVE webhook. PBS internal jobs
                     (Verify, Prune, GC, Sync) require separate configuration on the PBS server.
                   </p>
+                  <p className="text-[10px] font-medium text-muted-foreground">
+                    Add to /etc/proxmox-backup/notifications.cfg:
+                  </p>
                   <pre className="text-[10px] bg-background p-2 rounded border border-border overflow-x-auto font-mono">
-{`# On the PBS host:
-proxmox-backup-manager notification endpoint webhook \\
-  create proxmenux-webhook \\
-  --url http://<PVE_IP>:8008/api/notifications/webhook \\
-  --header "X-Webhook-Secret=<SECRET>"
+{`webhook: proxmenux-webhook
+\turl http://<PVE_IP>:8008/api/notifications/webhook
+\tmethod post
+\theader Content-Type:application/json
+\theader X-Webhook-Secret:{{ secrets.proxmenux_secret }}
 
-proxmox-backup-manager notification matcher \\
-  create proxmenux-pbs \\
-  --target proxmenux-webhook \\
-  --match-severity warning,error`}
+matcher: proxmenux-pbs
+\ttarget proxmenux-webhook
+\tmatch-severity warning,error`}
+                  </pre>
+                  <p className="text-[10px] font-medium text-muted-foreground">
+                    Add to /etc/proxmox-backup/notifications-priv.cfg:
+                  </p>
+                  <pre className="text-[10px] bg-background p-1.5 rounded border border-border overflow-x-auto font-mono">
+{`webhook: proxmenux-webhook
+\tsecret proxmenux_secret <SECRET>`}
                   </pre>
                   <p className="text-[10px] text-muted-foreground">
                     {"Replace <PVE_IP> with this node's IP and <SECRET> with the webhook secret above."}
