@@ -470,9 +470,15 @@ def get_event_types_by_group() -> Dict[str, list]:
         group = template.get('group', 'system')
         if group not in result:
             result[group] = []
+        import re
+        # Clean title: remove {hostname}: prefix and any remaining {placeholders}
+        title = template['title'].replace('{hostname}', '').strip(': ')
+        title = re.sub(r'\s*\{[^}]+\}', '', title).strip(' -:')
+        if not title:
+            title = event_type.replace('_', ' ').title()
         result[group].append({
             'type': event_type,
-            'title': template['title'].replace('{hostname}', '').strip(': '),
+            'title': title,
             'default_enabled': template.get('default_enabled', True),
         })
     return result

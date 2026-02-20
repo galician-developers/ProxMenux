@@ -835,6 +835,30 @@ class ProxmoxHookWatcher:
         body_lower = (body or '').lower()
         component_lower = (component or '').lower()
         
+        # VM / CT lifecycle events (if sent via webhook)
+        vmid = str(payload.get('vmid', ''))
+        if any(k in component_lower for k in ('qemu', 'lxc', 'vm', 'ct', 'container')):
+            if any(w in title_lower for w in ('start', 'running')):
+                etype = 'ct_start' if 'lxc' in component_lower or 'container' in component_lower else 'vm_start'
+                return etype, 'vm', vmid
+            if any(w in title_lower for w in ('stop', 'shutdown', 'down')):
+                etype = 'ct_stop' if 'lxc' in component_lower or 'container' in component_lower else 'vm_stop'
+                return etype, 'vm', vmid
+            if 'fail' in title_lower or 'crash' in title_lower or 'error' in body_lower:
+                return 'vm_fail', 'vm', vmid
+            if 'migrat' in title_lower:
+                return 'migration_complete', 'vm', vmid
+            return 'vm_start', 'vm', vmid
+        
+        # Also check title for VM keywords if component is not specific
+        if vmid or any(k in title_lower for k in ('vm ', 'ct ', 'qemu', 'lxc')):
+            if 'start' in title_lower:
+                return 'vm_start', 'vm', vmid
+            if any(w in title_lower for w in ('stop', 'shutdown')):
+                return 'vm_stop', 'vm', vmid
+            if 'fail' in title_lower or 'crash' in title_lower:
+                return 'vm_fail', 'vm', vmid
+        
         # Storage / SMART / ZFS / Ceph
         if any(k in component_lower for k in ('smart', 'disk', 'zfs', 'ceph')):
             entity_id = payload.get('device', payload.get('pool', ''))

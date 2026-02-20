@@ -262,7 +262,7 @@ def setup_proxmox_webhook():
             "",
             f"matcher: {_PVE_MATCHER_ID}",
             f"\ttarget {_PVE_ENDPOINT_ID}",
-            "\tmatch-severity warning,error",
+            "\tmode all",
         ]
     
     try:
@@ -315,7 +315,7 @@ def setup_proxmox_webhook():
         matcher_block = (
             f"matcher: {_PVE_MATCHER_ID}\n"
             f"\ttarget {_PVE_ENDPOINT_ID}\n"
-            f"\tmatch-severity warning,error\n"
+            f"\tmode all\n"
         )
         
         # ── Step 7: Append our blocks to cleaned main config ──

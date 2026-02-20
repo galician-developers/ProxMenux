@@ -6,13 +6,13 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs"
 import { Input } from "./ui/input"
 import { Label } from "./ui/label"
 import { Badge } from "./ui/badge"
-import { Checkbox } from "./ui/checkbox"
+
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
 import { fetchApi } from "../lib/api-config"
 import {
   Bell, BellOff, Send, CheckCircle2, XCircle, Loader2,
   AlertTriangle, Info, Settings2, Zap, Eye, EyeOff,
-  Trash2, ChevronDown, ChevronUp, TestTube2, Mail, Webhook,
+  Trash2, ChevronDown, ChevronUp, ChevronRight, TestTube2, Mail, Webhook,
   Copy, Server, Shield
 } from "lucide-react"
 
@@ -34,11 +34,19 @@ interface ChannelConfig {
   subject_prefix?: string
 }
 
+interface EventTypeInfo {
+  type: string
+  title: string
+  default_enabled: boolean
+}
+
 interface NotificationConfig {
   enabled: boolean
   channels: Record<string, ChannelConfig>
   severity_filter: string
   event_categories: Record<string, boolean>
+  event_toggles: Record<string, boolean>
+  event_types_by_group: Record<string, EventTypeInfo[]>
   ai_enabled: boolean
   ai_provider: string
   ai_api_key: string
@@ -101,11 +109,13 @@ const DEFAULT_CONFIG: NotificationConfig = {
     discord: { enabled: false },
     email: { enabled: false },
   },
-  severity_filter: "warning",
+  severity_filter: "all",
   event_categories: {
     system: true, vm_ct: true, backup: true, resources: true,
     storage: true, network: true, security: true, cluster: true,
   },
+  event_toggles: {},
+  event_types_by_group: {},
   ai_enabled: false,
   ai_provider: "openai",
   ai_api_key: "",
@@ -132,6 +142,7 @@ export function NotificationSettings() {
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({})
   const [editMode, setEditMode] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [originalConfig, setOriginalConfig] = useState<NotificationConfig>(DEFAULT_CONFIG)
   const [webhookSetup, setWebhookSetup] = useState<{
     status: "idle" | "running" | "success" | "failed"
@@ -227,6 +238,12 @@ export function NotificationSettings() {
     // Flatten event_categories: { system: true, backups: false } -> events.system, events.backups
     for (const [cat, enabled] of Object.entries(cfg.event_categories)) {
       flat[`events.${cat}`] = String(enabled)
+    }
+    // Flatten event_toggles: { vm_start: true, vm_stop: false } -> event.vm_start, event.vm_stop
+    if (cfg.event_toggles) {
+      for (const [evt, enabled] of Object.entries(cfg.event_toggles)) {
+        flat[`event.${evt}`] = String(enabled)
+      }
     }
     return flat
   }
@@ -1043,32 +1060,128 @@ matcher: proxmenux-pbs
               {/* Event Categories */}
               <div className="space-y-1.5 border-t border-border/30 pt-3">
                 <Label className="text-[11px] text-muted-foreground">Event Categories</Label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                {EVENT_CATEGORIES.map(cat => (
-                  <label
-                    key={cat.key}
-                    className={`flex items-start gap-2.5 p-2 rounded-md border border-border/50 transition-colors ${
-                      editMode ? "hover:bg-muted/50 cursor-pointer" : "opacity-60"
-                    }`}
-                  >
-                    <Checkbox
-                      checked={config.event_categories[cat.key] ?? true}
-                      onCheckedChange={checked => {
-                        if (!editMode) return
-                        updateConfig(p => ({
-                          ...p,
-                          event_categories: { ...p.event_categories, [cat.key]: !!checked },
-                        }))
-                      }}
-                      disabled={!editMode}
-                      className="mt-0.5"
-                    />
-                    <div className="min-w-0">
-                      <span className="text-xs font-medium block">{cat.label}</span>
-                      <span className="text-[10px] text-muted-foreground">{cat.desc}</span>
+              <div className="space-y-1.5">
+                {EVENT_CATEGORIES.map(cat => {
+                  const isEnabled = config.event_categories[cat.key] ?? true
+                  const isExpanded = expandedCategories.has(cat.key)
+                  const eventsForGroup = config.event_types_by_group?.[cat.key] || []
+                  const enabledCount = eventsForGroup.filter(e => config.event_toggles?.[e.type] ?? e.default_enabled).length
+                  
+                  return (
+                    <div key={cat.key} className={`rounded-md border transition-colors ${
+                      isEnabled ? "border-green-500/30 bg-green-500/5" : "border-border/50 bg-transparent"
+                    }`}>
+                      {/* Category header row */}
+                      <div className="flex items-center gap-2.5 p-2.5">
+                        {/* Expand/collapse button */}
+                        <button
+                          type="button"
+                          className={`shrink-0 transition-transform ${isExpanded ? "rotate-90" : ""} ${
+                            !isEnabled ? "opacity-30 pointer-events-none" : "text-muted-foreground hover:text-foreground"
+                          }`}
+                          onClick={() => {
+                            if (!isEnabled) return
+                            setExpandedCategories(prev => {
+                              const next = new Set(prev)
+                              if (next.has(cat.key)) next.delete(cat.key)
+                              else next.add(cat.key)
+                              return next
+                            })
+                          }}
+                          aria-label={isExpanded ? "Collapse" : "Expand"}
+                        >
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        </button>
+                        
+                        {/* Label + description */}
+                        <div className="flex-1 min-w-0">
+                          <span className={`text-xs font-medium block ${
+                            isEnabled ? "text-green-400" : "text-foreground"
+                          }`}>
+                            {cat.label}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">{cat.desc}</span>
+                        </div>
+                        
+                        {/* Count badge */}
+                        {isEnabled && eventsForGroup.length > 0 && (
+                          <span className="text-[10px] text-muted-foreground tabular-nums">
+                            {enabledCount}/{eventsForGroup.length}
+                          </span>
+                        )}
+                        
+                        {/* Category toggle */}
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={isEnabled}
+                          disabled={!editMode}
+                          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                            !editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+                          } ${isEnabled ? "bg-green-600" : "bg-muted-foreground/30"}`}
+                          onClick={() => {
+                            if (!editMode) return
+                            const newEnabled = !isEnabled
+                            updateConfig(p => {
+                              const newToggles = { ...(p.event_toggles || {}) }
+                              // When enabling a category, turn all its events on by default
+                              if (newEnabled && eventsForGroup.length > 0) {
+                                for (const evt of eventsForGroup) {
+                                  newToggles[evt.type] = true
+                                }
+                              }
+                              return {
+                                ...p,
+                                event_categories: { ...p.event_categories, [cat.key]: newEnabled },
+                                event_toggles: newToggles,
+                              }
+                            })
+                          }}
+                        >
+                          <span className={`pointer-events-none block h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${
+                            isEnabled ? "translate-x-4" : "translate-x-0.5"
+                          }`} />
+                        </button>
+                      </div>
+                      
+                      {/* Per-event toggles (expanded) */}
+                      {isEnabled && isExpanded && eventsForGroup.length > 0 && (
+                        <div className="border-t border-border/30 px-2.5 py-2 space-y-0.5">
+                          {eventsForGroup.map(evt => {
+                            const evtEnabled = config.event_toggles?.[evt.type] ?? evt.default_enabled
+                            return (
+                              <div key={evt.type} className="flex items-center justify-between py-1 px-2 rounded hover:bg-muted/30 transition-colors">
+                                <span className={`text-[11px] ${evtEnabled ? "text-green-400" : "text-muted-foreground"}`}>
+                                  {evt.title}
+                                </span>
+                                <button
+                                  type="button"
+                                  role="switch"
+                                  aria-checked={evtEnabled}
+                                  disabled={!editMode}
+                                  className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none ${
+                                    !editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+                                  } ${evtEnabled ? "bg-green-600" : "bg-muted-foreground/30"}`}
+                                  onClick={() => {
+                                    if (!editMode) return
+                                    updateConfig(p => ({
+                                      ...p,
+                                      event_toggles: { ...(p.event_toggles || {}), [evt.type]: !evtEnabled },
+                                    }))
+                                  }}
+                                >
+                                  <span className={`pointer-events-none block h-3 w-3 rounded-full bg-background shadow-sm transition-transform ${
+                                    evtEnabled ? "translate-x-3.5" : "translate-x-0.5"
+                                  }`} />
+                                </button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
-                  </label>
-                ))}
+                  )
+                })}
               </div>
               </div>
               </div>{/* close bordered filters container */}

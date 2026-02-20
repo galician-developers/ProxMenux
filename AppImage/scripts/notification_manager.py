@@ -460,13 +460,28 @@ class NotificationManager:
         if not self._enabled:
             return
         
-        # Check if this event type is enabled in settings
-        event_setting = f'events.{event.event_type}'
-        if self._config.get(event_setting, 'true') == 'false':
+        # Check if this event's GROUP is enabled in settings.
+        # The UI saves categories by group key: events.vm_ct, events.backup, etc.
+        template = TEMPLATES.get(event.event_type, {})
+        event_group = template.get('group', 'system')
+        group_setting = f'events.{event_group}'
+        if self._config.get(group_setting, 'true') == 'false':
             return
         
-        # Check severity filter
-        min_severity = self._config.get('filter.min_severity', 'INFO')
+        # Check if this SPECIFIC event type is enabled (granular per-event toggle).
+        # Key format: event.{event_type} = "true"/"false"
+        # Default comes from the template's default_enabled field.
+        default_enabled = 'true' if template.get('default_enabled', True) else 'false'
+        event_specific = f'event.{event.event_type}'
+        if self._config.get(event_specific, default_enabled) == 'false':
+            return
+        
+        # Check severity filter.
+        # The UI saves severity_filter as: "all", "warning", "critical".
+        # Map to our internal severity names for comparison.
+        severity_map = {'all': 'INFO', 'warning': 'WARNING', 'critical': 'CRITICAL'}
+        raw_filter = self._config.get('severity_filter', 'all')
+        min_severity = severity_map.get(raw_filter.lower(), 'INFO')
         if not self._meets_severity(event.severity, min_severity):
             return
         
@@ -484,8 +499,10 @@ class NotificationManager:
         if not self._enabled:
             return
         
-        # Check severity filter
-        min_severity = self._config.get('filter.min_severity', 'INFO')
+        # Check severity filter (same mapping as _process_event)
+        severity_map = {'all': 'INFO', 'warning': 'WARNING', 'critical': 'CRITICAL'}
+        raw_filter = self._config.get('severity_filter', 'all')
+        min_severity = severity_map.get(raw_filter.lower(), 'INFO')
         if not self._meets_severity(event.severity, min_severity):
             return
         
@@ -955,17 +972,32 @@ class NotificationManager:
                 ch_cfg[config_key] = self._config.get(f'{ch_type}.{config_key}', '')
             channels[ch_type] = ch_cfg
         
-        # Build event_categories dict
+        # Build event_categories dict (group-level toggle)
         # EVENT_GROUPS is a dict: { 'system': {...}, 'vm_ct': {...}, ... }
         event_categories = {}
         for group_key in EVENT_GROUPS:
             event_categories[group_key] = self._config.get(f'events.{group_key}', 'true') == 'true'
         
+        # Build per-event toggles: { 'vm_start': true, 'vm_stop': false, ... }
+        event_toggles = {}
+        for event_type, tmpl in TEMPLATES.items():
+            default = tmpl.get('default_enabled', True)
+            saved = self._config.get(f'event.{event_type}', None)
+            if saved is not None:
+                event_toggles[event_type] = saved == 'true'
+            else:
+                event_toggles[event_type] = default
+        
+        # Build event_types_by_group for UI rendering
+        event_types_by_group = get_event_types_by_group()
+        
         config = {
             'enabled': self._enabled,
             'channels': channels,
-            'severity_filter': self._config.get('severity_filter', 'warning'),
+            'severity_filter': self._config.get('severity_filter', 'all'),
             'event_categories': event_categories,
+            'event_toggles': event_toggles,
+            'event_types_by_group': event_types_by_group,
             'ai_enabled': self._config.get('ai_enabled', 'false') == 'true',
             'ai_provider': self._config.get('ai_provider', 'openai'),
             'ai_api_key': self._config.get('ai_api_key', ''),
@@ -1008,8 +1040,15 @@ class NotificationManager:
             conn.close()
             
             # Rebuild channels with new config
+            was_enabled = self._enabled
             self._enabled = self._config.get('enabled', 'false') == 'true'
             self._rebuild_channels()
+            
+            # Start/stop service if enabled state changed
+            if self._enabled and not self._running:
+                self.start()
+            elif not self._enabled and self._running:
+                self.stop()
             
             return {'success': True, 'channels_active': list(self._channels.keys())}
         except Exception as e:
