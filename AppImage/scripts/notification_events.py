@@ -1025,6 +1025,31 @@ class ProxmoxHookWatcher:
             raw=payload,
         )
         
+        # Cross-source dedup: if a tasks/journal watcher already emitted
+        # the same event_type+entity_id within 60s, skip the webhook copy.
+        # The fingerprint is hostname:entity:entity_id:event_type (source-agnostic).
+        import time
+        dedup_key = f"{self._hostname}:{entity}:{entity_id}:{event_type}"
+        now = time.time()
+        if not hasattr(self, '_webhook_dedup'):
+            self._webhook_dedup = {}
+        last_seen = self._webhook_dedup.get(dedup_key, 0)
+        if now - last_seen < 60:
+            return {'accepted': False, 'skipped': True, 'reason': 'duplicate_within_60s'}
+        self._webhook_dedup[dedup_key] = now
+        
+        # Also check the pipeline's global dedup (from other sources)
+        if hasattr(self, '_pipeline') and hasattr(self._pipeline, '_recent_fingerprints'):
+            if dedup_key in self._pipeline._recent_fingerprints:
+                fp_time = self._pipeline._recent_fingerprints[dedup_key]
+                if now - fp_time < 60:
+                    return {'accepted': False, 'skipped': True, 'reason': 'duplicate_cross_source'}
+        
+        # Cleanup old entries periodically
+        if len(self._webhook_dedup) > 200:
+            cutoff = now - 120
+            self._webhook_dedup = {k: v for k, v in self._webhook_dedup.items() if v > cutoff}
+        
         self._queue.put(event)
         return {'accepted': True, 'event_type': event_type, 'event_id': event.event_id}
     
@@ -1154,6 +1179,43 @@ class ProxmoxHookWatcher:
             return 'firewall_issue', 'node', ''
         if any(k in component_lower for k in ('auth', 'security', 'pam', 'sshd')):
             return 'auth_fail', 'user', ''
+        
+        # ── Text-based heuristics (for proxmox_hook where component is empty) ──
+        # Scan title + body for known keywords regardless of component.
+        text = f"{title_lower} {body_lower}"
+        
+        # Backup / vzdump
+        if 'vzdump' in text or 'backup' in text:
+            import re
+            m = re.search(r'(?:vm|ct|vmid)\s*(\d+)', text, re.IGNORECASE)
+            vmid = m.group(1) if m else ''
+            if any(w in text for w in ('fail', 'error', 'could not', 'unable')):
+                return 'backup_fail', 'vm', vmid
+            if any(w in text for w in ('success', 'complete', 'finished', 'ok')):
+                return 'backup_complete', 'vm', vmid
+            return 'backup_start', 'vm', vmid
+        
+        # Mail bounces
+        if 'could not be delivered' in text or 'mail system' in text or 'postmaster' in text:
+            return 'system_problem', 'node', ''
+        
+        # Disk / I/O
+        if any(w in text for w in ('i/o error', 'disk error', 'smart', 'bad sector', 'read error')):
+            return 'disk_io_error', 'disk', ''
+        
+        # Auth
+        if any(w in text for w in ('authentication fail', 'login fail', 'unauthorized', 'permission denied')):
+            return 'auth_fail', 'user', ''
+        
+        # Service failures
+        if any(w in text for w in ('service fail', 'failed to start', 'exited with error')):
+            return 'service_fail', 'node', ''
+        
+        # Replication
+        if 'replication' in text:
+            if 'fail' in text or 'error' in text:
+                return 'replication_fail', 'vm', ''
+            return 'replication_complete', 'vm', ''
         
         # Fallback: system_problem generic
         return 'system_problem', 'node', ''
