@@ -232,7 +232,7 @@ def _pve_remove_our_blocks(text, headers_to_remove):
 def _build_webhook_fallback():
     """Build fallback manual commands for webhook setup."""
     import base64
-    body_tpl = '{"title":"{{ escape title }}","message":"{{ escape message }}","severity":"{{ severity }}","timestamp":"{{ timestamp }}","type":"{{ escape type }}","hostname":"{{ escape hostname }}"}'
+    body_tpl = '{"title":"{{ title }}","message":"{{ message }}","severity":"{{ severity }}","timestamp":"{{ timestamp }}"}'
     body_b64 = base64.b64encode(body_tpl.encode()).decode()
     return [
         "# 1. Append to END of /etc/pve/notifications.cfg",
@@ -312,11 +312,13 @@ def setup_pve_webhook_core() -> dict:
         
         # PVE stores body as base64 in the config file. We encode it here
         # so the config parser reads it correctly.
-        # IMPORTANT: use {{ escape X }} for title/message -- PVE's escape
-        # helper JSON-escapes quotes and newlines. Without it, multi-line
-        # backup messages break the JSON and our handler can't parse it.
+        # Only use fields that ALWAYS exist: title, message, severity, timestamp.
+        # "type" and "hostname" are inside "fields" (not top-level) and
+        # {{ escape X }} fails hard on undefined fields, breaking the
+        # entire notification delivery for ALL targets.
+        # Our _classify() extracts type/hostname from the message content.
         import base64
-        body_template = '{"title":"{{ escape title }}","message":"{{ escape message }}","severity":"{{ severity }}","timestamp":"{{ timestamp }}","type":"{{ escape type }}","hostname":"{{ escape hostname }}"}'
+        body_template = '{"title":"{{ title }}","message":"{{ message }}","severity":"{{ severity }}","timestamp":"{{ timestamp }}"}'
         body_b64 = base64.b64encode(body_template.encode()).decode()
         
         endpoint_block = (
@@ -651,11 +653,27 @@ def proxmox_webhook():
         
         # If still empty, try parsing raw data as JSON (PVE may not set Content-Type)
         if not payload and raw_data:
+            import json
             try:
-                import json
                 payload = json.loads(raw_data)
             except (json.JSONDecodeError, ValueError):
-                pass
+                # PVE's {{ message }} may contain unescaped newlines/quotes
+                # that break JSON. Try to repair common issues.
+                try:
+                    repaired = raw_data.replace('\n', '\\n').replace('\r', '\\r')
+                    payload = json.loads(repaired)
+                except (json.JSONDecodeError, ValueError):
+                    # Try to extract fields with regex from broken JSON
+                    import re
+                    title_m = re.search(r'"title"\s*:\s*"([^"]*)"', raw_data)
+                    sev_m = re.search(r'"severity"\s*:\s*"([^"]*)"', raw_data)
+                    if title_m:
+                        payload = {
+                            'title': title_m.group(1),
+                            'body': raw_data[:1000],
+                            'severity': sev_m.group(1) if sev_m else 'info',
+                            'source': 'proxmox_hook',
+                        }
         
         # If still empty, try to salvage data from raw body
         if not payload:
