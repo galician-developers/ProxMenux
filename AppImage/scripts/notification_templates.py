@@ -472,8 +472,16 @@ def render_template(event_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
     except (KeyError, ValueError):
         body_text = template['body']
     
-    # Clean up empty lines from missing optional variables
-    body_text = '\n'.join(line for line in body_text.split('\n') if line.strip())
+    # Clean up: remove empty lines and consecutive duplicate lines
+    cleaned_lines = []
+    for line in body_text.split('\n'):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if cleaned_lines and stripped == cleaned_lines[-1]:
+            continue  # skip consecutive duplicate
+        cleaned_lines.append(stripped)
+    body_text = '\n'.join(cleaned_lines)
     
     severity = variables.get('severity', 'INFO')
     group = template.get('group', 'system')

@@ -240,9 +240,23 @@ export function NotificationSettings() {
       flat[`events.${cat}`] = String(enabled)
     }
     // Flatten event_toggles: { vm_start: true, vm_stop: false } -> event.vm_start, event.vm_stop
+    // Always write ALL toggles to DB so the backend has an explicit record.
+    // This ensures default_enabled changes in templates don't get overridden by stale DB values.
     if (cfg.event_toggles) {
       for (const [evt, enabled] of Object.entries(cfg.event_toggles)) {
         flat[`event.${evt}`] = String(enabled)
+      }
+    }
+    // Also write any events NOT in event_toggles using their template defaults.
+    // This covers newly added templates whose default_enabled may be false.
+    if (cfg.event_types_by_group) {
+      for (const events of Object.values(cfg.event_types_by_group)) {
+        for (const evt of (events as Array<{type: string, default_enabled: boolean}>)) {
+          const key = `event.${evt.type}`
+          if (!(key in flat)) {
+            flat[key] = String(evt.default_enabled)
+          }
+        }
       }
     }
     return flat

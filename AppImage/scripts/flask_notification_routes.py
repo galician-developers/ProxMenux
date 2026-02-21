@@ -115,7 +115,7 @@ def get_notification_status():
 def get_notification_history():
     """Get notification history with optional filters."""
     try:
-        limit = request.args.get('limit', 50, type=int)
+        limit = request.args.get('limit', 100, type=int)
         offset = request.args.get('offset', 0, type=int)
         severity = request.args.get('severity', '')
         channel = request.args.get('channel', '')

@@ -311,6 +311,24 @@ class NotificationManager:
         except Exception as e:
             print(f"[NotificationManager] Failed to load config: {e}")
         
+        # Reconcile per-event toggles with current template defaults.
+        # If a template's default_enabled was changed (e.g. state_change False),
+        # but the DB has a stale 'true' from a previous default, fix it now.
+        # Only override if the user hasn't explicitly set it (we track this with
+        # a sentinel: if the value came from auto-save of defaults, it may be stale).
+        for event_type, tmpl in TEMPLATES.items():
+            key = f'event.{event_type}'
+            if key in self._config:
+                db_val = self._config[key] == 'true'
+                tmpl_default = tmpl.get('default_enabled', True)
+                # If template says disabled but DB says enabled, AND there's no
+                # explicit user marker, enforce the template default.
+                if not tmpl_default and db_val:
+                    # Check if user explicitly enabled it (look for a marker)
+                    marker = f'event_explicit.{event_type}'
+                    if marker not in self._config:
+                        self._config[key] = 'false'
+        
         self._enabled = self._config.get('enabled', 'false') == 'true'
         self._rebuild_channels()
     
@@ -533,6 +551,13 @@ class NotificationManager:
         if not self._group_limiter.allow(group):
             return
         
+        # Use the properly mapped severity from the event, not from template defaults.
+        # event.severity was set by _map_severity which normalises to CRITICAL/WARNING/INFO.
+        severity = event.severity
+        
+        # Inject the canonical severity into data so templates see it too.
+        event.data['severity'] = severity
+        
         # Render message from template (structured output)
         rendered = render_template(event.event_type, event.data)
         
@@ -544,7 +569,7 @@ class NotificationManager:
             'model': self._config.get('ai_model', ''),
         }
         body = format_with_ai(
-            rendered['title'], rendered['body'], rendered['severity'], ai_config
+            rendered['title'], rendered['body'], severity, ai_config
         )
         
         # Enrich data with structured fields for channels that support them
@@ -554,7 +579,7 @@ class NotificationManager:
         
         # Send through all active channels
         self._dispatch_to_channels(
-            rendered['title'], body, rendered['severity'],
+            rendered['title'], body, severity,
             event.event_type, enriched_data, event.source
         )
     
@@ -1048,6 +1073,19 @@ class NotificationManager:
                 ''', (full_key, str(value), now))
                 
                 self._config[short_key] = str(value)
+                
+                # If user is explicitly enabling an event that defaults to disabled,
+                # mark it so _load_config reconciliation won't override it later.
+                if short_key.startswith('event.') and str(value) == 'true':
+                    event_type = short_key[6:]  # strip 'event.'
+                    tmpl = TEMPLATES.get(event_type, {})
+                    if not tmpl.get('default_enabled', True):
+                        marker_key = f'{SETTINGS_PREFIX}event_explicit.{event_type}'
+                        cursor.execute('''
+                            INSERT OR REPLACE INTO user_settings (setting_key, setting_value, updated_at)
+                            VALUES (?, ?, ?)
+                        ''', (marker_key, 'true', now))
+                        self._config[f'event_explicit.{event_type}'] = 'true'
             
             conn.commit()
             conn.close()

@@ -962,9 +962,25 @@ class ProxmoxHookWatcher:
         
         severity = self._map_severity(severity_raw)
         
+        # Extract "reason" as extra detail, NOT the full body.
+        # Templates already have their own intro text (e.g. "{vmname} has failed.").
+        # The body from the webhook often starts with the same intro, so using the
+        # full body as {reason} causes duplication. We strip the first line (which
+        # is typically the title/summary) and keep only the extra detail lines.
+        reason = ''
+        if body:
+            body_lines = body.strip().split('\n')
+            # If more than 1 line, skip the first (summary) and use the rest
+            if len(body_lines) > 1:
+                reason = '\n'.join(body_lines[1:]).strip()[:500]
+            else:
+                # Single-line body: only use it as reason if it differs from title
+                if body.strip().lower() != (title or '').strip().lower():
+                    reason = body.strip()[:500]
+        
         data = {
             'hostname': self._hostname,
-            'reason': body[:500] if body else title,
+            'reason': reason,
             'title': title,
             'source_component': source_component,
             'notification_type': notification_type,
