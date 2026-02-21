@@ -231,25 +231,25 @@ def _pve_remove_our_blocks(text, headers_to_remove):
 
 def _build_webhook_fallback():
     """Build fallback manual commands for webhook setup."""
-        body_tpl = '{"title":"{{ escape title }}","message":"{{ escape message }}","severity":"{{ severity }}","timestamp":"{{ timestamp }}","type":"{{#if fields.type}}{{ fields.type }}{{else}}test{{/if}}","hostname":"{{#if fields.hostname}}{{ fields.hostname }}{{else}}unknown{{/if}}"}'
-        return [
-            "# 1. Append to END of /etc/pve/notifications.cfg",
-            "#    (do NOT delete existing content):",
-            "",
-            f"webhook: {_PVE_ENDPOINT_ID}",
-            f"\tmethod post",
-            f"\turl {_PVE_WEBHOOK_URL}",
-            "",
-            f"matcher: {_PVE_MATCHER_ID}",
-            f"\ttarget {_PVE_ENDPOINT_ID}",
-            "\tmode all",
-            "",
-            "# 2. Append to /etc/pve/priv/notifications.cfg :",
-            f"webhook: {_PVE_ENDPOINT_ID}",
-            "",
-            "# 3. Set body via pvesh (NOT in the config file -- PVE stores it base64):",
-            f"pvesh set /cluster/notifications/endpoints/webhook/{_PVE_ENDPOINT_ID} --body '{body_tpl}'",
-        ]
+    body_tpl = '{"title":"{{ escape title }}","message":"{{ escape message }}","severity":"{{ severity }}","timestamp":"{{ timestamp }}","type":"{{#if fields.type}}{{ fields.type }}{{else}}test{{/if}}","hostname":"{{#if fields.hostname}}{{ fields.hostname }}{{else}}unknown{{/if}}"}'
+    return [
+        "# 1. Append to END of /etc/pve/notifications.cfg",
+        "#    (do NOT delete existing content):",
+        "",
+        f"webhook: {_PVE_ENDPOINT_ID}",
+        f"\tmethod post",
+        f"\turl {_PVE_WEBHOOK_URL}",
+        "",
+        f"matcher: {_PVE_MATCHER_ID}",
+        f"\ttarget {_PVE_ENDPOINT_ID}",
+        "\tmode all",
+        "",
+        "# 2. Append to /etc/pve/priv/notifications.cfg :",
+        f"webhook: {_PVE_ENDPOINT_ID}",
+        "",
+        "# 3. Set body via pvesh (NOT in the config file -- PVE stores it base64):",
+        f"pvesh set /cluster/notifications/endpoints/webhook/{_PVE_ENDPOINT_ID} --body '{body_tpl}'",
+    ]
 
 
 def setup_pve_webhook_core() -> dict:
