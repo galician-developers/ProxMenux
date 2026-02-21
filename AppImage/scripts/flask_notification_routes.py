@@ -231,9 +231,10 @@ def _pve_remove_our_blocks(text, headers_to_remove):
 
 def _build_webhook_fallback():
     """Build fallback manual commands for webhook setup."""
+        body_tpl = '{"title":"{{ escape title }}","message":"{{ escape message }}","severity":"{{ severity }}","timestamp":"{{ timestamp }}","type":"{{#if fields.type}}{{ fields.type }}{{else}}test{{/if}}","hostname":"{{#if fields.hostname}}{{ fields.hostname }}{{else}}unknown{{/if}}"}'
         return [
-            "# Append to END of /etc/pve/notifications.cfg",
-            "# (do NOT delete existing content):",
+            "# 1. Append to END of /etc/pve/notifications.cfg",
+            "#    (do NOT delete existing content):",
             "",
             f"webhook: {_PVE_ENDPOINT_ID}",
             f"\tmethod post",
@@ -243,8 +244,11 @@ def _build_webhook_fallback():
             f"\ttarget {_PVE_ENDPOINT_ID}",
             "\tmode all",
             "",
-            "# ALSO append to /etc/pve/priv/notifications.cfg :",
+            "# 2. Append to /etc/pve/priv/notifications.cfg :",
             f"webhook: {_PVE_ENDPOINT_ID}",
+            "",
+            "# 3. Set body via pvesh (NOT in the config file -- PVE stores it base64):",
+            f"pvesh set /cluster/notifications/endpoints/webhook/{_PVE_ENDPOINT_ID} --body '{body_tpl}'",
         ]
 
 
@@ -306,15 +310,10 @@ def setup_pve_webhook_core() -> dict:
         # PVE secret format is: secret name=key,value=<base64>
         # Neither is needed for localhost calls.
         
-        # PVE webhook format requires:
-        #   - body: Handlebars template for the HTTP body
-        #   - header: Content-Type header for JSON
-        #   - A matching entry in priv/notifications.cfg (even if empty)
-        # The body template uses PVE's Handlebars syntax to pass notification
-        # metadata to our webhook handler as structured JSON.
-        # PVE sends JSON by default (title, message, severity, timestamp, fields).
-        # Do NOT set header or body -- PVE's config parser rejects custom header
-        # formats and a missing/malformed header line corrupts the ENTIRE config.
+        # Write ONLY basic properties (method, url) to the config file.
+        # body and header MUST be set via pvesh API (Step 10) because PVE
+        # stores them base64-encoded internally. Writing them as plain text
+        # to the config file corrupts PVE's config parser.
         endpoint_block = (
             f"webhook: {_PVE_ENDPOINT_ID}\n"
             f"\tmethod post\n"
@@ -382,32 +381,43 @@ def setup_pve_webhook_core() -> dict:
             pass
         
         # ── Step 10: Configure body and header via pvesh API ──
-        # Writing header/body directly to the config file uses a different
-        # internal format that PVE's parser rejects. Using pvesh set handles
-        # escaping and the priv-config wire format correctly.
+        # body and header are stored base64-encoded in the config file.
+        # Writing them as plain text corrupts PVE's parser. pvesh handles
+        # the encoding correctly.
         import subprocess
         
-        # Body template: PVE Handlebars that sends JSON to our webhook
-        body_template = '{"title":"{{ escape title }}","message":"{{ escape message }}","severity":"{{ severity }}","timestamp":"{{ timestamp }}"}'
+        pvesh_path = f'/cluster/notifications/endpoints/webhook/{_PVE_ENDPOINT_ID}'
+        
+        # Body template using PVE Handlebars syntax.
+        # - {{ escape title }} and {{ escape message }} are PVE built-in helpers
+        # - {{ severity }} gives: info, notice, warning, error, unknown
+        # - {{ fields.X }} is populated for real events (backup, replication, etc.)
+        #   but NOT for test notifications, so we use {{#if}} fallbacks.
+        # - {{ timestamp }} gives epoch seconds
+        body_template = (
+            '{'
+            '"title":"{{ escape title }}",'
+            '"message":"{{ escape message }}",'
+            '"severity":"{{ severity }}",'
+            '"timestamp":"{{ timestamp }}",'
+            '"type":"{{#if fields.type}}{{ fields.type }}{{else}}test{{/if}}",'
+            '"hostname":"{{#if fields.hostname}}{{ fields.hostname }}{{else}}unknown{{/if}}"'
+            '}'
+        )
         
         try:
-            # Set body template
-            subprocess.run(
-                ['pvesh', 'set',
-                 f'/cluster/notifications/endpoints/webhook/{_PVE_ENDPOINT_ID}',
-                 '--body', body_template],
+            # Set body template via pvesh (NOT in the config file -- PVE
+            # stores body base64-encoded internally, pvesh handles that).
+            # No header needed: our webhook handler parses JSON from raw
+            # body regardless of Content-Type.
+            r1 = subprocess.run(
+                ['pvesh', 'set', pvesh_path, '--body', body_template],
                 capture_output=True, text=True, timeout=10
             )
-            
-            # Set Content-Type header
-            subprocess.run(
-                ['pvesh', 'set',
-                 f'/cluster/notifications/endpoints/webhook/{_PVE_ENDPOINT_ID}',
-                 '--header', 'Content-Type:application/json'],
-                capture_output=True, text=True, timeout=10
-            )
+            if r1.returncode != 0:
+                result['body_config_warning'] = f'pvesh set --body failed: {r1.stderr.strip()}'
         except Exception as e:
-            # Non-fatal: webhook still works, just sends raw format
+            # Non-fatal: if pvesh fails, webhook still receives POSTs (just empty body)
             result['body_config_warning'] = str(e)
         
         result['configured'] = True
