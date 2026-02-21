@@ -491,20 +491,6 @@ class NotificationManager:
         if not self._enabled:
             return
         
-        # Track fingerprint for cross-source dedup (webhook vs tasks/journal).
-        # The webhook handler checks this dict to skip events already
-        # processed from tasks or journal watchers within 60s.
-        import time
-        if not hasattr(self, '_recent_fingerprints'):
-            self._recent_fingerprints = {}
-        self._recent_fingerprints[event.fingerprint] = time.time()
-        # Cleanup old entries
-        if len(self._recent_fingerprints) > 500:
-            cutoff = time.time() - 120
-            self._recent_fingerprints = {
-                k: v for k, v in self._recent_fingerprints.items() if v > cutoff
-            }
-        
         # Check if this event's GROUP is enabled in settings.
         # The UI saves categories by group key: events.vm_ct, events.backup, etc.
         template = TEMPLATES.get(event.event_type, {})
@@ -880,7 +866,6 @@ class NotificationManager:
         """Process incoming Proxmox webhook. Delegates to ProxmoxHookWatcher."""
         if not self._hook_watcher:
             self._hook_watcher = ProxmoxHookWatcher(self._event_queue)
-            self._hook_watcher._pipeline = self  # For cross-source dedup
         return self._hook_watcher.process_webhook(payload)
     
     def get_webhook_secret(self) -> str:
