@@ -1055,7 +1055,7 @@ class ProxmoxHookWatcher:
         # ── PVE native notification types ──
         # When PVE sends via our webhook body template, fields.type is one of:
         #   vzdump, fencing, replication, package-updates, system-mail
-        pve_type = payload.get('type', '').lower()
+        pve_type = payload.get('type', '').lower().strip()
         
         if pve_type == 'vzdump':
             # Backup notification -- determine success or failure from severity
@@ -1163,6 +1163,6 @@ class ProxmoxHookWatcher:
         raw_l = str(raw).lower()
         if raw_l in ('critical', 'emergency', 'alert', 'crit', 'err', 'error'):
             return 'CRITICAL'
-        if raw_l in ('warning', 'warn'):
+        if raw_l in ('warning', 'warn', 'notice'):
             return 'WARNING'
         return 'INFO'

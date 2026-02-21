@@ -232,7 +232,7 @@ def _pve_remove_our_blocks(text, headers_to_remove):
 def _build_webhook_fallback():
     """Build fallback manual commands for webhook setup."""
     import base64
-    body_tpl = '{"title":"{{ title }}","message":"{{ message }}","severity":"{{ severity }}","timestamp":"{{ timestamp }}"}'
+    body_tpl = '{"title":"{{ escape title }}","message":"{{ escape message }}","severity":"{{ severity }}","timestamp":"{{ timestamp }}","type":"{{ escape type }}","hostname":"{{ escape hostname }}"}'
     body_b64 = base64.b64encode(body_tpl.encode()).decode()
     return [
         "# 1. Append to END of /etc/pve/notifications.cfg",
@@ -311,10 +311,12 @@ def setup_pve_webhook_core() -> dict:
         # Neither is needed for localhost calls.
         
         # PVE stores body as base64 in the config file. We encode it here
-        # so the config parser reads it correctly. The plain-text template:
-        #   {"title":"{{ title }}","message":"{{ message }}","severity":"{{ severity }}","timestamp":"{{ timestamp }}"}
+        # so the config parser reads it correctly.
+        # IMPORTANT: use {{ escape X }} for title/message -- PVE's escape
+        # helper JSON-escapes quotes and newlines. Without it, multi-line
+        # backup messages break the JSON and our handler can't parse it.
         import base64
-        body_template = '{"title":"{{ title }}","message":"{{ message }}","severity":"{{ severity }}","timestamp":"{{ timestamp }}"}'
+        body_template = '{"title":"{{ escape title }}","message":"{{ escape message }}","severity":"{{ severity }}","timestamp":"{{ timestamp }}","type":"{{ escape type }}","hostname":"{{ escape hostname }}"}'
         body_b64 = base64.b64encode(body_template.encode()).decode()
         
         endpoint_block = (
@@ -655,14 +657,15 @@ def proxmox_webhook():
             except (json.JSONDecodeError, ValueError):
                 pass
         
-        # If still empty, create a minimal test event from raw data
+        # If still empty, try to salvage data from raw body
         if not payload:
             if raw_data:
+                # Last resort: treat raw text as the message body
                 payload = {
-                    'type': 'webhook_test',
-                    'title': 'PVE Webhook Test',
-                    'body': raw_data[:500],
+                    'title': 'PVE Notification',
+                    'body': raw_data[:1000],
                     'severity': 'info',
+                    'source': 'proxmox_hook',
                 }
             else:
                 return _reject(400, 'empty_payload', 400)
