@@ -495,8 +495,21 @@ class NotificationManager:
         self._dispatch_event(event)
     
     def _process_event_direct(self, event: NotificationEvent):
-        """Process a burst summary event. Bypasses aggregator but applies all other filters."""
+        """Process a burst summary event. Bypasses aggregator but applies ALL other filters."""
         if not self._enabled:
+            return
+        
+        # Check group filter (same as _process_event)
+        template = TEMPLATES.get(event.event_type, {})
+        event_group = template.get('group', 'system')
+        group_setting = f'events.{event_group}'
+        if self._config.get(group_setting, 'true') == 'false':
+            return
+        
+        # Check per-event filter (same as _process_event)
+        default_enabled = 'true' if template.get('default_enabled', True) else 'false'
+        event_specific = f'event.{event.event_type}'
+        if self._config.get(event_specific, default_enabled) == 'false':
             return
         
         # Check severity filter (same mapping as _process_event)

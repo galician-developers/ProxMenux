@@ -45,11 +45,14 @@ SEVERITY_ICONS_DISCORD = {
 
 TEMPLATES = {
     # ── Health Monitor state changes ──
+    # NOTE: state_change is disabled by default -- it fires on every
+    # status oscillation (OK->WARNING->OK) which creates noise.
+    # The health_persistent and new_error templates cover this better.
     'state_change': {
         'title': '{hostname}: {category} changed to {current}',
         'body': '{category} status changed from {previous} to {current}.\n{reason}',
         'group': 'system',
-        'default_enabled': True,
+        'default_enabled': False,
     },
     'new_error': {
         'title': '{hostname}: New {severity} - {category}',
@@ -136,6 +139,18 @@ TEMPLATES = {
         'body': '{vmname} ({vmid}) migration to {target_node} failed.\n{reason}',
         'group': 'vm_ct',
         'default_enabled': True,
+    },
+    'replication_fail': {
+        'title': '{hostname}: Replication FAILED - {vmid}',
+        'body': 'Replication of {vmname} ({vmid}) has failed.\n{reason}',
+        'group': 'vm_ct',
+        'default_enabled': True,
+    },
+    'replication_complete': {
+        'title': '{hostname}: Replication complete - {vmid}',
+        'body': 'Replication of {vmname} ({vmid}) completed successfully.',
+        'group': 'vm_ct',
+        'default_enabled': False,
     },
     
     # ── Backup / Snapshot events ──
@@ -314,6 +329,40 @@ TEMPLATES = {
         'default_enabled': False,
     },
     
+    # ── Persistent Health Issues (daily digest) ──
+    'health_persistent': {
+        'title': '{hostname}: {count} active health issue(s)',
+        'body': 'The following health issues remain active:\n{issue_list}\n\nThis digest is sent once every 24 hours while issues persist.',
+        'group': 'system',
+        'default_enabled': True,
+    },
+    'health_issue_new': {
+        'title': '{hostname}: New health issue - {category}',
+        'body': 'New {severity} issue detected:\n{reason}',
+        'group': 'system',
+        'default_enabled': True,
+    },
+    'health_issue_resolved': {
+        'title': '{hostname}: Resolved - {category}',
+        'body': '{category} issue has been resolved.\n{reason}\nDuration: {duration}',
+        'group': 'system',
+        'default_enabled': True,
+    },
+    
+    # ── Update notifications (enriched) ──
+    'update_summary': {
+        'title': '{hostname}: {total_count} updates available',
+        'body': '{security_count} security update(s), {total_count} total.\n{package_list}',
+        'group': 'system',
+        'default_enabled': True,
+    },
+    'pve_update': {
+        'title': '{hostname}: PVE update available ({version})',
+        'body': 'Proxmox VE update available: {version}\n{details}',
+        'group': 'system',
+        'default_enabled': True,
+    },
+    
     # ── Burst aggregation summaries ──
     'burst_auth_fail': {
         'title': '{hostname}: {count} auth failures in {window}',
@@ -407,6 +456,9 @@ def render_template(event_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         'used': '', 'total': '', 'available': '', 'cores': '',
         'count': '', 'size': '', 'snapshot_name': '', 'jail': '',
         'failures': '', 'quorum': '', 'change_details': '', 'message': '',
+        'security_count': '0', 'total_count': '0', 'package_list': '',
+        'packages': '', 'pve_packages': '', 'version': '',
+        'issue_list': '', 'error_key': '',
     }
     variables.update(data)
     
