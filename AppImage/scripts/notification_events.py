@@ -935,12 +935,34 @@ class ProxmoxHookWatcher:
         if not payload:
             return {'accepted': False, 'error': 'Empty payload'}
         
+        # ── Normalise PVE native webhook format ──
+        # PVE sends: {title, message, severity, timestamp, fields: {type, hostname, job-id}}
+        # Our code expects: {type, severity, title, body, component, ...}
+        # Flatten `fields` into the top-level payload so _classify sees them.
+        if 'fields' in payload and isinstance(payload['fields'], dict):
+            fields = payload['fields']
+            # Map PVE field names to our expected names
+            if 'type' in fields and 'type' not in payload:
+                payload['type'] = fields['type']       # vzdump, fencing, replication, etc.
+            if 'hostname' in fields:
+                payload['hostname'] = fields['hostname']
+            if 'job-id' in fields:
+                payload['job_id'] = fields['job-id']
+            # Merge remaining fields
+            for k, v in fields.items():
+                if k not in payload:
+                    payload[k] = v
+        
+        # PVE uses 'message' for the body text
+        if 'message' in payload and 'body' not in payload:
+            payload['body'] = payload['message']
+        
         # Extract common fields from PVE notification payload
         notification_type = payload.get('type', payload.get('notification-type', ''))
         severity_raw = payload.get('severity', payload.get('priority', 'info'))
         title = payload.get('title', payload.get('subject', ''))
         body = payload.get('body', payload.get('message', ''))
-        source_component = payload.get('component', payload.get('source', ''))
+        source_component = payload.get('component', payload.get('source', payload.get('type', '')))
         
         # If 'type' is already a known template key, use it directly.
         # This allows tests and internal callers to inject events by exact type
@@ -1029,6 +1051,37 @@ class ProxmoxHookWatcher:
         # proper detail (security count, package list) on a 24h cycle.
         if 'updates' in title_lower and ('changed' in title_lower or 'status' in title_lower):
             return '_skip', '', ''
+        
+        # ── PVE native notification types ──
+        # When PVE sends via our webhook body template, fields.type is one of:
+        #   vzdump, fencing, replication, package-updates, system-mail
+        pve_type = payload.get('type', '').lower()
+        
+        if pve_type == 'vzdump':
+            # Backup notification -- determine success or failure from severity
+            pve_sev = payload.get('severity', 'info').lower()
+            vmid = ''
+            # Try to extract VMID from title like "Backup of VM 100 (qemu)"
+            import re
+            m = re.search(r'VM\s+(\d+)|CT\s+(\d+)', title, re.IGNORECASE)
+            if m:
+                vmid = m.group(1) or m.group(2) or ''
+            if pve_sev == 'error':
+                return 'backup_fail', 'vm', vmid
+            return 'backup_complete', 'vm', vmid
+        
+        if pve_type == 'fencing':
+            return 'split_brain', 'node', payload.get('hostname', '')
+        
+        if pve_type == 'replication':
+            return 'replication_fail', 'vm', ''
+        
+        if pve_type == 'package-updates':
+            return 'update_available', 'node', ''
+        
+        if pve_type == 'system-mail':
+            # Forwarded system mail (e.g. from smartd) -- treat as system_problem
+            return 'system_problem', 'node', ''
         
         # VM / CT lifecycle events (if sent via webhook)
         vmid = str(payload.get('vmid', ''))

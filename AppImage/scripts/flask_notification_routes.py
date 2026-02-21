@@ -229,16 +229,32 @@ def _pve_remove_our_blocks(text, headers_to_remove):
     return ''.join(cleaned)
 
 
-@notification_bp.route('/api/notifications/proxmox/setup-webhook', methods=['POST'])
-def setup_proxmox_webhook():
-    """Automatically configure PVE notifications to call our webhook.
+def _build_webhook_fallback():
+    """Build fallback manual commands for webhook setup."""
+    return [
+        "# Append to END of /etc/pve/notifications.cfg",
+        "# (do NOT delete existing content):",
+        "",
+        f"webhook: {_PVE_ENDPOINT_ID}",
+        f"\tmethod post",
+        f"\turl {_PVE_WEBHOOK_URL}",
+        '\theader Content-Type=application/json',
+        '\tbody {"title":"{{ escape title }}","message":"{{ escape message }}","severity":"{{ severity }}","timestamp":{{ timestamp }},"fields":{{ json fields }}}',
+        "",
+        f"matcher: {_PVE_MATCHER_ID}",
+        f"\ttarget {_PVE_ENDPOINT_ID}",
+        "\tmode all",
+        "",
+        "# ALSO append to /etc/pve/priv/notifications.cfg :",
+        f"webhook: {_PVE_ENDPOINT_ID}",
+    ]
+
+
+def setup_pve_webhook_core() -> dict:
+    """Core logic to configure PVE webhook. Callable from anywhere.
     
-    Strategy: parse existing config into discrete blocks, only add or
-    replace blocks whose name matches our IDs, preserve everything else
-    byte-for-byte.  Creates timestamped backups before any modification.
-    
+    Returns dict with 'configured', 'error', 'fallback_commands' keys.
     Idempotent: safe to call multiple times.
-    Only touches blocks named 'proxmenux-webhook' / 'proxmenux-default'.
     """
     import secrets as secrets_mod
     
@@ -251,20 +267,6 @@ def setup_proxmox_webhook():
         'error': None,
     }
     
-    def _build_fallback():
-        return [
-            "# Append to END of /etc/pve/notifications.cfg",
-            "# (do NOT delete existing content):",
-            "",
-            f"webhook: {_PVE_ENDPOINT_ID}",
-            f"\tmethod post",
-            f"\turl {_PVE_WEBHOOK_URL}",
-            "",
-            f"matcher: {_PVE_MATCHER_ID}",
-            f"\ttarget {_PVE_ENDPOINT_ID}",
-            "\tmode all",
-        ]
-    
     try:
         # ── Step 1: Ensure webhook secret exists (for our own internal use) ──
         secret = notification_manager.get_webhook_secret()
@@ -276,8 +278,8 @@ def setup_proxmox_webhook():
         cfg_text, err = _pve_read_file(_PVE_NOTIFICATIONS_CFG)
         if err:
             result['error'] = err
-            result['fallback_commands'] = _build_fallback()
-            return jsonify(result), 200
+            result['fallback_commands'] = _build_webhook_fallback()
+            return result
         
         # ── Step 3: Read priv config (to clean up any broken blocks we wrote before) ──
         priv_text, err = _pve_read_file(_PVE_PRIV_CFG)
@@ -306,10 +308,18 @@ def setup_proxmox_webhook():
         # PVE secret format is: secret name=key,value=<base64>
         # Neither is needed for localhost calls.
         
+        # PVE webhook format requires:
+        #   - body: Handlebars template for the HTTP body
+        #   - header: Content-Type header for JSON
+        #   - A matching entry in priv/notifications.cfg (even if empty)
+        # The body template uses PVE's Handlebars syntax to pass notification
+        # metadata to our webhook handler as structured JSON.
         endpoint_block = (
             f"webhook: {_PVE_ENDPOINT_ID}\n"
             f"\tmethod post\n"
             f"\turl {_PVE_WEBHOOK_URL}\n"
+            f'\theader Content-Type=application/json\n'
+            f'\tbody {{"title":"{{{{ escape title }}}}","message":"{{{{ escape message }}}}","severity":"{{{{ severity }}}}","timestamp":{{{{ timestamp }}}},"fields":{{{{ json fields }}}}}}\n'
         )
         
         matcher_block = (
@@ -332,8 +342,8 @@ def setup_proxmox_webhook():
                 f.write(new_cfg)
         except PermissionError:
             result['error'] = f'Permission denied writing {_PVE_NOTIFICATIONS_CFG}'
-            result['fallback_commands'] = _build_fallback()
-            return jsonify(result), 200
+            result['fallback_commands'] = _build_webhook_fallback()
+            return result
         except Exception as e:
             try:
                 with open(_PVE_NOTIFICATIONS_CFG, 'w') as f:
@@ -341,35 +351,58 @@ def setup_proxmox_webhook():
             except Exception:
                 pass
             result['error'] = str(e)
-            result['fallback_commands'] = _build_fallback()
-            return jsonify(result), 200
+            result['fallback_commands'] = _build_webhook_fallback()
+            return result
         
-        # ── Step 9: Clean priv config (remove our broken blocks, write nothing new) ──
-        if priv_text is not None and cleaned_priv != priv_text:
-            try:
-                with open(_PVE_PRIV_CFG, 'w') as f:
-                    f.write(cleaned_priv)
-            except Exception:
-                pass
+        # ── Step 9: Write priv config with our webhook entry ──
+        # PVE REQUIRES a matching block in priv/notifications.cfg for every
+        # webhook endpoint, even if it has no secrets. Without it PVE throws:
+        #   "Could not instantiate endpoint: private config does not exist"
+        priv_block = (
+            f"webhook: {_PVE_ENDPOINT_ID}\n"
+        )
+        
+        if priv_text is not None:
+            # Start from cleaned priv (our old blocks removed)
+            if cleaned_priv and not cleaned_priv.endswith('\n'):
+                cleaned_priv += '\n'
+            if cleaned_priv and not cleaned_priv.endswith('\n\n'):
+                cleaned_priv += '\n'
+            new_priv = cleaned_priv + priv_block
+        else:
+            new_priv = priv_block
+        
+        try:
+            with open(_PVE_PRIV_CFG, 'w') as f:
+                f.write(new_priv)
+        except PermissionError:
+            result['error'] = f'Permission denied writing {_PVE_PRIV_CFG}'
+            result['fallback_commands'] = _build_webhook_fallback()
+            return result
+        except Exception:
+            pass
         
         result['configured'] = True
         result['secret'] = secret
-        return jsonify(result), 200
+        return result
     
     except Exception as e:
         result['error'] = str(e)
-        result['fallback_commands'] = _build_fallback()
-        return jsonify(result), 200
+        result['fallback_commands'] = _build_webhook_fallback()
+        return result
 
 
-@notification_bp.route('/api/notifications/proxmox/cleanup-webhook', methods=['POST'])
-def cleanup_proxmox_webhook():
-    """Remove ProxMenux webhook blocks from PVE notification config.
+@notification_bp.route('/api/notifications/proxmox/setup-webhook', methods=['POST'])
+def setup_proxmox_webhook():
+    """HTTP endpoint wrapper for webhook setup."""
+    return jsonify(setup_pve_webhook_core()), 200
+
+
+def cleanup_pve_webhook_core() -> dict:
+    """Core logic to remove PVE webhook blocks. Callable from anywhere.
     
-    Called when the notification service is disabled.
+    Returns dict with 'cleaned', 'error' keys.
     Only removes blocks named 'proxmenux-webhook' / 'proxmenux-default'.
-    All other blocks are preserved byte-for-byte.
-    Creates backups before modification.
     """
     result = {'cleaned': False, 'error': None}
     
@@ -378,7 +411,7 @@ def cleanup_proxmox_webhook():
         cfg_text, err = _pve_read_file(_PVE_NOTIFICATIONS_CFG)
         if err:
             result['error'] = err
-            return jsonify(result), 200
+            return result
         
         priv_text, err = _pve_read_file(_PVE_PRIV_CFG)
         if err:
@@ -392,7 +425,7 @@ def cleanup_proxmox_webhook():
         
         if not has_our_blocks and not has_priv_blocks:
             result['cleaned'] = True
-            return jsonify(result), 200
+            return result
         
         # Backup before modification
         _pve_backup_file(_PVE_NOTIFICATIONS_CFG)
@@ -407,7 +440,7 @@ def cleanup_proxmox_webhook():
                     f.write(cleaned_cfg)
             except PermissionError:
                 result['error'] = f'Permission denied writing {_PVE_NOTIFICATIONS_CFG}'
-                return jsonify(result), 200
+                return result
             except Exception as e:
                 # Rollback
                 try:
@@ -416,7 +449,7 @@ def cleanup_proxmox_webhook():
                 except Exception:
                     pass
                 result['error'] = str(e)
-                return jsonify(result), 200
+                return result
         
         if has_priv_blocks and priv_text is not None:
             cleaned_priv = _pve_remove_our_blocks(priv_text, _PVE_OUR_HEADERS)
@@ -427,11 +460,17 @@ def cleanup_proxmox_webhook():
                 pass  # Best-effort
         
         result['cleaned'] = True
-        return jsonify(result), 200
+        return result
     
     except Exception as e:
         result['error'] = str(e)
-        return jsonify(result), 200
+        return result
+
+
+@notification_bp.route('/api/notifications/proxmox/cleanup-webhook', methods=['POST'])
+def cleanup_proxmox_webhook():
+    """HTTP endpoint wrapper for webhook cleanup."""
+    return jsonify(cleanup_pve_webhook_core()), 200
 
 
 @notification_bp.route('/api/notifications/proxmox/read-cfg', methods=['GET'])

@@ -401,6 +401,19 @@ class NotificationManager:
         self._running = True
         self._stats['started_at'] = datetime.now().isoformat()
         
+        # Ensure PVE webhook is configured (repairs priv config if missing)
+        try:
+            from flask_notification_routes import setup_pve_webhook_core
+            wh_result = setup_pve_webhook_core()
+            if wh_result.get('configured'):
+                print("[NotificationManager] PVE webhook configured OK.")
+            elif wh_result.get('error'):
+                print(f"[NotificationManager] PVE webhook warning: {wh_result['error']}")
+        except ImportError:
+            pass  # flask_notification_routes not loaded yet (early startup)
+        except Exception as e:
+            print(f"[NotificationManager] PVE webhook setup error: {e}")
+        
         # Start event watchers
         self._journal_watcher = JournalWatcher(self._event_queue)
         self._task_watcher = TaskWatcher(self._event_queue)
@@ -1095,13 +1108,35 @@ class NotificationManager:
             self._enabled = self._config.get('enabled', 'false') == 'true'
             self._rebuild_channels()
             
-            # Start/stop service if enabled state changed
-            if self._enabled and not self._running:
-                self.start()
-            elif not self._enabled and self._running:
-                self.stop()
+            # Start/stop service and auto-configure PVE webhook
+            pve_webhook_result = None
+            if self._enabled and not was_enabled:
+                # Notifications just got ENABLED -> start service + setup PVE webhook
+                if not self._running:
+                    self.start()
+                try:
+                    from flask_notification_routes import setup_pve_webhook_core
+                    pve_webhook_result = setup_pve_webhook_core()
+                except ImportError:
+                    pass  # flask_notification_routes not available (CLI mode)
+                except Exception as e:
+                    pve_webhook_result = {'configured': False, 'error': str(e)}
+            elif not self._enabled and was_enabled:
+                # Notifications just got DISABLED -> stop service + cleanup PVE webhook
+                if self._running:
+                    self.stop()
+                try:
+                    from flask_notification_routes import cleanup_pve_webhook_core
+                    cleanup_pve_webhook_core()
+                except ImportError:
+                    pass
+                except Exception:
+                    pass
             
-            return {'success': True, 'channels_active': list(self._channels.keys())}
+            result = {'success': True, 'channels_active': list(self._channels.keys())}
+            if pve_webhook_result:
+                result['pve_webhook'] = pve_webhook_result
+            return result
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
