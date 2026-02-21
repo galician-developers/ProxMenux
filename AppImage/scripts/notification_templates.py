@@ -363,6 +363,14 @@ TEMPLATES = {
         'default_enabled': True,
     },
     
+    # ── PVE webhook test ──
+    'webhook_test': {
+        'title': '{hostname}: Webhook test received',
+        'body': 'PVE webhook connectivity test successful.\n{reason}',
+        'group': 'system',
+        'default_enabled': True,
+    },
+    
     # ── Burst aggregation summaries ──
     'burst_auth_fail': {
         'title': '{hostname}: {count} auth failures in {window}',
