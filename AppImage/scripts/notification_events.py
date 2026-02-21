@@ -942,10 +942,19 @@ class ProxmoxHookWatcher:
         body = payload.get('body', payload.get('message', ''))
         source_component = payload.get('component', payload.get('source', ''))
         
-        # Map to our event taxonomy
-        event_type, entity, entity_id = self._classify(
-            notification_type, source_component, title, body, payload
-        )
+        # If 'type' is already a known template key, use it directly.
+        # This allows tests and internal callers to inject events by exact type
+        # without relying on _classify's keyword heuristics.
+        from notification_templates import TEMPLATES as _TMPL
+        if notification_type in _TMPL:
+            event_type = notification_type
+            entity = payload.get('entity', 'node')
+            entity_id = payload.get('entity_id', payload.get('vmid', ''))
+        else:
+            # Map to our event taxonomy via heuristic classification
+            event_type, entity, entity_id = self._classify(
+                notification_type, source_component, title, body, payload
+            )
         
         # Discard meta-events (overall status changes, update status, etc.)
         if event_type == '_skip':
@@ -960,10 +969,13 @@ class ProxmoxHookWatcher:
             'source_component': source_component,
             'notification_type': notification_type,
         }
-        # Merge extra fields from payload
-        for key in ('vmid', 'node', 'storage', 'device', 'pool'):
-            if key in payload:
-                data[key] = str(payload[key])
+        # Merge ALL extra fields from payload into data so template
+        # variables ({vmid}, {vmname}, {count}, {source_ip}, etc.) resolve.
+        _reserved = {'type', 'severity', 'priority', 'title', 'subject',
+                      'body', 'message', 'component', 'source'}
+        for key, val in payload.items():
+            if key not in _reserved and key not in data:
+                data[key] = str(val) if val is not None else ''
         
         event = NotificationEvent(
             event_type=event_type,
