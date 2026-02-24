@@ -302,6 +302,12 @@ TEMPLATES = {
         'group': 'system',
         'default_enabled': True,
     },
+    'system_mail': {
+        'title': '{hostname}: System mail notification',
+        'body': '{reason}',
+        'group': 'system',
+        'default_enabled': True,
+    },
     'service_fail': {
         'title': '{hostname}: Service failed - {service_name}',
         'body': 'Service {service_name} has failed.\n{reason}',
