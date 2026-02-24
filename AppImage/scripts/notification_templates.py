@@ -103,36 +103,40 @@ def _format_vzdump_body(parsed: Dict[str, Any], is_success: bool) -> str:
     
     for vm in parsed.get('vms', []):
         status = vm.get('status', '').lower()
-        if status == 'ok':
-            icon = '\u2705'  # green check
-        else:
-            icon = '\u274C'  # red X
+        icon = '\u2705' if status == 'ok' else '\u274C'
         
-        vm_line = f"{icon} ID {vm['vmid']} ({vm['name']})"
-        parts.append(vm_line)
+        parts.append(f"{icon} ID {vm['vmid']} ({vm['name']})")
         
+        details = []
         if vm.get('size'):
-            parts.append(f"   Size: {vm['size']}")
+            details.append(f"Size: {vm['size']}")
         if vm.get('time'):
-            parts.append(f"   Duration: {vm['time']}")
+            details.append(f"Duration: {vm['time']}")
         if vm.get('filename'):
-            parts.append(f"   File: {vm['filename']}")
+            details.append(f"File: {vm['filename']}")
+        if details:
+            parts.append(' | '.join(details))
         parts.append('')  # blank line between VMs
     
     # Summary
     vm_count = parsed.get('vm_count', 0)
     if vm_count > 0 or parsed.get('total_size'):
-        parts.append('Summary:')
+        ok_count = sum(1 for v in parsed.get('vms', [])
+                       if v.get('status', '').lower() == 'ok')
+        fail_count = vm_count - ok_count
+        
+        summary_parts = []
         if vm_count:
-            ok_count = sum(1 for v in parsed.get('vms', []) if v.get('status', '').lower() == 'ok')
-            fail_count = vm_count - ok_count
-            parts.append(f"   Total: {vm_count} backup(s)")
-            if fail_count:
-                parts.append(f"   Failed: {fail_count}")
+            summary_parts.append(f"{vm_count} backup(s)")
+        if fail_count:
+            summary_parts.append(f"{fail_count} failed")
         if parsed.get('total_size'):
-            parts.append(f"   Total size: {parsed['total_size']}")
+            summary_parts.append(f"Total: {parsed['total_size']}")
         if parsed.get('total_time'):
-            parts.append(f"   Total time: {parsed['total_time']}")
+            summary_parts.append(f"Time: {parsed['total_time']}")
+        
+        if summary_parts:
+            parts.append('--- ' + ' | '.join(summary_parts))
     
     return '\n'.join(parts)
 
@@ -422,7 +426,7 @@ TEMPLATES = {
     },
     'service_fail': {
         'title': '{hostname}: Service failed - {service_name}',
-        'body': 'Service {service_name} has failed.\n{reason}',
+        'body': '{reason}',
         'group': 'system',
         'default_enabled': True,
     },
@@ -619,16 +623,9 @@ def render_template(event_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         except (KeyError, ValueError):
             body_text = template['body']
     
-    # Clean up: remove empty lines and consecutive duplicate lines
-    cleaned_lines = []
-    for line in body_text.split('\n'):
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if cleaned_lines and stripped == cleaned_lines[-1]:
-            continue  # skip consecutive duplicate
-        cleaned_lines.append(stripped)
-    body_text = '\n'.join(cleaned_lines)
+    # Clean up: collapse runs of 3+ blank lines into 1, remove trailing whitespace
+    import re as _re
+    body_text = _re.sub(r'\n{3,}', '\n\n', body_text.strip())
     
     severity = variables.get('severity', 'INFO')
     group = template.get('group', 'system')

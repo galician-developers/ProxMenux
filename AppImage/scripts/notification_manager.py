@@ -874,10 +874,6 @@ class NotificationManager:
         """Process incoming Proxmox webhook. Delegates to ProxmoxHookWatcher."""
         if not self._hook_watcher:
             self._hook_watcher = ProxmoxHookWatcher(self._event_queue)
-            # Share the webhook's delivery record with TaskWatcher
-            # so tasks can yield to richer webhook data for backup/replication.
-            if self._task_watcher:
-                self._task_watcher._webhook_delivered = self._hook_watcher._delivered
         return self._hook_watcher.process_webhook(payload)
     
     def get_webhook_secret(self) -> str:

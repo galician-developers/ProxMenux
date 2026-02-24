@@ -280,7 +280,7 @@ class JournalWatcher:
                 return
     
     def _check_service_failure(self, msg: str, unit: str):
-        """Detect critical service failures."""
+        """Detect critical service failures with enriched context."""
         service_patterns = [
             r'Failed to start (.+)',
             r'Unit (\S+) (?:entered failed state|failed)',
@@ -291,12 +291,59 @@ class JournalWatcher:
             match = re.search(pattern, msg)
             if match:
                 service_name = match.group(1)
-                self._emit('service_fail', 'WARNING', {
+                data = {
                     'service_name': service_name,
-                    'reason': msg[:200],
+                    'reason': msg[:300],
                     'hostname': self._hostname,
-                }, entity='node', entity_id=service_name)
+                }
+                
+                # Enrich PVE VM/CT services with guest name and context
+                # pve-container@101 -> LXC container 101
+                # qemu-server@100  -> QEMU VM 100
+                pve_match = re.match(
+                    r'(pve-container|qemu-server)@(\d+)', service_name)
+                if pve_match:
+                    svc_type = pve_match.group(1)
+                    vmid = pve_match.group(2)
+                    vm_name = self._resolve_vm_name(vmid)
+                    
+                    if svc_type == 'pve-container':
+                        guest_type = 'LXC container'
+                    else:
+                        guest_type = 'QEMU VM'
+                    
+                    display = f"{guest_type} {vmid}"
+                    if vm_name:
+                        display = f"{guest_type} {vmid} ({vm_name})"
+                    
+                    data['service_name'] = service_name
+                    data['vmid'] = vmid
+                    data['vmname'] = vm_name
+                    data['guest_type'] = guest_type
+                    data['display_name'] = display
+                    data['reason'] = (
+                        f"{display} failed to start.\n{msg[:300]}"
+                    )
+                
+                self._emit('service_fail', 'WARNING', data,
+                           entity='node', entity_id=service_name)
                 return
+    
+    def _resolve_vm_name(self, vmid: str) -> str:
+        """Try to resolve VMID to a guest name from PVE config files."""
+        if not vmid:
+            return ''
+        # Check QEMU configs
+        for base in ['/etc/pve/qemu-server', '/etc/pve/lxc']:
+            conf = os.path.join(base, f'{vmid}.conf')
+            try:
+                with open(conf) as f:
+                    for line in f:
+                        if line.startswith('hostname:') or line.startswith('name:'):
+                            return line.split(':', 1)[1].strip()
+            except (OSError, IOError):
+                continue
+        return ''
     
     def _check_disk_io(self, msg: str, syslog_id: str, priority: int):
         """Detect disk I/O errors from kernel messages."""
@@ -457,9 +504,6 @@ class TaskWatcher:
         self._thread: Optional[threading.Thread] = None
         self._hostname = _hostname()
         self._last_position = 0
-        # Set by NotificationManager to point at ProxmoxHookWatcher._delivered
-        # so we can skip events the webhook already delivered with richer data.
-        self._webhook_delivered: Optional[dict] = None
     
     def start(self):
         if self._running:
@@ -575,22 +619,13 @@ class TaskWatcher:
         # Determine entity type from task type
         entity = 'ct' if task_type.startswith('vz') else 'vm'
         
-        # ── Cross-source dedup: yield to PVE webhook for backup/replication ──
-        # The webhook delivers richer data (full logs, sizes, durations).
-        # If the webhook already delivered this event within 120s, skip.
-        # For backup events, PVE sends ONE webhook for the entire vzdump job
-        # (covering all VMs), while TaskWatcher sees individual per-VM tasks.
-        # So we check by event_type ONLY (no VMID) -- if ANY backup_complete
-        # arrived from webhook recently, skip ALL backup_complete from tasks.
-        _WEBHOOK_TYPES = {'backup_complete', 'backup_fail', 'backup_start',
-                          'replication_complete', 'replication_fail'}
-        if event_type in _WEBHOOK_TYPES and self._webhook_delivered:
-            import time as _time
-            # Check type-only key first (covers multi-VM jobs)
-            type_key = f"{event_type}:"
-            for dkey, dtime in self._webhook_delivered.items():
-                if dkey.startswith(type_key) and (_time.time() - dtime) < 120:
-                    return  # Webhook already delivered this with richer data
+        # Backup and replication events are handled EXCLUSIVELY by the PVE
+        # webhook, which delivers much richer data (full logs, sizes, durations,
+        # filenames). TaskWatcher skips these entirely to avoid duplicates.
+        _WEBHOOK_EXCLUSIVE = {'backup_complete', 'backup_fail', 'backup_start',
+                              'replication_complete', 'replication_fail'}
+        if event_type in _WEBHOOK_EXCLUSIVE:
+            return
         
         self._queue.put(NotificationEvent(
             event_type, severity, data, source='tasks',
@@ -1028,18 +1063,6 @@ class ProxmoxHookWatcher:
             dur_m = re.search(r'Total running time:\s*(.+?)(?:\n|$)', message)
             if dur_m:
                 data['duration'] = dur_m.group(1).strip()
-        
-        # Record this event for cross-source dedup.
-        # TaskWatcher iterates this dict checking if any key with the same
-        # event_type prefix was delivered recently (within 120s).
-        import time
-        self._delivered[f"{event_type}:{entity_id}"] = time.time()
-        # Cleanup old entries (use del, NOT reassign -- TaskWatcher holds a ref)
-        if len(self._delivered) > 200:
-            cutoff = time.time() - 300
-            stale = [k for k, v in self._delivered.items() if v < cutoff]
-            for k in stale:
-                del self._delivered[k]
         
         event = NotificationEvent(
             event_type=event_type,
