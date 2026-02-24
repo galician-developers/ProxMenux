@@ -265,16 +265,53 @@ class JournalWatcher:
         
         for pattern, (event_type, severity, reason) in critical_patterns.items():
             if re.search(pattern, msg, re.IGNORECASE):
-                data = {'reason': reason, 'hostname': self._hostname}
                 entity = 'node'
                 entity_id = ''
                 
-                # Try to extract device for disk errors
-                dev_match = re.search(r'dev\s+(\S+)', msg)
-                if dev_match and event_type == 'disk_io_error':
-                    data['device'] = dev_match.group(1)
-                    entity = 'disk'
-                    entity_id = dev_match.group(1)
+                # Build a context-rich reason from the journal message.
+                # The raw msg contains process name, PID, addresses, library, etc.
+                enriched = reason
+                
+                if 'segfault' in pattern:
+                    # Kernel segfault: "process[PID]: segfault at ADDR ... in lib.so"
+                    m = re.search(r'(\S+)\[(\d+)\].*segfault', msg)
+                    proc_name = m.group(1) if m else ''
+                    proc_pid = m.group(2) if m else ''
+                    lib_match = re.search(r'\bin\s+(\S+)', msg)
+                    lib_name = lib_match.group(1) if lib_match else ''
+                    
+                    parts = [reason]
+                    if proc_name:
+                        parts.append(f"Process: {proc_name}" + (f" (PID {proc_pid})" if proc_pid else ''))
+                    if lib_name:
+                        parts.append(f"Module: {lib_name}")
+                    enriched = '\n'.join(parts)
+                
+                elif 'Out of memory' in pattern:
+                    # OOM: "Out of memory: Killed process PID (name)"
+                    m = re.search(r'Killed process\s+(\d+)\s+\(([^)]+)\)', msg)
+                    if m:
+                        enriched = f"{reason}\nKilled: {m.group(2)} (PID {m.group(1)})"
+                    else:
+                        enriched = f"{reason}\n{msg[:300]}"
+                
+                elif event_type == 'disk_io_error':
+                    # Include device and raw message for disk/fs errors
+                    dev_match = re.search(r'dev\s+(\S+)', msg)
+                    if dev_match:
+                        entity = 'disk'
+                        entity_id = dev_match.group(1)
+                        enriched = f"{reason}\nDevice: {dev_match.group(1)}"
+                    else:
+                        enriched = f"{reason}\n{msg[:300]}"
+                
+                else:
+                    # Generic: include the raw journal message for context
+                    enriched = f"{reason}\n{msg[:300]}"
+                
+                data = {'reason': enriched, 'hostname': self._hostname}
+                if entity == 'disk':
+                    data['device'] = entity_id
                 
                 self._emit(event_type, severity, data, entity=entity, entity_id=entity_id)
                 return
