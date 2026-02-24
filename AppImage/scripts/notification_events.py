@@ -941,9 +941,6 @@ class ProxmoxHookWatcher:
     def __init__(self, event_queue: Queue):
         self._queue = event_queue
         self._hostname = _hostname()
-        # Shared dict: TaskWatcher._webhook_delivered points here.
-        # Records (event_type:entity_id -> timestamp) for cross-source dedup.
-        self._delivered: Dict[str, float] = {}
     
     def process_webhook(self, payload: dict) -> dict:
         """Process an incoming Proxmox webhook payload.
@@ -1026,15 +1023,18 @@ class ProxmoxHookWatcher:
             if dur_m:
                 data['duration'] = dur_m.group(1).strip()
         
-        # Record in the shared delivered dict so TaskWatcher can dedup.
-        # TaskWatcher._webhook_delivered points at self._delivered (same object).
-        self._delivered[f"{event_type}:{entity_id}"] = time.time()
-        # Prune old entries periodically
+        # Record this event for cross-source dedup.
+        # TaskWatcher checks this dict before emitting backup/replication
+        # events so it yields to the richer webhook data.
+        import time
+        if not hasattr(self, '_delivered'):
+            self._delivered = {}
+        dedup_key = f"{event_type}:{entity_id}"
+        self._delivered[dedup_key] = time.time()
+        # Cleanup old entries
         if len(self._delivered) > 200:
             cutoff = time.time() - 300
-            to_del = [k for k, v in self._delivered.items() if v < cutoff]
-            for k in to_del:
-                del self._delivered[k]
+            self._delivered = {k: v for k, v in self._delivered.items() if v > cutoff}
         
         event = NotificationEvent(
             event_type=event_type,
