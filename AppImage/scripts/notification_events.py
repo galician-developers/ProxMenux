@@ -996,6 +996,7 @@ class ProxmoxHookWatcher:
             'hostname': pve_hostname,
             'pve_type': pve_type,
             'pve_message': message,
+            'pve_title': title,
             'title': title,
             'job_id': pve_job_id,
         }

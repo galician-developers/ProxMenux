@@ -12,11 +12,129 @@ Author: MacRimi
 """
 
 import json
+import re
 import socket
 import time
 import urllib.request
 import urllib.error
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+
+
+# ─── vzdump message parser ───────────────────────────────────────
+
+def _parse_vzdump_message(message: str) -> Optional[Dict[str, Any]]:
+    """Parse a PVE vzdump notification message into structured data.
+    
+    PVE vzdump messages contain:
+      - A table:  VMID  Name  Status  Time  Size  Filename
+      - Totals:   Total running time: Xs / Total size: X GiB
+      - Full logs per VM
+    
+    Returns dict with 'vms' list, 'total_time', 'total_size', or None.
+    """
+    if not message:
+        return None
+    
+    vms: List[Dict[str, str]] = []
+    total_time = ''
+    total_size = ''
+    
+    lines = message.split('\n')
+    
+    # Find the table header line
+    header_idx = -1
+    for i, line in enumerate(lines):
+        if re.match(r'\s*VMID\s+Name\s+Status', line, re.IGNORECASE):
+            header_idx = i
+            break
+    
+    if header_idx >= 0:
+        # Parse column positions from header
+        header = lines[header_idx]
+        # Parse table rows after header
+        for line in lines[header_idx + 1:]:
+            stripped = line.strip()
+            if not stripped or stripped.startswith('Total') or stripped.startswith('Logs') or stripped.startswith('='):
+                break
+            # Table row: VMID  Name  Status  Time  Size  Filename
+            # Use regex to parse flexible whitespace columns
+            m = re.match(
+                r'\s*(\d+)\s+'           # VMID
+                r'(\S+)\s+'              # Name
+                r'(\S+)\s+'              # Status (ok/error)
+                r'(\S+)\s+'              # Time
+                r'([\d.]+\s+\S+)\s+'     # Size (e.g. "1.423 GiB")
+                r'(\S+)',                # Filename
+                line
+            )
+            if m:
+                vms.append({
+                    'vmid': m.group(1),
+                    'name': m.group(2),
+                    'status': m.group(3),
+                    'time': m.group(4),
+                    'size': m.group(5),
+                    'filename': m.group(6).split('/')[-1],  # just filename
+                })
+    
+    # Extract totals
+    for line in lines:
+        m_time = re.search(r'Total running time:\s*(.+)', line)
+        if m_time:
+            total_time = m_time.group(1).strip()
+        m_size = re.search(r'Total size:\s*(.+)', line)
+        if m_size:
+            total_size = m_size.group(1).strip()
+    
+    if not vms and not total_size:
+        return None
+    
+    return {
+        'vms': vms,
+        'total_time': total_time,
+        'total_size': total_size,
+        'vm_count': len(vms),
+    }
+
+
+def _format_vzdump_body(parsed: Dict[str, Any], is_success: bool) -> str:
+    """Format parsed vzdump data into a clean Telegram-friendly message."""
+    parts = []
+    
+    for vm in parsed.get('vms', []):
+        status = vm.get('status', '').lower()
+        if status == 'ok':
+            icon = '\u2705'  # green check
+        else:
+            icon = '\u274C'  # red X
+        
+        vm_line = f"{icon} ID {vm['vmid']} ({vm['name']})"
+        parts.append(vm_line)
+        
+        if vm.get('size'):
+            parts.append(f"   Size: {vm['size']}")
+        if vm.get('time'):
+            parts.append(f"   Duration: {vm['time']}")
+        if vm.get('filename'):
+            parts.append(f"   File: {vm['filename']}")
+        parts.append('')  # blank line between VMs
+    
+    # Summary
+    vm_count = parsed.get('vm_count', 0)
+    if vm_count > 0 or parsed.get('total_size'):
+        parts.append('Summary:')
+        if vm_count:
+            ok_count = sum(1 for v in parsed.get('vms', []) if v.get('status', '').lower() == 'ok')
+            fail_count = vm_count - ok_count
+            parts.append(f"   Total: {vm_count} backup(s)")
+            if fail_count:
+                parts.append(f"   Failed: {fail_count}")
+        if parsed.get('total_size'):
+            parts.append(f"   Total size: {parsed['total_size']}")
+        if parsed.get('total_time'):
+            parts.append(f"   Total time: {parsed['total_time']}")
+    
+    return '\n'.join(parts)
 
 
 # ─── Severity Icons ──────────────────────────────────────────────
@@ -475,10 +593,31 @@ def render_template(event_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
     except (KeyError, ValueError):
         title = template['title']
     
-    try:
-        body_text = template['body'].format(**variables)
-    except (KeyError, ValueError):
-        body_text = template['body']
+    # ── PVE vzdump special formatting ──
+    # When the event came from PVE webhook with a full vzdump message,
+    # parse the table/logs and format a rich body instead of the sparse template.
+    pve_message = data.get('pve_message', '')
+    pve_title = data.get('pve_title', '')
+    
+    if event_type in ('backup_complete', 'backup_fail') and pve_message:
+        parsed = _parse_vzdump_message(pve_message)
+        if parsed:
+            is_success = (event_type == 'backup_complete')
+            body_text = _format_vzdump_body(parsed, is_success)
+            # Use PVE's own title if available (contains hostname and status)
+            if pve_title:
+                title = pve_title
+        else:
+            # Couldn't parse -- use PVE raw message as body
+            body_text = pve_message.strip()
+    elif event_type == 'system_mail' and pve_message:
+        # System mail -- use PVE message directly (mail bounce, cron, smartd)
+        body_text = pve_message.strip()[:1000]
+    else:
+        try:
+            body_text = template['body'].format(**variables)
+        except (KeyError, ValueError):
+            body_text = template['body']
     
     # Clean up: remove empty lines and consecutive duplicate lines
     cleaned_lines = []
