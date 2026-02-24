@@ -653,6 +653,14 @@ class NotificationManager:
         if event.severity == 'CRITICAL' and cooldown_str is None:
             cooldown = 60
         
+        # Backup/replication events: each execution is unique and should
+        # always be delivered. A 10s cooldown prevents exact duplicates
+        # (webhook + tasks) but allows repeated backup jobs to report.
+        _ALWAYS_DELIVER = {'backup_complete', 'backup_fail', 'backup_start',
+                           'replication_complete', 'replication_fail'}
+        if event.event_type in _ALWAYS_DELIVER and cooldown_str is None:
+            cooldown = 10
+        
         # Check against last sent time using stable fingerprint
         last_sent = self._cooldowns.get(event.fingerprint, 0)
         

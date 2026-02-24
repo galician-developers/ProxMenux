@@ -578,14 +578,19 @@ class TaskWatcher:
         # ── Cross-source dedup: yield to PVE webhook for backup/replication ──
         # The webhook delivers richer data (full logs, sizes, durations).
         # If the webhook already delivered this event within 120s, skip.
+        # For backup events, PVE sends ONE webhook for the entire vzdump job
+        # (covering all VMs), while TaskWatcher sees individual per-VM tasks.
+        # So we check by event_type ONLY (no VMID) -- if ANY backup_complete
+        # arrived from webhook recently, skip ALL backup_complete from tasks.
         _WEBHOOK_TYPES = {'backup_complete', 'backup_fail', 'backup_start',
                           'replication_complete', 'replication_fail'}
         if event_type in _WEBHOOK_TYPES and self._webhook_delivered:
             import time as _time
-            dedup_key = f"{event_type}:{vmid}"
-            last_webhook = self._webhook_delivered.get(dedup_key, 0)
-            if _time.time() - last_webhook < 120:
-                return  # Webhook already delivered this with richer data
+            # Check type-only key first (covers multi-VM jobs)
+            type_key = f"{event_type}:"
+            for dkey, dtime in self._webhook_delivered.items():
+                if dkey.startswith(type_key) and (_time.time() - dtime) < 120:
+                    return  # Webhook already delivered this with richer data
         
         self._queue.put(NotificationEvent(
             event_type, severity, data, source='tasks',
@@ -1025,17 +1030,16 @@ class ProxmoxHookWatcher:
                 data['duration'] = dur_m.group(1).strip()
         
         # Record this event for cross-source dedup.
-        # TaskWatcher checks this dict before emitting backup/replication
-        # events so it yields to the richer webhook data.
+        # TaskWatcher iterates this dict checking if any key with the same
+        # event_type prefix was delivered recently (within 120s).
         import time
-        if not hasattr(self, '_delivered'):
-            self._delivered = {}
-        dedup_key = f"{event_type}:{entity_id}"
-        self._delivered[dedup_key] = time.time()
-        # Cleanup old entries
+        self._delivered[f"{event_type}:{entity_id}"] = time.time()
+        # Cleanup old entries (use del, NOT reassign -- TaskWatcher holds a ref)
         if len(self._delivered) > 200:
             cutoff = time.time() - 300
-            self._delivered = {k: v for k, v in self._delivered.items() if v > cutoff}
+            stale = [k for k, v in self._delivered.items() if v < cutoff]
+            for k in stale:
+                del self._delivered[k]
         
         event = NotificationEvent(
             event_type=event_type,
