@@ -571,6 +571,11 @@ class TaskWatcher:
         self._thread: Optional[threading.Thread] = None
         self._hostname = _hostname()
         self._last_position = 0
+        # Track active vzdump jobs. While a vzdump is running, VM/CT
+        # start/stop/shutdown events are backup-induced (mode=stop/snapshot)
+        # and should NOT generate notifications.
+        self._active_vzdump_ts: float = 0  # timestamp of last vzdump start
+        self._VZDUMP_WINDOW = 14400  # 4h max backup window
     
     def start(self):
         if self._running:
@@ -651,6 +656,23 @@ class TaskWatcher:
         
         event_type, default_severity = event_info
         
+        # ── Track active vzdump jobs ──
+        # When a vzdump starts, record its timestamp. While active, we
+        # suppress start/stop/shutdown of individual VMs -- those are just
+        # the backup stopping and restarting guests (mode=stop).
+        if task_type == 'vzdump':
+            if not status:
+                # vzdump just started
+                self._active_vzdump_ts = time.time()
+            else:
+                # vzdump finished -- clear after a small grace period
+                # (VMs may still be restarting)
+                def _clear_vzdump():
+                    time.sleep(30)
+                    self._active_vzdump_ts = 0
+                threading.Thread(target=_clear_vzdump, daemon=True,
+                                 name='clear-vzdump').start()
+        
         # Check if task failed
         is_error = status and status != 'OK' and status != ''
         
@@ -693,6 +715,17 @@ class TaskWatcher:
                               'replication_complete', 'replication_fail'}
         if event_type in _WEBHOOK_EXCLUSIVE:
             return
+        
+        # Suppress VM/CT start/stop/shutdown while a vzdump is active.
+        # These are backup-induced operations (mode=stop), not user actions.
+        # Exception: if a VM/CT FAILS to start after backup, that IS important.
+        _BACKUP_NOISE = {'vm_start', 'vm_stop', 'vm_shutdown', 'vm_restart',
+                         'ct_start', 'ct_stop'}
+        vzdump_age = time.time() - self._active_vzdump_ts if self._active_vzdump_ts else float('inf')
+        if event_type in _BACKUP_NOISE and vzdump_age < self._VZDUMP_WINDOW:
+            # Allow through only if it's a FAILURE (e.g. VM failed to start)
+            if not is_error:
+                return
         
         self._queue.put(NotificationEvent(
             event_type, severity, data, source='tasks',
