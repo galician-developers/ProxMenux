@@ -249,6 +249,23 @@ class JournalWatcher:
     
     def _check_kernel_critical(self, msg: str, syslog_id: str, priority: int):
         """Detect kernel panics, OOM, segfaults, hardware errors."""
+        # Only process messages from kernel or systemd (not app-level logs)
+        if syslog_id and syslog_id not in ('kernel', 'systemd', 'systemd-coredump', ''):
+            return
+        
+        # Filter out normal kernel messages that are NOT problems
+        _KERNEL_NOISE = [
+            r'vfio-pci\s+\S+:\s*reset',       # PCI passthrough resets (normal during VM start/stop)
+            r'vfio-pci\s+\S+:\s*resetting',
+            r'entered\s+(?:promiscuous|allmulticast)\s+mode',  # Network bridge ops
+            r'entered\s+(?:blocking|forwarding|disabled)\s+state',  # Bridge STP
+            r'tap\d+i\d+:',                     # TAP interface events
+            r'vmbr\d+:.*port\s+\d+',            # Bridge port events
+        ]
+        for noise in _KERNEL_NOISE:
+            if re.search(noise, msg, re.IGNORECASE):
+                return
+        
         critical_patterns = {
             r'kernel panic':       ('system_problem', 'CRITICAL', 'Kernel panic'),
             r'Out of memory':      ('system_problem', 'CRITICAL', 'Out of memory killer activated'),
@@ -318,6 +335,19 @@ class JournalWatcher:
     
     def _check_service_failure(self, msg: str, unit: str):
         """Detect critical service failures with enriched context."""
+        # Filter out noise -- these are normal systemd transient units,
+        # not real service failures worth alerting about.
+        _NOISE_PATTERNS = [
+            r'session-\d+\.scope',          # SSH/login sessions
+            r'user@\d+\.service',           # Per-user service managers
+            r'user-runtime-dir@\d+',        # User runtime dirs
+            r'systemd-coredump@',           # Coredump handlers (transient)
+            r'run-.*\.mount',               # Transient mounts
+        ]
+        for noise in _NOISE_PATTERNS:
+            if re.search(noise, msg) or re.search(noise, unit):
+                return
+        
         service_patterns = [
             r'Failed to start (.+)',
             r'Unit (\S+) (?:entered failed state|failed)',
@@ -743,13 +773,16 @@ class PollingCollector:
         'load': 'load_high',
         'temperature': 'temp_high',
         'disk': 'disk_space_low',
-        'storage': 'disk_space_low',
+        'storage': 'storage_unavailable',
         'network': 'network_down',
         'pve_services': 'service_fail',
         'security': 'auth_fail',
         'updates': 'update_available',
         'zfs': 'disk_io_error',
         'smart': 'disk_io_error',
+        'disks': 'disk_io_error',
+        'logs': 'system_problem',
+        'vms': 'system_problem',
     }
     
     def __init__(self, event_queue: Queue, poll_interval: int = 60):

@@ -821,8 +821,20 @@ class HealthMonitor:
         issues = []
         storage_details = {}
         
-        # Check disk usage and mount status first for critical mounts
-        critical_mounts = ['/']
+        # Check disk usage and mount status for important mounts.
+        # We detect actual mountpoints dynamically rather than hard-coding.
+        critical_mounts = set()
+        critical_mounts.add('/')
+        try:
+            for part in psutil.disk_partitions(all=False):
+                mp = part.mountpoint
+                # Include standard system mounts and PVE storage
+                if mp in ('/', '/var', '/tmp', '/boot', '/boot/efi') or \
+                   mp.startswith('/var/lib/vz') or mp.startswith('/mnt/'):
+                    critical_mounts.add(mp)
+        except Exception:
+            pass
+        critical_mounts = sorted(critical_mounts)
         
         for mount_point in critical_mounts:
             try:
@@ -857,9 +869,32 @@ class HealthMonitor:
                 # Check filesystem usage only if not already flagged as critical
                 if mount_point not in storage_details or storage_details[mount_point].get('status') == 'OK':
                     fs_status = self._check_filesystem(mount_point)
+                    error_key = f'disk_space_{mount_point}'
                     if fs_status['status'] != 'OK':
                         issues.append(f"{mount_point}: {fs_status['reason']}")
                         storage_details[mount_point] = fs_status
+                        # Record persistent error for notifications
+                        usage = psutil.disk_usage(mount_point)
+                        avail_gb = usage.free / (1024**3)
+                        if avail_gb >= 1:
+                            avail_str = f"{avail_gb:.1f} GiB"
+                        else:
+                            avail_str = f"{usage.free / (1024**2):.0f} MiB"
+                        health_persistence.record_error(
+                            error_key=error_key,
+                            category='disk',
+                            severity=fs_status['status'],
+                            reason=f'{mount_point}: {fs_status["reason"]}',
+                            details={
+                                'mount': mount_point,
+                                'used': str(round(usage.percent, 1)),
+                                'available': avail_str,
+                                'dismissable': False,
+                            }
+                        )
+                    else:
+                        # Space recovered -- clear any previous alert
+                        health_persistence.clear_error(error_key)
             except Exception:
                 pass # Silently skip if mountpoint check fails
         
@@ -1871,7 +1906,8 @@ class HealthMonitor:
                         self.persistent_log_patterns[pattern] = {
                             'count': 1,
                             'first_seen': current_time,
-                            'last_seen': current_time
+                            'last_seen': current_time,
+                            'sample': line.strip()[:200],  # Original line for display
                         }
                 
                 for line in previous_lines:
@@ -1913,12 +1949,16 @@ class HealthMonitor:
                         pattern_hash = hashlib.md5(pattern.encode()).hexdigest()[:8]
                         error_key = f'log_persistent_{pattern_hash}'
                         if not health_persistence.is_error_active(error_key, category='logs'):
+                            # Use the original sample line for the notification,
+                            # not the normalized pattern (which has IDs replaced).
+                            sample = data.get('sample', pattern)
                             health_persistence.record_error(
                                 error_key=error_key,
                                 category='logs',
                                 severity='WARNING',
-                                reason=f'Persistent error pattern detected: {pattern[:80]}',
-                                details={'pattern': pattern, 'dismissable': True, 'occurrences': data['count']}
+                                reason=f'Recurring error ({data["count"]}x): {sample[:150]}',
+                                details={'pattern': pattern, 'sample': sample,
+                                         'dismissable': True, 'occurrences': data['count']}
                             )
                 
                 patterns_to_remove = [

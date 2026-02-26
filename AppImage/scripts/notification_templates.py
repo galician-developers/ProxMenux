@@ -25,10 +25,10 @@ from typing import Dict, Any, Optional, List
 def _parse_vzdump_message(message: str) -> Optional[Dict[str, Any]]:
     """Parse a PVE vzdump notification message into structured data.
     
-    PVE vzdump messages contain:
-      - A table:  VMID  Name  Status  Time  Size  Filename
-      - Totals:   Total running time: Xs / Total size: X GiB
-      - Full logs per VM
+    Supports two formats:
+    1. Local storage: table with columns VMID Name Status Time Size Filename
+    2. PBS storage: log-style output with 'Finished Backup of VM NNN (HH:MM:SS)'
+       and sizes in lines like 'root.pxar: had to backup X of Y' or 'transferred X'
     
     Returns dict with 'vms' list, 'total_time', 'total_size', or None.
     """
@@ -41,7 +41,7 @@ def _parse_vzdump_message(message: str) -> Optional[Dict[str, Any]]:
     
     lines = message.split('\n')
     
-    # Find the table header line
+    # ── Strategy 1: classic table (local/NFS/CIFS storage) ──
     header_idx = -1
     for i, line in enumerate(lines):
         if re.match(r'\s*VMID\s+Name\s+Status', line, re.IGNORECASE):
@@ -49,15 +49,10 @@ def _parse_vzdump_message(message: str) -> Optional[Dict[str, Any]]:
             break
     
     if header_idx >= 0:
-        # Parse column positions from header
-        header = lines[header_idx]
-        # Parse table rows after header
         for line in lines[header_idx + 1:]:
             stripped = line.strip()
             if not stripped or stripped.startswith('Total') or stripped.startswith('Logs') or stripped.startswith('='):
                 break
-            # Table row: VMID  Name  Status  Time  Size  Filename
-            # Use regex to parse flexible whitespace columns
             m = re.match(
                 r'\s*(\d+)\s+'           # VMID
                 r'(\S+)\s+'              # Name
@@ -74,10 +69,91 @@ def _parse_vzdump_message(message: str) -> Optional[Dict[str, Any]]:
                     'status': m.group(3),
                     'time': m.group(4),
                     'size': m.group(5),
-                    'filename': m.group(6).split('/')[-1],  # just filename
+                    'filename': m.group(6).split('/')[-1],
                 })
     
-    # Extract totals
+    # ── Strategy 2: log-style (PBS / Proxmox Backup Server) ──
+    # Parse from the full vzdump log lines.
+    # Look for patterns:
+    #   "Starting Backup of VM NNN (lxc/qemu)"  -> detect guest
+    #   "CT Name: xxx" or "VM Name: xxx"         -> guest name
+    #   "Finished Backup of VM NNN (HH:MM:SS)"   -> duration + status=ok
+    #   "root.pxar: had to backup X of Y"         -> size (CT)
+    #   "transferred X in N seconds"              -> size (QEMU)
+    #   "creating ... archive 'ct/100/2026-..'"   -> archive name for PBS
+    #   "TASK ERROR:" or "ERROR:"                 -> status=error
+    if not vms:
+        current_vm: Optional[Dict[str, str]] = None
+        
+        for line in lines:
+            # Remove "INFO: " prefix that PVE adds
+            clean = re.sub(r'^(?:INFO|WARNING|ERROR):\s*', '', line.strip())
+            
+            # Start of a new VM backup
+            m_start = re.match(
+                r'Starting Backup of VM (\d+)\s+\((lxc|qemu)\)', clean)
+            if m_start:
+                if current_vm:
+                    vms.append(current_vm)
+                current_vm = {
+                    'vmid': m_start.group(1),
+                    'name': '',
+                    'status': 'ok',
+                    'time': '',
+                    'size': '',
+                    'filename': '',
+                    'type': m_start.group(2),
+                }
+                continue
+            
+            if current_vm:
+                # Guest name
+                m_name = re.match(r'(?:CT|VM) Name:\s*(.+)', clean)
+                if m_name:
+                    current_vm['name'] = m_name.group(1).strip()
+                    continue
+                
+                # PBS archive path -> extract as filename
+                m_archive = re.search(
+                    r"creating .+ archive '([^']+)'", clean)
+                if m_archive:
+                    current_vm['filename'] = m_archive.group(1)
+                    continue
+                
+                # Size for containers (pxar)
+                m_pxar = re.search(
+                    r'root\.pxar:.*?of\s+([\d.]+\s+\S+)', clean)
+                if m_pxar:
+                    current_vm['size'] = m_pxar.group(1)
+                    continue
+                
+                # Size for QEMU (transferred)
+                m_transfer = re.search(
+                    r'transferred\s+([\d.]+\s+\S+)', clean)
+                if m_transfer:
+                    current_vm['size'] = m_transfer.group(1)
+                    continue
+                
+                # Finished -> duration
+                m_finish = re.match(
+                    r'Finished Backup of VM (\d+)\s+\(([^)]+)\)', clean)
+                if m_finish:
+                    current_vm['time'] = m_finish.group(2)
+                    current_vm['status'] = 'ok'
+                    vms.append(current_vm)
+                    current_vm = None
+                    continue
+                
+                # Error
+                if clean.startswith('ERROR:') or clean.startswith('TASK ERROR'):
+                    if current_vm:
+                        current_vm['status'] = 'error'
+        
+        # Don't forget the last VM if it wasn't finished
+        if current_vm:
+            vms.append(current_vm)
+    
+    # ── Extract totals ──
     for line in lines:
         m_time = re.search(r'Total running time:\s*(.+)', line)
         if m_time:
@@ -85,6 +161,50 @@ def _parse_vzdump_message(message: str) -> Optional[Dict[str, Any]]:
         m_size = re.search(r'Total size:\s*(.+)', line)
         if m_size:
             total_size = m_size.group(1).strip()
+    
+    # For PBS: calculate total size if not explicitly stated
+    if not total_size and vms:
+        # Sum individual sizes if they share units
+        sizes_gib = 0.0
+        for vm in vms:
+            s = vm.get('size', '')
+            m = re.match(r'([\d.]+)\s+(.*)', s)
+            if m:
+                val = float(m.group(1))
+                unit = m.group(2).strip().upper()
+                if 'GIB' in unit or 'GB' in unit:
+                    sizes_gib += val
+                elif 'MIB' in unit or 'MB' in unit:
+                    sizes_gib += val / 1024
+                elif 'TIB' in unit or 'TB' in unit:
+                    sizes_gib += val * 1024
+        if sizes_gib > 0:
+            if sizes_gib >= 1024:
+                total_size = f"{sizes_gib / 1024:.3f} TiB"
+            elif sizes_gib >= 1:
+                total_size = f"{sizes_gib:.3f} GiB"
+            else:
+                total_size = f"{sizes_gib * 1024:.3f} MiB"
+    
+    # For PBS: calculate total time if not stated
+    if not total_time and vms:
+        total_secs = 0
+        for vm in vms:
+            t = vm.get('time', '')
+            # Parse HH:MM:SS format
+            m = re.match(r'(\d+):(\d+):(\d+)', t)
+            if m:
+                total_secs += int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
+        if total_secs > 0:
+            hours = total_secs // 3600
+            mins = (total_secs % 3600) // 60
+            secs = total_secs % 60
+            if hours:
+                total_time = f"{hours}h {mins}m {secs}s"
+            elif mins:
+                total_time = f"{mins}m {secs}s"
+            else:
+                total_time = f"{secs}s"
     
     if not vms and not total_size:
         return None
@@ -113,7 +233,12 @@ def _format_vzdump_body(parsed: Dict[str, Any], is_success: bool) -> str:
         if vm.get('time'):
             details.append(f"Duration: {vm['time']}")
         if vm.get('filename'):
-            details.append(f"File: {vm['filename']}")
+            fname = vm['filename']
+            # PBS archives look like "ct/100/2026-..." or "vm/105/2026-..."
+            if re.match(r'^(?:ct|vm)/\d+/', fname):
+                details.append(f"PBS: {fname}")
+            else:
+                details.append(f"File: {fname}")
         if details:
             parts.append(' | '.join(details))
         parts.append('')  # blank line between VMs
@@ -335,6 +460,12 @@ TEMPLATES = {
     'disk_io_error': {
         'title': '{hostname}: Disk I/O error',
         'body': 'I/O error detected on {device}.\n{reason}',
+        'group': 'storage',
+        'default_enabled': True,
+    },
+    'storage_unavailable': {
+        'title': '{hostname}: Storage unavailable - {storage_name}',
+        'body': 'PVE storage "{storage_name}" ({storage_type}) is not available.\n{reason}',
         'group': 'storage',
         'default_enabled': True,
     },
