@@ -598,11 +598,17 @@ class TaskWatcher:
         """Check if a vzdump (backup) job is currently running.
         
         Reads /var/log/pve/tasks/active which lists all running PVE tasks.
+        Also verifies the process is actually alive (PID check).
         Result is cached for a few seconds to avoid excessive file reads.
         """
         now = time.time()
+        # Negative cache: if we recently confirmed NO vzdump, skip the check
+        if hasattr(self, '_vzdump_negative_cache') and \
+           now - self._vzdump_negative_cache < self._vzdump_cache_ttl:
+            return False
+        # Positive cache
         if now - self._vzdump_active_cache < self._vzdump_cache_ttl:
-            return True  # Recently confirmed active
+            return True
         
         active_file = '/var/log/pve/tasks/active'
         try:
@@ -610,11 +616,20 @@ class TaskWatcher:
                 for line in f:
                     # UPID format: UPID:node:pid:pstart:starttime:type:id:user:
                     if ':vzdump:' in line:
-                        self._vzdump_active_cache = now
-                        return True
+                        # Verify the PID is still alive
+                        parts = line.strip().split(':')
+                        if len(parts) >= 3:
+                            try:
+                                pid = int(parts[2])
+                                os.kill(pid, 0)  # Signal 0 = just check existence
+                                self._vzdump_active_cache = now
+                                return True
+                            except (ValueError, ProcessLookupError, PermissionError):
+                                pass  # PID not found or not a number -- stale entry
         except (OSError, IOError):
             pass
         
+        self._vzdump_negative_cache = now
         return False
     
     def _watch_loop(self):

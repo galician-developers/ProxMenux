@@ -1386,6 +1386,32 @@ class HealthMonitor:
         except Exception:
             return {'status': 'UNKNOWN', 'reason': 'Ping command failed'}
     
+    def _is_vzdump_active(self) -> bool:
+        """Check if a vzdump (backup) job is currently running."""
+        try:
+            with open('/var/log/pve/tasks/active', 'r') as f:
+                for line in f:
+                    if ':vzdump:' in line:
+                        return True
+        except (OSError, IOError):
+            pass
+        return False
+    
+    def _resolve_vm_name(self, vmid: str) -> str:
+        """Resolve VMID to guest name from PVE config files."""
+        if not vmid:
+            return ''
+        for base in ['/etc/pve/qemu-server', '/etc/pve/lxc']:
+            conf = os.path.join(base, f'{vmid}.conf')
+            try:
+                with open(conf) as f:
+                    for line in f:
+                        if line.startswith('hostname:') or line.startswith('name:'):
+                            return line.split(':', 1)[1].strip()
+            except (OSError, IOError):
+                continue
+        return ''
+    
     def _check_vms_cts_optimized(self) -> Dict[str, Any]:
         """
         Optimized VM/CT check - detects qmp failures and startup errors from logs.
@@ -1402,20 +1428,28 @@ class HealthMonitor:
                 timeout=3
             )
             
+            # Check if vzdump is running -- QMP timeouts during backup are normal
+            _vzdump_running = self._is_vzdump_active()
+            
             if result.returncode == 0:
                 for line in result.stdout.split('\n'):
                     line_lower = line.lower()
                     
                     vm_qmp_match = re.search(r'vm\s+(\d+)\s+qmp\s+command.*(?:failed|unable|timeout)', line_lower)
                     if vm_qmp_match:
+                        if _vzdump_running:
+                            continue  # Normal during backup
                         vmid = vm_qmp_match.group(1)
+                        vm_name = self._resolve_vm_name(vmid)
+                        display = f"VM {vmid} ({vm_name})" if vm_name else f"VM {vmid}"
                         key = f'vm_{vmid}'
                         if key not in vm_details:
-                            issues.append(f'VM {vmid}: Communication issue')
+                            issues.append(f'{display}: QMP communication issue')
                             vm_details[key] = {
                                 'status': 'WARNING',
-                                'reason': 'QMP command timeout',
+                                'reason': f'{display}: QMP command failed or timed out.\n{line.strip()[:200]}',
                                 'id': vmid,
+                                'vmname': vm_name,
                                 'type': 'VM'
                             }
                         continue
@@ -1539,29 +1573,35 @@ class HealthMonitor:
                 timeout=3
             )
             
+            _vzdump_running = self._is_vzdump_active()
+            
             if result.returncode == 0:
                 for line in result.stdout.split('\n'):
                     line_lower = line.lower()
                     
-                    # VM QMP errors
+                    # VM QMP errors (skip during active backup -- normal behavior)
                     vm_qmp_match = re.search(r'vm\s+(\d+)\s+qmp\s+command.*(?:failed|unable|timeout)', line_lower)
                     if vm_qmp_match:
+                        if _vzdump_running:
+                            continue  # Normal during backup
                         vmid = vm_qmp_match.group(1)
+                        vm_name = self._resolve_vm_name(vmid)
+                        display = f"VM {vmid} ({vm_name})" if vm_name else f"VM {vmid}"
                         error_key = f'vm_{vmid}'
                         if error_key not in vm_details:
-                            # Record persistent error
                             health_persistence.record_error(
                                 error_key=error_key,
                                 category='vms',
                                 severity='WARNING',
-                                reason='QMP command timeout',
-                                details={'id': vmid, 'type': 'VM'}
+                                reason=f'{display}: QMP command failed or timed out.\n{line.strip()[:200]}',
+                                details={'id': vmid, 'vmname': vm_name, 'type': 'VM'}
                             )
-                            issues.append(f'VM {vmid}: Communication issue')
+                            issues.append(f'{display}: QMP communication issue')
                             vm_details[error_key] = {
                                 'status': 'WARNING',
-                                'reason': 'QMP command timeout',
+                                'reason': f'{display}: QMP command failed or timed out',
                                 'id': vmid,
+                                'vmname': vm_name,
                                 'type': 'VM'
                             }
                         continue
