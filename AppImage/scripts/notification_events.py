@@ -571,11 +571,9 @@ class TaskWatcher:
         self._thread: Optional[threading.Thread] = None
         self._hostname = _hostname()
         self._last_position = 0
-        # Track active vzdump jobs. While a vzdump is running, VM/CT
-        # start/stop/shutdown events are backup-induced (mode=stop/snapshot)
-        # and should NOT generate notifications.
-        self._active_vzdump_ts: float = 0  # timestamp of last vzdump start
-        self._VZDUMP_WINDOW = 14400  # 4h max backup window
+        # Cache for active vzdump detection
+        self._vzdump_active_cache: float = 0  # timestamp of last positive check
+        self._vzdump_cache_ttl = 5  # cache result for 5s
     
     def start(self):
         if self._running:
@@ -595,6 +593,29 @@ class TaskWatcher:
     
     def stop(self):
         self._running = False
+    
+    def _is_vzdump_active(self) -> bool:
+        """Check if a vzdump (backup) job is currently running.
+        
+        Reads /var/log/pve/tasks/active which lists all running PVE tasks.
+        Result is cached for a few seconds to avoid excessive file reads.
+        """
+        now = time.time()
+        if now - self._vzdump_active_cache < self._vzdump_cache_ttl:
+            return True  # Recently confirmed active
+        
+        active_file = '/var/log/pve/tasks/active'
+        try:
+            with open(active_file, 'r') as f:
+                for line in f:
+                    # UPID format: UPID:node:pid:pstart:starttime:type:id:user:
+                    if ':vzdump:' in line:
+                        self._vzdump_active_cache = now
+                        return True
+        except (OSError, IOError):
+            pass
+        
+        return False
     
     def _watch_loop(self):
         """Poll the task index file for new entries."""
@@ -656,22 +677,7 @@ class TaskWatcher:
         
         event_type, default_severity = event_info
         
-        # ── Track active vzdump jobs ──
-        # When a vzdump starts, record its timestamp. While active, we
-        # suppress start/stop/shutdown of individual VMs -- those are just
-        # the backup stopping and restarting guests (mode=stop).
-        if task_type == 'vzdump':
-            if not status:
-                # vzdump just started
-                self._active_vzdump_ts = time.time()
-            else:
-                # vzdump finished -- clear after a small grace period
-                # (VMs may still be restarting)
-                def _clear_vzdump():
-                    time.sleep(30)
-                    self._active_vzdump_ts = 0
-                threading.Thread(target=_clear_vzdump, daemon=True,
-                                 name='clear-vzdump').start()
+
         
         # Check if task failed
         is_error = status and status != 'OK' and status != ''
@@ -721,10 +727,8 @@ class TaskWatcher:
         # Exception: if a VM/CT FAILS to start after backup, that IS important.
         _BACKUP_NOISE = {'vm_start', 'vm_stop', 'vm_shutdown', 'vm_restart',
                          'ct_start', 'ct_stop'}
-        vzdump_age = time.time() - self._active_vzdump_ts if self._active_vzdump_ts else float('inf')
-        if event_type in _BACKUP_NOISE and vzdump_age < self._VZDUMP_WINDOW:
-            # Allow through only if it's a FAILURE (e.g. VM failed to start)
-            if not is_error:
+        if event_type in _BACKUP_NOISE and not is_error:
+            if self._is_vzdump_active():
                 return
         
         self._queue.put(NotificationEvent(

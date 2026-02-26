@@ -686,16 +686,6 @@ def proxmox_webhook():
             else:
                 return _reject(400, 'empty_payload', 400)
         
-        # DEBUG: Capture raw webhook payload for parser analysis
-        import json as _json
-        try:
-            with open('/tmp/proxmenux_webhook_payload.log', 'a') as _f:
-                _f.write(f"\n{'='*80}\n{time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-                _f.write(_json.dumps(payload, indent=2, default=str, ensure_ascii=False))
-                _f.write('\n')
-        except Exception:
-            pass
-        
         result = notification_manager.process_webhook(payload)
         # Always return 200 to PVE -- a non-200 makes PVE report the webhook as broken.
         # The 'accepted' field in the JSON body indicates actual processing status.

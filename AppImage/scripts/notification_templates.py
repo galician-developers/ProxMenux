@@ -49,28 +49,38 @@ def _parse_vzdump_message(message: str) -> Optional[Dict[str, Any]]:
             break
     
     if header_idx >= 0:
-        for line in lines[header_idx + 1:]:
-            stripped = line.strip()
-            if not stripped or stripped.startswith('Total') or stripped.startswith('Logs') or stripped.startswith('='):
-                break
-            m = re.match(
-                r'\s*(\d+)\s+'           # VMID
-                r'(\S+)\s+'              # Name
-                r'(\S+)\s+'              # Status (ok/error)
-                r'(\S+)\s+'              # Time
-                r'([\d.]+\s+\S+)\s+'     # Size (e.g. "1.423 GiB")
-                r'(\S+)',                # Filename
-                line
-            )
-            if m:
-                vms.append({
-                    'vmid': m.group(1),
-                    'name': m.group(2),
-                    'status': m.group(3),
-                    'time': m.group(4),
-                    'size': m.group(5),
-                    'filename': m.group(6).split('/')[-1],
-                })
+        # Use column positions from the header to slice each row.
+        # Header: "VMID    Name           Status    Time      Size          Filename"
+        header = lines[header_idx]
+        col_starts = []
+        for col_name in ['VMID', 'Name', 'Status', 'Time', 'Size', 'Filename']:
+            idx = header.find(col_name)
+            if idx >= 0:
+                col_starts.append(idx)
+        
+        if len(col_starts) == 6:
+            for line in lines[header_idx + 1:]:
+                stripped = line.strip()
+                if not stripped or stripped.startswith('Total') or stripped.startswith('Logs') or stripped.startswith('='):
+                    break
+                # Pad line to avoid index errors
+                padded = line.ljust(col_starts[-1] + 50)
+                vmid = padded[col_starts[0]:col_starts[1]].strip()
+                name = padded[col_starts[1]:col_starts[2]].strip()
+                status = padded[col_starts[2]:col_starts[3]].strip()
+                time_val = padded[col_starts[3]:col_starts[4]].strip()
+                size = padded[col_starts[4]:col_starts[5]].strip()
+                filename = padded[col_starts[5]:].strip()
+                
+                if vmid and vmid.isdigit():
+                    vms.append({
+                        'vmid': vmid,
+                        'name': name,
+                        'status': status,
+                        'time': time_val,
+                        'size': size,
+                        'filename': filename,
+                    })
     
     # ── Strategy 2: log-style (PBS / Proxmox Backup Server) ──
     # Parse from the full vzdump log lines.
