@@ -324,6 +324,13 @@ class HealthMonitor:
         Returns JSON structure with ALL 10 categories always present.
         Now includes persistent error tracking.
         """
+        # Run cleanup on every status check so stale errors are auto-resolved
+        # using the user-configured Suppression Duration (single source of truth).
+        try:
+            health_persistence.cleanup_old_errors()
+        except Exception:
+            pass
+        
         active_errors = health_persistence.get_active_errors()
         # No need to create persistent_issues dict here, it's implicitly handled by the checks
         
@@ -821,8 +828,20 @@ class HealthMonitor:
         issues = []
         storage_details = {}
         
-        # Check disk usage and mount status first for critical mounts
-        critical_mounts = ['/']
+        # Check disk usage and mount status for important mounts.
+        # We detect actual mountpoints dynamically rather than hard-coding.
+        critical_mounts = set()
+        critical_mounts.add('/')
+        try:
+            for part in psutil.disk_partitions(all=False):
+                mp = part.mountpoint
+                # Include standard system mounts and PVE storage
+                if mp in ('/', '/var', '/tmp', '/boot', '/boot/efi') or \
+                   mp.startswith('/var/lib/vz') or mp.startswith('/mnt/'):
+                    critical_mounts.add(mp)
+        except Exception:
+            pass
+        critical_mounts = sorted(critical_mounts)
         
         for mount_point in critical_mounts:
             try:
@@ -857,9 +876,32 @@ class HealthMonitor:
                 # Check filesystem usage only if not already flagged as critical
                 if mount_point not in storage_details or storage_details[mount_point].get('status') == 'OK':
                     fs_status = self._check_filesystem(mount_point)
+                    error_key = f'disk_space_{mount_point}'
                     if fs_status['status'] != 'OK':
                         issues.append(f"{mount_point}: {fs_status['reason']}")
                         storage_details[mount_point] = fs_status
+                        # Record persistent error for notifications
+                        usage = psutil.disk_usage(mount_point)
+                        avail_gb = usage.free / (1024**3)
+                        if avail_gb >= 1:
+                            avail_str = f"{avail_gb:.1f} GiB"
+                        else:
+                            avail_str = f"{usage.free / (1024**2):.0f} MiB"
+                        health_persistence.record_error(
+                            error_key=error_key,
+                            category='disk',
+                            severity=fs_status['status'],
+                            reason=f'{mount_point}: {fs_status["reason"]}',
+                            details={
+                                'mount': mount_point,
+                                'used': str(round(usage.percent, 1)),
+                                'available': avail_str,
+                                'dismissable': False,
+                            }
+                        )
+                    else:
+                        # Space recovered -- clear any previous alert
+                        health_persistence.clear_error(error_key)
             except Exception:
                 pass # Silently skip if mountpoint check fails
         
@@ -1052,16 +1094,67 @@ class HealthMonitor:
         
         return storages
     
+    def _resolve_ata_to_disk(self, ata_port: str) -> str:
+        """Resolve an ATA controller name (e.g. 'ata8') to a block device (e.g. 'sda').
+        
+        Uses /sys/class/ata_port/ symlinks and /sys/block/ to find the mapping.
+        Falls back to parsing dmesg for 'ata8: SATA link up' -> 'sd 7:0:0:0: [sda]'.
+        """
+        if not ata_port or not ata_port.startswith('ata'):
+            return ata_port
+        
+        port_num = ata_port.replace('ata', '')
+        
+        # Method 1: Walk /sys/class/ata_port/ -> host -> target -> block
+        try:
+            ata_path = f'/sys/class/ata_port/{ata_port}'
+            if os.path.exists(ata_path):
+                device_path = os.path.realpath(ata_path)
+                # Walk up to find the SCSI host, then find block devices
+                # Path: /sys/devices/.../ataX/hostY/targetY:0:0/Y:0:0:0/block/sdZ
+                for root, dirs, files in os.walk(os.path.dirname(device_path)):
+                    if 'block' in dirs:
+                        block_path = os.path.join(root, 'block')
+                        devs = os.listdir(block_path)
+                        if devs:
+                            return devs[0]  # e.g. 'sda'
+        except (OSError, IOError):
+            pass
+        
+        # Method 2: Parse dmesg for ATA link messages
+        try:
+            result = subprocess.run(
+                ['dmesg', '--notime'],
+                capture_output=True, text=True, timeout=2
+            )
+            if result.returncode == 0:
+                # Look for "ata8: SATA link up" followed by "sd X:0:0:0: [sda]"
+                lines = result.stdout.split('\n')
+                host_num = None
+                for line in lines:
+                    m = re.search(rf'{ata_port}:\s+SATA link', line)
+                    if m:
+                        # ata port number maps to host(N-1) typically
+                        host_num = int(port_num) - 1
+                    if host_num is not None:
+                        m2 = re.search(rf'sd\s+{host_num}:\d+:\d+:\d+:\s+\[(\w+)\]', line)
+                        if m2:
+                            return m2.group(1)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        
+        return ata_port  # Return original if resolution fails
+    
     def _check_disks_optimized(self) -> Dict[str, Any]:
         """
-        Optimized disk check - always returns status.
-        Checks dmesg for I/O errors and SMART status.
-        NOTE: This function is now largely covered by _check_storage_optimized,
-              but kept for potential specific disk-level reporting if needed.
-              Currently, its primary function is to detect recent I/O errors.
+        Disk I/O error check -- the SINGLE source of truth for disk errors.
+        
+        Reads dmesg for I/O/ATA/SCSI errors, counts per device, records in
+        health_persistence, and returns status for the health dashboard.
+        Resolves ATA controller names (ata8) to physical disks (sda).
         """
         current_time = time.time()
-        disk_issues = {}
+        disk_results = {}  # Single dict for both WARNING and CRITICAL
         
         try:
             # Check dmesg for I/O errors in the last 5 minutes
@@ -1072,17 +1165,52 @@ class HealthMonitor:
                 timeout=2
             )
             
+            # Collect a sample line per device for richer error messages
+            disk_samples = {}
+            
             if result.returncode == 0:
                 for line in result.stdout.split('\n'):
                     line_lower = line.lower()
-                    if any(keyword in line_lower for keyword in ['i/o error', 'ata error', 'scsi error', 'medium error']):
-                        # Try to extract disk name
-                        disk_match = re.search(r'/dev/(sd[a-z]|nvme\d+n\d+)', line)
-                        if disk_match:
-                            disk_name = disk_match.group(1)
+                    # Detect various disk error formats
+                    is_disk_error = any(kw in line_lower for kw in [
+                        'i/o error', 'scsi error', 'medium error',
+                        'failed command:', 'exception emask',
+                    ])
+                    ata_match = re.search(r'(ata\d+)[\.\d]*:.*(?:error|failed|exception)', line_lower)
+                    if ata_match:
+                        is_disk_error = True
+                    
+                    if is_disk_error:
+                        # Extract device from multiple formats
+                        raw_device = None
+                        for dev_re in [
+                            r'dev\s+(sd[a-z]+)',          # dev sdb
+                            r'\[(sd[a-z]+)\]',            # [sda]
+                            r'/dev/(sd[a-z]+)',            # /dev/sda
+                            r'(nvme\d+n\d+)',             # nvme0n1
+                            r'device\s+(sd[a-z]+\d*)',    # device sda1
+                            r'(ata\d+)',                  # ata8 (ATA controller)
+                        ]:
+                            dm = re.search(dev_re, line)
+                            if dm:
+                                raw_device = dm.group(1)
+                                break
+                        
+                        if raw_device:
+                            # Resolve ATA port to physical disk name
+                            if raw_device.startswith('ata'):
+                                resolved = self._resolve_ata_to_disk(raw_device)
+                                disk_name = resolved
+                            else:
+                                disk_name = raw_device.rstrip('0123456789') if raw_device.startswith('sd') else raw_device
+                            
                             self.io_error_history[disk_name].append(current_time)
+                            if disk_name not in disk_samples:
+                                # Clean the sample: strip dmesg timestamp prefix
+                                clean = re.sub(r'^\[.*?\]\s*', '', line.strip())
+                                disk_samples[disk_name] = clean[:200]
                 
-                # Clean old history (keep errors from the last 5 minutes)
+                # Clean old history and evaluate per-disk status
                 for disk in list(self.io_error_history.keys()):
                     self.io_error_history[disk] = [
                         t for t in self.io_error_history[disk]
@@ -1090,57 +1218,67 @@ class HealthMonitor:
                     ]
                     
                     error_count = len(self.io_error_history[disk])
+                    error_key = f'disk_{disk}'
+                    sample = disk_samples.get(disk, '')
+                    display = f'/dev/{disk}' if not disk.startswith('/') else disk
                     
-                    # Report based on recent error count
                     if error_count >= 3:
-                        error_key = f'disk_{disk}'
                         severity = 'CRITICAL'
-                        reason = f'{error_count} I/O errors in 5 minutes'
+                        reason = f'{display}: {error_count} I/O errors in 5 min'
+                        if sample:
+                            reason += f'\n{sample}'
                         
                         health_persistence.record_error(
                             error_key=error_key,
                             category='disks',
                             severity=severity,
                             reason=reason,
-                            details={'disk': disk, 'error_count': error_count, 'dismissable': False}
+                            details={'disk': disk, 'device': display,
+                                     'error_count': error_count,
+                                     'sample': sample, 'dismissable': False}
                         )
-                        
-                        disk_details[disk] = {
+                        disk_results[display] = {
                             'status': severity,
                             'reason': reason,
-                            'dismissable': False
+                            'device': disk,
+                            'error_count': error_count,
+                            'dismissable': False,
                         }
                     elif error_count >= 1:
-                        error_key = f'disk_{disk}'
                         severity = 'WARNING'
-                        reason = f'{error_count} I/O error(s) in 5 minutes'
+                        reason = f'{display}: {error_count} I/O error(s) in 5 min'
+                        if sample:
+                            reason += f'\n{sample}'
                         
-                        health_persistence.record_error(
+                        rec_result = health_persistence.record_error(
                             error_key=error_key,
                             category='disks',
                             severity=severity,
                             reason=reason,
-                            details={'disk': disk, 'error_count': error_count, 'dismissable': True}
+                            details={'disk': disk, 'device': display,
+                                     'error_count': error_count,
+                                     'sample': sample, 'dismissable': True}
                         )
-                        
-                        disk_issues[f'/dev/{disk}'] = {
-                            'status': severity,
-                            'reason': reason,
-                            'dismissable': True
-                        }
+                        if not rec_result or rec_result.get('type') != 'skipped_acknowledged':
+                            disk_results[display] = {
+                                'status': severity,
+                                'reason': reason,
+                                'device': disk,
+                                'error_count': error_count,
+                                'dismissable': True,
+                            }
                     else:
-                        error_key = f'disk_{disk}'
                         health_persistence.resolve_error(error_key, 'Disk errors cleared')
             
-            if not disk_issues:
+            if not disk_results:
                 return {'status': 'OK'}
             
-            has_critical = any(d.get('status') == 'CRITICAL' for d in disk_issues.values())
+            has_critical = any(d.get('status') == 'CRITICAL' for d in disk_results.values())
             
             return {
                 'status': 'CRITICAL' if has_critical else 'WARNING',
-                'reason': f"{len(disk_issues)} disk(s) with recent errors",
-                'details': disk_issues
+                'reason': f"{len(disk_results)} disk(s) with recent errors",
+                'details': disk_results
             }
         
         except Exception as e:
@@ -1351,12 +1489,51 @@ class HealthMonitor:
         except Exception:
             return {'status': 'UNKNOWN', 'reason': 'Ping command failed'}
     
+    def _is_vzdump_active(self) -> bool:
+        """Check if a vzdump (backup) job is currently running."""
+        try:
+            with open('/var/log/pve/tasks/active', 'r') as f:
+                for line in f:
+                    if ':vzdump:' in line:
+                        return True
+        except (OSError, IOError):
+            pass
+        return False
+    
+    def _resolve_vm_name(self, vmid: str) -> str:
+        """Resolve VMID to guest name from PVE config files."""
+        if not vmid:
+            return ''
+        for base in ['/etc/pve/qemu-server', '/etc/pve/lxc']:
+            conf = os.path.join(base, f'{vmid}.conf')
+            try:
+                with open(conf) as f:
+                    for line in f:
+                        if line.startswith('hostname:') or line.startswith('name:'):
+                            return line.split(':', 1)[1].strip()
+            except (OSError, IOError):
+                continue
+        return ''
+    
     def _check_vms_cts_optimized(self) -> Dict[str, Any]:
         """
         Optimized VM/CT check - detects qmp failures and startup errors from logs.
         Improved detection of container and VM errors from journalctl.
         """
         try:
+            # First: auto-resolve any persisted VM/CT errors where the guest
+            # is now running.  This clears stale "Failed to start" / QMP
+            # errors that are no longer relevant.
+            try:
+                active_vm_errors = health_persistence.get_active_errors('vms')
+                for err in active_vm_errors:
+                    details = err.get('details') or {}
+                    vmid = details.get('id', '')
+                    if vmid:
+                        health_persistence.check_vm_running(vmid)
+            except Exception:
+                pass
+            
             issues = []
             vm_details = {}
             
@@ -1367,20 +1544,28 @@ class HealthMonitor:
                 timeout=3
             )
             
+            # Check if vzdump is running -- QMP timeouts during backup are normal
+            _vzdump_running = self._is_vzdump_active()
+            
             if result.returncode == 0:
                 for line in result.stdout.split('\n'):
                     line_lower = line.lower()
                     
                     vm_qmp_match = re.search(r'vm\s+(\d+)\s+qmp\s+command.*(?:failed|unable|timeout)', line_lower)
                     if vm_qmp_match:
+                        if _vzdump_running:
+                            continue  # Normal during backup
                         vmid = vm_qmp_match.group(1)
+                        vm_name = self._resolve_vm_name(vmid)
+                        display = f"VM {vmid} ({vm_name})" if vm_name else f"VM {vmid}"
                         key = f'vm_{vmid}'
                         if key not in vm_details:
-                            issues.append(f'VM {vmid}: Communication issue')
+                            issues.append(f'{display}: QMP communication issue')
                             vm_details[key] = {
                                 'status': 'WARNING',
-                                'reason': 'QMP command timeout',
+                                'reason': f'{display}: QMP command failed or timed out.\n{line.strip()[:200]}',
                                 'id': vmid,
+                                'vmname': vm_name,
                                 'type': 'VM'
                             }
                         continue
@@ -1401,11 +1586,15 @@ class HealthMonitor:
                             else:
                                 reason = 'Container error'
                             
-                            issues.append(f'CT {ctid}: {reason}')
+                            ct_name = self._resolve_vm_name(ctid)
+                            display = f"CT {ctid} ({ct_name})" if ct_name else f"CT {ctid}"
+                            full_reason = f'{display}: {reason}\n{line.strip()[:200]}'
+                            issues.append(f'{display}: {reason}')
                             vm_details[key] = {
                                 'status': 'WARNING' if 'device' in reason.lower() else 'CRITICAL',
-                                'reason': reason,
+                                'reason': full_reason,
                                 'id': ctid,
+                                'vmname': ct_name,
                                 'type': 'CT'
                             }
                         continue
@@ -1440,11 +1629,15 @@ class HealthMonitor:
                             vmid = id_match.group(1)
                             key = f'vmct_{vmid}'
                             if key not in vm_details:
-                                issues.append(f'VM/CT {vmid}: Failed to start')
+                                vm_name = self._resolve_vm_name(vmid)
+                                display = f"VM/CT {vmid} ({vm_name})" if vm_name else f"VM/CT {vmid}"
+                                full_reason = f'{display}: Failed to start\n{line.strip()[:200]}'
+                                issues.append(f'{display}: Failed to start')
                                 vm_details[key] = {
                                     'status': 'CRITICAL',
-                                    'reason': 'Failed to start',
+                                    'reason': full_reason,
                                     'id': vmid,
+                                    'vmname': vm_name,
                                     'type': 'VM/CT'
                                 }
             
@@ -1504,31 +1697,38 @@ class HealthMonitor:
                 timeout=3
             )
             
+            _vzdump_running = self._is_vzdump_active()
+            
             if result.returncode == 0:
                 for line in result.stdout.split('\n'):
                     line_lower = line.lower()
                     
-                    # VM QMP errors
+                    # VM QMP errors (skip during active backup -- normal behavior)
                     vm_qmp_match = re.search(r'vm\s+(\d+)\s+qmp\s+command.*(?:failed|unable|timeout)', line_lower)
                     if vm_qmp_match:
+                        if _vzdump_running:
+                            continue  # Normal during backup
                         vmid = vm_qmp_match.group(1)
+                        vm_name = self._resolve_vm_name(vmid)
+                        display = f"VM {vmid} ({vm_name})" if vm_name else f"VM {vmid}"
                         error_key = f'vm_{vmid}'
                         if error_key not in vm_details:
-                            # Record persistent error
-                            health_persistence.record_error(
+                            rec_result = health_persistence.record_error(
                                 error_key=error_key,
                                 category='vms',
                                 severity='WARNING',
-                                reason='QMP command timeout',
-                                details={'id': vmid, 'type': 'VM'}
+                                reason=f'{display}: QMP command failed or timed out.\n{line.strip()[:200]}',
+                                details={'id': vmid, 'vmname': vm_name, 'type': 'VM'}
                             )
-                            issues.append(f'VM {vmid}: Communication issue')
-                            vm_details[error_key] = {
-                                'status': 'WARNING',
-                                'reason': 'QMP command timeout',
-                                'id': vmid,
-                                'type': 'VM'
-                            }
+                            if not rec_result or rec_result.get('type') != 'skipped_acknowledged':
+                                issues.append(f'{display}: QMP communication issue')
+                                vm_details[error_key] = {
+                                    'status': 'WARNING',
+                                    'reason': f'{display}: QMP command failed or timed out',
+                                    'id': vmid,
+                                    'vmname': vm_name,
+                                    'type': 'VM'
+                                }
                         continue
                     
                     # Container errors (including startup issues via vzstart)
@@ -1548,20 +1748,21 @@ class HealthMonitor:
                                 reason = 'Startup error'
                             
                             # Record persistent error
-                            health_persistence.record_error(
+                            rec_result = health_persistence.record_error(
                                 error_key=error_key,
                                 category='vms',
                                 severity='WARNING',
                                 reason=reason,
                                 details={'id': ctid, 'type': 'CT'}
                             )
-                            issues.append(f'CT {ctid}: {reason}')
-                            vm_details[error_key] = {
-                                'status': 'WARNING',
-                                'reason': reason,
-                                'id': ctid,
-                                'type': 'CT'
-                            }
+                            if not rec_result or rec_result.get('type') != 'skipped_acknowledged':
+                                issues.append(f'CT {ctid}: {reason}')
+                                vm_details[error_key] = {
+                                    'status': 'WARNING',
+                                    'reason': reason,
+                                    'id': ctid,
+                                    'type': 'CT'
+                                }
                     
                     # Generic failed to start for VMs and CTs
                     if any(keyword in line_lower for keyword in ['failed to start', 'cannot start', 'activation failed', 'start error']):
@@ -1586,22 +1787,28 @@ class HealthMonitor:
                                 vm_type = 'VM/CT'
                             
                             if error_key not in vm_details:
-                                reason = 'Failed to start'
+                                vm_name = self._resolve_vm_name(vmid_ctid)
+                                display = f"{vm_type} {vmid_ctid}"
+                                if vm_name:
+                                    display = f"{vm_type} {vmid_ctid} ({vm_name})"
+                                reason = f'{display}: Failed to start\n{line.strip()[:200]}'
                                 # Record persistent error
-                                health_persistence.record_error(
+                                rec_result = health_persistence.record_error(
                                     error_key=error_key,
                                     category='vms',
                                     severity='CRITICAL',
                                     reason=reason,
-                                    details={'id': vmid_ctid, 'type': vm_type}
+                                    details={'id': vmid_ctid, 'vmname': vm_name, 'type': vm_type}
                                 )
-                                issues.append(f'{vm_type} {vmid_ctid}: {reason}')
-                                vm_details[error_key] = {
-                                    'status': 'CRITICAL',
-                                    'reason': reason,
-                                    'id': vmid_ctid,
-                                    'type': vm_type
-                                }
+                                if not rec_result or rec_result.get('type') != 'skipped_acknowledged':
+                                    issues.append(f'{display}: Failed to start')
+                                    vm_details[error_key] = {
+                                        'status': 'CRITICAL',
+                                        'reason': reason,
+                                        'id': vmid_ctid,
+                                        'vmname': vm_name,
+                                        'type': vm_type
+                                    }
             
             # Build checks dict from vm_details
             checks = {}
@@ -1692,16 +1899,23 @@ class HealthMonitor:
             if failed_services:
                 reason = f'Services inactive: {", ".join(failed_services)}'
                 
-                # Record each failed service in persistence
+                # Record each failed service in persistence, respecting dismiss
+                active_failed = []
                 for svc in failed_services:
                     error_key = f'pve_service_{svc}'
-                    health_persistence.record_error(
+                    rec_result = health_persistence.record_error(
                         error_key=error_key,
                         category='pve_services',
                         severity='CRITICAL',
                         reason=f'PVE service {svc} is {service_details.get(svc, "inactive")}',
                         details={'service': svc, 'state': service_details.get(svc, 'inactive')}
                     )
+                    if rec_result and rec_result.get('type') == 'skipped_acknowledged':
+                        # Mark as dismissed in checks for frontend
+                        if svc in checks:
+                            checks[svc]['dismissed'] = True
+                    else:
+                        active_failed.append(svc)
                 
                 # Auto-clear services that recovered
                 for svc in services_to_check:
@@ -1710,10 +1924,21 @@ class HealthMonitor:
                         if health_persistence.is_error_active(error_key):
                             health_persistence.clear_error(error_key)
                 
+                # If all failed services are dismissed, return OK
+                if not active_failed:
+                    return {
+                        'status': 'OK',
+                        'reason': None,
+                        'failed': [],
+                        'is_cluster': is_cluster,
+                        'services_checked': len(services_to_check),
+                        'checks': checks
+                    }
+                
                 return {
                     'status': 'CRITICAL',
-                    'reason': reason,
-                    'failed': failed_services,
+                    'reason': f'Services inactive: {", ".join(active_failed)}',
+                    'failed': active_failed,
                     'is_cluster': is_cluster,
                     'services_checked': len(services_to_check),
                     'checks': checks
@@ -1871,7 +2096,8 @@ class HealthMonitor:
                         self.persistent_log_patterns[pattern] = {
                             'count': 1,
                             'first_seen': current_time,
-                            'last_seen': current_time
+                            'last_seen': current_time,
+                            'sample': line.strip()[:200],  # Original line for display
                         }
                 
                 for line in previous_lines:
@@ -1903,6 +2129,18 @@ class HealthMonitor:
                     if recent_count >= 5 and recent_count >= prev_count * 4:
                         spike_errors[pattern] = recent_count
                 
+                # Helper: get human-readable samples from normalized patterns
+                def _get_samples(error_dict, max_items=3):
+                    """Return list of readable sample lines for error patterns."""
+                    samples = []
+                    for pattern in list(error_dict.keys())[:max_items]:
+                        pdata = self.persistent_log_patterns.get(pattern, {})
+                        sample = pdata.get('sample', pattern)
+                        # Trim timestamp prefix if present (e.g. "Feb 27 16:03:35 host ")
+                        clean = re.sub(r'^[A-Z][a-z]{2}\s+\d+\s+[\d:]+\s+\S+\s+', '', sample)
+                        samples.append(clean[:120])
+                    return samples
+                
                 persistent_errors = {}
                 for pattern, data in self.persistent_log_patterns.items():
                     time_span = current_time - data['first_seen']
@@ -1913,12 +2151,16 @@ class HealthMonitor:
                         pattern_hash = hashlib.md5(pattern.encode()).hexdigest()[:8]
                         error_key = f'log_persistent_{pattern_hash}'
                         if not health_persistence.is_error_active(error_key, category='logs'):
+                            # Use the original sample line for the notification,
+                            # not the normalized pattern (which has IDs replaced).
+                            sample = data.get('sample', pattern)
                             health_persistence.record_error(
                                 error_key=error_key,
                                 category='logs',
                                 severity='WARNING',
-                                reason=f'Persistent error pattern detected: {pattern[:80]}',
-                                details={'pattern': pattern, 'dismissable': True, 'occurrences': data['count']}
+                                reason=f'Recurring error ({data["count"]}x): {sample[:150]}',
+                                details={'pattern': pattern, 'sample': sample,
+                                         'dismissable': True, 'occurrences': data['count']}
                             )
                 
                 patterns_to_remove = [
@@ -1940,26 +2182,33 @@ class HealthMonitor:
                     reason = f'Critical error detected: {representative_error[:100]}'
                 elif cascade_count > 0:
                     status = 'WARNING'
-                    reason = f'Error cascade detected: {cascade_count} pattern(s) repeating ≥15 times in 3min'
+                    samples = _get_samples(cascading_errors, 3)
+                    reason = f'Error cascade ({cascade_count} patterns repeating):\n' + '\n'.join(f'  - {s}' for s in samples)
                 elif spike_count > 0:
                     status = 'WARNING'
-                    reason = f'Error spike detected: {spike_count} pattern(s) increased 4x'
+                    samples = _get_samples(spike_errors, 3)
+                    reason = f'Error spike ({spike_count} patterns with 4x increase):\n' + '\n'.join(f'  - {s}' for s in samples)
                 elif persistent_count > 0:
                     status = 'WARNING'
-                    reason = f'Persistent errors: {persistent_count} pattern(s) recurring over 15+ minutes'
+                    samples = _get_samples(persistent_errors, 3)
+                    reason = f'Persistent errors ({persistent_count} patterns over 15+ min):\n' + '\n'.join(f'  - {s}' for s in samples)
                 else:
                     # No significant issues found
                     status = 'OK'
                     reason = None
                 
                 # Record/clear persistent errors for each log sub-check so Dismiss works
+                cascade_samples = _get_samples(cascading_errors, 2) if cascade_count else []
+                spike_samples = _get_samples(spike_errors, 2) if spike_count else []
+                persist_samples = _get_samples(persistent_errors, 2) if persistent_count else []
+                
                 log_sub_checks = {
                     'log_error_cascade': {'active': cascade_count > 0, 'severity': 'WARNING',
-                        'reason': f'{cascade_count} pattern(s) repeating >=15 times'},
+                        'reason': f'{cascade_count} pattern(s) repeating >=15 times:\n' + '\n'.join(f'  - {s}' for s in cascade_samples) if cascade_count else ''},
                     'log_error_spike': {'active': spike_count > 0, 'severity': 'WARNING',
-                        'reason': f'{spike_count} pattern(s) with 4x increase'},
+                        'reason': f'{spike_count} pattern(s) with 4x increase:\n' + '\n'.join(f'  - {s}' for s in spike_samples) if spike_count else ''},
                     'log_persistent_errors': {'active': persistent_count > 0, 'severity': 'WARNING',
-                        'reason': f'{persistent_count} recurring pattern(s) over 15+ min'},
+                        'reason': f'{persistent_count} recurring pattern(s) over 15+ min:\n' + '\n'.join(f'  - {s}' for s in persist_samples) if persistent_count else ''},
                     'log_critical_errors': {'active': unique_critical_count > 0, 'severity': 'CRITICAL',
                         'reason': f'{unique_critical_count} critical error(s) found', 'dismissable': False},
                 }
@@ -2335,20 +2584,7 @@ class HealthMonitor:
                 msg = f'{total_banned} IP(s) currently banned by Fail2Ban (jails: {jails_str})'
                 result['status'] = 'WARNING'
                 result['detail'] = msg
-                
-                # Record in persistence (dismissable)
-                health_persistence.record_error(
-                    error_key='fail2ban',
-                    category='security',
-                    severity='WARNING',
-                    reason=msg,
-                    details={
-                        'banned_count': total_banned,
-                        'jails': jails_with_bans,
-                        'banned_ips': all_banned_ips[:5],
-                        'dismissable': True
-                    }
-                )
+                # Persistence handled by _check_security caller via security_fail2ban key
             else:
                 result['detail'] = f'Fail2Ban active ({len(jails)} jail(s), no current bans)'
                 # Auto-resolve if previously banned IPs are now gone
@@ -2456,14 +2692,60 @@ class HealthMonitor:
             except Exception:
                 pass
             
-            # Determine overall security status
-            if issues:
-                # Check if any sub-check is CRITICAL
-                has_critical = any(c.get('status') == 'CRITICAL' for c in checks.values())
+            # Persist errors and respect dismiss for each sub-check
+            dismissed_keys = set()
+            security_sub_checks = {
+                'security_login_attempts': checks.get('login_attempts', {}),
+                'security_certificates': checks.get('certificates', {}),
+                'security_uptime': checks.get('uptime', {}),
+                'security_fail2ban': checks.get('fail2ban', {}),
+            }
+            
+            for err_key, check_info in security_sub_checks.items():
+                check_status = check_info.get('status', 'OK')
+                if check_status not in ('OK', 'INFO'):
+                    is_dismissable = check_info.get('dismissable', True)
+                    rec_result = health_persistence.record_error(
+                        error_key=err_key,
+                        category='security',
+                        severity=check_status,
+                        reason=check_info.get('detail', ''),
+                        details={'dismissable': is_dismissable}
+                    )
+                    if rec_result and rec_result.get('type') == 'skipped_acknowledged':
+                        dismissed_keys.add(err_key)
+                elif health_persistence.is_error_active(err_key):
+                    health_persistence.clear_error(err_key)
+            
+            # Rebuild issues excluding dismissed sub-checks
+            key_to_check = {
+                'security_login_attempts': 'login_attempts',
+                'security_certificates': 'certificates',
+                'security_uptime': 'uptime',
+                'security_fail2ban': 'fail2ban',
+            }
+            active_issues = []
+            for err_key, check_name in key_to_check.items():
+                if err_key in dismissed_keys:
+                    # Mark as dismissed in checks for the frontend
+                    if check_name in checks:
+                        checks[check_name]['dismissed'] = True
+                    continue
+                check_info = checks.get(check_name, {})
+                if check_info.get('status', 'OK') not in ('OK', 'INFO'):
+                    active_issues.append(check_info.get('detail', ''))
+            
+            # Determine overall security status from non-dismissed issues only
+            if active_issues:
+                has_critical = any(
+                    c.get('status') == 'CRITICAL'
+                    for k, c in checks.items()
+                    if f'security_{k}' not in dismissed_keys
+                )
                 overall_status = 'CRITICAL' if has_critical else 'WARNING'
                 return {
                     'status': overall_status,
-                    'reason': '; '.join(issues[:2]),
+                    'reason': '; '.join(active_issues[:2]),
                     'checks': checks
                 }
             

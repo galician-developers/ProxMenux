@@ -25,12 +25,8 @@ from pathlib import Path
 class HealthPersistence:
     """Manages persistent health error tracking"""
     
-    # Error retention periods (seconds)
-    VM_ERROR_RETENTION = 48 * 3600  # 48 hours
-    LOG_ERROR_RETENTION = 24 * 3600  # 24 hours
-    DISK_ERROR_RETENTION = 48 * 3600  # 48 hours
-    
-    # Default suppression: 24 hours (user can change per-category in settings)
+    # Default suppression duration when no user setting exists for a category.
+    # Users override per-category via the Suppression Duration settings UI.
     DEFAULT_SUPPRESSION_HOURS = 24
     
     # Mapping from error categories to settings keys
@@ -114,6 +110,31 @@ class HealthPersistence:
             )
         ''')
         
+        # Notification history table (records all sent notifications)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS notification_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,
+                channel TEXT NOT NULL,
+                title TEXT,
+                message TEXT,
+                severity TEXT,
+                sent_at TEXT NOT NULL,
+                success INTEGER DEFAULT 1,
+                error_message TEXT,
+                source TEXT DEFAULT 'server'
+            )
+        ''')
+        
+        # Notification cooldown persistence (survives restarts)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS notification_last_sent (
+                fingerprint TEXT PRIMARY KEY,
+                last_sent_ts INTEGER NOT NULL,
+                count INTEGER DEFAULT 1
+            )
+        ''')
+        
         # Migration: add suppression_hours column to errors if not present
         cursor.execute("PRAGMA table_info(errors)")
         columns = [col[1] for col in cursor.fetchall()]
@@ -125,6 +146,9 @@ class HealthPersistence:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_category ON errors(category)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_resolved ON errors(resolved_at)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_events_error ON events(error_key)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_notif_sent_at ON notification_history(sent_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_notif_severity ON notification_history(severity)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_nls_ts ON notification_last_sent(last_sent_ts)')
         
         conn.commit()
         conn.close()
@@ -468,32 +492,58 @@ class HealthPersistence:
         cursor = conn.cursor()
         
         now = datetime.now()
+        now_iso = now.isoformat()
         
         # Delete resolved errors older than 7 days
         cutoff_resolved = (now - timedelta(days=7)).isoformat()
         cursor.execute('DELETE FROM errors WHERE resolved_at < ?', (cutoff_resolved,))
         
-        # Auto-resolve VM/CT errors older than 48h
-        cutoff_vm = (now - timedelta(seconds=self.VM_ERROR_RETENTION)).isoformat()
-        cursor.execute('''
-            UPDATE errors 
-            SET resolved_at = ?
-            WHERE category = 'vms' 
-              AND resolved_at IS NULL 
-              AND first_seen < ?
-              AND acknowledged = 0
-        ''', (now.isoformat(), cutoff_vm))
+        # ── Auto-resolve stale errors using Suppression Duration settings ──
+        # Read per-category suppression hours from user_settings.
+        # If the user hasn't configured a value, use DEFAULT_SUPPRESSION_HOURS.
+        # This is the SINGLE source of truth for auto-resolution timing.
+        user_settings = {}
+        try:
+            cursor.execute(
+                'SELECT setting_key, setting_value FROM user_settings WHERE setting_key LIKE ?',
+                ('suppress_%',)
+            )
+            for row in cursor.fetchall():
+                user_settings[row[0]] = row[1]
+        except Exception:
+            pass
         
-        # Auto-resolve log errors older than 24h
-        cutoff_logs = (now - timedelta(seconds=self.LOG_ERROR_RETENTION)).isoformat()
+        for category, setting_key in self.CATEGORY_SETTING_MAP.items():
+            stored = user_settings.get(setting_key)
+            try:
+                hours = int(stored) if stored else self.DEFAULT_SUPPRESSION_HOURS
+            except (ValueError, TypeError):
+                hours = self.DEFAULT_SUPPRESSION_HOURS
+            
+            # -1 means permanently suppressed -- skip auto-resolve
+            if hours < 0:
+                continue
+            
+            cutoff = (now - timedelta(hours=hours)).isoformat()
+            cursor.execute('''
+                UPDATE errors 
+                SET resolved_at = ?
+                WHERE category = ?
+                  AND resolved_at IS NULL 
+                  AND last_seen < ?
+                  AND acknowledged = 0
+            ''', (now_iso, category, cutoff))
+        
+        # Catch-all: auto-resolve any error from an unmapped category
+        # whose last_seen exceeds DEFAULT_SUPPRESSION_HOURS.
+        fallback_cutoff = (now - timedelta(hours=self.DEFAULT_SUPPRESSION_HOURS)).isoformat()
         cursor.execute('''
-            UPDATE errors 
+            UPDATE errors
             SET resolved_at = ?
-            WHERE category = 'logs' 
-              AND resolved_at IS NULL 
-              AND first_seen < ?
+            WHERE resolved_at IS NULL
               AND acknowledged = 0
-        ''', (now.isoformat(), cutoff_logs))
+              AND last_seen < ?
+        ''', (now_iso, fallback_cutoff))
         
         # Delete old events (>30 days)
         cutoff_events = (now - timedelta(days=30)).isoformat()
