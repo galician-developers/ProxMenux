@@ -441,7 +441,7 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
                     disabled={dismissingKey === checkKey}
                     onClick={(e) => {
                       e.stopPropagation()
-                      handleAcknowledge(checkKey, e)
+                      handleAcknowledge(checkData.error_key || checkKey, e)
                     }}
                   >
                     {dismissingKey === checkKey ? (

@@ -410,6 +410,54 @@ class HealthPersistence:
         
         result = {'success': False, 'error_key': error_key}
         
+        if not row:
+            # Error not in DB yet -- create a minimal record so the dismiss persists.
+            # Try to infer category from the error_key prefix.
+            category = ''
+            for cat, prefix in [('security', 'security_'), ('updates', 'security_updates'),
+                                ('updates', 'update_'), ('updates', 'kernel_'),
+                                ('updates', 'pending_'), ('updates', 'system_age'),
+                                ('pve_services', 'pve_service_'), ('vms', 'vm_'), ('vms', 'ct_'),
+                                ('disks', 'disk_'), ('logs', 'log_'), ('network', 'net_'),
+                                ('temperature', 'temp_')]:
+                if error_key.startswith(prefix) or error_key == prefix:
+                    category = cat
+                    break
+            
+            setting_key = self.CATEGORY_SETTING_MAP.get(category, '')
+            sup_hours = self.DEFAULT_SUPPRESSION_HOURS
+            if setting_key:
+                stored = self.get_setting(setting_key)
+                if stored is not None:
+                    try:
+                        sup_hours = int(stored)
+                    except (ValueError, TypeError):
+                        pass
+            
+            cursor.execute('''
+                INSERT INTO errors (error_key, category, severity, reason, first_seen, last_seen,
+                                    occurrence_count, acknowledged, resolved_at, suppression_hours)
+                VALUES (?, ?, 'WARNING', 'Dismissed by user', ?, ?, 1, 1, ?, ?)
+            ''', (error_key, category, now, now, now, sup_hours))
+            
+            self._record_event(cursor, 'acknowledged', error_key, {
+                'original_severity': 'WARNING',
+                'category': category,
+                'suppression_hours': sup_hours
+            })
+            
+            result = {
+                'success': True,
+                'error_key': error_key,
+                'original_severity': 'WARNING',
+                'category': category,
+                'suppression_hours': sup_hours,
+                'acknowledged_at': now
+            }
+            conn.commit()
+            conn.close()
+            return result
+        
         if row:
             error_dict = dict(row)
             original_severity = error_dict.get('severity', 'WARNING')

@@ -1817,7 +1817,8 @@ class HealthMonitor:
                 checks[vm_label] = {
                     'status': val.get('status', 'WARNING'),
                     'detail': val.get('reason', 'Error'),
-                    'dismissable': True
+                    'dismissable': True,
+                    'error_key': vm_label
                 }
             
             if not issues:
@@ -1878,16 +1879,20 @@ class HealthMonitor:
             # Build checks dict with status per service
             checks = {}
             for svc in services_to_check:
+                error_key = f'pve_service_{svc}'
                 if svc in failed_services:
                     state = service_details.get(svc, 'inactive')
                     checks[svc] = {
                         'status': 'CRITICAL',
                         'detail': f'Service is {state}',
+                        'error_key': error_key,
+                        'dismissable': True,
                     }
                 else:
                     checks[svc] = {
                         'status': 'OK',
                         'detail': 'Active',
+                        'error_key': error_key,
                     }
             
             if is_cluster:
@@ -2445,20 +2450,24 @@ class HealthMonitor:
                     'status': sec_status,
                     'detail': f'{len(security_updates_packages)} security update(s) pending' if security_updates_packages else 'No security updates pending',
                     'dismissable': True if security_updates_packages and not sec_dismissed else False,
-                    'dismissed': bool(sec_dismissed)
+                    'dismissed': bool(sec_dismissed),
+                    'error_key': 'security_updates'
                 },
                 'system_age': {
                     'status': update_age_status,
                     'detail': f'Last updated {last_update_days} day(s) ago' if last_update_days is not None else 'Unknown',
-                    'dismissable': False if update_age_status == 'CRITICAL' else True if update_age_status == 'WARNING' else False
+                    'dismissable': False if update_age_status == 'CRITICAL' else True if update_age_status == 'WARNING' else False,
+                    'error_key': 'system_age'
                 },
                 'pending_updates': {
                     'status': 'INFO' if update_count > 50 else 'OK',
                     'detail': f'{update_count} package(s) pending',
+                    'error_key': 'pending_updates'
                 },
                 'kernel_pve': {
                     'status': kernel_status,
                     'detail': f'{len(kernel_pve_updates_packages)} kernel/PVE update(s)' if kernel_pve_updates_packages else 'Kernel/PVE up to date',
+                    'error_key': 'kernel_pve'
                 }
             }
             
@@ -2695,13 +2704,19 @@ class HealthMonitor:
             # Persist errors and respect dismiss for each sub-check
             dismissed_keys = set()
             security_sub_checks = {
-                'security_login_attempts': checks.get('login_attempts', {}),
-                'security_certificates': checks.get('certificates', {}),
-                'security_uptime': checks.get('uptime', {}),
-                'security_fail2ban': checks.get('fail2ban', {}),
+                'security_login_attempts': 'login_attempts',
+                'security_certificates': 'certificates',
+                'security_uptime': 'uptime',
+                'security_fail2ban': 'fail2ban',
             }
             
-            for err_key, check_info in security_sub_checks.items():
+            # Inject error_key into each check so the frontend knows which DB key to use
+            for err_key, check_name in security_sub_checks.items():
+                if check_name in checks:
+                    checks[check_name]['error_key'] = err_key
+            
+            for err_key, check_name in security_sub_checks.items():
+                check_info = checks.get(check_name, {})
                 check_status = check_info.get('status', 'OK')
                 if check_status not in ('OK', 'INFO'):
                     is_dismissable = check_info.get('dismissable', True)
