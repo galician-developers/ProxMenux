@@ -2189,23 +2189,23 @@ class HealthMonitor:
                 'log_critical_errors': {'active': unique_critical_count > 0, 'severity': 'CRITICAL',
                     'reason': f'{unique_critical_count} critical error(s) found', 'dismissable': False},
             }
-                
-                # Track which sub-checks were dismissed
-                dismissed_keys = set()
-                for err_key, info in log_sub_checks.items():
-                    if info['active']:
-                        is_dismissable = info.get('dismissable', True)
-                        result = health_persistence.record_error(
-                            error_key=err_key,
-                            category='logs',
-                            severity=info['severity'],
-                            reason=info['reason'],
-                            details={'dismissable': is_dismissable}
-                        )
-                        if result and result.get('type') == 'skipped_acknowledged':
-                            dismissed_keys.add(err_key)
-                    elif health_persistence.is_error_active(err_key):
-                        health_persistence.clear_error(err_key)
+            
+            # Track which sub-checks were dismissed
+            dismissed_keys = set()
+            for err_key, info in log_sub_checks.items():
+                if info['active']:
+                    is_dismissable = info.get('dismissable', True)
+                    result = health_persistence.record_error(
+                        error_key=err_key,
+                        category='logs',
+                        severity=info['severity'],
+                        reason=info['reason'],
+                        details={'dismissable': is_dismissable}
+                    )
+                    if result and result.get('type') == 'skipped_acknowledged':
+                        dismissed_keys.add(err_key)
+                elif health_persistence.is_error_active(err_key):
+                    health_persistence.clear_error(err_key)
                 
                 # Build checks dict - downgrade dismissed items to INFO
                 def _log_check_status(key, active, severity):
