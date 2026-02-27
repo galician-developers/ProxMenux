@@ -26,7 +26,7 @@ class HealthPersistence:
     """Manages persistent health error tracking"""
     
     # Default suppression duration when no user setting exists for a category.
-    # Users can override per-category via the Suppression Duration settings.
+    # Users override per-category via the Suppression Duration settings UI.
     DEFAULT_SUPPRESSION_HOURS = 24
     
     # Mapping from error categories to settings keys
@@ -498,13 +498,16 @@ class HealthPersistence:
         cutoff_resolved = (now - timedelta(days=7)).isoformat()
         cursor.execute('DELETE FROM errors WHERE resolved_at < ?', (cutoff_resolved,))
         
-        # ── Auto-resolve stale errors using user-configured Suppression Duration ──
-        # Read the per-category suppression hours from user_settings.
-        # If the user hasn't configured a category, fall back to DEFAULT_SUPPRESSION_HOURS.
+        # ── Auto-resolve stale errors using Suppression Duration settings ──
+        # Read per-category suppression hours from user_settings.
+        # If the user hasn't configured a value, use DEFAULT_SUPPRESSION_HOURS.
         # This is the SINGLE source of truth for auto-resolution timing.
         user_settings = {}
         try:
-            cursor.execute('SELECT setting_key, setting_value FROM user_settings WHERE setting_key LIKE ?', ('suppress_%',))
+            cursor.execute(
+                'SELECT setting_key, setting_value FROM user_settings WHERE setting_key LIKE ?',
+                ('suppress_%',)
+            )
             for row in cursor.fetchall():
                 user_settings[row[0]] = row[1]
         except Exception:
@@ -517,6 +520,10 @@ class HealthPersistence:
             except (ValueError, TypeError):
                 hours = self.DEFAULT_SUPPRESSION_HOURS
             
+            # -1 means permanently suppressed -- skip auto-resolve
+            if hours < 0:
+                continue
+            
             cutoff = (now - timedelta(hours=hours)).isoformat()
             cursor.execute('''
                 UPDATE errors 
@@ -527,7 +534,7 @@ class HealthPersistence:
                   AND acknowledged = 0
             ''', (now_iso, category, cutoff))
         
-        # Catch-all: auto-resolve ANY error from an unmapped category
+        # Catch-all: auto-resolve any error from an unmapped category
         # whose last_seen exceeds DEFAULT_SUPPRESSION_HOURS.
         fallback_cutoff = (now - timedelta(hours=self.DEFAULT_SUPPRESSION_HOURS)).isoformat()
         cursor.execute('''

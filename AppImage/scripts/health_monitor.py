@@ -324,7 +324,8 @@ class HealthMonitor:
         Returns JSON structure with ALL 10 categories always present.
         Now includes persistent error tracking.
         """
-        # Run cleanup on every status check to auto-resolve stale errors
+        # Run cleanup on every status check so stale errors are auto-resolved
+        # using the user-configured Suppression Duration (single source of truth).
         try:
             health_persistence.cleanup_old_errors()
         except Exception:
@@ -2157,18 +2158,18 @@ class HealthMonitor:
                     # Get a representative critical error reason
                     representative_error = next(iter(critical_errors_found.values()))
                     reason = f'Critical error detected: {representative_error[:100]}'
-                elif cascade_count > 0:
-                    status = 'WARNING'
-                    samples = _get_samples(cascading_errors, 3)
-                    reason = f'Error cascade ({cascade_count} patterns repeating):\n' + '\n'.join(f'  - {s}' for s in samples)
-                elif spike_count > 0:
-                    status = 'WARNING'
-                    samples = _get_samples(spike_errors, 3)
-                    reason = f'Error spike ({spike_count} patterns with 4x increase):\n' + '\n'.join(f'  - {s}' for s in samples)
-                elif persistent_count > 0:
-                    status = 'WARNING'
-                    samples = _get_samples(persistent_errors, 3)
-                    reason = f'Persistent errors ({persistent_count} patterns over 15+ min):\n' + '\n'.join(f'  - {s}' for s in samples)
+        elif cascade_count > 0:
+                status = 'WARNING'
+                samples = _get_samples(cascading_errors, 3)
+                reason = f'Error cascade ({cascade_count} patterns repeating):\n' + '\n'.join(f'  - {s}' for s in samples)
+            elif spike_count > 0:
+                status = 'WARNING'
+                samples = _get_samples(spike_errors, 3)
+                reason = f'Error spike ({spike_count} patterns with 4x increase):\n' + '\n'.join(f'  - {s}' for s in samples)
+            elif persistent_count > 0:
+                status = 'WARNING'
+                samples = _get_samples(persistent_errors, 3)
+                reason = f'Persistent errors ({persistent_count} patterns over 15+ min):\n' + '\n'.join(f'  - {s}' for s in samples)
                 else:
                     # No significant issues found
                     status = 'OK'
@@ -2189,23 +2190,23 @@ class HealthMonitor:
                 'log_critical_errors': {'active': unique_critical_count > 0, 'severity': 'CRITICAL',
                     'reason': f'{unique_critical_count} critical error(s) found', 'dismissable': False},
             }
-            
-            # Track which sub-checks were dismissed
-            dismissed_keys = set()
-            for err_key, info in log_sub_checks.items():
-                if info['active']:
-                    is_dismissable = info.get('dismissable', True)
-                    result = health_persistence.record_error(
-                        error_key=err_key,
-                        category='logs',
-                        severity=info['severity'],
-                        reason=info['reason'],
-                        details={'dismissable': is_dismissable}
-                    )
-                    if result and result.get('type') == 'skipped_acknowledged':
-                        dismissed_keys.add(err_key)
-                elif health_persistence.is_error_active(err_key):
-                    health_persistence.clear_error(err_key)
+                
+                # Track which sub-checks were dismissed
+                dismissed_keys = set()
+                for err_key, info in log_sub_checks.items():
+                    if info['active']:
+                        is_dismissable = info.get('dismissable', True)
+                        result = health_persistence.record_error(
+                            error_key=err_key,
+                            category='logs',
+                            severity=info['severity'],
+                            reason=info['reason'],
+                            details={'dismissable': is_dismissable}
+                        )
+                        if result and result.get('type') == 'skipped_acknowledged':
+                            dismissed_keys.add(err_key)
+                    elif health_persistence.is_error_active(err_key):
+                        health_persistence.clear_error(err_key)
                 
                 # Build checks dict - downgrade dismissed items to INFO
                 def _log_check_status(key, active, severity):

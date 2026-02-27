@@ -408,10 +408,10 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
               key={checkKey}
               className="flex items-center justify-between gap-1.5 sm:gap-2 text-[10px] sm:text-xs py-1.5 px-2 sm:px-3 rounded-md hover:bg-muted/40 transition-colors"
             >
-              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 overflow-hidden">
-                {getStatusIcon(checkData.status, "sm")}
+              <div className="flex items-start gap-1.5 sm:gap-2 min-w-0 flex-1">
+                <span className="mt-0.5 shrink-0">{getStatusIcon(checkData.status, "sm")}</span>
                 <span className="font-medium shrink-0">{formatCheckLabel(checkKey)}</span>
-                <span className="text-muted-foreground truncate block">{checkData.detail}</span>
+                <span className="text-muted-foreground break-words whitespace-pre-wrap min-w-0">{checkData.detail}</span>
                 {checkData.dismissed && (
                   <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 shrink-0 text-blue-400 border-blue-400/30">
                     Dismissed
@@ -520,8 +520,8 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
             </div>
 
             {healthData.summary && healthData.summary !== "All systems operational" && (
-              <div className="text-sm p-3 rounded-lg bg-muted/20 border overflow-hidden max-w-full">
-                <p className="font-medium text-foreground truncate" title={healthData.summary}>{healthData.summary}</p>
+              <div className="text-xs sm:text-sm p-3 rounded-lg bg-muted/20 border overflow-hidden max-w-full">
+                <p className="font-medium text-foreground break-words whitespace-pre-wrap">{healthData.summary}</p>
               </div>
             )}
 
@@ -559,7 +559,7 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
                           )}
                         </div>
                         {reason && !isExpanded && (
-                          <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 truncate" title={reason}>{reason}</p>
+                          <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 line-clamp-2 break-words">{reason}</p>
                         )}
                       </div>
                       <div className="flex items-center gap-1 sm:gap-2 shrink-0">
@@ -578,7 +578,7 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
                     {isExpanded && (
                       <div className="border-t border-border/50 bg-muted/5 px-1.5 sm:px-2 py-1.5 overflow-hidden">
                         {reason && (
-                          <p className="text-xs text-muted-foreground px-3 py-1.5 mb-1 break-words">{reason}</p>
+                          <p className="text-xs text-muted-foreground px-3 py-1.5 mb-1 break-words whitespace-pre-wrap">{reason}</p>
                         )}
                         {hasChecks ? (
                           renderChecks(checks, key)
