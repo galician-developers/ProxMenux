@@ -3,6 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect, useCallback } from "react"
+import { fetchApi, getApiUrl, getAuthToken } from "@/lib/api-config"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -122,10 +123,16 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
       let newOverallStatus = "OK"
       
       // Use the new combined endpoint for fewer round-trips
-      const response = await fetch(getApiUrl("/api/health/full"))
+      const token = getAuthToken()
+      const authHeaders: Record<string, string> = {}
+      if (token) {
+        authHeaders["Authorization"] = `Bearer ${token}`
+      }
+
+      const response = await fetch(getApiUrl("/api/health/full"), { headers: authHeaders })
       if (!response.ok) {
         // Fallback to legacy endpoint
-        const legacyResponse = await fetch(getApiUrl("/api/health/details"))
+        const legacyResponse = await fetch(getApiUrl("/api/health/details"), { headers: authHeaders })
         if (!legacyResponse.ok) throw new Error("Failed to fetch health details")
         const data = await legacyResponse.json()
         setHealthData(data)
@@ -288,15 +295,22 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
     setDismissingKey(errorKey)
 
     try {
-      const response = await fetch(getApiUrl("/api/health/acknowledge"), {
+      const url = getApiUrl("/api/health/acknowledge")
+      const token = getAuthToken()
+      const headers: Record<string, string> = { "Content-Type": "application/json" }
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`
+      }
+
+      const response = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ error_key: errorKey }),
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Failed to dismiss error")
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `Failed to dismiss error (${response.status})`)
       }
 
       await fetchHealthDetails()
