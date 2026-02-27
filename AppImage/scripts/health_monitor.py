@@ -1712,21 +1712,22 @@ class HealthMonitor:
                         display = f"VM {vmid} ({vm_name})" if vm_name else f"VM {vmid}"
                         error_key = f'vm_{vmid}'
                         if error_key not in vm_details:
-                            health_persistence.record_error(
+                            rec_result = health_persistence.record_error(
                                 error_key=error_key,
                                 category='vms',
                                 severity='WARNING',
                                 reason=f'{display}: QMP command failed or timed out.\n{line.strip()[:200]}',
                                 details={'id': vmid, 'vmname': vm_name, 'type': 'VM'}
                             )
-                            issues.append(f'{display}: QMP communication issue')
-                            vm_details[error_key] = {
-                                'status': 'WARNING',
-                                'reason': f'{display}: QMP command failed or timed out',
-                                'id': vmid,
-                                'vmname': vm_name,
-                                'type': 'VM'
-                            }
+                            if not rec_result or rec_result.get('type') != 'skipped_acknowledged':
+                                issues.append(f'{display}: QMP communication issue')
+                                vm_details[error_key] = {
+                                    'status': 'WARNING',
+                                    'reason': f'{display}: QMP command failed or timed out',
+                                    'id': vmid,
+                                    'vmname': vm_name,
+                                    'type': 'VM'
+                                }
                         continue
                     
                     # Container errors (including startup issues via vzstart)
@@ -1746,20 +1747,21 @@ class HealthMonitor:
                                 reason = 'Startup error'
                             
                             # Record persistent error
-                            health_persistence.record_error(
+                            rec_result = health_persistence.record_error(
                                 error_key=error_key,
                                 category='vms',
                                 severity='WARNING',
                                 reason=reason,
                                 details={'id': ctid, 'type': 'CT'}
                             )
-                            issues.append(f'CT {ctid}: {reason}')
-                            vm_details[error_key] = {
-                                'status': 'WARNING',
-                                'reason': reason,
-                                'id': ctid,
-                                'type': 'CT'
-                            }
+                            if not rec_result or rec_result.get('type') != 'skipped_acknowledged':
+                                issues.append(f'CT {ctid}: {reason}')
+                                vm_details[error_key] = {
+                                    'status': 'WARNING',
+                                    'reason': reason,
+                                    'id': ctid,
+                                    'type': 'CT'
+                                }
                     
                     # Generic failed to start for VMs and CTs
                     if any(keyword in line_lower for keyword in ['failed to start', 'cannot start', 'activation failed', 'start error']):
@@ -1790,21 +1792,22 @@ class HealthMonitor:
                                     display = f"{vm_type} {vmid_ctid} ({vm_name})"
                                 reason = f'{display}: Failed to start\n{line.strip()[:200]}'
                                 # Record persistent error
-                                health_persistence.record_error(
+                                rec_result = health_persistence.record_error(
                                     error_key=error_key,
                                     category='vms',
                                     severity='CRITICAL',
                                     reason=reason,
                                     details={'id': vmid_ctid, 'vmname': vm_name, 'type': vm_type}
                                 )
-                                issues.append(f'{display}: Failed to start')
-                                vm_details[error_key] = {
-                                    'status': 'CRITICAL',
-                                    'reason': reason,
-                                    'id': vmid_ctid,
-                                    'vmname': vm_name,
-                                    'type': vm_type
-                                }
+                                if not rec_result or rec_result.get('type') != 'skipped_acknowledged':
+                                    issues.append(f'{display}: Failed to start')
+                                    vm_details[error_key] = {
+                                        'status': 'CRITICAL',
+                                        'reason': reason,
+                                        'id': vmid_ctid,
+                                        'vmname': vm_name,
+                                        'type': vm_type
+                                    }
             
             # Build checks dict from vm_details
             checks = {}
