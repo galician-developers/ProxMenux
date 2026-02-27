@@ -3,7 +3,6 @@
 import type React from "react"
 
 import { useState, useEffect, useCallback } from "react"
-import { fetchApi, getApiUrl, getAuthToken } from "@/lib/api-config"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -123,16 +122,10 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
       let newOverallStatus = "OK"
       
       // Use the new combined endpoint for fewer round-trips
-      const token = getAuthToken()
-      const authHeaders: Record<string, string> = {}
-      if (token) {
-        authHeaders["Authorization"] = `Bearer ${token}`
-      }
-
-      const response = await fetch(getApiUrl("/api/health/full"), { headers: authHeaders })
+      const response = await fetch(getApiUrl("/api/health/full"))
       if (!response.ok) {
         // Fallback to legacy endpoint
-        const legacyResponse = await fetch(getApiUrl("/api/health/details"), { headers: authHeaders })
+        const legacyResponse = await fetch(getApiUrl("/api/health/details"))
         if (!legacyResponse.ok) throw new Error("Failed to fetch health details")
         const data = await legacyResponse.json()
         setHealthData(data)
@@ -295,22 +288,15 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
     setDismissingKey(errorKey)
 
     try {
-      const url = getApiUrl("/api/health/acknowledge")
-      const token = getAuthToken()
-      const headers: Record<string, string> = { "Content-Type": "application/json" }
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`
-      }
-
-      const response = await fetch(url, {
+      const response = await fetch(getApiUrl("/api/health/acknowledge"), {
         method: "POST",
-        headers,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ error_key: errorKey }),
       })
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || `Failed to dismiss error (${response.status})`)
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to dismiss error")
       }
 
       await fetchHealthDetails()
@@ -422,10 +408,10 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
               key={checkKey}
               className="flex items-center justify-between gap-1.5 sm:gap-2 text-[10px] sm:text-xs py-1.5 px-2 sm:px-3 rounded-md hover:bg-muted/40 transition-colors"
             >
-              <div className="flex items-start gap-1.5 sm:gap-2 min-w-0 flex-1">
-                <span className="mt-0.5 shrink-0">{getStatusIcon(checkData.status, "sm")}</span>
+              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 overflow-hidden">
+                {getStatusIcon(checkData.status, "sm")}
                 <span className="font-medium shrink-0">{formatCheckLabel(checkKey)}</span>
-                <span className="text-muted-foreground break-words whitespace-pre-wrap min-w-0">{checkData.detail}</span>
+                <span className="text-muted-foreground truncate block">{checkData.detail}</span>
                 {checkData.dismissed && (
                   <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 shrink-0 text-blue-400 border-blue-400/30">
                     Dismissed
@@ -534,8 +520,8 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
             </div>
 
             {healthData.summary && healthData.summary !== "All systems operational" && (
-              <div className="text-xs sm:text-sm p-3 rounded-lg bg-muted/20 border overflow-hidden max-w-full">
-                <p className="font-medium text-foreground break-words whitespace-pre-wrap">{healthData.summary}</p>
+              <div className="text-sm p-3 rounded-lg bg-muted/20 border overflow-hidden max-w-full">
+                <p className="font-medium text-foreground truncate" title={healthData.summary}>{healthData.summary}</p>
               </div>
             )}
 
@@ -573,7 +559,7 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
                           )}
                         </div>
                         {reason && !isExpanded && (
-                          <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 line-clamp-2 break-words">{reason}</p>
+                          <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 truncate" title={reason}>{reason}</p>
                         )}
                       </div>
                       <div className="flex items-center gap-1 sm:gap-2 shrink-0">
@@ -592,7 +578,7 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
                     {isExpanded && (
                       <div className="border-t border-border/50 bg-muted/5 px-1.5 sm:px-2 py-1.5 overflow-hidden">
                         {reason && (
-                          <p className="text-xs text-muted-foreground px-3 py-1.5 mb-1 break-words whitespace-pre-wrap">{reason}</p>
+                          <p className="text-xs text-muted-foreground px-3 py-1.5 mb-1 break-words">{reason}</p>
                         )}
                         {hasChecks ? (
                           renderChecks(checks, key)

@@ -34,12 +34,6 @@ interface DiskInfo {
   wear_leveling_count?: number // SSD: Wear Leveling Count
   total_lbas_written?: number // SSD/NVMe: Total LBAs Written (GB)
   ssd_life_left?: number // SSD: SSD Life Left percentage
-  io_errors?: {
-    count: number
-    severity: string
-    sample: string
-    reason: string
-  }
 }
 
 interface ZFSPool {
@@ -782,17 +776,6 @@ export function StorageOverview() {
                     </div>
                   </div>
 
-                  {disk.io_errors && disk.io_errors.count > 0 && (
-                    <div className={`flex items-start gap-2 p-2 rounded text-xs ${
-                      disk.io_errors.severity === 'CRITICAL'
-                        ? 'bg-red-500/10 text-red-400 border border-red-500/20'
-                        : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
-                    }`}>
-                      <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
-                      <span>{disk.io_errors.count} I/O error{disk.io_errors.count !== 1 ? 's' : ''} in 5 min</span>
-                    </div>
-                  )}
-
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     {disk.size_formatted && (
                       <div>
@@ -857,22 +840,6 @@ export function StorageOverview() {
                       </div>
                     </div>
                   </div>
-
-                  {disk.io_errors && disk.io_errors.count > 0 && (
-                    <div className={`flex items-start gap-2 p-2 rounded text-xs ${
-                      disk.io_errors.severity === 'CRITICAL'
-                        ? 'bg-red-500/10 text-red-400 border border-red-500/20'
-                        : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
-                    }`}>
-                      <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <span className="font-medium">{disk.io_errors.count} I/O error{disk.io_errors.count !== 1 ? 's' : ''} in 5 min</span>
-                        {disk.io_errors.sample && (
-                          <p className="mt-0.5 opacity-80 font-mono truncate max-w-md">{disk.io_errors.sample}</p>
-                        )}
-                      </div>
-                    </div>
-                  )}
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     {disk.size_formatted && (

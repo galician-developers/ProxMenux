@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { Wrench, Package, Ruler, HeartPulse, Cpu, MemoryStick, HardDrive, CircleDot, Network, Server, Settings2, FileText, RefreshCw, Shield, AlertTriangle, Info, Loader2, Check } from "lucide-react"
-import { NotificationSettings } from "./notification-settings"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
 import { Input } from "./ui/input"
 import { Badge } from "./ui/badge"
@@ -438,9 +437,6 @@ export function Settings() {
           )}
         </CardContent>
       </Card>
-
-      {/* Notification Settings */}
-      <NotificationSettings />
 
       {/* ProxMenux Optimizations */}
       <Card>

@@ -23,7 +23,6 @@ import time
 import threading
 import urllib.parse
 import hardware_monitor
-import health_persistence
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from functools import wraps
@@ -47,8 +46,6 @@ from flask_health_routes import health_bp  # noqa: E402
 from flask_auth_routes import auth_bp  # noqa: E402
 from flask_proxmenux_routes import proxmenux_bp  # noqa: E402
 from flask_security_routes import security_bp  # noqa: E402
-from flask_notification_routes import notification_bp  # noqa: E402
-from notification_manager import notification_manager  # noqa: E402
 from jwt_middleware import require_auth  # noqa: E402
 import auth_manager  # noqa: E402
 
@@ -123,7 +120,6 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(health_bp)
 app.register_blueprint(proxmenux_bp)
 app.register_blueprint(security_bp)
-app.register_blueprint(notification_bp)
 
 # Initialize terminal / WebSocket routes
 init_terminal_routes(app)
@@ -1160,65 +1156,18 @@ def get_storage_info():
                             'ssd_life_left': smart_data.get('ssd_life_left') # Added
                         }
                         
+                        storage_data['disk_count'] += 1
+                        health = smart_data.get('health', 'unknown').lower()
+                        if health == 'healthy':
+                            storage_data['healthy_disks'] += 1
+                        elif health == 'warning':
+                            storage_data['warning_disks'] += 1
+                        elif health in ['critical', 'failed']:
+                            storage_data['critical_disks'] += 1
+                            
         except Exception as e:
+            # print(f"Error getting disk list: {e}")
             pass
-        
-        # Enrich physical disks with active I/O errors from health_persistence.
-        # This is the single source of truth -- health_monitor detects ATA/SCSI/IO
-        # errors via dmesg, records them in health_persistence, and we read them here.
-        try:
-            active_disk_errors = health_persistence.get_active_errors(category='disks')
-            for err in active_disk_errors:
-                details = err.get('details', {})
-                if isinstance(details, str):
-                    try:
-                        details = json.loads(details)
-                    except (json.JSONDecodeError, TypeError):
-                        details = {}
-                
-                err_device = details.get('disk', '')
-                error_count = details.get('error_count', 0)
-                sample = details.get('sample', '')
-                severity = err.get('severity', 'WARNING')
-                
-                # Match error to physical disk.
-                # err_device can be 'sda', 'nvme0n1', or 'ata8' (if resolution failed)
-                matched_disk = None
-                if err_device in physical_disks:
-                    matched_disk = err_device
-                else:
-                    # Try partial match: 'sda' matches disk 'sda'
-                    for dk in physical_disks:
-                        if dk == err_device or err_device.startswith(dk):
-                            matched_disk = dk
-                            break
-                
-                if matched_disk:
-                    physical_disks[matched_disk]['io_errors'] = {
-                        'count': error_count,
-                        'severity': severity,
-                        'sample': sample,
-                        'reason': err.get('reason', ''),
-                    }
-                    # Override health status if I/O errors are more severe
-                    current_health = physical_disks[matched_disk].get('health', 'unknown').lower()
-                    if severity == 'CRITICAL' and current_health != 'critical':
-                        physical_disks[matched_disk]['health'] = 'critical'
-                    elif severity == 'WARNING' and current_health in ('healthy', 'unknown'):
-                        physical_disks[matched_disk]['health'] = 'warning'
-        except Exception:
-            pass
-        
-        # Count disk health states AFTER I/O error enrichment
-        for disk_name, disk_info in physical_disks.items():
-            storage_data['disk_count'] += 1
-            health = disk_info.get('health', 'unknown').lower()
-            if health == 'healthy':
-                storage_data['healthy_disks'] += 1
-            elif health == 'warning':
-                storage_data['warning_disks'] += 1
-            elif health in ['critical', 'failed']:
-                storage_data['critical_disks'] += 1
         
         storage_data['total'] = round(total_disk_size_bytes / (1024**4), 1)
         
@@ -7144,16 +7093,6 @@ if __name__ == '__main__':
         vital_thread.start()
     except Exception as e:
         print(f"[ProxMenux] Vital signs sampler failed to start: {e}")
-
-    # ── Notification Service ──
-    try:
-        notification_manager.start()
-        if notification_manager._enabled:
-            print(f"[ProxMenux] Notification service started (channels: {list(notification_manager._channels.keys())})")
-        else:
-            print("[ProxMenux] Notification service loaded (disabled - configure in Settings)")
-    except Exception as e:
-        print(f"[ProxMenux] Notification service failed to start: {e}")
 
     # Check for SSL configuration
     ssl_ctx = None
