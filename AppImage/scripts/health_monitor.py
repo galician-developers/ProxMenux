@@ -2158,38 +2158,38 @@ class HealthMonitor:
                     # Get a representative critical error reason
                     representative_error = next(iter(critical_errors_found.values()))
                     reason = f'Critical error detected: {representative_error[:100]}'
-        elif cascade_count > 0:
-                status = 'WARNING'
-                samples = _get_samples(cascading_errors, 3)
-                reason = f'Error cascade ({cascade_count} patterns repeating):\n' + '\n'.join(f'  - {s}' for s in samples)
-            elif spike_count > 0:
-                status = 'WARNING'
-                samples = _get_samples(spike_errors, 3)
-                reason = f'Error spike ({spike_count} patterns with 4x increase):\n' + '\n'.join(f'  - {s}' for s in samples)
-            elif persistent_count > 0:
-                status = 'WARNING'
-                samples = _get_samples(persistent_errors, 3)
-                reason = f'Persistent errors ({persistent_count} patterns over 15+ min):\n' + '\n'.join(f'  - {s}' for s in samples)
+                elif cascade_count > 0:
+                    status = 'WARNING'
+                    samples = _get_samples(cascading_errors, 3)
+                    reason = f'Error cascade ({cascade_count} patterns repeating):\n' + '\n'.join(f'  - {s}' for s in samples)
+                elif spike_count > 0:
+                    status = 'WARNING'
+                    samples = _get_samples(spike_errors, 3)
+                    reason = f'Error spike ({spike_count} patterns with 4x increase):\n' + '\n'.join(f'  - {s}' for s in samples)
+                elif persistent_count > 0:
+                    status = 'WARNING'
+                    samples = _get_samples(persistent_errors, 3)
+                    reason = f'Persistent errors ({persistent_count} patterns over 15+ min):\n' + '\n'.join(f'  - {s}' for s in samples)
                 else:
                     # No significant issues found
                     status = 'OK'
                     reason = None
                 
                 # Record/clear persistent errors for each log sub-check so Dismiss works
-            cascade_samples = _get_samples(cascading_errors, 2) if cascade_count else []
-            spike_samples = _get_samples(spike_errors, 2) if spike_count else []
-            persist_samples = _get_samples(persistent_errors, 2) if persistent_count else []
-            
-            log_sub_checks = {
-                'log_error_cascade': {'active': cascade_count > 0, 'severity': 'WARNING',
-                    'reason': f'{cascade_count} pattern(s) repeating >=15 times:\n' + '\n'.join(f'  - {s}' for s in cascade_samples) if cascade_count else ''},
-                'log_error_spike': {'active': spike_count > 0, 'severity': 'WARNING',
-                    'reason': f'{spike_count} pattern(s) with 4x increase:\n' + '\n'.join(f'  - {s}' for s in spike_samples) if spike_count else ''},
-                'log_persistent_errors': {'active': persistent_count > 0, 'severity': 'WARNING',
-                    'reason': f'{persistent_count} recurring pattern(s) over 15+ min:\n' + '\n'.join(f'  - {s}' for s in persist_samples) if persistent_count else ''},
-                'log_critical_errors': {'active': unique_critical_count > 0, 'severity': 'CRITICAL',
-                    'reason': f'{unique_critical_count} critical error(s) found', 'dismissable': False},
-            }
+                cascade_samples = _get_samples(cascading_errors, 2) if cascade_count else []
+                spike_samples = _get_samples(spike_errors, 2) if spike_count else []
+                persist_samples = _get_samples(persistent_errors, 2) if persistent_count else []
+                
+                log_sub_checks = {
+                    'log_error_cascade': {'active': cascade_count > 0, 'severity': 'WARNING',
+                        'reason': f'{cascade_count} pattern(s) repeating >=15 times:\n' + '\n'.join(f'  - {s}' for s in cascade_samples) if cascade_count else ''},
+                    'log_error_spike': {'active': spike_count > 0, 'severity': 'WARNING',
+                        'reason': f'{spike_count} pattern(s) with 4x increase:\n' + '\n'.join(f'  - {s}' for s in spike_samples) if spike_count else ''},
+                    'log_persistent_errors': {'active': persistent_count > 0, 'severity': 'WARNING',
+                        'reason': f'{persistent_count} recurring pattern(s) over 15+ min:\n' + '\n'.join(f'  - {s}' for s in persist_samples) if persistent_count else ''},
+                    'log_critical_errors': {'active': unique_critical_count > 0, 'severity': 'CRITICAL',
+                        'reason': f'{unique_critical_count} critical error(s) found', 'dismissable': False},
+                }
                 
                 # Track which sub-checks were dismissed
                 dismissed_keys = set()
