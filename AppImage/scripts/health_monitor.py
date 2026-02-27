@@ -1250,7 +1250,7 @@ class HealthMonitor:
                         if sample:
                             reason += f'\n{sample}'
                         
-                        health_persistence.record_error(
+                        rec_result = health_persistence.record_error(
                             error_key=error_key,
                             category='disks',
                             severity=severity,
@@ -1259,13 +1259,14 @@ class HealthMonitor:
                                      'error_count': error_count,
                                      'sample': sample, 'dismissable': True}
                         )
-                        disk_results[display] = {
-                            'status': severity,
-                            'reason': reason,
-                            'device': disk,
-                            'error_count': error_count,
-                            'dismissable': True,
-                        }
+                        if not rec_result or rec_result.get('type') != 'skipped_acknowledged':
+                            disk_results[display] = {
+                                'status': severity,
+                                'reason': reason,
+                                'device': disk,
+                                'error_count': error_count,
+                                'dismissable': True,
+                            }
                     else:
                         health_persistence.resolve_error(error_key, 'Disk errors cleared')
             
@@ -1898,16 +1899,23 @@ class HealthMonitor:
             if failed_services:
                 reason = f'Services inactive: {", ".join(failed_services)}'
                 
-                # Record each failed service in persistence
+                # Record each failed service in persistence, respecting dismiss
+                active_failed = []
                 for svc in failed_services:
                     error_key = f'pve_service_{svc}'
-                    health_persistence.record_error(
+                    rec_result = health_persistence.record_error(
                         error_key=error_key,
                         category='pve_services',
                         severity='CRITICAL',
                         reason=f'PVE service {svc} is {service_details.get(svc, "inactive")}',
                         details={'service': svc, 'state': service_details.get(svc, 'inactive')}
                     )
+                    if rec_result and rec_result.get('type') == 'skipped_acknowledged':
+                        # Mark as dismissed in checks for frontend
+                        if svc in checks:
+                            checks[svc]['dismissed'] = True
+                    else:
+                        active_failed.append(svc)
                 
                 # Auto-clear services that recovered
                 for svc in services_to_check:
@@ -1916,10 +1924,21 @@ class HealthMonitor:
                         if health_persistence.is_error_active(error_key):
                             health_persistence.clear_error(error_key)
                 
+                # If all failed services are dismissed, return OK
+                if not active_failed:
+                    return {
+                        'status': 'OK',
+                        'reason': None,
+                        'failed': [],
+                        'is_cluster': is_cluster,
+                        'services_checked': len(services_to_check),
+                        'checks': checks
+                    }
+                
                 return {
                     'status': 'CRITICAL',
-                    'reason': reason,
-                    'failed': failed_services,
+                    'reason': f'Services inactive: {", ".join(active_failed)}',
+                    'failed': active_failed,
                     'is_cluster': is_cluster,
                     'services_checked': len(services_to_check),
                     'checks': checks
@@ -2565,20 +2584,7 @@ class HealthMonitor:
                 msg = f'{total_banned} IP(s) currently banned by Fail2Ban (jails: {jails_str})'
                 result['status'] = 'WARNING'
                 result['detail'] = msg
-                
-                # Record in persistence (dismissable)
-                health_persistence.record_error(
-                    error_key='fail2ban',
-                    category='security',
-                    severity='WARNING',
-                    reason=msg,
-                    details={
-                        'banned_count': total_banned,
-                        'jails': jails_with_bans,
-                        'banned_ips': all_banned_ips[:5],
-                        'dismissable': True
-                    }
-                )
+                # Persistence handled by _check_security caller via security_fail2ban key
             else:
                 result['detail'] = f'Fail2Ban active ({len(jails)} jail(s), no current bans)'
                 # Auto-resolve if previously banned IPs are now gone
@@ -2686,14 +2692,60 @@ class HealthMonitor:
             except Exception:
                 pass
             
-            # Determine overall security status
-            if issues:
-                # Check if any sub-check is CRITICAL
-                has_critical = any(c.get('status') == 'CRITICAL' for c in checks.values())
+            # Persist errors and respect dismiss for each sub-check
+            dismissed_keys = set()
+            security_sub_checks = {
+                'security_login_attempts': checks.get('login_attempts', {}),
+                'security_certificates': checks.get('certificates', {}),
+                'security_uptime': checks.get('uptime', {}),
+                'security_fail2ban': checks.get('fail2ban', {}),
+            }
+            
+            for err_key, check_info in security_sub_checks.items():
+                check_status = check_info.get('status', 'OK')
+                if check_status not in ('OK', 'INFO'):
+                    is_dismissable = check_info.get('dismissable', True)
+                    rec_result = health_persistence.record_error(
+                        error_key=err_key,
+                        category='security',
+                        severity=check_status,
+                        reason=check_info.get('detail', ''),
+                        details={'dismissable': is_dismissable}
+                    )
+                    if rec_result and rec_result.get('type') == 'skipped_acknowledged':
+                        dismissed_keys.add(err_key)
+                elif health_persistence.is_error_active(err_key):
+                    health_persistence.clear_error(err_key)
+            
+            # Rebuild issues excluding dismissed sub-checks
+            key_to_check = {
+                'security_login_attempts': 'login_attempts',
+                'security_certificates': 'certificates',
+                'security_uptime': 'uptime',
+                'security_fail2ban': 'fail2ban',
+            }
+            active_issues = []
+            for err_key, check_name in key_to_check.items():
+                if err_key in dismissed_keys:
+                    # Mark as dismissed in checks for the frontend
+                    if check_name in checks:
+                        checks[check_name]['dismissed'] = True
+                    continue
+                check_info = checks.get(check_name, {})
+                if check_info.get('status', 'OK') not in ('OK', 'INFO'):
+                    active_issues.append(check_info.get('detail', ''))
+            
+            # Determine overall security status from non-dismissed issues only
+            if active_issues:
+                has_critical = any(
+                    c.get('status') == 'CRITICAL'
+                    for k, c in checks.items()
+                    if f'security_{k}' not in dismissed_keys
+                )
                 overall_status = 'CRITICAL' if has_critical else 'WARNING'
                 return {
                     'status': overall_status,
-                    'reason': '; '.join(issues[:2]),
+                    'reason': '; '.join(active_issues[:2]),
                     'checks': checks
                 }
             
