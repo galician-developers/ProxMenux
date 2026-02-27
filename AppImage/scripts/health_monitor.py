@@ -324,6 +324,12 @@ class HealthMonitor:
         Returns JSON structure with ALL 10 categories always present.
         Now includes persistent error tracking.
         """
+        # Run cleanup on every status check to auto-resolve stale errors
+        try:
+            health_persistence.cleanup_old_errors()
+        except Exception:
+            pass
+        
         active_errors = health_persistence.get_active_errors()
         # No need to create persistent_issues dict here, it's implicitly handled by the checks
         
@@ -1087,16 +1093,67 @@ class HealthMonitor:
         
         return storages
     
+    def _resolve_ata_to_disk(self, ata_port: str) -> str:
+        """Resolve an ATA controller name (e.g. 'ata8') to a block device (e.g. 'sda').
+        
+        Uses /sys/class/ata_port/ symlinks and /sys/block/ to find the mapping.
+        Falls back to parsing dmesg for 'ata8: SATA link up' -> 'sd 7:0:0:0: [sda]'.
+        """
+        if not ata_port or not ata_port.startswith('ata'):
+            return ata_port
+        
+        port_num = ata_port.replace('ata', '')
+        
+        # Method 1: Walk /sys/class/ata_port/ -> host -> target -> block
+        try:
+            ata_path = f'/sys/class/ata_port/{ata_port}'
+            if os.path.exists(ata_path):
+                device_path = os.path.realpath(ata_path)
+                # Walk up to find the SCSI host, then find block devices
+                # Path: /sys/devices/.../ataX/hostY/targetY:0:0/Y:0:0:0/block/sdZ
+                for root, dirs, files in os.walk(os.path.dirname(device_path)):
+                    if 'block' in dirs:
+                        block_path = os.path.join(root, 'block')
+                        devs = os.listdir(block_path)
+                        if devs:
+                            return devs[0]  # e.g. 'sda'
+        except (OSError, IOError):
+            pass
+        
+        # Method 2: Parse dmesg for ATA link messages
+        try:
+            result = subprocess.run(
+                ['dmesg', '--notime'],
+                capture_output=True, text=True, timeout=2
+            )
+            if result.returncode == 0:
+                # Look for "ata8: SATA link up" followed by "sd X:0:0:0: [sda]"
+                lines = result.stdout.split('\n')
+                host_num = None
+                for line in lines:
+                    m = re.search(rf'{ata_port}:\s+SATA link', line)
+                    if m:
+                        # ata port number maps to host(N-1) typically
+                        host_num = int(port_num) - 1
+                    if host_num is not None:
+                        m2 = re.search(rf'sd\s+{host_num}:\d+:\d+:\d+:\s+\[(\w+)\]', line)
+                        if m2:
+                            return m2.group(1)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        
+        return ata_port  # Return original if resolution fails
+    
     def _check_disks_optimized(self) -> Dict[str, Any]:
         """
-        Optimized disk check - always returns status.
-        Checks dmesg for I/O errors and SMART status.
-        NOTE: This function is now largely covered by _check_storage_optimized,
-              but kept for potential specific disk-level reporting if needed.
-              Currently, its primary function is to detect recent I/O errors.
+        Disk I/O error check -- the SINGLE source of truth for disk errors.
+        
+        Reads dmesg for I/O/ATA/SCSI errors, counts per device, records in
+        health_persistence, and returns status for the health dashboard.
+        Resolves ATA controller names (ata8) to physical disks (sda).
         """
         current_time = time.time()
-        disk_issues = {}
+        disk_results = {}  # Single dict for both WARNING and CRITICAL
         
         try:
             # Check dmesg for I/O errors in the last 5 minutes
@@ -1107,17 +1164,52 @@ class HealthMonitor:
                 timeout=2
             )
             
+            # Collect a sample line per device for richer error messages
+            disk_samples = {}
+            
             if result.returncode == 0:
                 for line in result.stdout.split('\n'):
                     line_lower = line.lower()
-                    if any(keyword in line_lower for keyword in ['i/o error', 'ata error', 'scsi error', 'medium error']):
-                        # Try to extract disk name
-                        disk_match = re.search(r'/dev/(sd[a-z]|nvme\d+n\d+)', line)
-                        if disk_match:
-                            disk_name = disk_match.group(1)
+                    # Detect various disk error formats
+                    is_disk_error = any(kw in line_lower for kw in [
+                        'i/o error', 'scsi error', 'medium error',
+                        'failed command:', 'exception emask',
+                    ])
+                    ata_match = re.search(r'(ata\d+)[\.\d]*:.*(?:error|failed|exception)', line_lower)
+                    if ata_match:
+                        is_disk_error = True
+                    
+                    if is_disk_error:
+                        # Extract device from multiple formats
+                        raw_device = None
+                        for dev_re in [
+                            r'dev\s+(sd[a-z]+)',          # dev sdb
+                            r'\[(sd[a-z]+)\]',            # [sda]
+                            r'/dev/(sd[a-z]+)',            # /dev/sda
+                            r'(nvme\d+n\d+)',             # nvme0n1
+                            r'device\s+(sd[a-z]+\d*)',    # device sda1
+                            r'(ata\d+)',                  # ata8 (ATA controller)
+                        ]:
+                            dm = re.search(dev_re, line)
+                            if dm:
+                                raw_device = dm.group(1)
+                                break
+                        
+                        if raw_device:
+                            # Resolve ATA port to physical disk name
+                            if raw_device.startswith('ata'):
+                                resolved = self._resolve_ata_to_disk(raw_device)
+                                disk_name = resolved
+                            else:
+                                disk_name = raw_device.rstrip('0123456789') if raw_device.startswith('sd') else raw_device
+                            
                             self.io_error_history[disk_name].append(current_time)
+                            if disk_name not in disk_samples:
+                                # Clean the sample: strip dmesg timestamp prefix
+                                clean = re.sub(r'^\[.*?\]\s*', '', line.strip())
+                                disk_samples[disk_name] = clean[:200]
                 
-                # Clean old history (keep errors from the last 5 minutes)
+                # Clean old history and evaluate per-disk status
                 for disk in list(self.io_error_history.keys()):
                     self.io_error_history[disk] = [
                         t for t in self.io_error_history[disk]
@@ -1125,57 +1217,66 @@ class HealthMonitor:
                     ]
                     
                     error_count = len(self.io_error_history[disk])
+                    error_key = f'disk_{disk}'
+                    sample = disk_samples.get(disk, '')
+                    display = f'/dev/{disk}' if not disk.startswith('/') else disk
                     
-                    # Report based on recent error count
                     if error_count >= 3:
-                        error_key = f'disk_{disk}'
                         severity = 'CRITICAL'
-                        reason = f'{error_count} I/O errors in 5 minutes'
+                        reason = f'{display}: {error_count} I/O errors in 5 min'
+                        if sample:
+                            reason += f'\n{sample}'
                         
                         health_persistence.record_error(
                             error_key=error_key,
                             category='disks',
                             severity=severity,
                             reason=reason,
-                            details={'disk': disk, 'error_count': error_count, 'dismissable': False}
+                            details={'disk': disk, 'device': display,
+                                     'error_count': error_count,
+                                     'sample': sample, 'dismissable': False}
                         )
-                        
-                        disk_details[disk] = {
+                        disk_results[display] = {
                             'status': severity,
                             'reason': reason,
-                            'dismissable': False
+                            'device': disk,
+                            'error_count': error_count,
+                            'dismissable': False,
                         }
                     elif error_count >= 1:
-                        error_key = f'disk_{disk}'
                         severity = 'WARNING'
-                        reason = f'{error_count} I/O error(s) in 5 minutes'
+                        reason = f'{display}: {error_count} I/O error(s) in 5 min'
+                        if sample:
+                            reason += f'\n{sample}'
                         
                         health_persistence.record_error(
                             error_key=error_key,
                             category='disks',
                             severity=severity,
                             reason=reason,
-                            details={'disk': disk, 'error_count': error_count, 'dismissable': True}
+                            details={'disk': disk, 'device': display,
+                                     'error_count': error_count,
+                                     'sample': sample, 'dismissable': True}
                         )
-                        
-                        disk_issues[f'/dev/{disk}'] = {
+                        disk_results[display] = {
                             'status': severity,
                             'reason': reason,
-                            'dismissable': True
+                            'device': disk,
+                            'error_count': error_count,
+                            'dismissable': True,
                         }
                     else:
-                        error_key = f'disk_{disk}'
                         health_persistence.resolve_error(error_key, 'Disk errors cleared')
             
-            if not disk_issues:
+            if not disk_results:
                 return {'status': 'OK'}
             
-            has_critical = any(d.get('status') == 'CRITICAL' for d in disk_issues.values())
+            has_critical = any(d.get('status') == 'CRITICAL' for d in disk_results.values())
             
             return {
                 'status': 'CRITICAL' if has_critical else 'WARNING',
-                'reason': f"{len(disk_issues)} disk(s) with recent errors",
-                'details': disk_issues
+                'reason': f"{len(disk_results)} disk(s) with recent errors",
+                'details': disk_results
             }
         
         except Exception as e:
@@ -1418,6 +1519,19 @@ class HealthMonitor:
         Improved detection of container and VM errors from journalctl.
         """
         try:
+            # First: auto-resolve any persisted VM/CT errors where the guest
+            # is now running.  This clears stale "Failed to start" / QMP
+            # errors that are no longer relevant.
+            try:
+                active_vm_errors = health_persistence.get_active_errors('vms')
+                for err in active_vm_errors:
+                    details = err.get('details') or {}
+                    vmid = details.get('id', '')
+                    if vmid:
+                        health_persistence.check_vm_running(vmid)
+            except Exception:
+                pass
+            
             issues = []
             vm_details = {}
             
@@ -1470,11 +1584,15 @@ class HealthMonitor:
                             else:
                                 reason = 'Container error'
                             
-                            issues.append(f'CT {ctid}: {reason}')
+                            ct_name = self._resolve_vm_name(ctid)
+                            display = f"CT {ctid} ({ct_name})" if ct_name else f"CT {ctid}"
+                            full_reason = f'{display}: {reason}\n{line.strip()[:200]}'
+                            issues.append(f'{display}: {reason}')
                             vm_details[key] = {
                                 'status': 'WARNING' if 'device' in reason.lower() else 'CRITICAL',
-                                'reason': reason,
+                                'reason': full_reason,
                                 'id': ctid,
+                                'vmname': ct_name,
                                 'type': 'CT'
                             }
                         continue
@@ -1509,11 +1627,15 @@ class HealthMonitor:
                             vmid = id_match.group(1)
                             key = f'vmct_{vmid}'
                             if key not in vm_details:
-                                issues.append(f'VM/CT {vmid}: Failed to start')
+                                vm_name = self._resolve_vm_name(vmid)
+                                display = f"VM/CT {vmid} ({vm_name})" if vm_name else f"VM/CT {vmid}"
+                                full_reason = f'{display}: Failed to start\n{line.strip()[:200]}'
+                                issues.append(f'{display}: Failed to start')
                                 vm_details[key] = {
                                     'status': 'CRITICAL',
-                                    'reason': 'Failed to start',
+                                    'reason': full_reason,
                                     'id': vmid,
+                                    'vmname': vm_name,
                                     'type': 'VM/CT'
                                 }
             
@@ -1661,20 +1783,25 @@ class HealthMonitor:
                                 vm_type = 'VM/CT'
                             
                             if error_key not in vm_details:
-                                reason = 'Failed to start'
+                                vm_name = self._resolve_vm_name(vmid_ctid)
+                                display = f"{vm_type} {vmid_ctid}"
+                                if vm_name:
+                                    display = f"{vm_type} {vmid_ctid} ({vm_name})"
+                                reason = f'{display}: Failed to start\n{line.strip()[:200]}'
                                 # Record persistent error
                                 health_persistence.record_error(
                                     error_key=error_key,
                                     category='vms',
                                     severity='CRITICAL',
                                     reason=reason,
-                                    details={'id': vmid_ctid, 'type': vm_type}
+                                    details={'id': vmid_ctid, 'vmname': vm_name, 'type': vm_type}
                                 )
-                                issues.append(f'{vm_type} {vmid_ctid}: {reason}')
+                                issues.append(f'{display}: Failed to start')
                                 vm_details[error_key] = {
                                     'status': 'CRITICAL',
                                     'reason': reason,
                                     'id': vmid_ctid,
+                                    'vmname': vm_name,
                                     'type': vm_type
                                 }
             
@@ -1979,6 +2106,18 @@ class HealthMonitor:
                     if recent_count >= 5 and recent_count >= prev_count * 4:
                         spike_errors[pattern] = recent_count
                 
+                # Helper: get human-readable samples from normalized patterns
+                def _get_samples(error_dict, max_items=3):
+                    """Return list of readable sample lines for error patterns."""
+                    samples = []
+                    for pattern in list(error_dict.keys())[:max_items]:
+                        pdata = self.persistent_log_patterns.get(pattern, {})
+                        sample = pdata.get('sample', pattern)
+                        # Trim timestamp prefix if present (e.g. "Feb 27 16:03:35 host ")
+                        clean = re.sub(r'^[A-Z][a-z]{2}\s+\d+\s+[\d:]+\s+\S+\s+', '', sample)
+                        samples.append(clean[:120])
+                    return samples
+                
                 persistent_errors = {}
                 for pattern, data in self.persistent_log_patterns.items():
                     time_span = current_time - data['first_seen']
@@ -2018,31 +2157,38 @@ class HealthMonitor:
                     # Get a representative critical error reason
                     representative_error = next(iter(critical_errors_found.values()))
                     reason = f'Critical error detected: {representative_error[:100]}'
-                elif cascade_count > 0:
-                    status = 'WARNING'
-                    reason = f'Error cascade detected: {cascade_count} pattern(s) repeating ≥15 times in 3min'
-                elif spike_count > 0:
-                    status = 'WARNING'
-                    reason = f'Error spike detected: {spike_count} pattern(s) increased 4x'
-                elif persistent_count > 0:
-                    status = 'WARNING'
-                    reason = f'Persistent errors: {persistent_count} pattern(s) recurring over 15+ minutes'
+        elif cascade_count > 0:
+                status = 'WARNING'
+                samples = _get_samples(cascading_errors, 3)
+                reason = f'Error cascade ({cascade_count} patterns repeating):\n' + '\n'.join(f'  - {s}' for s in samples)
+            elif spike_count > 0:
+                status = 'WARNING'
+                samples = _get_samples(spike_errors, 3)
+                reason = f'Error spike ({spike_count} patterns with 4x increase):\n' + '\n'.join(f'  - {s}' for s in samples)
+            elif persistent_count > 0:
+                status = 'WARNING'
+                samples = _get_samples(persistent_errors, 3)
+                reason = f'Persistent errors ({persistent_count} patterns over 15+ min):\n' + '\n'.join(f'  - {s}' for s in samples)
                 else:
                     # No significant issues found
                     status = 'OK'
                     reason = None
                 
                 # Record/clear persistent errors for each log sub-check so Dismiss works
-                log_sub_checks = {
-                    'log_error_cascade': {'active': cascade_count > 0, 'severity': 'WARNING',
-                        'reason': f'{cascade_count} pattern(s) repeating >=15 times'},
-                    'log_error_spike': {'active': spike_count > 0, 'severity': 'WARNING',
-                        'reason': f'{spike_count} pattern(s) with 4x increase'},
-                    'log_persistent_errors': {'active': persistent_count > 0, 'severity': 'WARNING',
-                        'reason': f'{persistent_count} recurring pattern(s) over 15+ min'},
-                    'log_critical_errors': {'active': unique_critical_count > 0, 'severity': 'CRITICAL',
-                        'reason': f'{unique_critical_count} critical error(s) found', 'dismissable': False},
-                }
+            cascade_samples = _get_samples(cascading_errors, 2) if cascade_count else []
+            spike_samples = _get_samples(spike_errors, 2) if spike_count else []
+            persist_samples = _get_samples(persistent_errors, 2) if persistent_count else []
+            
+            log_sub_checks = {
+                'log_error_cascade': {'active': cascade_count > 0, 'severity': 'WARNING',
+                    'reason': f'{cascade_count} pattern(s) repeating >=15 times:\n' + '\n'.join(f'  - {s}' for s in cascade_samples) if cascade_count else ''},
+                'log_error_spike': {'active': spike_count > 0, 'severity': 'WARNING',
+                    'reason': f'{spike_count} pattern(s) with 4x increase:\n' + '\n'.join(f'  - {s}' for s in spike_samples) if spike_count else ''},
+                'log_persistent_errors': {'active': persistent_count > 0, 'severity': 'WARNING',
+                    'reason': f'{persistent_count} recurring pattern(s) over 15+ min:\n' + '\n'.join(f'  - {s}' for s in persist_samples) if persistent_count else ''},
+                'log_critical_errors': {'active': unique_critical_count > 0, 'severity': 'CRITICAL',
+                    'reason': f'{unique_critical_count} critical error(s) found', 'dismissable': False},
+            }
                 
                 # Track which sub-checks were dismissed
                 dismissed_keys = set()

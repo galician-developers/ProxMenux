@@ -373,6 +373,18 @@ TEMPLATES = {
         'group': 'vm_ct',
         'default_enabled': False,
     },
+    'ct_shutdown': {
+        'title': '{hostname}: CT {vmid} shutdown',
+        'body': '{vmname} ({vmid}) has been shut down.',
+        'group': 'vm_ct',
+        'default_enabled': False,
+    },
+    'ct_restart': {
+        'title': '{hostname}: CT {vmid} restarted',
+        'body': '{vmname} ({vmid}) has been restarted.',
+        'group': 'vm_ct',
+        'default_enabled': False,
+    },
     'ct_fail': {
         'title': '{hostname}: CT {vmid} FAILED',
         'body': '{vmname} ({vmid}) has failed.\n{reason}',
@@ -469,7 +481,7 @@ TEMPLATES = {
     },
     'disk_io_error': {
         'title': '{hostname}: Disk I/O error',
-        'body': 'I/O error detected on {device}.\n{reason}',
+        'body': '{reason}',
         'group': 'storage',
         'default_enabled': True,
     },
@@ -730,6 +742,7 @@ def render_template(event_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         'security_count': '0', 'total_count': '0', 'package_list': '',
         'packages': '', 'pve_packages': '', 'version': '',
         'issue_list': '', 'error_key': '',
+        'storage_name': '', 'storage_type': '',
     }
     variables.update(data)
     

@@ -266,17 +266,24 @@ class JournalWatcher:
             if re.search(noise, msg, re.IGNORECASE):
                 return
         
+        # NOTE: Disk I/O errors (ATA, SCSI, blk_update_request) are NOT handled
+        # here. They are detected exclusively by HealthMonitor._check_disks_optimized
+        # which records to health_persistence -> PollingCollector -> notification.
+        # This avoids duplicate notifications and ensures the health dashboard
+        # stays in sync with notifications.
+        # Filesystem errors (EXT4/BTRFS/XFS/ZFS) ARE handled here because they
+        # indicate corruption, not just hardware I/O problems.
+        
         critical_patterns = {
             r'kernel panic':       ('system_problem', 'CRITICAL', 'Kernel panic'),
             r'Out of memory':      ('system_problem', 'CRITICAL', 'Out of memory killer activated'),
             r'segfault':           ('system_problem', 'WARNING',  'Segmentation fault detected'),
             r'BUG:':               ('system_problem', 'CRITICAL', 'Kernel BUG detected'),
             r'Call Trace:':        ('system_problem', 'WARNING',  'Kernel call trace'),
-            r'I/O error.*dev\s+(\S+)': ('disk_io_error', 'CRITICAL', 'Disk I/O error'),
-            r'EXT4-fs error':      ('disk_io_error', 'CRITICAL', 'Filesystem error'),
-            r'BTRFS error':        ('disk_io_error', 'CRITICAL', 'Filesystem error'),
-            r'XFS.*error':         ('disk_io_error', 'CRITICAL', 'Filesystem error'),
-            r'ZFS.*error':         ('disk_io_error', 'CRITICAL', 'ZFS pool error'),
+            r'EXT4-fs error':      ('system_problem', 'CRITICAL', 'Filesystem error'),
+            r'BTRFS error':        ('system_problem', 'CRITICAL', 'Filesystem error'),
+            r'XFS.*error':         ('system_problem', 'CRITICAL', 'Filesystem error'),
+            r'ZFS.*error':         ('system_problem', 'CRITICAL', 'ZFS pool error'),
             r'mce:.*Hardware Error': ('system_problem', 'CRITICAL', 'Hardware error (MCE)'),
         }
         
@@ -286,11 +293,9 @@ class JournalWatcher:
                 entity_id = ''
                 
                 # Build a context-rich reason from the journal message.
-                # The raw msg contains process name, PID, addresses, library, etc.
                 enriched = reason
                 
                 if 'segfault' in pattern:
-                    # Kernel segfault: "process[PID]: segfault at ADDR ... in lib.so"
                     m = re.search(r'(\S+)\[(\d+)\].*segfault', msg)
                     proc_name = m.group(1) if m else ''
                     proc_pid = m.group(2) if m else ''
@@ -305,20 +310,9 @@ class JournalWatcher:
                     enriched = '\n'.join(parts)
                 
                 elif 'Out of memory' in pattern:
-                    # OOM: "Out of memory: Killed process PID (name)"
                     m = re.search(r'Killed process\s+(\d+)\s+\(([^)]+)\)', msg)
                     if m:
                         enriched = f"{reason}\nKilled: {m.group(2)} (PID {m.group(1)})"
-                    else:
-                        enriched = f"{reason}\n{msg[:300]}"
-                
-                elif event_type == 'disk_io_error':
-                    # Include device and raw message for disk/fs errors
-                    dev_match = re.search(r'dev\s+(\S+)', msg)
-                    if dev_match:
-                        entity = 'disk'
-                        entity_id = dev_match.group(1)
-                        enriched = f"{reason}\nDevice: {dev_match.group(1)}"
                     else:
                         enriched = f"{reason}\n{msg[:300]}"
                 
@@ -327,8 +321,6 @@ class JournalWatcher:
                     enriched = f"{reason}\n{msg[:300]}"
                 
                 data = {'reason': enriched, 'hostname': self._hostname}
-                if entity == 'disk':
-                    data['device'] = entity_id
                 
                 self._emit(event_type, severity, data, entity=entity, entity_id=entity_id)
                 return
@@ -466,19 +458,65 @@ class JournalWatcher:
             }, entity='cluster', entity_id=node_name)
     
     def _check_system_shutdown(self, msg: str, syslog_id: str):
-        """Detect system shutdown/reboot."""
-        if 'systemd-journald' in syslog_id or 'systemd' in syslog_id:
-            if 'Journal stopped' in msg or 'Stopping Journal Service' in msg:
-                self._emit('system_shutdown', 'WARNING', {
-                    'reason': 'System journal stopped',
-                    'hostname': self._hostname,
-                }, entity='node', entity_id='')
-            elif 'Shutting down' in msg or 'System is rebooting' in msg:
-                event = 'system_reboot' if 'reboot' in msg.lower() else 'system_shutdown'
-                self._emit(event, 'WARNING', {
-                    'reason': msg[:200],
-                    'hostname': self._hostname,
-                }, entity='node', entity_id='')
+        """Detect system shutdown/reboot.
+        
+        Matches multiple systemd signals that indicate the node is going down:
+          - "Shutting down."  (systemd PID 1)
+          - "System is powering off."  / "System is rebooting."
+          - "Reached target Shutdown." / "Reached target Reboot."
+          - "Journal stopped"  (very late in shutdown)
+          - "The system will reboot now!"  / "The system will power off now!"
+        """
+        msg_lower = msg.lower()
+        
+        # Only process systemd / logind messages
+        if not any(s in syslog_id for s in ('systemd', 'logind', '')):
+            if 'systemd' not in msg_lower:
+                return
+        
+        is_reboot = False
+        is_shutdown = False
+        
+        # Detect reboot signals
+        reboot_signals = [
+            'system is rebooting',
+            'reached target reboot',
+            'the system will reboot now',
+            'starting reboot',
+        ]
+        for sig in reboot_signals:
+            if sig in msg_lower:
+                is_reboot = True
+                break
+        
+        # Detect shutdown/poweroff signals
+        if not is_reboot:
+            shutdown_signals = [
+                'system is powering off',
+                'system is halting',
+                'shutting down',
+                'reached target shutdown',
+                'reached target halt',
+                'the system will power off now',
+                'starting power-off',
+                'journal stopped',
+                'stopping journal service',
+            ]
+            for sig in shutdown_signals:
+                if sig in msg_lower:
+                    is_shutdown = True
+                    break
+        
+        if is_reboot:
+            self._emit('system_reboot', 'CRITICAL', {
+                'reason': msg[:200],
+                'hostname': self._hostname,
+            }, entity='node', entity_id='')
+        elif is_shutdown:
+            self._emit('system_shutdown', 'CRITICAL', {
+                'reason': msg[:200],
+                'hostname': self._hostname,
+            }, entity='node', entity_id='')
     
     def _check_permission_change(self, msg: str, syslog_id: str):
         """Detect user permission changes in PVE."""
@@ -557,7 +595,8 @@ class TaskWatcher:
         'qmreset':    ('vm_restart',  'INFO'),
         'vzstart':    ('ct_start',    'INFO'),
         'vzstop':     ('ct_stop',     'INFO'),
-        'vzshutdown': ('ct_stop',     'INFO'),
+        'vzshutdown': ('ct_shutdown', 'INFO'),
+        'vzreboot':   ('ct_restart',  'INFO'),
         'vzdump':     ('backup_start', 'INFO'),
         'qmsnapshot': ('snapshot_complete', 'INFO'),
         'vzsnapshot': ('snapshot_complete', 'INFO'),
@@ -741,7 +780,7 @@ class TaskWatcher:
         # These are backup-induced operations (mode=stop), not user actions.
         # Exception: if a VM/CT FAILS to start after backup, that IS important.
         _BACKUP_NOISE = {'vm_start', 'vm_stop', 'vm_shutdown', 'vm_restart',
-                         'ct_start', 'ct_stop'}
+                         'ct_start', 'ct_stop', 'ct_shutdown', 'ct_restart'}
         if event_type in _BACKUP_NOISE and not is_error:
             if self._is_vzdump_active():
                 return

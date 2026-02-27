@@ -661,6 +661,23 @@ class NotificationManager:
         if event.event_type in _ALWAYS_DELIVER and cooldown_str is None:
             cooldown = 10
         
+        # VM/CT state changes are real user actions that should always be
+        # delivered. Each start/stop/shutdown is a distinct event.  A 5s
+        # cooldown prevents exact duplicates from concurrent watchers.
+        _STATE_EVENTS = {
+            'vm_start', 'vm_stop', 'vm_shutdown', 'vm_restart',
+            'ct_start', 'ct_stop', 'ct_shutdown', 'ct_restart',
+            'vm_fail', 'ct_fail',
+        }
+        if event.event_type in _STATE_EVENTS and cooldown_str is None:
+            cooldown = 5
+        
+        # System shutdown/reboot must be delivered immediately -- the node
+        # is going down and there may be only seconds to send the message.
+        _URGENT_EVENTS = {'system_shutdown', 'system_reboot'}
+        if event.event_type in _URGENT_EVENTS and cooldown_str is None:
+            cooldown = 5
+        
         # Check against last sent time using stable fingerprint
         last_sent = self._cooldowns.get(event.fingerprint, 0)
         
