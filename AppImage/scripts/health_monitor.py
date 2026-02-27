@@ -2157,18 +2157,18 @@ class HealthMonitor:
                     # Get a representative critical error reason
                     representative_error = next(iter(critical_errors_found.values()))
                     reason = f'Critical error detected: {representative_error[:100]}'
-        elif cascade_count > 0:
-                status = 'WARNING'
-                samples = _get_samples(cascading_errors, 3)
-                reason = f'Error cascade ({cascade_count} patterns repeating):\n' + '\n'.join(f'  - {s}' for s in samples)
-            elif spike_count > 0:
-                status = 'WARNING'
-                samples = _get_samples(spike_errors, 3)
-                reason = f'Error spike ({spike_count} patterns with 4x increase):\n' + '\n'.join(f'  - {s}' for s in samples)
-            elif persistent_count > 0:
-                status = 'WARNING'
-                samples = _get_samples(persistent_errors, 3)
-                reason = f'Persistent errors ({persistent_count} patterns over 15+ min):\n' + '\n'.join(f'  - {s}' for s in samples)
+                elif cascade_count > 0:
+                    status = 'WARNING'
+                    samples = _get_samples(cascading_errors, 3)
+                    reason = f'Error cascade ({cascade_count} patterns repeating):\n' + '\n'.join(f'  - {s}' for s in samples)
+                elif spike_count > 0:
+                    status = 'WARNING'
+                    samples = _get_samples(spike_errors, 3)
+                    reason = f'Error spike ({spike_count} patterns with 4x increase):\n' + '\n'.join(f'  - {s}' for s in samples)
+                elif persistent_count > 0:
+                    status = 'WARNING'
+                    samples = _get_samples(persistent_errors, 3)
+                    reason = f'Persistent errors ({persistent_count} patterns over 15+ min):\n' + '\n'.join(f'  - {s}' for s in samples)
                 else:
                     # No significant issues found
                     status = 'OK'
