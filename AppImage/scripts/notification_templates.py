@@ -480,7 +480,7 @@ TEMPLATES = {
         'default_enabled': True,
     },
     'disk_io_error': {
-        'title': '{hostname}: Disk I/O error on /dev/{device}',
+        'title': '{hostname}: Disk I/O error on {device}',
         'body': '{reason}',
         'group': 'storage',
         'default_enabled': True,
