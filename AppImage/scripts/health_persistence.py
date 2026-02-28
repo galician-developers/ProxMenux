@@ -414,13 +414,15 @@ class HealthPersistence:
             # Error not in DB yet -- create a minimal record so the dismiss persists.
             # Try to infer category from the error_key prefix.
             category = ''
-            for cat, prefix in [('security', 'security_'), ('updates', 'security_updates'),
-                                ('updates', 'update_'), ('updates', 'kernel_'),
-                                ('updates', 'pending_'), ('updates', 'system_age'),
+            # Order matters: more specific prefixes MUST come before shorter ones
+            # e.g. 'security_updates' (updates) before 'security_' (security)
+            for cat, prefix in [('updates', 'security_updates'), ('updates', 'system_age'),
+                                ('updates', 'pending_updates'), ('updates', 'kernel_pve'),
+                                ('security', 'security_'), 
                                 ('pve_services', 'pve_service_'), ('vms', 'vm_'), ('vms', 'ct_'),
                                 ('disks', 'disk_'), ('logs', 'log_'), ('network', 'net_'),
                                 ('temperature', 'temp_')]:
-                if error_key.startswith(prefix) or error_key == prefix:
+                if error_key == prefix or error_key.startswith(prefix):
                     category = cat
                     break
             

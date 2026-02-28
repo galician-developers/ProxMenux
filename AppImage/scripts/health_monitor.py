@@ -2248,24 +2248,28 @@ class HealthMonitor:
                         'status': _log_check_status('log_error_cascade', cascade_count > 0, 'WARNING'),
                         'detail': f'{cascade_count} pattern(s) repeating >=15 times' if cascade_count > 0 else 'No cascading errors',
                         'dismissable': True,
-                        'dismissed': 'log_error_cascade' in dismissed_keys
+                        'dismissed': 'log_error_cascade' in dismissed_keys,
+                        'error_key': 'log_error_cascade'
                     },
                     'log_error_spike': {
                         'status': _log_check_status('log_error_spike', spike_count > 0, 'WARNING'),
                         'detail': f'{spike_count} pattern(s) with 4x increase' if spike_count > 0 else 'No error spikes',
                         'dismissable': True,
-                        'dismissed': 'log_error_spike' in dismissed_keys
+                        'dismissed': 'log_error_spike' in dismissed_keys,
+                        'error_key': 'log_error_spike'
                     },
                     'log_persistent_errors': {
                         'status': _log_check_status('log_persistent_errors', persistent_count > 0, 'WARNING'),
                         'detail': f'{persistent_count} recurring pattern(s) over 15+ min' if persistent_count > 0 else 'No persistent patterns',
                         'dismissable': True,
-                        'dismissed': 'log_persistent_errors' in dismissed_keys
+                        'dismissed': 'log_persistent_errors' in dismissed_keys,
+                        'error_key': 'log_persistent_errors'
                     },
                     'log_critical_errors': {
                         'status': _log_check_status('log_critical_errors', unique_critical_count > 0, 'CRITICAL'),
                         'detail': f'{unique_critical_count} critical error(s) found' if unique_critical_count > 0 else 'No critical errors',
-                        'dismissable': False
+                        'dismissable': False,
+                        'error_key': 'log_critical_errors'
                     }
                 }
                 

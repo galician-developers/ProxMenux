@@ -83,11 +83,10 @@ def acknowledge_error():
                 health_monitor.last_check_times.pop(cache_key, None)
                 health_monitor.cached_results.pop(cache_key, None)
             
-            # Also invalidate overall status caches so header updates immediately
-            health_monitor.last_check_times.pop('_bg_overall', None)
-            health_monitor.cached_results.pop('_bg_overall', None)
-            health_monitor.last_check_times.pop('overall_health', None)
-            health_monitor.cached_results.pop('overall_health', None)
+            # Also invalidate ALL background/overall caches so next fetch reflects dismiss
+            for ck in ['_bg_overall', '_bg_detailed', 'overall_health']:
+                health_monitor.last_check_times.pop(ck, None)
+                health_monitor.cached_results.pop(ck, None)
             
             # Use the per-record suppression hours from acknowledge_error()
             sup_hours = result.get('suppression_hours', 24)
