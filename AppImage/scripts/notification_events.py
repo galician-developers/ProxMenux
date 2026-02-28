@@ -1003,10 +1003,14 @@ class TaskWatcher:
         
         The 'active' file lists UPIDs of currently running PVE tasks.
         Format: UPID:node:pid:pstart:starttime:type:id:user:
-        Example: UPID:amd:0018088D:020C7A6E:69A33A76:vzdump:101:root@pam:
         
-        We track seen UPIDs to emit backup_start only once per task,
-        and clean up stale entries when they disappear from the file.
+        For multi-VM backups (`vzdump 100 101`), PVE creates:
+        - A main UPID with EMPTY vmid: UPID:amd:PID:...:vzdump::root@pam:
+        - Per-VM sub-UPIDs: UPID:amd:PID:...:vzdump:101:root@pam:
+        
+        We only emit backup_start for the MAIN job (empty vmid) and read
+        /proc/PID/cmdline to discover which VMs are being backed up.
+        Per-VM sub-UPIDs are tracked but don't trigger a notification.
         """
         if not os.path.exists(self.TASK_ACTIVE):
             return
@@ -1018,15 +1022,12 @@ class TaskWatcher:
                     line = line.strip()
                     if not line:
                         continue
-                    # Active file format: just the UPID per line
                     upid = line.split()[0] if line.split() else line
                     current_upids.add(upid)
                     
-                    # Only care about vzdump (backup) tasks
                     if ':vzdump:' not in upid:
                         continue
                     
-                    # Already seen this task?
                     if upid in self._seen_active_upids:
                         continue
                     
@@ -1034,25 +1035,59 @@ class TaskWatcher:
                     
                     # Parse UPID: UPID:node:pid:pstart:starttime:type:id:user:
                     upid_parts = upid.split(':')
-                    # Index:  0    1    2   3      4        5    6  7
                     if len(upid_parts) < 8:
                         continue
                     
-                    vmid = upid_parts[6]  # The guest ID being backed up
+                    vmid = upid_parts[6]   # Empty for main job, vmid for sub-task
                     user = upid_parts[7]
-                    vmname = self._get_vm_name(vmid) if vmid else ''
+                    pid_hex = upid_parts[2]
                     
                     # Track vzdump internally for VM suppression
                     self._vzdump_running_since = time.time()
                     
-                    # Emit backup_start notification
-                    guest_label = vmname if vmname else f'ID {vmid}'
+                    # Only emit notification for the MAIN job (empty vmid).
+                    # Per-VM sub-tasks are tracked for suppression but don't notify
+                    # (otherwise you'd get N+1 notifications for N VMs).
+                    if vmid:
+                        continue
+                    
+                    # Read /proc/PID/cmdline to discover which VMs and settings
+                    backup_info = self._parse_vzdump_cmdline(pid_hex)
+                    
+                    # Build the notification body
+                    reason_parts = []
+                    
+                    if backup_info.get('guests'):
+                        guest_lines = []
+                        for gid in backup_info['guests']:
+                            gname = self._get_vm_name(gid)
+                            if gname:
+                                guest_lines.append(f'  {gname} ({gid})')
+                            else:
+                                guest_lines.append(f'  ID {gid}')
+                        reason_parts.append('Guests:\n' + '\n'.join(guest_lines))
+                    
+                    details = []
+                    if backup_info.get('storage'):
+                        details.append(f'Storage: {backup_info["storage"]}')
+                    if backup_info.get('mode'):
+                        details.append(f'Mode: {backup_info["mode"]}')
+                    if backup_info.get('compress'):
+                        details.append(f'Compression: {backup_info["compress"]}')
+                    if details:
+                        reason_parts.append(' | '.join(details))
+                    
+                    if not reason_parts:
+                        reason_parts.append('Backup job started')
+                    
+                    reason = '\n'.join(reason_parts)
+                    
                     data = {
-                        'vmid': vmid,
-                        'vmname': guest_label,
+                        'vmid': ', '.join(backup_info.get('guests', [])),
+                        'vmname': '',
                         'hostname': self._hostname,
                         'user': user,
-                        'reason': f'Backup started for {guest_label} ({vmid})',
+                        'reason': reason,
                         'target_node': '',
                         'size': '',
                         'snapshot_name': '',
@@ -1061,16 +1096,61 @@ class TaskWatcher:
                     self._queue.put(NotificationEvent(
                         'backup_start', 'INFO', data,
                         source='tasks',
-                        entity='vm' if vmid.isdigit() and int(vmid) >= 100 else 'ct',
-                        entity_id=vmid,
+                        entity='backup',
+                        entity_id='vzdump',
                     ))
             
-            # Cleanup: remove UPIDs that are no longer in the active file
+            # Cleanup stale UPIDs
             stale = self._seen_active_upids - current_upids
             self._seen_active_upids -= stale
             
         except Exception as e:
             print(f"[TaskWatcher] Error reading active tasks: {e}")
+    
+    @staticmethod
+    def _parse_vzdump_cmdline(pid_hex: str) -> dict:
+        """Read /proc/PID/cmdline to extract vzdump parameters.
+        
+        Returns dict with keys: guests (list), storage, mode, compress, all.
+        """
+        info: dict = {'guests': [], 'storage': '', 'mode': '', 'compress': ''}
+        try:
+            pid = int(pid_hex, 16)
+            cmdline_path = f'/proc/{pid}/cmdline'
+            if not os.path.exists(cmdline_path):
+                return info
+            
+            with open(cmdline_path, 'rb') as f:
+                raw = f.read()
+            
+            # cmdline is null-byte separated
+            args = raw.decode('utf-8', errors='replace').split('\0')
+            args = [a for a in args if a]  # remove empty
+            
+            # Parse: vzdump VMID1 VMID2 --storage local --mode stop ...
+            i = 0
+            while i < len(args):
+                arg = args[i]
+                if arg.isdigit():
+                    info['guests'].append(arg)
+                elif arg == '--storage' and i + 1 < len(args):
+                    info['storage'] = args[i + 1]
+                    i += 1
+                elif arg == '--mode' and i + 1 < len(args):
+                    info['mode'] = args[i + 1]
+                    i += 1
+                elif arg == '--compress' and i + 1 < len(args):
+                    info['compress'] = args[i + 1]
+                    i += 1
+                elif arg == '--all' and i + 1 < len(args):
+                    if args[i + 1] == '1':
+                        info['guests'] = ['all']
+                    i += 1
+                i += 1
+            
+            return info
+        except Exception:
+            return info
     
     def _process_task_line(self, line: str):
         """Process a single task index line.

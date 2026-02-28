@@ -424,8 +424,8 @@ TEMPLATES = {
     
     # ── Backup / Snapshot events ──
     'backup_start': {
-        'title': '{hostname}: Backup started - {vmid}',
-        'body': 'Backup of {vmname} ({vmid}) has started.',
+        'title': '{hostname}: Backup started',
+        'body': '{reason}',
         'group': 'backup',
         'default_enabled': False,
     },
