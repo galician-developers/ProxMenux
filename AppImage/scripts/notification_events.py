@@ -956,6 +956,10 @@ class PollingCollector:
             severity = error.get('severity', 'WARNING')
             reason = error.get('reason', '')
             
+            # Never notify for INFO/OK severity -- these are informational only
+            if severity in ('INFO', 'OK'):
+                continue
+            
             # Determine if we should notify
             is_new = error_key not in self._known_errors and self._first_poll_done
             last_sent = self._last_notified.get(error_key, 0)

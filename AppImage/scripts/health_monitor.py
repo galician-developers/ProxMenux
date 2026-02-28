@@ -1145,6 +1145,27 @@ class HealthMonitor:
         
         return ata_port  # Return original if resolution fails
     
+    def _quick_smart_health(self, disk_name: str) -> str:
+        """Quick SMART health check for a single disk. Returns 'PASSED', 'FAILED', or 'UNKNOWN'."""
+        if not disk_name or disk_name.startswith('ata') or disk_name.startswith('zram'):
+            return 'UNKNOWN'
+        try:
+            dev_path = f'/dev/{disk_name}' if not disk_name.startswith('/') else disk_name
+            result = subprocess.run(
+                ['smartctl', '--health', '-j', dev_path],
+                capture_output=True, text=True, timeout=5
+            )
+            import json as _json
+            data = _json.loads(result.stdout)
+            passed = data.get('smart_status', {}).get('passed', None)
+            if passed is True:
+                return 'PASSED'
+            elif passed is False:
+                return 'FAILED'
+            return 'UNKNOWN'
+        except Exception:
+            return 'UNKNOWN'
+
     def _check_disks_optimized(self) -> Dict[str, Any]:
         """
         Disk I/O error check -- the SINGLE source of truth for disk errors.
@@ -1152,9 +1173,21 @@ class HealthMonitor:
         Reads dmesg for I/O/ATA/SCSI errors, counts per device, records in
         health_persistence, and returns status for the health dashboard.
         Resolves ATA controller names (ata8) to physical disks (sda).
+        
+        Cross-references SMART health to avoid false positives from transient
+        ATA controller errors. If SMART reports PASSED, dmesg errors are
+        downgraded to INFO (transient).
         """
         current_time = time.time()
         disk_results = {}  # Single dict for both WARNING and CRITICAL
+        
+        # Common transient ATA patterns that auto-recover and are not real disk failures
+        # 'action 0x0' means the kernel recovered automatically with no action needed
+        TRANSIENT_PATTERNS = [
+            re.compile(r'exception\s+emask.*action\s+0x0', re.IGNORECASE),
+            re.compile(r'serror.*=.*0x[0-9a-f]+\s*\(', re.IGNORECASE),
+            re.compile(r'SError:.*\{.*\}', re.IGNORECASE),
+        ]
         
         try:
             # Check dmesg for I/O errors in the last 5 minutes
@@ -1167,6 +1200,8 @@ class HealthMonitor:
             
             # Collect a sample line per device for richer error messages
             disk_samples = {}
+            # Track if ALL errors for a device are transient patterns
+            disk_transient_only = {}
             
             if result.returncode == 0:
                 for line in result.stdout.split('\n'):
@@ -1181,6 +1216,9 @@ class HealthMonitor:
                         is_disk_error = True
                     
                     if is_disk_error:
+                        # Check if this specific line is a known transient pattern
+                        is_transient = any(p.search(line) for p in TRANSIENT_PATTERNS)
+                        
                         # Extract device from multiple formats
                         raw_device = None
                         for dev_re in [
@@ -1206,9 +1244,14 @@ class HealthMonitor:
                             
                             self.io_error_history[disk_name].append(current_time)
                             if disk_name not in disk_samples:
-                                # Clean the sample: strip dmesg timestamp prefix
                                 clean = re.sub(r'^\[.*?\]\s*', '', line.strip())
                                 disk_samples[disk_name] = clean[:200]
+                            
+                            # Track transient status: if ANY non-transient error is found, mark False
+                            if disk_name not in disk_transient_only:
+                                disk_transient_only[disk_name] = is_transient
+                            elif not is_transient:
+                                disk_transient_only[disk_name] = False
                 
                 # Clean old history and evaluate per-disk status
                 for disk in list(self.io_error_history.keys()):
@@ -1221,51 +1264,58 @@ class HealthMonitor:
                     error_key = f'disk_{disk}'
                     sample = disk_samples.get(disk, '')
                     display = f'/dev/{disk}' if not disk.startswith('/') else disk
+                    all_transient = disk_transient_only.get(disk, False)
                     
-                    if error_count >= 3:
-                        severity = 'CRITICAL'
-                        reason = f'{display}: {error_count} I/O errors in 5 min'
-                        if sample:
-                            reason += f'\n{sample}'
+                    if error_count >= 1:
+                        # Cross-reference with SMART to determine real severity
+                        smart_health = self._quick_smart_health(disk)
+                        smart_ok = smart_health == 'PASSED'
                         
-                        health_persistence.record_error(
-                            error_key=error_key,
-                            category='disks',
-                            severity=severity,
-                            reason=reason,
-                            details={'disk': disk, 'device': display,
-                                     'error_count': error_count,
-                                     'sample': sample, 'dismissable': False}
-                        )
-                        disk_results[display] = {
-                            'status': severity,
-                            'reason': reason,
-                            'device': disk,
-                            'error_count': error_count,
-                            'dismissable': False,
-                        }
-                    elif error_count >= 1:
-                        severity = 'WARNING'
-                        reason = f'{display}: {error_count} I/O error(s) in 5 min'
-                        if sample:
-                            reason += f'\n{sample}'
-                        
-                        rec_result = health_persistence.record_error(
-                            error_key=error_key,
-                            category='disks',
-                            severity=severity,
-                            reason=reason,
-                            details={'disk': disk, 'device': display,
-                                     'error_count': error_count,
-                                     'sample': sample, 'dismissable': True}
-                        )
-                        if not rec_result or rec_result.get('type') != 'skipped_acknowledged':
+                        if smart_ok:
+                            # SMART is healthy -> dmesg errors are informational only
+                            # The disk is fine; these are transient controller/bus events
+                            reason = f'{display}: {error_count} I/O event(s) in 5 min (SMART: OK)'
+                            if sample:
+                                reason += f'\n{sample}'
+                            
+                            # Resolve any previous error since SMART confirms disk is healthy
+                            health_persistence.resolve_error(error_key, 'SMART healthy, I/O events are transient')
+                            
+                            disk_results[display] = {
+                                'status': 'INFO',
+                                'reason': reason,
+                                'device': disk,
+                                'error_count': error_count,
+                                'smart_status': smart_health,
+                                'dismissable': False,
+                                'error_key': error_key,
+                            }
+                        else:
+                            # SMART is FAILED or UNKNOWN with I/O errors -> real problem
+                            severity = 'CRITICAL' if error_count >= 3 else 'WARNING'
+                            smart_note = f'SMART: {smart_health}' if smart_health != 'UNKNOWN' else 'SMART: check manually'
+                            reason = f'{display}: {error_count} I/O error(s) in 5 min ({smart_note})'
+                            if sample:
+                                reason += f'\n{sample}'
+                            
+                            health_persistence.record_error(
+                                error_key=error_key,
+                                category='disks',
+                                severity=severity,
+                                reason=reason,
+                                details={'disk': disk, 'device': display,
+                                         'error_count': error_count,
+                                         'smart_status': smart_health,
+                                         'sample': sample, 'dismissable': severity != 'CRITICAL'}
+                            )
                             disk_results[display] = {
                                 'status': severity,
                                 'reason': reason,
                                 'device': disk,
                                 'error_count': error_count,
-                                'dismissable': True,
+                                'smart_status': smart_health,
+                                'dismissable': severity != 'CRITICAL',
+                                'error_key': error_key,
                             }
                     else:
                         health_persistence.resolve_error(error_key, 'Disk errors cleared')
@@ -1273,11 +1323,20 @@ class HealthMonitor:
             if not disk_results:
                 return {'status': 'OK'}
             
-            has_critical = any(d.get('status') == 'CRITICAL' for d in disk_results.values())
+            # Overall status: only count WARNING+ (skip INFO)
+            active_results = {k: v for k, v in disk_results.items() if v.get('status') not in ('OK', 'INFO')}
+            if not active_results:
+                return {
+                    'status': 'OK',
+                    'reason': 'Transient ATA events only (SMART healthy)',
+                    'details': disk_results
+                }
+            
+            has_critical = any(d.get('status') == 'CRITICAL' for d in active_results.values())
             
             return {
                 'status': 'CRITICAL' if has_critical else 'WARNING',
-                'reason': f"{len(disk_results)} disk(s) with recent errors",
+                'reason': f"{len(active_results)} disk(s) with recent errors",
                 'details': disk_results
             }
         
