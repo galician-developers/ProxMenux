@@ -2340,6 +2340,8 @@ class HealthMonitor:
         try:
             apt_history_path = '/var/log/apt/history.log'
             last_update_days = None
+            sec_result = None
+            age_result = None
             
             if os.path.exists(apt_history_path):
                 try:
@@ -2422,13 +2424,16 @@ class HealthMonitor:
                     # 1+ year without updates - WARNING
                     status = 'WARNING'
                     reason = f'System not updated in {last_update_days} days (>1 year)'
-                    health_persistence.record_error(
+                    age_result = health_persistence.record_error(
                         error_key='system_age',
                         category='updates',
                         severity='WARNING',
                         reason=reason,
-                        details={'days': last_update_days, 'update_count': update_count}
+                        details={'days': last_update_days, 'update_count': update_count, 'dismissable': True}
                     )
+                    if age_result and age_result.get('type') == 'skipped_acknowledged':
+                        status = 'INFO'
+                        reason = None
                 elif kernel_pve_updates_packages:
                     # Informational: Kernel or critical PVE components need update
                     status = 'INFO'
@@ -2444,7 +2449,9 @@ class HealthMonitor:
                 reason = 'Failed to check for updates (apt-get error)'
 
             # Build checks dict for updates sub-items
-            update_age_status = 'CRITICAL' if (last_update_days and last_update_days >= 548) else ('WARNING' if (last_update_days and last_update_days >= 365) else 'OK')
+            age_dismissed = bool(age_result and age_result.get('type') == 'skipped_acknowledged')
+            update_age_status = 'CRITICAL' if (last_update_days and last_update_days >= 548) else (
+                'INFO' if age_dismissed else ('WARNING' if (last_update_days and last_update_days >= 365) else 'OK'))
             sec_dismissed = security_updates_packages and sec_result and sec_result.get('type') == 'skipped_acknowledged'
             sec_status = 'INFO' if sec_dismissed else ('WARNING' if security_updates_packages else 'OK')
             kernel_status = 'INFO' if kernel_pve_updates_packages else 'OK'
@@ -2461,6 +2468,7 @@ class HealthMonitor:
                     'status': update_age_status,
                     'detail': f'Last updated {last_update_days} day(s) ago' if last_update_days is not None else 'Unknown',
                     'dismissable': False if update_age_status == 'CRITICAL' else True if update_age_status == 'WARNING' else False,
+                    'dismissed': bool(age_dismissed),
                     'error_key': 'system_age'
                 },
                 'pending_updates': {
