@@ -1145,6 +1145,65 @@ class HealthMonitor:
         
         return ata_port  # Return original if resolution fails
     
+    def _identify_block_device(self, device: str) -> str:
+        """
+        Identify a block device by querying lsblk.
+        Returns a human-readable string like:
+          "KINGSTON SA400S37960G (SSD, 894.3G) mounted at /mnt/data"
+        Returns empty string if the device is not found in lsblk.
+        """
+        if not device or device == 'unknown':
+            return ''
+        try:
+            candidates = [device]
+            base = re.sub(r'\d+$', '', device) if not ('nvme' in device or 'mmcblk' in device) else device
+            if base != device:
+                candidates.append(base)
+            
+            for dev in candidates:
+                dev_path = f'/dev/{dev}' if not dev.startswith('/') else dev
+                result = subprocess.run(
+                    ['lsblk', '-ndo', 'NAME,MODEL,SIZE,TRAN,MOUNTPOINT,ROTA', dev_path],
+                    capture_output=True, text=True, timeout=3
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    fields = result.stdout.strip().split(None, 5)
+                    name = fields[0] if len(fields) > 0 else dev
+                    model = fields[1] if len(fields) > 1 and fields[1] else 'Unknown model'
+                    size = fields[2] if len(fields) > 2 else '?'
+                    tran = (fields[3] if len(fields) > 3 else '').upper()
+                    mountpoint = fields[4] if len(fields) > 4 and fields[4] else ''
+                    rota = fields[5].strip() if len(fields) > 5 else '1'
+                    
+                    if tran == 'USB':
+                        disk_type = 'USB'
+                    elif tran == 'NVME' or 'nvme' in name:
+                        disk_type = 'NVMe'
+                    elif rota == '0':
+                        disk_type = 'SSD'
+                    else:
+                        disk_type = 'HDD'
+                    
+                    info = f'{model} ({disk_type}, {size})'
+                    if mountpoint:
+                        info += f' mounted at {mountpoint}'
+                    elif dev != device:
+                        part_result = subprocess.run(
+                            ['lsblk', '-ndo', 'MOUNTPOINT', f'/dev/{device}'],
+                            capture_output=True, text=True, timeout=2
+                        )
+                        part_mount = part_result.stdout.strip() if part_result.returncode == 0 else ''
+                        if part_mount:
+                            info += f' partition {device} mounted at {part_mount}'
+                        else:
+                            info += ' -- not mounted'
+                    else:
+                        info += ' -- not mounted'
+                    return info
+            return ''
+        except Exception:
+            return ''
+    
     def _quick_smart_health(self, disk_name: str) -> str:
         """Quick SMART health check for a single disk. Returns 'PASSED', 'FAILED', or 'UNKNOWN'."""
         if not disk_name or disk_name.startswith('ata') or disk_name.startswith('zram'):
@@ -1320,6 +1379,35 @@ class HealthMonitor:
                     else:
                         health_persistence.resolve_error(error_key, 'Disk errors cleared')
             
+            # Also include active filesystem errors (detected by _check_system_logs
+            # and cross-referenced to the 'disks' category)
+            try:
+                fs_errors = health_persistence.get_active_errors(category='disks')
+                for err in fs_errors:
+                    err_key = err.get('error_key', '')
+                    if not err_key.startswith('disk_fs_'):
+                        continue  # Only filesystem cross-references
+                    details = err.get('details', {})
+                    if isinstance(details, str):
+                        try:
+                            import json as _json
+                            details = _json.loads(details)
+                        except Exception:
+                            details = {}
+                    device = details.get('device', err_key.replace('disk_fs_', '/dev/'))
+                    if device not in disk_results:
+                        disk_results[device] = {
+                            'status': err.get('severity', 'CRITICAL'),
+                            'reason': err.get('reason', 'Filesystem error'),
+                            'device': details.get('disk', ''),
+                            'error_count': 1,
+                            'error_type': 'filesystem',
+                            'dismissable': False,
+                            'error_key': err_key,
+                        }
+            except Exception:
+                pass
+            
             if not disk_results:
                 return {'status': 'OK'}
             
@@ -1336,7 +1424,7 @@ class HealthMonitor:
             
             return {
                 'status': 'CRITICAL' if has_critical else 'WARNING',
-                'reason': f"{len(active_results)} disk(s) with recent errors",
+                'reason': f"{len(active_results)} disk(s) with errors",
                 'details': disk_results
             }
         
@@ -2035,6 +2123,87 @@ class HealthMonitor:
                 return True
         return False
     
+    def _enrich_critical_log_reason(self, line: str) -> str:
+        """
+        Transform a raw kernel/system log line into a human-readable reason
+        for notifications and the health dashboard.
+        """
+        line_lower = line.lower()
+        
+        # EXT4/BTRFS/XFS/ZFS filesystem errors
+        if 'ext4-fs error' in line_lower or 'btrfs error' in line_lower or 'xfs' in line_lower and 'error' in line_lower:
+            fs_type = 'EXT4' if 'ext4' in line_lower else ('BTRFS' if 'btrfs' in line_lower else 'XFS')
+            dev_match = re.search(r'device\s+(\S+?)\)?:', line)
+            device = dev_match.group(1).rstrip(')') if dev_match else 'unknown'
+            func_match = re.search(r':\s+(\w+):\d+:', line)
+            func_name = func_match.group(1) if func_match else ''
+            inode_match = re.search(r'inode\s+#?(\d+)', line)
+            inode = inode_match.group(1) if inode_match else ''
+            
+            # Translate function name
+            func_translations = {
+                'ext4_find_entry': 'directory lookup failed (possible directory corruption)',
+                'ext4_lookup': 'file lookup failed (possible metadata corruption)',
+                'ext4_journal_start': 'journal transaction failed (journal corruption)',
+                'ext4_readdir': 'directory read failed (directory data corrupted)',
+                'ext4_get_inode_loc': 'inode location failed (inode table corruption)',
+                '__ext4_get_inode_loc': 'inode location failed (inode table corruption)',
+                'ext4_xattr_get': 'extended attributes read failed',
+                'ext4_iget': 'inode read failed (possible inode corruption)',
+                'ext4_mb_generate_buddy': 'block allocator error',
+                'ext4_validate_block_bitmap': 'block bitmap corrupted',
+                'ext4_validate_inode_bitmap': 'inode bitmap corrupted',
+                'htree_dirblock_to_tree': 'directory index tree corrupted',
+            }
+            
+            # Identify the device
+            device_info = self._identify_block_device(device)
+            
+            reason = f'{fs_type} filesystem error on /dev/{device}'
+            if device_info:
+                reason += f'\nDevice: {device_info}'
+            else:
+                reason += f'\nDevice: /dev/{device} (not currently detected -- may be a disconnected USB or temporary device)'
+            if func_name:
+                desc = func_translations.get(func_name, func_name)
+                reason += f'\nError: {desc}'
+            if inode:
+                inode_hint = 'root directory' if inode == '2' else f'inode #{inode}'
+                reason += f'\nAffected: {inode_hint}'
+            reason += f'\nAction: Run "fsck /dev/{device}" (unmount first)'
+            return reason
+        
+        # Out of memory
+        if 'out of memory' in line_lower or 'oom_kill' in line_lower:
+            m = re.search(r'Killed process\s+\d+\s+\(([^)]+)\)', line)
+            process = m.group(1) if m else 'unknown'
+            return f'Out of memory - system killed process "{process}" to free RAM'
+        
+        # Kernel panic
+        if 'kernel panic' in line_lower:
+            return 'Kernel panic - system halted. Reboot required.'
+        
+        # Segfault
+        if 'segfault' in line_lower:
+            m = re.search(r'(\S+)\[\d+\].*segfault', line)
+            process = m.group(1) if m else 'unknown'
+            return f'Process "{process}" crashed (segmentation fault)'
+        
+        # Hardware error
+        if 'hardware error' in line_lower or 'mce:' in line_lower:
+            return f'Hardware error detected (MCE) - check CPU/RAM health'
+        
+        # RAID failure
+        if 'raid' in line_lower and 'fail' in line_lower:
+            md_match = re.search(r'(md\d+)', line)
+            md_dev = md_match.group(1) if md_match else 'unknown'
+            return f'RAID array {md_dev} degraded or failed - check disk status'
+        
+        # Fallback: clean up the raw line
+        clean = re.sub(r'^\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+', '', line)
+        clean = re.sub(r'\[\d+\]:\s*', '', clean)
+        return clean[:150]
+    
     def _classify_log_severity(self, line: str) -> Optional[str]:
         """
         Classify log line severity intelligently.
@@ -2141,15 +2310,41 @@ class HealthMonitor:
                         
                         if pattern not in critical_errors_found:
                             critical_errors_found[pattern] = line
+                            # Build a human-readable reason from the raw log line
+                            enriched_reason = self._enrich_critical_log_reason(line)
                             # Record persistent error if it's not already active
                             if not health_persistence.is_error_active(error_key, category='logs'):
                                 health_persistence.record_error(
                                     error_key=error_key,
                                     category='logs',
                                     severity='CRITICAL',
-                                    reason=line[:100], # Truncate reason for brevity
-                                    details={'pattern': pattern, 'dismissable': True}
+                                    reason=enriched_reason,
+                                    details={'pattern': pattern, 'raw_line': line[:200], 'dismissable': True}
                                 )
+                            
+                            # Cross-reference: filesystem errors also belong in the disks category
+                            # so they appear in the Storage/Disks dashboard section
+                            fs_match = re.search(r'(?:ext4-fs|btrfs|xfs|zfs)\s+error.*?(?:device\s+(\S+?)\)?[:\s])', line, re.IGNORECASE)
+                            if fs_match:
+                                fs_device = fs_match.group(1).rstrip(')') if fs_match.group(1) else 'unknown'
+                                # Strip partition number to get base disk (sdb1 -> sdb)
+                                base_device = re.sub(r'\d+$', '', fs_device) if not ('nvme' in fs_device or 'mmcblk' in fs_device) else fs_device.rsplit('p', 1)[0] if 'p' in fs_device else fs_device
+                                disk_error_key = f'disk_fs_{fs_device}'
+                                if not health_persistence.is_error_active(disk_error_key, category='disks'):
+                                    health_persistence.record_error(
+                                        error_key=disk_error_key,
+                                        category='disks',
+                                        severity='CRITICAL',
+                                        reason=enriched_reason,
+                                        details={
+                                            'disk': base_device,
+                                            'device': f'/dev/{fs_device}',
+                                            'error_type': 'filesystem',
+                                            'error_count': 1,
+                                            'sample': line[:200],
+                                            'dismissable': False
+                                        }
+                                    )
                     
                     recent_patterns[pattern] += 1
                     
@@ -2241,9 +2436,13 @@ class HealthMonitor:
                 
                 if unique_critical_count > 0:
                     status = 'CRITICAL'
-                    # Get a representative critical error reason
-                    representative_error = next(iter(critical_errors_found.values()))
-                    reason = f'Critical error detected: {representative_error[:100]}'
+                    # Use enriched reason from the first critical error for the summary
+                    representative_line = next(iter(critical_errors_found.values()))
+                    enriched = self._enrich_critical_log_reason(representative_line)
+                    if unique_critical_count == 1:
+                        reason = enriched
+                    else:
+                        reason = f'{unique_critical_count} critical error(s):\n{enriched}'
                 elif cascade_count > 0:
                     status = 'WARNING'
                     samples = _get_samples(cascading_errors, 3)
@@ -2326,7 +2525,7 @@ class HealthMonitor:
                     },
                     'log_critical_errors': {
                         'status': _log_check_status('log_critical_errors', unique_critical_count > 0, 'CRITICAL'),
-                        'detail': f'{unique_critical_count} critical error(s) found' if unique_critical_count > 0 else 'No critical errors',
+                        'detail': reason if unique_critical_count > 0 else 'No critical errors',
                         'dismissable': False,
                         'error_key': 'log_critical_errors'
                     }

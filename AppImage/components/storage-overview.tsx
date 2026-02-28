@@ -39,6 +39,7 @@ interface DiskInfo {
     severity: string
     sample: string
     reason: string
+    error_type?: string  // 'io' | 'filesystem'
   }
 }
 
@@ -782,19 +783,23 @@ export function StorageOverview() {
                     </div>
                   </div>
 
-                  {disk.io_errors && disk.io_errors.count > 0 && (
+                    {disk.io_errors && disk.io_errors.count > 0 && (
                     <div className={`flex items-start gap-2 p-2 rounded text-xs ${
                       disk.io_errors.severity === 'CRITICAL'
                         ? 'bg-red-500/10 text-red-400 border border-red-500/20'
                         : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
                     }`}>
                       <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
-                      <span>{disk.io_errors.count} I/O error{disk.io_errors.count !== 1 ? 's' : ''} in 5 min</span>
+                      <span>
+                        {disk.io_errors.error_type === 'filesystem'
+                          ? `Filesystem corruption detected`
+                          : `${disk.io_errors.count} I/O error${disk.io_errors.count !== 1 ? 's' : ''} in 5 min`}
+                      </span>
                     </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    {disk.size_formatted && (
+                    )}
+                    
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      {disk.size_formatted && (
                       <div>
                         <p className="text-sm text-muted-foreground">Size</p>
                         <p className="font-medium">{disk.size_formatted}</p>
@@ -866,9 +871,20 @@ export function StorageOverview() {
                     }`}>
                       <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
                       <div>
-                        <span className="font-medium">{disk.io_errors.count} I/O error{disk.io_errors.count !== 1 ? 's' : ''} in 5 min</span>
-                        {disk.io_errors.sample && (
-                          <p className="mt-0.5 opacity-80 font-mono truncate max-w-md">{disk.io_errors.sample}</p>
+                        {disk.io_errors.error_type === 'filesystem' ? (
+                          <>
+                            <span className="font-medium">Filesystem corruption detected</span>
+                            {disk.io_errors.reason && (
+                              <p className="mt-0.5 opacity-90 whitespace-pre-line">{disk.io_errors.reason}</p>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-medium">{disk.io_errors.count} I/O error{disk.io_errors.count !== 1 ? 's' : ''} in 5 min</span>
+                            {disk.io_errors.sample && (
+                              <p className="mt-0.5 opacity-80 font-mono truncate max-w-md">{disk.io_errors.sample}</p>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>

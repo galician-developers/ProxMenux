@@ -554,6 +554,15 @@ class NotificationManager:
     
     def _dispatch_event(self, event: NotificationEvent):
         """Shared dispatch pipeline: cooldown -> rate limit -> render -> send."""
+        # Suppress VM/CT start/stop during active backups (second layer of defense).
+        # The primary filter is in TaskWatcher, but timing gaps can let events
+        # slip through. This catch-all filter checks at dispatch time.
+        _BACKUP_NOISE_TYPES = {'vm_start', 'vm_stop', 'vm_shutdown', 'vm_restart',
+                                'ct_start', 'ct_stop', 'ct_shutdown', 'ct_restart'}
+        if event.event_type in _BACKUP_NOISE_TYPES and event.severity != 'CRITICAL':
+            if self._is_backup_running():
+                return
+        
         # Check cooldown
         if not self._check_cooldown(event):
             return
@@ -627,6 +636,42 @@ class NotificationManager:
                 )
     
     # ─── Cooldown / Dedup ───────────────────────────────────────
+    
+    def _is_backup_running(self) -> bool:
+        """Quick check if any vzdump process is currently active.
+        
+        Reads /var/log/pve/tasks/active and also checks for vzdump processes.
+        """
+        import os
+        # Method 1: Check active tasks file
+        try:
+            with open('/var/log/pve/tasks/active', 'r') as f:
+                for line in f:
+                    if ':vzdump:' in line:
+                        parts = line.strip().split(':')
+                        if len(parts) >= 3:
+                            try:
+                                pid = int(parts[2])
+                                os.kill(pid, 0)
+                                return True
+                            except (ValueError, ProcessLookupError, PermissionError):
+                                pass
+        except (OSError, IOError):
+            pass
+        
+        # Method 2: Check for running vzdump processes directly
+        import subprocess
+        try:
+            result = subprocess.run(
+                ['pgrep', '-x', 'vzdump'],
+                capture_output=True, timeout=2
+            )
+            if result.returncode == 0:
+                return True
+        except Exception:
+            pass
+        
+        return False
     
     def _check_cooldown(self, event: NotificationEvent) -> bool:
         """Check if the event passes cooldown rules."""

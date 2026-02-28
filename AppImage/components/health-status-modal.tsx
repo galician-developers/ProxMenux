@@ -634,23 +634,23 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
                       <div className="mt-0.5 shrink-0 flex items-center gap-1.5 sm:gap-2">
                         <CatIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground" />
                       </div>
-                      <div className="flex-1 min-w-0 overflow-hidden">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2 mb-1">
-                          <div className="min-w-0">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <div className="min-w-0 flex-1">
                             <p className="font-medium text-xs sm:text-sm text-muted-foreground truncate">{catLabel}</p>
                             <p className="text-[10px] sm:text-xs text-muted-foreground/70 truncate">{item.reason}</p>
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0">
                             {isPermanent ? (
-                              <Badge variant="outline" className="text-[9px] sm:text-xs border-amber-500/50 text-amber-500/70 bg-transparent">
+                              <Badge variant="outline" className="text-[9px] sm:text-xs border-amber-500/50 text-amber-500/70 bg-transparent whitespace-nowrap">
                                 Permanent
                               </Badge>
                             ) : (
-                              <Badge variant="outline" className="text-[9px] sm:text-xs border-blue-500/50 text-blue-500/70 bg-transparent">
+                              <Badge variant="outline" className="text-[9px] sm:text-xs border-blue-500/50 text-blue-500/70 bg-transparent whitespace-nowrap">
                                 Dismissed
                               </Badge>
                             )}
-                            <Badge variant="outline" className={`text-[9px] sm:text-xs ${getOutlineBadgeStyle(item.severity)}`}>
+                            <Badge variant="outline" className={`text-[9px] sm:text-xs whitespace-nowrap ${getOutlineBadgeStyle(item.severity)}`}>
                               was {item.severity}
                             </Badge>
                           </div>

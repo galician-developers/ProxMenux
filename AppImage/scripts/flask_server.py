@@ -1199,6 +1199,7 @@ def get_storage_info():
                         'severity': severity,
                         'sample': sample,
                         'reason': err.get('reason', ''),
+                        'error_type': details.get('error_type', 'io'),
                     }
                     # Override health status if I/O errors are more severe
                     current_health = physical_disks[matched_disk].get('health', 'unknown').lower()
@@ -1206,6 +1207,9 @@ def get_storage_info():
                         physical_disks[matched_disk]['health'] = 'critical'
                     elif severity == 'WARNING' and current_health in ('healthy', 'unknown'):
                         physical_disks[matched_disk]['health'] = 'warning'
+                # If err_device doesn't match any physical disk, the error still
+                # lives in the health monitor (Disk I/O & System Logs sections).
+                # We don't create virtual disks -- Physical Disks shows real hardware only.
         except Exception:
             pass
         
