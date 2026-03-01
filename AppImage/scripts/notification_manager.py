@@ -699,6 +699,15 @@ class NotificationManager:
         if event.severity == 'CRITICAL' and cooldown_str is None:
             cooldown = 60
         
+        # Disk I/O and filesystem errors: 24h cooldown per fingerprint.
+        # Same as Proxmox's notification policy.  The JournalWatcher already
+        # gates these through SMART verification + its own 24h dedup, but
+        # this acts as defense-in-depth in case a disk event arrives from
+        # another source (PollingCollector, hooks, etc.).
+        _DISK_EVENTS = {'disk_io_error', 'storage_unavailable'}
+        if event.event_type in _DISK_EVENTS and cooldown_str is None:
+            cooldown = 86400  # 24 hours
+        
         # Backup/replication events: each execution is unique and should
         # always be delivered. A 10s cooldown prevents exact duplicates
         # (webhook + tasks) but allows repeated backup jobs to report.
