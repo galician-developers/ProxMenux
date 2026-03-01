@@ -1498,17 +1498,53 @@ class PollingCollector:
                     self._last_notified[error_key] = now
                 continue
             
+            # ── Freshness check for re-notifications ──
+            # Don't re-notify errors whose last_seen is stale (>2h old).
+            # If the health monitor stopped detecting the error, last_seen
+            # freezes.  Re-notifying with dated info is confusing.
+            _FRESHNESS_WINDOW = 7200  # 2 hours
+            last_seen_str = error.get('last_seen', '')
+            error_is_stale = False
+            if last_seen_str:
+                try:
+                    from datetime import datetime as _dt
+                    ls_epoch = _dt.fromisoformat(last_seen_str).timestamp()
+                    if now - ls_epoch > _FRESHNESS_WINDOW:
+                        error_is_stale = True
+                except (ValueError, TypeError):
+                    pass
+            
             # Determine if we should notify
             is_new = error_key not in self._known_errors
             last_sent = self._last_notified.get(error_key, 0)
             is_due = (now - last_sent) >= self.DIGEST_INTERVAL
             
-            if not is_new and not is_due:
-                continue
+            # For re-notifications (not new): skip if stale OR not due
+            if not is_new:
+                if error_is_stale or not is_due:
+                    continue
             
             # Map to our event type
             event_type = self._CATEGORY_TO_EVENT_TYPE.get(category, 'system_problem')
             entity, eid = self._ENTITY_MAP.get(category, ('node', ''))
+            
+            # ── SMART gate for disk errors ──
+            # If the health monitor recorded a disk error but SMART is NOT
+            # FAILED, skip the notification entirely.  Disk notifications
+            # should ONLY be sent when SMART confirms a real hardware failure.
+            # This prevents WARNING-level disk errors (SMART: unavailable)
+            # from being emitted as notifications at all.
+            if category in ('disks', 'smart', 'zfs'):
+                details = error.get('details', {})
+                if isinstance(details, str):
+                    try:
+                        details = json.loads(details)
+                    except (json.JSONDecodeError, TypeError):
+                        details = {}
+                smart_status = details.get('smart_status', '') if isinstance(details, dict) else ''
+                if smart_status != 'FAILED':
+                    # SMART is PASSED, UNKNOWN, or unavailable -- don't notify
+                    continue
             
             # Updates are always informational notifications except
             # system_age which can be WARNING (365+ days) or CRITICAL (548+ days).

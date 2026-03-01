@@ -1500,16 +1500,22 @@ class HealthMonitor:
                             if sample:
                                 reason += f'\n{sample}'
                             
-                            health_persistence.record_error(
-                                error_key=error_key,
-                                category='disks',
-                                severity=severity,
-                                reason=reason,
-                                details={'disk': disk, 'device': display,
-                                         'error_count': error_count,
-                                         'smart_status': smart_health,
-                                         'sample': sample, 'dismissable': True}
-                            )
+                            # Only record to persistence ONCE.  If the error is
+                            # already active, don't call record_error again --
+                            # that would keep updating last_seen and preventing
+                            # the freshness check from detecting it as stale.
+                            if not health_persistence.is_error_active(error_key, category='disks'):
+                                health_persistence.record_error(
+                                    error_key=error_key,
+                                    category='disks',
+                                    severity=severity,
+                                    reason=reason,
+                                    details={'disk': disk, 'device': display,
+                                             'error_count': error_count,
+                                             'smart_status': smart_health,
+                                             'sample': sample, 'dismissable': True}
+                                )
+                            
                             disk_results[display] = {
                                 'status': severity,
                                 'reason': reason,
