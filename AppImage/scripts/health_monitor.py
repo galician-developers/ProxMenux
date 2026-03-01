@@ -71,11 +71,12 @@ class HealthMonitor:
     LOG_CHECK_INTERVAL = 300
     
     # Updates Thresholds
-    UPDATES_WARNING = 365  # Only warn after 1 year without updates
-    UPDATES_CRITICAL = 730  # Critical after 2 years
+    UPDATES_WARNING = 365   # Only warn after 1 year without updates (system_age)
+    UPDATES_CRITICAL = 548  # Critical after 18 months without updates
+    SECURITY_WARN_DAYS = 360  # Security updates only become WARNING after 360 days unpatched
     
     BENIGN_ERROR_PATTERNS = [
-        # Proxmox specific benign patterns
+        # ── Proxmox API / proxy operational noise ──
         r'got inotify poll request in wrong process',
         r'auth key pair too old, rotating',
         r'proxy detected vanished client connection',
@@ -84,33 +85,62 @@ class HealthMonitor:
         r'disconnect peer',
         r'task OK',
         r'backup finished',
+        # PVE ticket / auth transient errors (web UI session expiry, API token
+        # refresh, brute-force bots). These are logged at WARNING/ERR level
+        # but are NOT system problems -- they are access-control events.
+        r'invalid PVE ticket',
+        r'authentication failure.*pve',
+        r'permission denied.*ticket',
+        r'no ticket',
+        r'CSRF.*failed',
+        r'pveproxy\[\d+\]: authentication failure',
+        r'pvedaemon\[\d+\]: authentication failure',
+        # PVE cluster/corosync normal chatter
+        r'corosync.*retransmit',
+        r'corosync.*delivering',
+        r'pmxcfs.*update',
+        r'pve-cluster\[\d+\]:.*status',
         
-        # Systemd informational messages
+        # ── Systemd informational messages ──
         r'(started|starting|stopped|stopping) session',
         r'session \d+ logged (in|out)',
         r'new session \d+ of user',
         r'removed session \d+',
         r'user@\d+\.service:',
         r'user runtime directory',
+        # Systemd service restarts (normal lifecycle)
+        r'systemd\[\d+\]: .+\.service: (Scheduled restart|Consumed)',
+        r'systemd\[\d+\]: .+\.service: Deactivated successfully',
         
-        # Network transient errors (common and usually self-recovering)
+        # ── Network transient errors (common and usually self-recovering) ──
         r'dhcp.*timeout',
         r'temporary failure in name resolution',
         r'network is unreachable',
         r'no route to host',
         
-        # Backup and sync normal warnings
+        # ── Backup and sync normal warnings ──
         r'rsync.*vanished',
         r'backup job .* finished',
         r'vzdump backup .* finished',
         
-        # ZFS informational
+        # ── ZFS informational ──
         r'zfs.*scrub (started|finished|in progress)',
         r'zpool.*resilver',
         
-        # LXC/Container normal operations
+        # ── LXC/Container normal operations ──
         r'lxc.*monitor',
         r'systemd\[1\]: (started|stopped) .*\.scope',
+        
+        # ── ATA/SCSI transient bus errors ──
+        # These are logged at ERR level but are common on SATA controllers
+        # during hot-plug, link renegotiation, or cable noise. They are NOT
+        # indicative of disk failure unless SMART also reports problems.
+        r'ata\d+.*SError.*BadCRC',
+        r'ata\d+.*Emask 0x10.*ATA bus error',
+        r'failed command: (READ|WRITE) FPDMA QUEUED',
+        r'ata\d+.*hard resetting link',
+        r'ata\d+.*link is slow',
+        r'ata\d+.*COMRESET',
     ]
     
     CRITICAL_LOG_KEYWORDS = [
@@ -120,14 +150,23 @@ class HealthMonitor:
         'ext4-fs error', 'xfs.*corruption',
         'lvm activation failed',
         'hardware error', 'mce:',
-        'segfault', 'general protection fault'
+        'general protection fault',
     ]
+    
+    # Segfault is WARNING, not CRITICAL -- only PVE-critical process
+    # segfaults are escalated to CRITICAL in _classify_log_severity.
+    PVE_CRITICAL_PROCESSES = {
+        'pveproxy', 'pvedaemon', 'pvestatd', 'pve-cluster',
+        'corosync', 'qemu-system', 'lxc-start', 'ceph-osd',
+        'ceph-mon', 'pmxcfs', 'kvm',
+    }
     
     WARNING_LOG_KEYWORDS = [
         'i/o error', 'ata error', 'scsi error',
         'task hung', 'blocked for more than',
         'failed to start', 'service.*failed',
-        'disk.*offline', 'disk.*removed'
+        'disk.*offline', 'disk.*removed',
+        'segfault',  # WARNING by default; escalated to CRITICAL only for PVE processes
     ]
     
     # PVE Critical Services
@@ -1483,7 +1522,7 @@ class HealthMonitor:
                     else:
                         health_persistence.resolve_error(error_key, 'Disk errors cleared')
             
-            # Also include active filesystem errors (detected by _check_system_logs
+            # Also include active filesystem errors (detected by _check_log_analysis
             # and cross-referenced to the 'disks' category)
             try:
                 fs_errors = health_persistence.get_active_errors(category='disks')
@@ -1491,6 +1530,11 @@ class HealthMonitor:
                     err_key = err.get('error_key', '')
                     if not err_key.startswith('disk_fs_'):
                         continue  # Only filesystem cross-references
+                    
+                    # Skip acknowledged/dismissed errors
+                    if err.get('acknowledged') == 1:
+                        continue
+                    
                     details = err.get('details', {})
                     if isinstance(details, str):
                         try:
@@ -1498,15 +1542,34 @@ class HealthMonitor:
                             details = _json.loads(details)
                         except Exception:
                             details = {}
+                    
                     device = details.get('device', err_key.replace('disk_fs_', '/dev/'))
+                    base_disk = details.get('disk', '')
+                    
+                    # Check if the device still exists.  If not, auto-resolve
+                    # the error -- it was likely a disconnected USB/temp device.
+                    dev_path = f'/dev/{base_disk}' if base_disk else device
+                    if not os.path.exists(dev_path):
+                        health_persistence.resolve_error(
+                            err_key, 'Device no longer present in system')
+                        continue
+                    
+                    # Cross-reference with SMART: if SMART is healthy for
+                    # this disk, downgrade to INFO (transient fs error).
+                    severity = err.get('severity', 'WARNING')
+                    if base_disk:
+                        smart_health = self._quick_smart_health(base_disk)
+                        if smart_health == 'PASSED' and severity == 'CRITICAL':
+                            severity = 'WARNING'
+                    
                     if device not in disk_results:
                         disk_results[device] = {
-                            'status': err.get('severity', 'CRITICAL'),
+                            'status': severity,
                             'reason': err.get('reason', 'Filesystem error'),
-                            'device': details.get('disk', ''),
+                            'device': base_disk,
                             'error_count': 1,
                             'error_type': 'filesystem',
-                            'dismissable': False,
+                            'dismissable': True,
                             'error_key': err_key,
                         }
             except Exception:
@@ -2303,6 +2366,9 @@ class HealthMonitor:
         if 'segfault' in line_lower:
             m = re.search(r'(\S+)\[\d+\].*segfault', line)
             process = m.group(1) if m else 'unknown'
+            is_critical_proc = any(p in process.lower() for p in self.PVE_CRITICAL_PROCESSES)
+            if is_critical_proc:
+                return f'Critical process "{process}" crashed (segmentation fault) -- PVE service affected'
             return f'Process "{process}" crashed (segmentation fault)'
         
         # Hardware error
@@ -2324,31 +2390,43 @@ class HealthMonitor:
         """
         Classify log line severity intelligently.
         Returns: 'CRITICAL', 'WARNING', or None (benign/info)
+        
+        Design principles:
+        - CRITICAL must be reserved for events that require IMMEDIATE action
+          (data loss risk, service outage, hardware failure confirmed by SMART).
+        - WARNING is for events worth investigating but not urgent.
+        - Everything else is None (benign/informational).
         """
         line_lower = line.lower()
         
-        # Check if benign first
+        # Check if benign first -- fast path for known noise
         if self._is_benign_error(line):
             return None
         
-        # Check critical keywords
+        # Check critical keywords (hard failures: OOM, panic, FS corruption, etc.)
         for keyword in self.CRITICAL_LOG_KEYWORDS:
             if re.search(keyword, line_lower):
                 return 'CRITICAL'
         
-        # Check warning keywords
+        # Check warning keywords (includes segfault, I/O errors, etc.)
         for keyword in self.WARNING_LOG_KEYWORDS:
             if re.search(keyword, line_lower):
+                # Special case: segfault of a PVE-critical process is CRITICAL
+                if 'segfault' in line_lower:
+                    for proc in self.PVE_CRITICAL_PROCESSES:
+                        if proc in line_lower:
+                            return 'CRITICAL'
                 return 'WARNING'
         
-        # Generic error/warning classification based on common terms
-        if 'critical' in line_lower or 'fatal' in line_lower or 'panic' in line_lower:
+        # Generic classification -- very conservative to avoid false positives.
+        # Only escalate if the line explicitly uses severity-level keywords
+        # from the kernel or systemd (not just any line containing "error").
+        if 'kernel panic' in line_lower or 'fatal' in line_lower and 'non-fatal' not in line_lower:
             return 'CRITICAL'
-        elif 'error' in line_lower or 'fail' in line_lower:
-            return 'WARNING'
-        elif 'warning' in line_lower or 'warn' in line_lower:
-            return None  # Generic warnings are often informational and not critical
         
+        # Lines from priority "err" that don't match any keyword above are
+        # likely informational noise (e.g. "error response from daemon").
+        # Return None to avoid flooding the dashboard with non-actionable items.
         return None
 
     def _check_logs_with_persistence(self) -> Dict[str, Any]:
@@ -2424,18 +2502,61 @@ class HealthMonitor:
                         pattern_hash = hashlib.md5(pattern.encode()).hexdigest()[:8]
                         error_key = f'log_critical_{pattern_hash}'
                         
+                        # ── SMART cross-reference for disk/FS errors ──
+                        # Filesystem and disk errors are only truly CRITICAL if
+                        # the underlying disk is actually failing.  We check:
+                        #  1. Device exists? No -> WARNING (disconnected USB, etc.)
+                        #  2. SMART PASSED? -> WARNING (transient error, not disk failure)
+                        #  3. SMART FAILED? -> CRITICAL (confirmed hardware problem)
+                        #  4. SMART UNKNOWN? -> WARNING (can't confirm, err on side of caution)
+                        fs_dev_match = re.search(
+                            r'(?:ext4-fs|btrfs|xfs|zfs)\s+error.*?device\s+(\S+?)\)?[:\s]',
+                            line, re.IGNORECASE
+                        )
+                        smart_status_for_log = None
+                        if fs_dev_match:
+                            fs_dev = fs_dev_match.group(1).rstrip(')')
+                            base_dev = re.sub(r'\d+$', '', fs_dev)
+                            if not os.path.exists(f'/dev/{base_dev}'):
+                                # Device not present -- almost certainly a disconnected drive
+                                severity = 'WARNING'
+                                smart_status_for_log = 'DEVICE_ABSENT'
+                            elif self.capabilities.get('has_smart'):
+                                smart_health = self._quick_smart_health(base_dev)
+                                smart_status_for_log = smart_health
+                                if smart_health == 'PASSED':
+                                    # SMART says disk is healthy -- transient FS error
+                                    severity = 'WARNING'
+                                elif smart_health == 'UNKNOWN':
+                                    # Can't verify -- be conservative, don't alarm
+                                    severity = 'WARNING'
+                                # smart_health == 'FAILED' -> keep CRITICAL
+                        
                         if pattern not in critical_errors_found:
-                            critical_errors_found[pattern] = line
+                            # Only count as "critical" if severity wasn't downgraded
+                            if severity == 'CRITICAL':
+                                critical_errors_found[pattern] = line
                             # Build a human-readable reason from the raw log line
                             enriched_reason = self._enrich_critical_log_reason(line)
+                            
+                            # Append SMART context to the reason if we checked it
+                            if smart_status_for_log == 'PASSED':
+                                enriched_reason += '\nSMART: Passed (disk is healthy -- error is likely transient)'
+                            elif smart_status_for_log == 'FAILED':
+                                enriched_reason += '\nSMART: FAILED -- disk is failing, replace immediately'
+                            elif smart_status_for_log == 'DEVICE_ABSENT':
+                                enriched_reason += '\nDevice not currently detected -- may be a disconnected USB or temporary device'
+                            
                             # Record persistent error if it's not already active
                             if not health_persistence.is_error_active(error_key, category='logs'):
                                 health_persistence.record_error(
                                     error_key=error_key,
                                     category='logs',
-                                    severity='CRITICAL',
+                                    severity=severity,
                                     reason=enriched_reason,
-                                    details={'pattern': pattern, 'raw_line': line[:200], 'dismissable': True}
+                                    details={'pattern': pattern, 'raw_line': line[:200],
+                                             'smart_status': smart_status_for_log,
+                                             'dismissable': True}
                                 )
                             
                             # Cross-reference: filesystem errors also belong in the disks category
@@ -2446,11 +2567,23 @@ class HealthMonitor:
                                 # Strip partition number to get base disk (sdb1 -> sdb)
                                 base_device = re.sub(r'\d+$', '', fs_device) if not ('nvme' in fs_device or 'mmcblk' in fs_device) else fs_device.rsplit('p', 1)[0] if 'p' in fs_device else fs_device
                                 disk_error_key = f'disk_fs_{fs_device}'
+                                
+                                # Use the SMART-aware severity we already determined above
+                                device_exists = os.path.exists(f'/dev/{base_device}')
+                                if not device_exists:
+                                    fs_severity = 'WARNING'
+                                elif smart_status_for_log == 'PASSED':
+                                    fs_severity = 'WARNING'  # SMART healthy -> transient
+                                elif smart_status_for_log == 'FAILED':
+                                    fs_severity = 'CRITICAL'  # SMART failing -> real problem
+                                else:
+                                    fs_severity = 'WARNING'  # Can't confirm -> conservative
+                                
                                 if not health_persistence.is_error_active(disk_error_key, category='disks'):
                                     health_persistence.record_error(
                                         error_key=disk_error_key,
                                         category='disks',
-                                        severity='CRITICAL',
+                                        severity=fs_severity,
                                         reason=enriched_reason,
                                         details={
                                             'disk': base_device,
@@ -2458,7 +2591,9 @@ class HealthMonitor:
                                             'error_type': 'filesystem',
                                             'error_count': 1,
                                             'sample': line[:200],
-                                            'dismissable': False
+                                            'smart_status': smart_status_for_log,
+                                            'dismissable': True,
+                                            'device_exists': device_exists,
                                         }
                                     )
                     
@@ -2529,11 +2664,17 @@ class HealthMonitor:
                             # Use the original sample line for the notification,
                             # not the normalized pattern (which has IDs replaced).
                             sample = data.get('sample', pattern)
+                            # Strip journal timestamp prefix so the stored reason
+                            # doesn't contain dated information that confuses
+                            # re-notifications.
+                            clean_sample = re.sub(
+                                r'^[A-Z][a-z]{2}\s+\d+\s+[\d:]+\s+\S+\s+', '', sample
+                            )
                             health_persistence.record_error(
                                 error_key=error_key,
                                 category='logs',
                                 severity='WARNING',
-                                reason=f'Recurring error ({data["count"]}x): {sample[:150]}',
+                                reason=f'Recurring error ({data["count"]}x): {clean_sample[:150]}',
                                 details={'pattern': pattern, 'sample': sample,
                                          'dismissable': True, 'occurrences': data['count']}
                             )
@@ -2707,12 +2848,31 @@ class HealthMonitor:
         
         return pattern[:150]  # Keep first 150 characters to avoid overly long patterns
     
+    # Regex to parse Inst lines: Inst <pkg> [<cur>] (<new> <repo> [<arch>])
+    _RE_INST = re.compile(r'^Inst\s+(\S+)\s+\[([^\]]+)\]\s+\((\S+)\s+')
+    _RE_INST_NEW = re.compile(r'^Inst\s+(\S+)\s+\((\S+)\s+')
+    
+    _PVE_PREFIXES = (
+        'pve-', 'proxmox-', 'qemu-server', 'lxc-pve', 'ceph',
+        'corosync', 'libpve', 'pbs-', 'pmg-',
+    )
+    _KERNEL_PREFIXES = ('linux-image', 'pve-kernel', 'pve-firmware')
+    _IMPORTANT_PKGS = {
+        'pve-manager', 'proxmox-ve', 'qemu-server', 'pve-container',
+        'pve-ha-manager', 'pve-firewall', 'ceph-common',
+        'proxmox-backup-client',
+    }
+    
     def _check_updates(self) -> Optional[Dict[str, Any]]:
         """
         Check for pending system updates.
-        - WARNING: Security updates available, or system not updated >1 year (365 days).
+        - INFO: Any updates available (including security updates).
+        - WARNING: Security updates pending 360+ days unpatched, or system not updated >1 year (365 days).
         - CRITICAL: System not updated >18 months (548 days).
-        - INFO: Kernel/PVE updates available, or >50 non-security updates pending.
+        
+        Updates are always informational unless they represent a prolonged
+        unpatched state.  Detects PVE version upgrades from pve-manager
+        Inst lines and exposes them as an INFO sub-check.
         """
         cache_key = 'updates_check'
         current_time = time.time()
@@ -2734,150 +2894,214 @@ class HealthMonitor:
                     days_since_update = (current_time - mtime) / 86400
                     last_update_days = int(days_since_update)
                 except Exception:
-                    pass # Ignore if mtime fails
+                    pass
             
             # Perform a dry run of apt-get upgrade to see pending packages
             try:
                 result = subprocess.run(
                     ['apt-get', 'upgrade', '--dry-run'],
-                    capture_output=True,
-                    text=True,
-                    timeout=10
+                    capture_output=True, text=True, timeout=30
                 )
             except subprocess.TimeoutExpired:
                 print("[HealthMonitor] apt-get upgrade --dry-run timed out")
                 return {
                     'status': 'UNKNOWN',
                     'reason': 'apt-get timed out - repository may be unreachable',
-                    'count': 0,
-                    'checks': {}
+                    'count': 0, 'checks': {}
                 }
             
             status = 'OK'
             reason = None
             update_count = 0
-            security_updates_packages = []
-            kernel_pve_updates_packages = []
+            security_pkgs: list = []
+            kernel_pkgs: list = []
+            pve_pkgs: list = []
+            important_pkgs: list = []   # {name, cur, new}
+            pve_manager_info = None     # {cur, new} or None
             sec_result = None
+            sec_severity = 'INFO'
+            sec_days_unpatched = 0
             
             if result.returncode == 0:
-                lines = result.stdout.strip().split('\n')
+                for line in result.stdout.strip().split('\n'):
+                    if not line.startswith('Inst '):
+                        continue
+                    update_count += 1
+                    
+                    # Parse package name, current and new versions
+                    m = self._RE_INST.match(line)
+                    if m:
+                        pkg_name, cur_ver, new_ver = m.group(1), m.group(2), m.group(3)
+                    else:
+                        m2 = self._RE_INST_NEW.match(line)
+                        if m2:
+                            pkg_name, cur_ver, new_ver = m2.group(1), '', m2.group(2)
+                        else:
+                            parts = line.split()
+                            pkg_name = parts[1] if len(parts) > 1 else 'unknown'
+                            cur_ver, new_ver = '', ''
+                    
+                    # Strip arch suffix (e.g. package:amd64)
+                    pkg_name = pkg_name.split(':')[0]
+                    name_lower = pkg_name.lower()
+                    line_lower = line.lower()
+                    
+                    # Categorise
+                    if 'security' in line_lower or 'debian-security' in line_lower:
+                        security_pkgs.append(pkg_name)
+                    
+                    if any(name_lower.startswith(p) for p in self._KERNEL_PREFIXES):
+                        kernel_pkgs.append(pkg_name)
+                    elif any(name_lower.startswith(p) for p in self._PVE_PREFIXES):
+                        pve_pkgs.append(pkg_name)
+                    
+                    # Collect important packages with version info
+                    if pkg_name in self._IMPORTANT_PKGS and cur_ver:
+                        important_pkgs.append({
+                            'name': pkg_name, 'cur': cur_ver, 'new': new_ver
+                        })
+                    
+                    # Detect pve-manager upgrade -> PVE version upgrade
+                    if pkg_name == 'pve-manager' and cur_ver and new_ver:
+                        pve_manager_info = {'cur': cur_ver, 'new': new_ver}
                 
-                for line in lines:
-                    # 'Inst ' indicates a package will be installed/upgraded
-                    if line.startswith('Inst '):
-                        update_count += 1
-                        line_lower = line.lower()
-                        package_name = line.split()[1].split(':')[0] # Get package name, strip arch if present
-                        
-                        # Check for security updates (common pattern in repo names)
-                        if 'security' in line_lower or 'debian-security' in line_lower:
-                            security_updates_packages.append(package_name)
-                        
-                        # Check for kernel or critical PVE updates
-                        if any(pkg in line_lower for pkg in ['linux-image', 'pve-kernel', 'pve-manager', 'proxmox-ve', 'qemu-server', 'pve-api-core']):
-                            kernel_pve_updates_packages.append(package_name)
-                
-                # Determine overall status based on findings
-                if security_updates_packages:
-                    status = 'WARNING'
-                    reason = f'{len(security_updates_packages)} security update(s) available'
-                    # Record persistent error for security updates to ensure it's visible
+                # ── Determine overall status ──────────────────────
+                if security_pkgs:
+                    sec_days_unpatched = 0
+                    try:
+                        existing = health_persistence.get_error_by_key('security_updates')
+                        if existing and existing.get('first_seen'):
+                            from datetime import datetime
+                            first_dt = datetime.fromisoformat(existing['first_seen'])
+                            sec_days_unpatched = (datetime.now() - first_dt).days
+                    except Exception:
+                        pass
+                    
+                    if sec_days_unpatched >= self.SECURITY_WARN_DAYS:
+                        status = 'WARNING'
+                        reason = f'{len(security_pkgs)} security update(s) pending for {sec_days_unpatched} days'
+                        sec_severity = 'WARNING'
+                    else:
+                        status = 'INFO'
+                        reason = f'{len(security_pkgs)} security update(s) pending'
+                        sec_severity = 'INFO'
+                    
                     sec_result = health_persistence.record_error(
                         error_key='security_updates',
                         category='updates',
-                        severity='WARNING',
+                        severity=sec_severity,
                         reason=reason,
-                        details={'count': len(security_updates_packages), 'packages': security_updates_packages[:5], 'dismissable': True}
+                        details={'count': len(security_pkgs), 'packages': security_pkgs[:5],
+                                 'dismissable': sec_severity == 'WARNING',
+                                 'days_unpatched': sec_days_unpatched}
                     )
-                    # If previously dismissed, downgrade to INFO
                     if sec_result and sec_result.get('type') == 'skipped_acknowledged':
                         status = 'INFO'
                         reason = None
+                
                 elif last_update_days and last_update_days >= 548:
-                    # 18+ months without updates - CRITICAL
                     status = 'CRITICAL'
                     reason = f'System not updated in {last_update_days} days (>18 months)'
                     health_persistence.record_error(
-                        error_key='system_age',
-                        category='updates',
-                        severity='CRITICAL',
-                        reason=reason,
+                        error_key='system_age', category='updates',
+                        severity='CRITICAL', reason=reason,
                         details={'days': last_update_days, 'update_count': update_count, 'dismissable': False}
                     )
                 elif last_update_days and last_update_days >= 365:
-                    # 1+ year without updates - WARNING
                     status = 'WARNING'
                     reason = f'System not updated in {last_update_days} days (>1 year)'
                     age_result = health_persistence.record_error(
-                        error_key='system_age',
-                        category='updates',
-                        severity='WARNING',
-                        reason=reason,
+                        error_key='system_age', category='updates',
+                        severity='WARNING', reason=reason,
                         details={'days': last_update_days, 'update_count': update_count, 'dismissable': True}
                     )
                     if age_result and age_result.get('type') == 'skipped_acknowledged':
                         status = 'INFO'
                         reason = None
-                elif kernel_pve_updates_packages:
-                    # Informational: Kernel or critical PVE components need update
+                elif kernel_pkgs or pve_pkgs:
                     status = 'INFO'
-                    reason = f'{len(kernel_pve_updates_packages)} kernel/PVE update(s) available'
-                elif update_count > 50:
-                    # Informational: Large number of pending updates
+                    reason = f'{len(kernel_pkgs)} kernel + {len(pve_pkgs)} Proxmox update(s) available'
+                elif update_count > 0:
                     status = 'INFO'
-                    reason = f'{update_count} updates pending (consider maintenance window)'
+                    reason = f'{update_count} package update(s) pending'
             
-            # If apt-get upgrade --dry-run failed
             elif result.returncode != 0:
                 status = 'WARNING'
                 reason = 'Failed to check for updates (apt-get error)'
 
-            # Build checks dict for updates sub-items
+            # ── Build checks dict ─────────────────────────────────
             age_dismissed = bool(age_result and age_result.get('type') == 'skipped_acknowledged')
             update_age_status = 'CRITICAL' if (last_update_days and last_update_days >= 548) else (
                 'INFO' if age_dismissed else ('WARNING' if (last_update_days and last_update_days >= 365) else 'OK'))
-            sec_dismissed = security_updates_packages and sec_result and sec_result.get('type') == 'skipped_acknowledged'
-            sec_status = 'INFO' if sec_dismissed else ('WARNING' if security_updates_packages else 'OK')
-            kernel_status = 'INFO' if kernel_pve_updates_packages else 'OK'
+            
+            sec_dismissed = security_pkgs and sec_result and sec_result.get('type') == 'skipped_acknowledged'
+            if sec_dismissed:
+                sec_status = 'INFO'
+            elif security_pkgs:
+                sec_status = sec_severity
+            else:
+                sec_status = 'OK'
+            
+            sec_detail = f'{len(security_pkgs)} security update(s) pending'
+            if security_pkgs and sec_days_unpatched >= self.SECURITY_WARN_DAYS:
+                sec_detail += f' ({sec_days_unpatched} days unpatched)'
             
             checks = {
+                'kernel_pve': {
+                    'status': 'INFO' if kernel_pkgs else 'OK',
+                    'detail': f'{len(kernel_pkgs)} kernel/PVE update(s)' if kernel_pkgs else 'Kernel/PVE up to date',
+                    'error_key': 'kernel_pve'
+                },
+                'pending_updates': {
+                    'status': 'INFO' if update_count > 0 else 'OK',
+                    'detail': f'{update_count} package(s) pending',
+                    'error_key': 'pending_updates'
+                },
                 'security_updates': {
                     'status': sec_status,
-                    'detail': f'{len(security_updates_packages)} security update(s) pending' if security_updates_packages else 'No security updates pending',
-                    'dismissable': True if security_updates_packages and not sec_dismissed else False,
+                    'detail': sec_detail if security_pkgs else 'No security updates pending',
+                    'dismissable': sec_status == 'WARNING' and not sec_dismissed,
                     'dismissed': bool(sec_dismissed),
                     'error_key': 'security_updates'
                 },
                 'system_age': {
                     'status': update_age_status,
                     'detail': f'Last updated {last_update_days} day(s) ago' if last_update_days is not None else 'Unknown',
-                    'dismissable': False if update_age_status == 'CRITICAL' else True if update_age_status == 'WARNING' else False,
+                    'dismissable': update_age_status == 'WARNING' and not age_dismissed,
                     'dismissed': bool(age_dismissed),
                     'error_key': 'system_age'
                 },
-                'pending_updates': {
-                    'status': 'INFO' if update_count > 50 else 'OK',
-                    'detail': f'{update_count} package(s) pending',
-                    'error_key': 'pending_updates'
-                },
-                'kernel_pve': {
-                    'status': kernel_status,
-                    'detail': f'{len(kernel_pve_updates_packages)} kernel/PVE update(s)' if kernel_pve_updates_packages else 'Kernel/PVE up to date',
-                    'error_key': 'kernel_pve'
-                }
             }
+            
+            # PVE version sub-check (always INFO)
+            if pve_manager_info:
+                checks['pve_version'] = {
+                    'status': 'INFO',
+                    'detail': f"PVE {pve_manager_info['cur']} -> {pve_manager_info['new']} available",
+                    'error_key': 'pve_version'
+                }
+            else:
+                checks['pve_version'] = {
+                    'status': 'OK',
+                    'detail': 'Proxmox VE is up to date',
+                    'error_key': 'pve_version'
+                }
             
             # Construct result dictionary
             update_result = {
                 'status': status,
                 'count': update_count,
-                'checks': checks
+                'checks': checks,
             }
             if reason:
                 update_result['reason'] = reason
             if last_update_days is not None:
                 update_result['days_since_update'] = last_update_days
+            # Attach categorised counts for the frontend
+            update_result['security_count'] = len(security_pkgs)
+            update_result['pve_count'] = len(pve_pkgs)
+            update_result['kernel_count'] = len(kernel_pkgs)
+            update_result['important_packages'] = important_pkgs[:8]
             
             self.cached_results[cache_key] = update_result
             self.last_check_times[cache_key] = current_time

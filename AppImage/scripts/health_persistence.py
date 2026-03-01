@@ -548,6 +548,33 @@ class HealthPersistence:
         
         return errors
     
+    def get_error_by_key(self, error_key: str) -> Optional[Dict[str, Any]]:
+        """Get a single error record by its unique error_key.
+        
+        Returns the full row as a dict (including first_seen, last_seen,
+        acknowledged, etc.) or None if not found / already resolved.
+        Only returns unresolved (active) errors.
+        """
+        conn = self._get_conn()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT * FROM errors
+            WHERE error_key = ? AND resolved_at IS NULL
+            LIMIT 1
+        ''', (error_key,))
+        row = cursor.fetchone()
+        conn.close()
+        if row is None:
+            return None
+        error_dict = dict(row)
+        if error_dict.get('details'):
+            try:
+                error_dict['details'] = json.loads(error_dict['details'])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return error_dict
+    
     def cleanup_old_errors(self):
         """Clean up old resolved errors and auto-resolve stale errors"""
         with self._db_lock:

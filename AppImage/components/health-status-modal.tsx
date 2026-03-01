@@ -383,6 +383,7 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
       log_persistent_errors: "Persistent Errors",
       log_critical_errors: "Critical Errors",
       // Updates
+      pve_version: "Proxmox VE Version",
       security_updates: "Security Updates",
       system_age: "System Age",
       pending_updates: "Pending Updates",

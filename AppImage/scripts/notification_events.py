@@ -337,6 +337,16 @@ class JournalWatcher:
                     entity = 'disk'
                     entity_id = f'fs_{device}'
                     
+                    # Check if the device physically exists to calibrate severity.
+                    # A disconnected USB / temp device should NOT be CRITICAL.
+                    import os as _os
+                    base_dev = re.sub(r'\d+$', '', device) if device != 'unknown' else ''
+                    device_exists = base_dev and _os.path.exists(f'/dev/{base_dev}')
+                    
+                    if not device_exists and device != 'unknown':
+                        # Device not present -- downgrade to WARNING
+                        severity = 'WARNING'
+                    
                     # Identify what this device is (model, type, mountpoint)
                     device_info = self._identify_block_device(device)
                     
@@ -357,7 +367,10 @@ class JournalWatcher:
                     if inode:
                         inode_hint = 'root directory' if inode == '2' else f'inode #{inode}'
                         parts.append(f'Affected: {inode_hint}')
-                    parts.append(f'Action: Run "fsck /dev/{device}" (unmount first) or check backup integrity')
+                    if device_exists:
+                        parts.append(f'Action: Run "fsck /dev/{device}" (unmount first) or check backup integrity')
+                    else:
+                        parts.append('Note: Device not currently connected -- this may be a stale journal entry')
                     enriched = '\n'.join(parts)
                 
                 else:
@@ -1325,7 +1338,7 @@ class PollingCollector:
         'network': 'network_down',
         'pve_services': 'service_fail',
         'security': 'auth_fail',
-        'updates': 'update_available',
+        'updates': 'update_summary',
         'zfs': 'disk_io_error',
         'smart': 'disk_io_error',
         'disks': 'disk_io_error',
@@ -1442,12 +1455,18 @@ class PollingCollector:
             event_type = self._CATEGORY_TO_EVENT_TYPE.get(category, 'system_problem')
             entity, eid = self._ENTITY_MAP.get(category, ('node', ''))
             
+            # Updates are always informational notifications except
+            # system_age which can be WARNING (365+ days) or CRITICAL (548+ days).
+            emit_severity = severity
+            if category == 'updates' and error_key != 'system_age':
+                emit_severity = 'INFO'
+            
             data = {
                 'hostname': self._hostname,
                 'category': category,
                 'reason': reason,
                 'error_key': error_key,
-                'severity': severity,
+                'severity': emit_severity,
                 'first_seen': error.get('first_seen', ''),
                 'last_seen': error.get('last_seen', ''),
                 'is_persistent': not is_new,
@@ -1464,7 +1483,7 @@ class PollingCollector:
                     pass
             
             self._queue.put(NotificationEvent(
-                event_type, severity, data, source='health',
+                event_type, emit_severity, data, source='health',
                 entity=entity, entity_id=eid or error_key,
             ))
             
@@ -1482,11 +1501,36 @@ class PollingCollector:
     
     # ── Update check (enriched) ────────────────────────────────
     
+    # Proxmox-related package prefixes used for categorisation
+    _PVE_PREFIXES = (
+        'pve-', 'proxmox-', 'qemu-server', 'lxc-pve', 'ceph',
+        'corosync', 'libpve', 'pbs-', 'pmg-',
+    )
+    _KERNEL_PREFIXES = ('linux-image', 'pve-kernel', 'pve-firmware')
+    _IMPORTANT_PKGS = {
+        'pve-manager', 'proxmox-ve', 'qemu-server', 'pve-container',
+        'pve-ha-manager', 'pve-firewall', 'pve-storage-iscsi-direct',
+        'ceph-common', 'proxmox-backup-client',
+    }
+    
+    # Regex to parse Inst lines from apt-get -s upgrade
+    # Inst <pkg> [<cur_ver>] (<new_ver> <repo> [<arch>])
+    _RE_INST = re.compile(
+        r'^Inst\s+(\S+)\s+\[([^\]]+)\]\s+\((\S+)\s+'
+    )
+    # Fallback for new installs (no current version):
+    # Inst <pkg> (<new_ver> <repo> [<arch>])
+    _RE_INST_NEW = re.compile(
+        r'^Inst\s+(\S+)\s+\((\S+)\s+'
+    )
+    
     def _check_updates(self):
         """Check for available system updates every 24 h.
         
-        Enriched output: total count, security updates, PVE version hint,
-        and top package names.
+        Emits a structured ``update_summary`` notification with categorised
+        counts (security, Proxmox-related, kernel, other) and important
+        package versions.  If pve-manager has an upgrade, also emits a
+        separate ``pve_update`` notification.
         """
         now = time.time()
         if now - self._last_update_check < self.UPDATE_CHECK_INTERVAL:
@@ -1502,58 +1546,84 @@ class PollingCollector:
             if result.returncode != 0:
                 return
             
-            lines = [l for l in result.stdout.split('\n') if l.startswith('Inst ')]
-            total = len(lines)
+            inst_lines = [l for l in result.stdout.split('\n') if l.startswith('Inst ')]
+            total = len(inst_lines)
             if total == 0:
                 return
             
-            packages = [l.split()[1] for l in lines]
-            security = [p for p in packages if any(
-                kw in p.lower() for kw in ('security', 'cve', 'openssl', 'libssl')
-            )]
+            # ── Parse every Inst line ──────────────────────────────
+            all_pkgs: list[dict] = []   # {name, cur, new}
+            security_pkgs: list[dict] = []
+            pve_pkgs: list[dict] = []
+            kernel_pkgs: list[dict] = []
+            pve_manager_info: dict | None = None
             
-            # Also detect security updates via apt changelog / Debian-Security origin
-            sec_result = subprocess.run(
-                ['apt-get', '-s', 'upgrade', '-o', 'Dir::Etc::SourceList=/dev/null',
-                 '-o', 'Dir::Etc::SourceParts=/dev/null'],
-                capture_output=True, text=True, timeout=30,
-            )
-            # Count lines from security repo (rough heuristic)
-            sec_count = max(len(security), 0)
-            try:
-                sec_output = subprocess.run(
-                    ['apt-get', '-s', '--only-upgrade', 'install'] + packages[:50],
-                    capture_output=True, text=True, timeout=30,
-                )
-                for line in sec_output.stdout.split('\n'):
-                    if 'security' in line.lower() and 'Inst ' in line:
-                        sec_count += 1
-            except Exception:
-                pass
+            for line in inst_lines:
+                m = self._RE_INST.match(line)
+                if m:
+                    info = {'name': m.group(1), 'cur': m.group(2), 'new': m.group(3)}
+                else:
+                    m2 = self._RE_INST_NEW.match(line)
+                    if m2:
+                        info = {'name': m2.group(1), 'cur': '', 'new': m2.group(2)}
+                    else:
+                        pkg_name = line.split()[1] if len(line.split()) > 1 else 'unknown'
+                        info = {'name': pkg_name, 'cur': '', 'new': ''}
+                
+                all_pkgs.append(info)
+                name_lower = info['name'].lower()
+                line_lower = line.lower()
+                
+                # Categorise
+                if 'security' in line_lower or 'debian-security' in line_lower:
+                    security_pkgs.append(info)
+                
+                if any(name_lower.startswith(p) for p in self._KERNEL_PREFIXES):
+                    kernel_pkgs.append(info)
+                elif any(name_lower.startswith(p) for p in self._PVE_PREFIXES):
+                    pve_pkgs.append(info)
+                
+                # Detect pve-manager upgrade specifically
+                if info['name'] == 'pve-manager':
+                    pve_manager_info = info
             
-            # Check for PVE version upgrade
-            pve_packages = [p for p in packages if 'pve-' in p.lower() or 'proxmox-' in p.lower()]
+            # ── Build important packages list ──────────────────────
+            important_lines = []
+            for pkg in all_pkgs:
+                if pkg['name'] in self._IMPORTANT_PKGS and pkg['cur']:
+                    important_lines.append(
+                        f"{pkg['name']} ({pkg['cur']} -> {pkg['new']})"
+                    )
             
-            # Build display details
-            top_pkgs = packages[:8]
-            details = ', '.join(top_pkgs)
-            if total > 8:
-                details += f', ... +{total - 8} more'
-            
+            # ── Emit structured update_summary ─────────────────────
             data = {
                 'hostname': self._hostname,
-                'count': str(total),
-                'security_count': str(sec_count),
-                'details': details,
-                'packages': ', '.join(packages[:20]),
+                'total_count': str(total),
+                'security_count': str(len(security_pkgs)),
+                'pve_count': str(len(pve_pkgs)),
+                'kernel_count': str(len(kernel_pkgs)),
+                'important_list': ', '.join(important_lines) if important_lines else 'none',
+                'package_list': ', '.join(important_lines[:6]) if important_lines else '',
             }
-            if pve_packages:
-                data['pve_packages'] = ', '.join(pve_packages)
             
             self._queue.put(NotificationEvent(
-                'update_available', 'INFO', data,
+                'update_summary', 'INFO', data,
                 source='polling', entity='node', entity_id='',
             ))
+            
+            # ── Emit pve_update if pve-manager has an upgrade ──────
+            if pve_manager_info and pve_manager_info['cur'] and pve_manager_info['new']:
+                pve_data = {
+                    'hostname': self._hostname,
+                    'current_version': pve_manager_info['cur'],
+                    'new_version': pve_manager_info['new'],
+                    'version': pve_manager_info['new'],
+                    'details': f"pve-manager {pve_manager_info['cur']} -> {pve_manager_info['new']}",
+                }
+                self._queue.put(NotificationEvent(
+                    'pve_update', 'INFO', pve_data,
+                    source='polling', entity='node', entity_id='',
+                ))
         except Exception:
             pass
     

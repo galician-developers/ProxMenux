@@ -584,10 +584,10 @@ TEMPLATES = {
         'default_enabled': True,
     },
     'update_available': {
-        'title': '{hostname}: Updates available ({count})',
-        'body': '{count} package updates are available.\n{details}',
+        'title': '{hostname}: Updates available',
+        'body': 'Total updates: {total_count}\nSecurity: {security_count}\nProxmox: {pve_count}\nKernel: {kernel_count}\nImportant: {important_list}',
         'group': 'system',
-        'default_enabled': False,
+        'default_enabled': False,  # Superseded by update_summary
     },
     'update_complete': {
         'title': '{hostname}: Update completed',
@@ -626,14 +626,20 @@ TEMPLATES = {
     
     # ── Update notifications (enriched) ──
     'update_summary': {
-        'title': '{hostname}: {total_count} updates available',
-        'body': '{security_count} security update(s), {total_count} total.\n{package_list}',
+        'title': '{hostname}: Updates available',
+        'body': (
+            'Total updates: {total_count}\n'
+            'Security updates: {security_count}\n'
+            'Proxmox-related updates: {pve_count}\n'
+            'Kernel updates: {kernel_count}\n'
+            'Important packages: {important_list}'
+        ),
         'group': 'system',
         'default_enabled': True,
     },
     'pve_update': {
-        'title': '{hostname}: PVE update available ({version})',
-        'body': 'Proxmox VE update available: {version}\n{details}',
+        'title': '{hostname}: Proxmox VE {new_version} available',
+        'body': 'Proxmox VE {current_version} -> {new_version}\n{details}',
         'group': 'system',
         'default_enabled': True,
     },
