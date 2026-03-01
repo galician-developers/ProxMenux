@@ -1225,6 +1225,54 @@ class HealthMonitor:
         except Exception:
             return 'UNKNOWN'
 
+    def _check_all_disks_smart(self, fallback: str = 'UNKNOWN') -> str:
+        """Check SMART health of ALL physical disks.
+        
+        Used when an ATA port can't be resolved to a specific /dev/sdX.
+        If ALL disks report PASSED, returns 'PASSED' (errors are transient).
+        If ANY disk reports FAILED, returns 'FAILED'.
+        Otherwise returns the fallback value.
+        """
+        try:
+            # List all block devices (exclude partitions, loop, zram, dm)
+            result = subprocess.run(
+                ['lsblk', '-dnpo', 'NAME,TYPE'],
+                capture_output=True, text=True, timeout=3
+            )
+            if result.returncode != 0:
+                return fallback
+            
+            disks = []
+            for line in result.stdout.strip().split('\n'):
+                parts = line.split()
+                if len(parts) >= 2 and parts[1] == 'disk':
+                    disks.append(parts[0])  # e.g. /dev/sda
+            
+            if not disks:
+                return fallback
+            
+            all_passed = True
+            any_failed = False
+            checked = 0
+            
+            for dev in disks:
+                health = self._quick_smart_health(dev)
+                if health == 'PASSED':
+                    checked += 1
+                elif health == 'FAILED':
+                    any_failed = True
+                    break
+                else:
+                    all_passed = False  # Can't confirm this disk
+            
+            if any_failed:
+                return 'FAILED'
+            if all_passed and checked > 0:
+                return 'PASSED'
+            return fallback
+        except Exception:
+            return fallback
+    
     def _check_disks_optimized(self) -> Dict[str, Any]:
         """
         Disk I/O error check -- the SINGLE source of truth for disk errors.
@@ -1240,12 +1288,18 @@ class HealthMonitor:
         current_time = time.time()
         disk_results = {}  # Single dict for both WARNING and CRITICAL
         
-        # Common transient ATA patterns that auto-recover and are not real disk failures
-        # 'action 0x0' means the kernel recovered automatically with no action needed
+        # Common transient ATA patterns that auto-recover and are not real disk failures.
+        # These are bus/controller level events, NOT media errors:
+        #   action 0x0 = no action needed (fully recovered)
+        #   action 0x6 = hard reset + port reinit (common cable/connector recovery)
+        #   SError with BadCRC/Dispar = signal integrity issue (cable, not disk)
+        #   Emask 0x10 = ATA bus error (controller/interconnect, not media)
         TRANSIENT_PATTERNS = [
-            re.compile(r'exception\s+emask.*action\s+0x0', re.IGNORECASE),
+            re.compile(r'exception\s+emask.*action\s+0x[06]', re.IGNORECASE),
             re.compile(r'serror.*=.*0x[0-9a-f]+\s*\(', re.IGNORECASE),
-            re.compile(r'SError:.*\{.*\}', re.IGNORECASE),
+            re.compile(r'SError:.*\{.*(?:BadCRC|Dispar|CommWake).*\}', re.IGNORECASE),
+            re.compile(r'emask\s+0x10\s+\(ATA bus error\)', re.IGNORECASE),
+            re.compile(r'failed command:\s*READ FPDMA QUEUED', re.IGNORECASE),
         ]
         
         try:
@@ -1328,9 +1382,32 @@ class HealthMonitor:
                     if error_count >= 1:
                         # Cross-reference with SMART to determine real severity
                         smart_health = self._quick_smart_health(disk)
+                        
+                        # If SMART is UNKNOWN (unresolved ATA port), check ALL
+                        # physical disks.  If every disk passes SMART, the ATA
+                        # errors are transient bus/controller noise.
+                        if smart_health == 'UNKNOWN':
+                            smart_health = self._check_all_disks_smart(smart_health)
+                        
                         smart_ok = smart_health == 'PASSED'
                         
-                        if smart_ok:
+                        # Transient-only errors (e.g. SError with auto-recovery)
+                        # are always INFO regardless of SMART
+                        if all_transient:
+                            reason = f'{display}: {error_count} transient ATA event(s) in 5 min (auto-recovered)'
+                            if sample:
+                                reason += f'\n{sample}'
+                            health_persistence.resolve_error(error_key, 'Transient ATA events, auto-recovered')
+                            disk_results[display] = {
+                                'status': 'INFO',
+                                'reason': reason,
+                                'device': disk,
+                                'error_count': error_count,
+                                'smart_status': smart_health,
+                                'dismissable': False,
+                                'error_key': error_key,
+                            }
+                        elif smart_ok:
                             # SMART is healthy -> dmesg errors are informational only
                             # The disk is fine; these are transient controller/bus events
                             reason = f'{display}: {error_count} I/O event(s) in 5 min (SMART: OK)'
@@ -1349,11 +1426,10 @@ class HealthMonitor:
                                 'dismissable': False,
                                 'error_key': error_key,
                             }
-                        else:
-                            # SMART is FAILED or UNKNOWN with I/O errors -> real problem
-                            severity = 'CRITICAL' if error_count >= 3 else 'WARNING'
-                            smart_note = f'SMART: {smart_health}' if smart_health != 'UNKNOWN' else 'SMART: check manually'
-                            reason = f'{display}: {error_count} I/O error(s) in 5 min ({smart_note})'
+                        elif smart_health == 'FAILED':
+                            # SMART confirms a real disk failure
+                            severity = 'CRITICAL'
+                            reason = f'{display}: {error_count} I/O error(s) in 5 min (SMART: FAILED)'
                             if sample:
                                 reason += f'\n{sample}'
                             
@@ -1365,7 +1441,7 @@ class HealthMonitor:
                                 details={'disk': disk, 'device': display,
                                          'error_count': error_count,
                                          'smart_status': smart_health,
-                                         'sample': sample, 'dismissable': severity != 'CRITICAL'}
+                                         'sample': sample, 'dismissable': False}
                             )
                             disk_results[display] = {
                                 'status': severity,
@@ -1373,7 +1449,35 @@ class HealthMonitor:
                                 'device': disk,
                                 'error_count': error_count,
                                 'smart_status': smart_health,
-                                'dismissable': severity != 'CRITICAL',
+                                'dismissable': False,
+                                'error_key': error_key,
+                            }
+                        else:
+                            # SMART is genuinely UNKNOWN (no disk resolved, no
+                            # smartctl at all) -- treat as WARNING, not CRITICAL.
+                            # These are likely transient and will auto-resolve.
+                            severity = 'WARNING'
+                            reason = f'{display}: {error_count} I/O event(s) in 5 min (SMART: unavailable)'
+                            if sample:
+                                reason += f'\n{sample}'
+                            
+                            health_persistence.record_error(
+                                error_key=error_key,
+                                category='disks',
+                                severity=severity,
+                                reason=reason,
+                                details={'disk': disk, 'device': display,
+                                         'error_count': error_count,
+                                         'smart_status': smart_health,
+                                         'sample': sample, 'dismissable': True}
+                            )
+                            disk_results[display] = {
+                                'status': severity,
+                                'reason': reason,
+                                'device': disk,
+                                'error_count': error_count,
+                                'smart_status': smart_health,
+                                'dismissable': True,
                                 'error_key': error_key,
                             }
                     else:
@@ -1816,11 +1920,13 @@ class HealthMonitor:
             # Get persistent errors first
             persistent_errors = health_persistence.get_active_errors('vms')
             
-            # Check if any persistent VMs/CTs have started
+            # Check if any persistent VMs/CTs have started or were dismissed
             for error in persistent_errors:
                 error_key = error['error_key']
-                if error_key.startswith('vm_') or error_key.startswith('ct_'):
-                    vm_id = error_key.split('_')[1]
+                is_acknowledged = error.get('acknowledged') == 1
+                
+                if error_key.startswith(('vm_', 'ct_', 'vmct_')):
+                    vm_id = error_key.split('_', 1)[1]
                     # Check if VM is running using persistence helper
                     if health_persistence.check_vm_running(vm_id):
                         continue  # Error auto-resolved if VM is now running
@@ -1831,9 +1937,12 @@ class HealthMonitor:
                     'reason': error['reason'],
                     'id': error.get('details', {}).get('id', 'unknown'),
                     'type': error.get('details', {}).get('type', 'VM/CT'),
-                    'first_seen': error['first_seen']
+                    'first_seen': error['first_seen'],
+                    'dismissed': is_acknowledged,
                 }
-                issues.append(f"{error.get('details', {}).get('type', 'VM')} {error.get('details', {}).get('id', '')}: {error['reason']}")
+                # Only add to issues if not dismissed
+                if not is_acknowledged:
+                    issues.append(f"{error.get('details', {}).get('type', 'VM')} {error.get('details', {}).get('id', '')}: {error['reason']}")
             
             # Check for new errors in logs
             # Using 'warning' priority to catch potential startup issues
@@ -1958,24 +2067,31 @@ class HealthMonitor:
                                     }
             
             # Build checks dict from vm_details
+            # 'key' is the persistence error_key (e.g. 'qmp_110', 'ct_101', 'vm_110')
             checks = {}
             for key, val in vm_details.items():
                 vm_label = f"{val.get('type', 'VM')} {val.get('id', key)}"
+                is_dismissed = val.get('dismissed', False)
                 checks[vm_label] = {
-                    'status': val.get('status', 'WARNING'),
+                    'status': 'INFO' if is_dismissed else val.get('status', 'WARNING'),
                     'detail': val.get('reason', 'Error'),
                     'dismissable': True,
-                    'error_key': vm_label
+                    'dismissed': is_dismissed,
+                    'error_key': key  # Must match the persistence DB key
                 }
             
             if not issues:
-                checks['qmp_communication'] = {'status': 'OK', 'detail': 'No QMP timeouts detected'}
-                checks['container_startup'] = {'status': 'OK', 'detail': 'No container startup errors'}
-                checks['vm_startup'] = {'status': 'OK', 'detail': 'No VM startup failures'}
-                checks['oom_killer'] = {'status': 'OK', 'detail': 'No OOM events detected'}
+                # No active (non-dismissed) issues
+                if not checks:
+                    checks['qmp_communication'] = {'status': 'OK', 'detail': 'No QMP timeouts detected'}
+                    checks['container_startup'] = {'status': 'OK', 'detail': 'No container startup errors'}
+                    checks['vm_startup'] = {'status': 'OK', 'detail': 'No VM startup failures'}
+                    checks['oom_killer'] = {'status': 'OK', 'detail': 'No OOM events detected'}
                 return {'status': 'OK', 'checks': checks}
             
-            has_critical = any(d.get('status') == 'CRITICAL' for d in vm_details.values())
+            # Only consider non-dismissed items for overall severity
+            active_details = {k: v for k, v in vm_details.items() if not v.get('dismissed')}
+            has_critical = any(d.get('status') == 'CRITICAL' for d in active_details.values())
             
             return {
                 'status': 'CRITICAL' if has_critical else 'WARNING',
@@ -2532,10 +2648,21 @@ class HealthMonitor:
                 }
                 
                 # Recalculate overall status considering dismissed items
-                active_issues = [k for k, v in log_checks.items() if v['status'] in ('WARNING', 'CRITICAL')]
+                active_issues = {k: v for k, v in log_checks.items() if v['status'] in ('WARNING', 'CRITICAL')}
                 if not active_issues:
                     status = 'OK'
                     reason = None
+                else:
+                    # Recalculate status and reason from only non-dismissed sub-checks
+                    has_critical = any(v['status'] == 'CRITICAL' for v in active_issues.values())
+                    status = 'CRITICAL' if has_critical else 'WARNING'
+                    # Rebuild reason from active (non-dismissed) checks only
+                    active_reasons = []
+                    for k, v in active_issues.items():
+                        detail = v.get('detail', '')
+                        if detail:
+                            active_reasons.append(detail)
+                    reason = '; '.join(active_reasons[:3]) if active_reasons else None
                 
                 log_result = {'status': status, 'checks': log_checks}
                 if reason:

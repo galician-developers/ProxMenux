@@ -69,7 +69,7 @@ def acknowledge_error():
             # Use the error's category to clear the correct cache
             category = result.get('category', '')
             cache_key_map = {
-                'logs': 'system_logs',
+                'logs': 'logs_analysis',
                 'pve_services': 'pve_services',
                 'updates': 'updates_check',
                 'security': 'security_check',

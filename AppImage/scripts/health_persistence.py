@@ -419,7 +419,7 @@ class HealthPersistence:
             for cat, prefix in [('updates', 'security_updates'), ('updates', 'system_age'),
                                 ('updates', 'pending_updates'), ('updates', 'kernel_pve'),
                                 ('security', 'security_'), 
-                                ('pve_services', 'pve_service_'), ('vms', 'vm_'), ('vms', 'ct_'),
+                                ('pve_services', 'pve_service_'), ('vms', 'vmct_'), ('vms', 'vm_'), ('vms', 'ct_'),
                                 ('disks', 'disk_'), ('logs', 'log_'), ('network', 'net_'),
                                 ('temperature', 'temp_')]:
                 if error_key == prefix or error_key.startswith(prefix):
@@ -487,6 +487,22 @@ class HealthPersistence:
                 'category': category,
                 'suppression_hours': sup_hours
             })
+            
+            # Cascade acknowledge: when dismissing a group check
+            # (e.g. log_persistent_errors), also dismiss all individual
+            # sub-errors that share the same prefix in the DB.
+            # Currently only persistent errors have per-pattern sub-records
+            # (e.g. log_persistent_a1b2c3d4).
+            CASCADE_PREFIXES = {
+                'log_persistent_errors': 'log_persistent_',
+            }
+            child_prefix = CASCADE_PREFIXES.get(error_key)
+            if child_prefix:
+                cursor.execute('''
+                    UPDATE errors 
+                    SET acknowledged = 1, resolved_at = ?, suppression_hours = ?
+                    WHERE error_key LIKE ? AND acknowledged = 0
+                ''', (now, sup_hours, child_prefix + '%'))
             
             result = {
                 'success': True,

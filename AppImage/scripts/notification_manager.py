@@ -651,7 +651,8 @@ class NotificationManager:
                         parts = line.strip().split(':')
                         if len(parts) >= 3:
                             try:
-                                pid = int(parts[2])
+                                # PID in UPID is HEXADECIMAL
+                                pid = int(parts[2], 16)
                                 os.kill(pid, 0)
                                 return True
                             except (ValueError, ProcessLookupError, PermissionError):
