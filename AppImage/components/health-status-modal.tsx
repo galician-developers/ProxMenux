@@ -184,6 +184,10 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
       CATEGORIES.forEach(({ key }) => {
         const cat = healthData.details[key as keyof typeof healthData.details]
         if (cat && cat.status?.toUpperCase() !== "OK") {
+          // Updates section: only auto-expand on WARNING+, not INFO
+          if (key === "updates" && cat.status?.toUpperCase() === "INFO") {
+            return
+          }
           nonOkCategories.add(key)
         }
       })
