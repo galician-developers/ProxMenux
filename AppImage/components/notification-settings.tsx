@@ -101,6 +101,140 @@ const AI_PROVIDERS = [
   { value: "groq", label: "Groq" },
 ]
 
+// ── Channel visual definitions ──
+const CHANNEL_COLOR_MAP: Record<string, string> = {
+  blue: "border-blue-500/60 bg-blue-500/10",
+  green: "border-green-500/60 bg-green-500/10",
+  indigo: "border-indigo-500/60 bg-indigo-500/10",
+  amber: "border-amber-500/60 bg-amber-500/10",
+}
+const CHANNEL_TEXT_COLOR: Record<string, string> = {
+  blue: "text-blue-400",
+  green: "text-green-400",
+  indigo: "text-indigo-400",
+  amber: "text-amber-400",
+}
+const CHANNEL_MUTED_COLOR: Record<string, string> = {
+  blue: "text-blue-500/30",
+  green: "text-green-500/30",
+  indigo: "text-indigo-500/30",
+  amber: "text-amber-500/30",
+}
+const CHANNEL_SWITCH_COLOR: Record<string, string> = {
+  blue: "bg-blue-600",
+  green: "bg-green-600",
+  indigo: "bg-indigo-600",
+  amber: "bg-amber-600",
+}
+
+const CHANNEL_DEFS: ChannelDef[] = [
+  { key: "telegram", label: "Telegram", color: "blue", activeColor: "bg-blue-600 hover:bg-blue-700" },
+  { key: "gotify", label: "Gotify", color: "green", activeColor: "bg-green-600 hover:bg-green-700" },
+  { key: "discord", label: "Discord", color: "indigo", activeColor: "bg-indigo-600 hover:bg-indigo-700" },
+  { key: "email", label: "Email", color: "amber", activeColor: "bg-amber-600 hover:bg-amber-700" },
+]
+
+interface ChannelDef {
+  key: string
+  label: string
+  color: string
+  activeColor: string
+}
+
+function ChannelLogo({ channel, className }: { channel: string; className?: string }) {
+  switch (channel) {
+    case "telegram":
+      return (
+        <svg viewBox="0 0 24 24" className={className} fill="currentColor">
+          <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
+        </svg>
+      )
+    case "gotify":
+      return (
+        <svg viewBox="0 0 24 24" className={className} fill="currentColor">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+        </svg>
+      )
+    case "discord":
+      return (
+        <svg viewBox="0 0 24 24" className={className} fill="currentColor">
+          <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" />
+        </svg>
+      )
+    case "email":
+      return <Mail className={className} />
+    default:
+      return null
+  }
+}
+
+function ChannelGrid({ channels, selectedChannel, onSelectChannel, onToggleChannel }: {
+  channels: Record<string, ChannelConfig | undefined>
+  selectedChannel: string | null
+  onSelectChannel: (key: string) => void
+  onToggleChannel: (key: string, enabled: boolean) => void
+}) {
+  return (
+    <div className="grid grid-cols-4 gap-3">
+      {CHANNEL_DEFS.map(ch => {
+        const isEnabled = channels[ch.key]?.enabled || false
+        const isSelected = selectedChannel === ch.key
+
+        return (
+          <button
+            key={ch.key}
+            onClick={() => onSelectChannel(ch.key)}
+            className={`group relative flex flex-col items-center justify-center gap-2 rounded-lg border p-4 transition-all cursor-pointer ${
+              isSelected
+                ? `${CHANNEL_COLOR_MAP[ch.color]} ring-1 ring-offset-0`
+                : isEnabled
+                  ? "border-border/60 bg-muted/30 hover:bg-muted/40"
+                  : "border-border/30 bg-muted/10 hover:border-border/50 hover:bg-muted/20"
+            }`}
+          >
+            {isEnabled && (
+              <span className={`absolute top-2 right-2 h-1.5 w-1.5 rounded-full ${CHANNEL_SWITCH_COLOR[ch.color]}`} />
+            )}
+
+            <span className={`transition-colors ${
+              isEnabled || isSelected ? CHANNEL_TEXT_COLOR[ch.color] : CHANNEL_MUTED_COLOR[ch.color]
+            }`}>
+              <ChannelLogo channel={ch.key} className="h-7 w-7" />
+            </span>
+
+            <span className={`text-[11px] font-medium transition-colors ${
+              isEnabled || isSelected ? "text-foreground" : "text-muted-foreground/60"
+            }`}>
+              {ch.label}
+            </span>
+
+            <div
+              className="absolute inset-x-0 bottom-0 flex items-center justify-center py-1.5 rounded-b-lg bg-background/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={(e) => {
+                e.stopPropagation()
+                onToggleChannel(ch.key, !isEnabled)
+              }}
+            >
+              <div
+                className={`relative w-8 h-4 rounded-full transition-colors ${
+                  isEnabled ? CHANNEL_SWITCH_COLOR[ch.color] : "bg-muted-foreground/30"
+                }`}
+                role="switch"
+                aria-checked={isEnabled}
+                aria-label={`Enable ${ch.label}`}
+              >
+                <span className={`absolute top-[2px] left-[2px] h-3 w-3 rounded-full bg-white shadow transition-transform ${
+                  isEnabled ? "translate-x-4" : "translate-x-0"
+                }`} />
+              </div>
+            </div>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 const DEFAULT_CONFIG: NotificationConfig = {
   enabled: false,
   channels: {
@@ -672,100 +806,12 @@ matcher: proxmenux-pbs
               </div>
 
               {/* ── Channel Cards Grid ── */}
-              <div className="grid grid-cols-4 gap-3">
-                {([
-                  { key: "telegram", label: "Telegram", color: "blue", activeColor: "bg-blue-600 hover:bg-blue-700",
-                    logo: <svg viewBox="0 0 24 24" className="h-7 w-7" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg> },
-                  { key: "gotify", label: "Gotify", color: "green", activeColor: "bg-green-600 hover:bg-green-700",
-                    logo: <svg viewBox="0 0 24 24" className="h-7 w-7" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg> },
-                  { key: "discord", label: "Discord", color: "indigo", activeColor: "bg-indigo-600 hover:bg-indigo-700",
-                    logo: <svg viewBox="0 0 24 24" className="h-7 w-7" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg> },
-                  { key: "email", label: "Email", color: "amber", activeColor: "bg-amber-600 hover:bg-amber-700",
-                    logo: <Mail className="h-7 w-7" /> },
-                ] as { key: string; label: string; color: string; activeColor: string; logo: React.ReactNode }[]).map(ch => {
-                  const isEnabled = (config.channels as Record<string, ChannelConfig | undefined>)[ch.key]?.enabled || false
-                  const isSelected = selectedChannel === ch.key
-                  const colorMap: Record<string, string> = {
-                    blue: "border-blue-500/60 bg-blue-500/10",
-                    green: "border-green-500/60 bg-green-500/10",
-                    indigo: "border-indigo-500/60 bg-indigo-500/10",
-                    amber: "border-amber-500/60 bg-amber-500/10",
-                  }
-                  const textColorMap: Record<string, string> = {
-                    blue: "text-blue-400",
-                    green: "text-green-400",
-                    indigo: "text-indigo-400",
-                    amber: "text-amber-400",
-                  }
-                  const mutedColorMap: Record<string, string> = {
-                    blue: "text-blue-500/30",
-                    green: "text-green-500/30",
-                    indigo: "text-indigo-500/30",
-                    amber: "text-amber-500/30",
-                  }
-                  const switchColorMap: Record<string, string> = {
-                    blue: "bg-blue-600",
-                    green: "bg-green-600",
-                    indigo: "bg-indigo-600",
-                    amber: "bg-amber-600",
-                  }
-
-                  return (
-                    <button
-                      key={ch.key}
-                      onClick={() => setSelectedChannel(isSelected ? null : ch.key)}
-                      className={`group relative flex flex-col items-center justify-center gap-2 rounded-lg border p-4 transition-all cursor-pointer ${
-                        isSelected
-                          ? `${colorMap[ch.color]} ring-1 ring-${ch.color}-500/40`
-                          : isEnabled
-                            ? `border-border/60 bg-muted/30 hover:${colorMap[ch.color]}`
-                            : "border-border/30 bg-muted/10 hover:border-border/50 hover:bg-muted/20"
-                      }`}
-                    >
-                      {/* Status dot */}
-                      {isEnabled && (
-                        <span className={`absolute top-2 right-2 h-1.5 w-1.5 rounded-full ${switchColorMap[ch.color]}`} />
-                      )}
-
-                      {/* Logo */}
-                      <span className={`transition-colors ${
-                        isEnabled || isSelected ? textColorMap[ch.color] : mutedColorMap[ch.color]
-                      } group-hover:${textColorMap[ch.color]}`}>
-                        {ch.logo}
-                      </span>
-
-                      {/* Label */}
-                      <span className={`text-[11px] font-medium transition-colors ${
-                        isEnabled || isSelected ? "text-foreground" : "text-muted-foreground/60"
-                      }`}>
-                        {ch.label}
-                      </span>
-
-                      {/* Hover overlay with switch */}
-                      <div
-                        className="absolute inset-x-0 bottom-0 flex items-center justify-center py-1.5 rounded-b-lg bg-background/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          updateChannel(ch.key, "enabled", !isEnabled)
-                        }}
-                      >
-                        <div
-                          className={`relative w-8 h-4 rounded-full transition-colors ${
-                            isEnabled ? switchColorMap[ch.color] : "bg-muted-foreground/30"
-                          }`}
-                          role="switch"
-                          aria-checked={isEnabled}
-                          aria-label={`Enable ${ch.label}`}
-                        >
-                          <span className={`absolute top-[2px] left-[2px] h-3 w-3 rounded-full bg-white shadow transition-transform ${
-                            isEnabled ? "translate-x-4" : "translate-x-0"
-                          }`} />
-                        </div>
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
+              <ChannelGrid
+                channels={config.channels}
+                selectedChannel={selectedChannel}
+                onSelectChannel={(key) => setSelectedChannel(selectedChannel === key ? null : key)}
+                onToggleChannel={(key, enabled) => updateChannel(key, "enabled", enabled)}
+              />
 
               {/* ── Selected Channel Configuration Panel ── */}
               {selectedChannel === "telegram" && (
