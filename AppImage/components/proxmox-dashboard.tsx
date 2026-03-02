@@ -110,7 +110,7 @@ export function ProxmoxDashboard() {
       })
       setIsServerConnected(true)
     } catch (error) {
-      console.error("[v0] Failed to fetch system data from Flask server:", error)
+      // Expected to fail in v0 preview (no Flask server)
 
       setIsServerConnected(false)
       setSystemStatus((prev) => ({

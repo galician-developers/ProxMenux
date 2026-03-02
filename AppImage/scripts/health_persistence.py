@@ -221,7 +221,28 @@ class HealthPersistence:
                     conn.close()
                     return {'type': 'skipped_acknowledged', 'needs_notification': False}
                 else:
-                    # Suppression expired - reset as a NEW event
+                    # Suppression expired.
+                    # For log-based errors (spike, persistent, cascade),
+                    # do NOT re-trigger.  The journal always contains old
+                    # messages, so re-creating the error would cause an
+                    # infinite notification cycle.  Instead, just delete
+                    # the stale record so it stops appearing in the UI.
+                    is_log_error = (
+                        error_key.startswith('log_persistent_')
+                        or error_key.startswith('log_spike_')
+                        or error_key.startswith('log_cascade_')
+                        or error_key.startswith('log_critical_')
+                        or category == 'logs'
+                    )
+                    if is_log_error:
+                        cursor.execute('DELETE FROM errors WHERE error_key = ?', (error_key,))
+                        conn.commit()
+                        conn.close()
+                        return {'type': 'skipped_expired_log', 'needs_notification': False}
+                    
+                    # For non-log errors (hardware, services, etc.),
+                    # re-triggering is correct -- the condition is real
+                    # and still present.
                     cursor.execute('DELETE FROM errors WHERE error_key = ?', (error_key,))
                     cursor.execute('''
                         INSERT INTO errors 

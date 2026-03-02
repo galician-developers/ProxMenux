@@ -19,29 +19,19 @@ export const API_PORT = process.env.NEXT_PUBLIC_API_PORT || "8008"
  */
 export function getApiBaseUrl(): string {
   if (typeof window === "undefined") {
-    console.log("[v0] getApiBaseUrl: Running on server (SSR)")
     return ""
   }
 
   const { protocol, hostname, port } = window.location
 
-  console.log("[v0] getApiBaseUrl - protocol:", protocol, "hostname:", hostname, "port:", port)
-
   // If accessing via standard ports (80/443) or no port, assume we're behind a proxy
   // In this case, use relative URLs so the proxy handles routing
   const isStandardPort = port === "" || port === "80" || port === "443"
 
-  console.log("[v0] getApiBaseUrl - isStandardPort:", isStandardPort)
-
   if (isStandardPort) {
-    // Behind a proxy - use relative URL
-    console.log("[v0] getApiBaseUrl: Detected proxy access, using relative URLs")
     return ""
   } else {
-    // Direct access - use explicit API port
-    const baseUrl = `${protocol}//${hostname}:${API_PORT}`
-    console.log("[v0] getApiBaseUrl: Direct access detected, using:", baseUrl)
-    return baseUrl
+    return `${protocol}//${hostname}:${API_PORT}`
   }
 }
 
@@ -69,12 +59,7 @@ export function getAuthToken(): string | null {
   if (typeof window === "undefined") {
     return null
   }
-  const token = localStorage.getItem("proxmenux-auth-token")
-  console.log(
-    "[v0] getAuthToken called:",
-    token ? `Token found (length: ${token.length})` : "No token found in localStorage",
-  )
-  return token
+  return localStorage.getItem("proxmenux-auth-token")
 }
 
 /**
@@ -96,31 +81,20 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
 
   if (token) {
     headers["Authorization"] = `Bearer ${token}`
-    console.log("[v0] fetchApi:", endpoint, "- Authorization header ADDED")
-  } else {
-    console.log("[v0] fetchApi:", endpoint, "- NO TOKEN - Request will fail if endpoint is protected")
   }
 
-  try {
-    const response = await fetch(url, {
-      ...options,
-      headers,
-      cache: "no-store",
-    })
+  const response = await fetch(url, {
+    ...options,
+    headers,
+    cache: "no-store",
+  })
 
-    console.log("[v0] fetchApi:", endpoint, "- Response status:", response.status)
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        console.error("[v0] fetchApi: 401 UNAUTHORIZED -", endpoint, "- Token present:", !!token)
-        throw new Error(`Unauthorized: ${endpoint}`)
-      }
-      throw new Error(`API request failed: ${response.status} ${response.statusText}`)
+  if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error(`Unauthorized: ${endpoint}`)
     }
-
-    return response.json()
-  } catch (error) {
-    console.error("[v0] fetchApi error for", endpoint, ":", error)
-    throw error
+    throw new Error(`API request failed: ${response.status} ${response.statusText}`)
   }
+
+  return response.json()
 }

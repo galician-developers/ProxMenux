@@ -505,6 +505,7 @@ class JournalWatcher:
             r'user-runtime-dir@\d+',        # User runtime dirs
             r'systemd-coredump@',           # Coredump handlers (transient)
             r'run-.*\.mount',               # Transient mounts
+            r'proxmenux-monitor',           # Self-referential: monitor can't alert about itself
         ]
         for noise in _NOISE_PATTERNS:
             if re.search(noise, msg) or re.search(noise, unit):
@@ -741,17 +742,20 @@ class JournalWatcher:
     def _check_backup_start(self, msg: str, syslog_id: str):
         """Detect backup job start from journal messages.
         
-        Matches multiple formats:
-        - pvedaemon: "INFO: starting new backup job: vzdump 110 --storage PBS-Cloud --mode stop ..."
-        - pvesh:     "INFO: starting new backup job: vzdump 104 --mode stop --storage PBS-Cloud ..."
-        - vzdump:    "starting new backup job: vzdump 110 --storage PBS-Cloud --mode stop ..."
-        - vzdump:    "INFO: Starting Backup of VM 110 (qemu)"  (per-guest fallback)
+        The message "starting new backup job: vzdump ..." is unique and
+        definitive -- only a real vzdump invocation produces it.  We match
+        purely on message content, regardless of which service emitted it,
+        because PVE uses different syslog identifiers depending on how the
+        backup was triggered:
+          - pvescheduler  (scheduled backups via /etc/pve/jobs.cfg)
+          - pvedaemon     (GUI-triggered backups)
+          - pvesh         (CLI / API-triggered backups)
+          - vzdump        (per-guest "Starting Backup of VM ..." lines)
         
-        PVE emits from pvedaemon for scheduled backups, from pvesh for
-        API/CLI-triggered backups, and from vzdump for the per-guest lines.
+        Trying to maintain a whitelist of syslog_ids is fragile -- new PVE
+        versions or plugins may introduce more.  The message pattern itself
+        is the reliable indicator.
         """
-        if syslog_id not in ('pvedaemon', 'pvesh', 'vzdump', ''):
-            return
         
         # Primary pattern: full vzdump command with all arguments
         # Matches both "INFO: starting new backup job: vzdump ..." and
@@ -887,49 +891,45 @@ class JournalWatcher:
             }, entity='cluster', entity_id=node_name)
     
     def _check_system_shutdown(self, msg: str, syslog_id: str):
-        """Detect system shutdown/reboot.
+        """Detect full-node shutdown or reboot.
         
-        Matches multiple systemd signals that indicate the node is going down:
-          - "Shutting down."  (systemd PID 1)
-          - "System is powering off."  / "System is rebooting."
-          - "Reached target Shutdown." / "Reached target Reboot."
-          - "Journal stopped"  (very late in shutdown)
-          - "The system will reboot now!"  / "The system will power off now!"
+        ONLY matches definitive signals from PID 1 (systemd) that prove
+        the entire node is going down -- NOT individual service restarts.
+        
+        Severity is INFO, not CRITICAL, because:
+        - A planned shutdown/reboot is an administrative action, not an emergency.
+        - If the node truly crashes, the monitor dies before it can send anything.
+        - Proxmox itself treats these as informational notifications.
         """
-        msg_lower = msg.lower()
+        # Strict syslog_id filter: only systemd PID 1 and systemd-logind
+        # emit authoritative node-level shutdown messages.
+        if syslog_id not in ('systemd', 'systemd-logind'):
+            return
         
-        # Only process systemd / logind messages
-        if not any(s in syslog_id for s in ('systemd', 'logind', '')):
-            if 'systemd' not in msg_lower:
-                return
+        msg_lower = msg.lower()
         
         is_reboot = False
         is_shutdown = False
         
-        # Detect reboot signals
+        # Reboot signals -- only definitive whole-system messages
         reboot_signals = [
             'system is rebooting',
-            'reached target reboot',
             'the system will reboot now',
-            'starting reboot',
         ]
         for sig in reboot_signals:
             if sig in msg_lower:
                 is_reboot = True
                 break
         
-        # Detect shutdown/poweroff signals
+        # Shutdown/poweroff signals -- only definitive whole-system messages.
+        # "shutting down" is deliberately EXCLUDED because many services emit
+        # it during normal restarts (e.g. "Shutting down proxy server...").
+        # "journal stopped" is EXCLUDED because journald can restart independently.
         if not is_reboot:
             shutdown_signals = [
                 'system is powering off',
                 'system is halting',
-                'shutting down',
-                'reached target shutdown',
-                'reached target halt',
                 'the system will power off now',
-                'starting power-off',
-                'journal stopped',
-                'stopping journal service',
             ]
             for sig in shutdown_signals:
                 if sig in msg_lower:
@@ -937,13 +937,13 @@ class JournalWatcher:
                     break
         
         if is_reboot:
-            self._emit('system_reboot', 'CRITICAL', {
-                'reason': msg[:200],
+            self._emit('system_reboot', 'INFO', {
+                'reason': 'The system is rebooting.',
                 'hostname': self._hostname,
             }, entity='node', entity_id='')
         elif is_shutdown:
-            self._emit('system_shutdown', 'CRITICAL', {
-                'reason': msg[:200],
+            self._emit('system_shutdown', 'INFO', {
+                'reason': 'The system is shutting down.',
                 'hostname': self._hostname,
             }, entity='node', entity_id='')
     
@@ -1832,10 +1832,35 @@ class ProxmoxHookWatcher:
             'hostname': pve_hostname,
             'pve_type': pve_type,
             'pve_message': message,
-            'pve_title': title,
-            'title': title,
+            'pve_title': title or event_type,
+            'title': title or event_type,
             'job_id': pve_job_id,
         }
+        
+        # ── Extract clean reason for system-mail events ──
+        # smartd and other system mail contains verbose boilerplate.
+        # Extract just the actionable warning/error lines.
+        if pve_type == 'system-mail' and message:
+            clean_lines = []
+            for line in message.split('\n'):
+                stripped = line.strip()
+                # Skip boilerplate lines
+                if not stripped:
+                    continue
+                if stripped.startswith('This message was generated'):
+                    continue
+                if stripped.startswith('For details see'):
+                    continue
+                if stripped.startswith('You can also use'):
+                    continue
+                if stripped.startswith('The original message'):
+                    continue
+                if stripped.startswith('Another message will'):
+                    continue
+                if stripped.startswith('host name:') or stripped.startswith('DNS domain:'):
+                    continue
+                clean_lines.append(stripped)
+            data['reason'] = '\n'.join(clean_lines).strip() if clean_lines else message.strip()[:500]
         
         # Extract VMID and VM name from message for vzdump events
         if pve_type == 'vzdump' and message:
@@ -1902,8 +1927,27 @@ class ProxmoxHookWatcher:
         if pve_type == 'package-updates':
             return 'update_available', 'node', ''
         
-        if pve_type == 'system-mail':
-            return 'system_mail', 'node', ''
+    if pve_type == 'system-mail':
+        # Parse smartd messages to extract useful info and filter noise.
+        # smartd sends system-mail when it detects SMART issues.
+        msg_lower = (message or '').lower()
+        title_lower_sm = (title or '').lower()
+        
+        # ── Filter smartd noise ──
+        # FailedReadSmartErrorLog: smartd can't read the error log -- this is
+        # a firmware quirk on some WD/Seagate drives, NOT a disk failure.
+        # FailedReadSmartData: similar firmware issue.
+        # These should NOT generate notifications.
+        smartd_noise = [
+            'failedreadsmarterrorlog',
+            'failedreadsmartdata',
+            'failedopendevice',  # drive was temporarily unavailable
+        ]
+        for noise in smartd_noise:
+            if noise in title_lower_sm or noise in msg_lower:
+                return '_skip', '', ''
+        
+        return 'system_mail', 'node', ''
         
         # ── Fallback for unknown/empty pve_type ──
         # (e.g. test notifications, future PVE event types)

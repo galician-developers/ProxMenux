@@ -561,13 +561,13 @@ TEMPLATES = {
     # ── System events ──
     'system_shutdown': {
         'title': '{hostname}: System shutting down',
-        'body': 'The system is shutting down.\n{reason}',
+        'body': '{reason}',
         'group': 'system',
         'default_enabled': True,
     },
     'system_reboot': {
         'title': '{hostname}: System rebooting',
-        'body': 'The system is rebooting.\n{reason}',
+        'body': '{reason}',
         'group': 'system',
         'default_enabled': True,
     },
@@ -579,6 +579,12 @@ TEMPLATES = {
     },
     'service_fail': {
         'title': '{hostname}: Service failed - {service_name}',
+        'body': '{reason}',
+        'group': 'system',
+        'default_enabled': True,
+    },
+    'system_mail': {
+        'title': '{hostname}: {pve_title}',
         'body': '{reason}',
         'group': 'system',
         'default_enabled': True,

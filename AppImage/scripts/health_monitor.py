@@ -141,6 +141,20 @@ class HealthMonitor:
         r'ata\d+.*hard resetting link',
         r'ata\d+.*link is slow',
         r'ata\d+.*COMRESET',
+        
+        # ── ProxMenux self-referential noise ──
+        # The monitor reporting its OWN service failures is circular --
+        # it cannot meaningfully alert about itself.
+        r'proxmenux-monitor\.service.*Failed',
+        r'proxmenux-monitor\.service.*exit-code',
+        r'ProxMenux-Monitor.*Failed at step EXEC',
+        
+        # ── PVE scheduler operational noise ──
+        # pvescheduler emits "could not update job state" every minute
+        # when a scheduled job reference is stale.  This is cosmetic,
+        # not a system problem.
+        r'pvescheduler.*could not update job state',
+        r'pvescheduler.*no such task',
     ]
     
     CRITICAL_LOG_KEYWORDS = [
