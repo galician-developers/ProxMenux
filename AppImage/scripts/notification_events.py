@@ -1927,27 +1927,27 @@ class ProxmoxHookWatcher:
         if pve_type == 'package-updates':
             return 'update_available', 'node', ''
         
-    if pve_type == 'system-mail':
-        # Parse smartd messages to extract useful info and filter noise.
-        # smartd sends system-mail when it detects SMART issues.
-        msg_lower = (message or '').lower()
-        title_lower_sm = (title or '').lower()
-        
-        # ── Filter smartd noise ──
-        # FailedReadSmartErrorLog: smartd can't read the error log -- this is
-        # a firmware quirk on some WD/Seagate drives, NOT a disk failure.
-        # FailedReadSmartData: similar firmware issue.
-        # These should NOT generate notifications.
-        smartd_noise = [
-            'failedreadsmarterrorlog',
-            'failedreadsmartdata',
-            'failedopendevice',  # drive was temporarily unavailable
-        ]
-        for noise in smartd_noise:
-            if noise in title_lower_sm or noise in msg_lower:
-                return '_skip', '', ''
-        
-        return 'system_mail', 'node', ''
+        if pve_type == 'system-mail':
+            # Parse smartd messages to extract useful info and filter noise.
+            # smartd sends system-mail when it detects SMART issues.
+            msg_lower = (message or '').lower()
+            title_lower_sm = (title or '').lower()
+            
+            # ── Filter smartd noise ──
+            # FailedReadSmartErrorLog: smartd can't read the error log -- this is
+            # a firmware quirk on some WD/Seagate drives, NOT a disk failure.
+            # FailedReadSmartData: similar firmware issue.
+            # These should NOT generate notifications.
+            smartd_noise = [
+                'failedreadsmarterrorlog',
+                'failedreadsmartdata',
+                'failedopendevice',  # drive was temporarily unavailable
+            ]
+            for noise in smartd_noise:
+                if noise in title_lower_sm or noise in msg_lower:
+                    return '_skip', '', ''
+            
+            return 'system_mail', 'node', ''
         
         # ── Fallback for unknown/empty pve_type ──
         # (e.g. test notifications, future PVE event types)
