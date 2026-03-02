@@ -5553,6 +5553,22 @@
     "type": "ct"
   },
   {
+    "name": "PowerDNS",
+    "slug": "powerdns",
+    "desc": "The PowerDNS Authoritative Server is a versatile nameserver which supports a large number of backends. These backends can either be plain zone files or be more dynamic in nature. PowerDNS has the concepts of ‘backends’. A backend is a datastore that the server will consult that contains DNS records (and some metadata). The backends range from database backends (MySQL, PostgreSQL) and BIND zone files to co-processes and JSON API’s.",
+    "script": "ct/powerdns.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/powerdns.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/powerdns.sh",
+    "os": "debian",
+    "categories": [
+      5
+    ],
+    "notes": [
+      "For administrator credentials type: `cat ~/poweradmin.creds` inside LXC."
+    ],
+    "type": "ct"
+  },
+  {
     "name": "PrivateBin",
     "slug": "privatebin",
     "desc": "PrivateBin is a minimalist, open-source pastebin where the server has zero knowledge of pasted data. Data is encrypted/decrypted in the browser using 256-bit AES.",
