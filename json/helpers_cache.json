@@ -1118,20 +1118,21 @@
     "name": "Coolify",
     "slug": "coolify",
     "desc": "Coolify is an open-source & self-hostable alternative to Heroku, Netlify, and Vercel. It helps you manage your servers, applications, and databases on your own hardware with Docker. Deploy any application from Git repositories, Docker images, or use pre-built templates.",
-    "script": "ct/coolify.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/coolify.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/coolify.sh",
-    "os": "debian",
+    "script": "tools/addon/coolify.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/coolify.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/tools/addon/coolify.sh",
+    "os": "generic",
     "categories": [
       3
     ],
     "notes": [
+      "This is an addon script intended to be used on top of an existing Docker container.",
+      "Execute within an existing LXC console (Debian / Ubuntu / Alpine supported)",
       "Initial setup will be done via the web interface on first access.",
       "Coolify has built-in auto-updates. You can configure update frequency in Settings.",
-      "Coolify requires SSH access to manage deployments. SSH is enabled automatically.",
-      "This container uses Docker-in-Docker (nesting) for application deployments."
+      "To update via CLI, run the addon script again and select Update, or use: bash <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/coolify.sh)"
     ],
-    "type": "ct"
+    "type": "addon"
   },
   {
     "name": "Copyparty",
@@ -1516,18 +1517,19 @@
     "name": "Dockge",
     "slug": "dockge",
     "desc": "Dockge is a fancy, easy-to-use and reactive self-hosted docker compose.yaml stack-oriented manager.",
-    "script": "ct/dockge.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/dockge.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/dockge.sh",
-    "os": "debian",
+    "script": "tools/addon/dockge.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/dockge.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/tools/addon/dockge.sh",
+    "os": "generic",
     "categories": [
       3
     ],
     "notes": [
-      "Options to add Immich and/or Home Assistant",
-      "If the LXC is created Privileged, the script will automatically set up USB passthrough."
+      "This is an addon script intended to be used on top of an existing Docker container.",
+      "Execute within an existing LXC console (Debian / Ubuntu / Alpine supported)",
+      "To update, run the addon script again and select Update, or use: bash <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/dockge.sh)"
     ],
-    "type": "ct"
+    "type": "addon"
   },
   {
     "name": "Docmost",
@@ -1549,19 +1551,21 @@
     "name": "Dokploy",
     "slug": "dokploy",
     "desc": "Dokploy is a free, self-hostable Platform as a Service (PaaS) that simplifies the deployment and management of applications and databases. Built with Docker and Traefik, it offers features like automatic SSL, Docker Compose support, database backups, and a real-time monitoring dashboard.",
-    "script": "ct/dokploy.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/dokploy.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/dokploy.sh",
-    "os": "debian",
+    "script": "tools/addon/dokploy.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/dokploy.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/tools/addon/dokploy.sh",
+    "os": "generic",
     "categories": [
       3
     ],
     "notes": [
+      "This is an addon script intended to be used on top of an existing Docker container.",
+      "Execute within an existing LXC console (Debian / Ubuntu / Alpine supported)",
       "Initial setup will be done via the web interface on first access.",
       "Dokploy has built-in auto-updates via the web interface.",
-      "This container uses Docker-in-Docker (nesting) for application deployments."
+      "To update via CLI, run the addon script again and select Update, or use: bash <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/dokploy.sh)"
     ],
-    "type": "ct"
+    "type": "addon"
   },
   {
     "name": "Dolibarr",
@@ -3283,33 +3287,20 @@
     "name": "Komodo",
     "slug": "komodo",
     "desc": "Komodo is a build and deployment system that automates the creation of versioned Docker images from Git repositories and facilitates the deployment of Docker containers and Docker Compose setups. It provides features such as build automation triggered by Git pushes, deployment management, and monitoring of uptime and logs across multiple servers. The core API and associated agent are developed in Rust.",
-    "script": "ct/alpine-komodo.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/alpine-komodo.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/alpine-komodo.sh",
-    "os": "alpine",
+    "script": "tools/addon/komodo.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/komodo.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/tools/addon/komodo.sh",
+    "os": "generic",
     "categories": [
       3
     ],
     "notes": [
-      "For admin username and password type `cat ~/komodo.creds` inside LXC."
+      "This is an addon script intended to be used on top of an existing Docker container.",
+      "Execute within an existing LXC console (Debian / Ubuntu / Alpine supported)",
+      "For admin username and password, run: cat ~/komodo.creds",
+      "To update, run the addon script again and select Update, or use: bash <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/komodo.sh)"
     ],
-    "type": "ct"
-  },
-  {
-    "name": "Komodo",
-    "slug": "komodo",
-    "desc": "Komodo is a build and deployment system that automates the creation of versioned Docker images from Git repositories and facilitates the deployment of Docker containers and Docker Compose setups. It provides features such as build automation triggered by Git pushes, deployment management, and monitoring of uptime and logs across multiple servers. The core API and associated agent are developed in Rust.",
-    "script": "ct/komodo.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/komodo.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/komodo.sh",
-    "os": "debian",
-    "categories": [
-      3
-    ],
-    "notes": [
-      "For admin username and password type `cat ~/komodo.creds` inside LXC."
-    ],
-    "type": "ct"
+    "type": "addon"
   },
   {
     "name": "Kubo",
@@ -5576,6 +5567,20 @@
     "type": "ct"
   },
   {
+    "name": "Profilarr",
+    "slug": "profilarr",
+    "desc": "Profilarr is a configuration management platform for Radarr and Sonarr that simplifies importing, syncing, and managing quality profiles, custom formats, and release profiles.",
+    "script": "ct/profilarr.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/profilarr.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/profilarr.sh",
+    "os": "debian",
+    "categories": [
+      14
+    ],
+    "notes": [],
+    "type": "ct"
+  },
+  {
     "name": "ProjectSend",
     "slug": "projectsend",
     "desc": "ProjectSend is a free, open source software that lets you share files with your clients, focused on ease of use and privacy. It supports clients groups, system users roles, statistics, multiple languages, detailed logs... and much more!",
@@ -6154,17 +6159,20 @@
     "name": "Runtipi",
     "slug": "runtipi",
     "desc": "Runtipi lets you install all your favorite self-hosted apps without the hassle of configuring and managing each service. One-click installs and updates for more than 180 popular apps.",
-    "script": "ct/runtipi.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/runtipi.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/runtipi.sh",
-    "os": "debian",
+    "script": "tools/addon/runtipi.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/runtipi.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/tools/addon/runtipi.sh",
+    "os": "generic",
     "categories": [
       2
     ],
     "notes": [
-      "WARNING: Installation sources scripts outside of Community Scripts repo. Please check the source before installing."
+      "This is an addon script intended to be used on top of an existing Docker container.",
+      "Execute within an existing LXC console (Debian / Ubuntu only)",
+      "WARNING: Installation sources scripts outside of Community Scripts repo. Please check the source before installing.",
+      "To update via CLI, run the addon script again and select Update, or use: bash <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/runtipi.sh)"
     ],
-    "type": "ct"
+    "type": "addon"
   },
   {
     "name": "RustDesk Server",
