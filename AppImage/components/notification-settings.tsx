@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
-
+import { ChannelGrid } from "./channel-grid"
 import { Input } from "./ui/input"
 import { Label } from "./ui/label"
 import { Badge } from "./ui/badge"
@@ -100,42 +100,6 @@ const AI_PROVIDERS = [
   { value: "openai", label: "OpenAI" },
   { value: "groq", label: "Groq" },
 ]
-
-// ── Channel visual definitions ──
-const CHANNEL_COLOR_MAP: Record<string, string> = {
-  blue: "border-blue-500/60 bg-blue-500/10",
-  green: "border-green-500/60 bg-green-500/10",
-  indigo: "border-indigo-500/60 bg-indigo-500/10",
-  amber: "border-amber-500/60 bg-amber-500/10",
-}
-
-const CHANNEL_SWITCH_COLOR: Record<string, string> = {
-  blue: "bg-blue-600",
-  green: "bg-green-600",
-  indigo: "bg-indigo-600",
-  amber: "bg-amber-600",
-}
-
-const CHANNEL_DEFS: ChannelDef[] = [
-  { key: "telegram", label: "Telegram", color: "blue", activeColor: "bg-blue-600 hover:bg-blue-700" },
-  { key: "gotify", label: "Gotify", color: "green", activeColor: "bg-green-600 hover:bg-green-700" },
-  { key: "discord", label: "Discord", color: "indigo", activeColor: "bg-indigo-600 hover:bg-indigo-700" },
-  { key: "email", label: "Email", color: "amber", activeColor: "bg-amber-600 hover:bg-amber-700" },
-]
-
-interface ChannelDef {
-  key: string
-  label: string
-  color: string
-  activeColor: string
-}
-
-const CHANNEL_ICONS: Record<string, string> = {
-  telegram: "/icons/telegram.svg",
-  gotify: "/icons/gotify.svg",
-  discord: "/icons/discord.svg",
-  email: "/icons/mail.svg",
-}
 
 const DEFAULT_CONFIG: NotificationConfig = {
   enabled: false,
@@ -707,64 +671,21 @@ matcher: proxmenux-pbs
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Channels</span>
               </div>
 
-              {/* ── Channel Cards Grid ── */}
-              <div className="grid grid-cols-4 gap-3">
-                {CHANNEL_DEFS.map(ch => {
-                  /* eslint-disable @typescript-eslint/no-explicit-any */
-                  const chConf = (config.channels || {})[ch.key]
-                  const isEnabled = !!(chConf && chConf.enabled)
-                  const isSelected = selectedChannel === ch.key
+              <ChannelGrid
+                enabledChannels={{
+                  telegram: config.channels.telegram?.enabled || false,
+                  gotify: config.channels.gotify?.enabled || false,
+                  discord: config.channels.discord?.enabled || false,
+                  email: config.channels.email?.enabled || false,
+                }}
+                onToggle={(ch, val) => updateChannel(ch, "enabled", val)}
+                selectedChannel={selectedChannel}
+                onSelect={setSelectedChannel}
+              />
 
-                  return (
-                    <button
-                      key={ch.key}
-                      onClick={() => setSelectedChannel(isSelected ? null : ch.key)}
-                      className={`group relative flex flex-col items-center justify-center gap-2 rounded-lg border p-4 transition-all cursor-pointer ${
-                        isSelected
-                          ? CHANNEL_COLOR_MAP[ch.color] + " ring-1 ring-offset-0"
-                          : isEnabled
-                            ? "border-border/60 bg-muted/30 hover:bg-muted/40"
-                            : "border-border/30 bg-muted/10 hover:border-border/50 hover:bg-muted/20"
-                      }`}
-                    >
-                      {isEnabled && (
-                        <span className={"absolute top-2 right-2 h-1.5 w-1.5 rounded-full " + CHANNEL_SWITCH_COLOR[ch.color]} />
-                      )}
-
-                      <img
-                        src={CHANNEL_ICONS[ch.key]}
-                        alt={ch.label}
-                        className={"h-7 w-7 transition-opacity " + (isEnabled || isSelected ? "opacity-100" : "opacity-30 group-hover:opacity-70")}
-                      />
-
-                      <span className={"text-[11px] font-medium transition-colors " + (isEnabled || isSelected ? "text-foreground" : "text-muted-foreground/60")}>
-                        {ch.label}
-                      </span>
-
-                      <div
-                        className="absolute inset-x-0 bottom-0 flex items-center justify-center py-1.5 rounded-b-lg bg-background/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          updateChannel(ch.key, "enabled", !isEnabled)
-                        }}
-                      >
-                        <div
-                          className={"relative w-8 h-4 rounded-full transition-colors " + (isEnabled ? CHANNEL_SWITCH_COLOR[ch.color] : "bg-muted-foreground/30")}
-                          role="switch"
-                          aria-checked={isEnabled}
-                          aria-label={"Enable " + ch.label}
-                        >
-                          <span className={"absolute top-[2px] left-[2px] h-3 w-3 rounded-full bg-white shadow transition-transform " + (isEnabled ? "translate-x-4" : "translate-x-0")} />
-                        </div>
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-
-              {/* ── Selected Channel Configuration Panel ── */}
+              {/* ── Telegram Config ── */}
               {selectedChannel === "telegram" && (
-                <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-3 space-y-3">
+                <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-3 space-y-3 mt-3">
                   {config.channels.telegram?.enabled ? (
                     <>
                       <div className="space-y-1.5">
@@ -819,8 +740,9 @@ matcher: proxmenux-pbs
                 </div>
               )}
 
+              {/* ── Gotify Config ── */}
               {selectedChannel === "gotify" && (
-                <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-3 space-y-3">
+                <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-3 space-y-3 mt-3">
                   {config.channels.gotify?.enabled ? (
                     <>
                       <div className="space-y-1.5">
@@ -875,8 +797,9 @@ matcher: proxmenux-pbs
                 </div>
               )}
 
+              {/* ── Discord Config ── */}
               {selectedChannel === "discord" && (
-                <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-3 space-y-3">
+                <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-3 space-y-3 mt-3">
                   {config.channels.discord?.enabled ? (
                     <>
                       <div className="space-y-1.5">
@@ -922,8 +845,9 @@ matcher: proxmenux-pbs
                 </div>
               )}
 
+              {/* ── Email Config ── */}
               {selectedChannel === "email" && (
-                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-3">
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-3 mt-3">
                   {config.channels.email?.enabled ? (
                     <>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1065,7 +989,6 @@ matcher: proxmenux-pbs
                   <span>{testResult.message}</span>
                 </div>
               )}
-              </div>{/* close bordered channel container */}
             </div>
 
             {/* ── Filters ── */}
