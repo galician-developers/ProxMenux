@@ -115,6 +115,14 @@ class JournalWatcher:
         # 24h anti-cascade for disk I/O + filesystem errors (keyed by device name)
         self._disk_io_notified: Dict[str, float] = {}
         self._DISK_IO_COOLDOWN = 86400  # 24 hours
+        
+        # Track when the last full backup job notification was sent
+        # so we can suppress per-guest "Starting Backup of VM ..." noise
+        self._last_backup_job_ts: float = 0
+        self._BACKUP_JOB_SUPPRESS_WINDOW = 7200  # 2h: suppress per-guest during active job
+        
+        # NOTE: Service failure batching is handled universally by
+        # BurstAggregator in NotificationManager (AGGREGATION_RULES).
     
     def start(self):
         """Start the journal watcher thread."""
@@ -521,42 +529,26 @@ class JournalWatcher:
             match = re.search(pattern, msg)
             if match:
                 service_name = match.group(1)
-                data = {
-                    'service_name': service_name,
-                    'reason': msg[:300],
-                    'hostname': self._hostname,
-                }
+                display_name = service_name
                 
                 # Enrich PVE VM/CT services with guest name and context
-                # pve-container@101 -> LXC container 101
-                # qemu-server@100  -> QEMU VM 100
                 pve_match = re.match(
                     r'(pve-container|qemu-server)@(\d+)', service_name)
                 if pve_match:
                     svc_type = pve_match.group(1)
                     vmid = pve_match.group(2)
                     vm_name = self._resolve_vm_name(vmid)
-                    
-                    if svc_type == 'pve-container':
-                        guest_type = 'LXC container'
-                    else:
-                        guest_type = 'QEMU VM'
-                    
-                    display = f"{guest_type} {vmid}"
-                    if vm_name:
-                        display = f"{guest_type} {vmid} ({vm_name})"
-                    
-                    data['service_name'] = service_name
-                    data['vmid'] = vmid
-                    data['vmname'] = vm_name
-                    data['guest_type'] = guest_type
-                    data['display_name'] = display
-                    data['reason'] = (
-                        f"{display} failed to start.\n{msg[:300]}"
-                    )
+                    guest_type = 'CT' if svc_type == 'pve-container' else 'VM'
+                    display_name = f"{guest_type} {vm_name} ({vmid})" if vm_name else f"{guest_type} {vmid}"
                 
-                self._emit('service_fail', 'WARNING', data,
-                           entity='node', entity_id=service_name)
+                # Emit directly -- the BurstAggregator in NotificationManager
+                # will automatically batch multiple service failures that
+                # arrive within the aggregation window (90s).
+                self._emit('service_fail', 'WARNING', {
+                    'service_name': display_name,
+                    'reason': msg[:300],
+                    'hostname': self._hostname,
+                }, entity='node', entity_id=service_name)
                 return
     
     def _resolve_vm_name(self, vmid: str) -> str:
@@ -765,11 +757,17 @@ class JournalWatcher:
         # Fallback: vzdump also emits per-guest messages like:
         #   "INFO: Starting Backup of VM 104 (lxc)"
         # These fire for EACH guest when a multi-guest vzdump job runs.
-        # We only use this if the primary pattern didn't match.
+        # We SUPPRESS these when a full backup job was recently notified
+        # (within 2h window) to avoid spamming one notification per guest.
+        # Only use fallback for standalone single-VM backups (manual, no job).
         fallback_guest = None
         if not match:
             fb = re.match(r'(?:INFO:\s*)?Starting Backup of VM (\d+)\s+\((lxc|qemu)\)', msg)
             if fb:
+                # If a full job notification was sent recently, suppress per-guest noise
+                now = time.time()
+                if now - self._last_backup_job_ts < self._BACKUP_JOB_SUPPRESS_WINDOW:
+                    return  # Part of an active job -- already notified
                 fallback_guest = fb.group(1)
             else:
                 return
@@ -809,16 +807,21 @@ class JournalWatcher:
         
         if guests:
             if guests == ['all']:
-                reason_parts.append('Guests: All VMs/CTs')
+                reason_parts.append('VM/CT: All')
             else:
                 guest_lines = []
                 for gid in guests:
-                    gname = self._resolve_vm_name(gid)
-                    if gname:
-                        guest_lines.append(f'  {gname} ({gid})')
+                    # Skip non-guest IDs (0, 1 are not real guests)
+                    if gid in ('0', '1'):
+                        continue
+                    info = self._resolve_vm_info(gid)
+                    if info:
+                        gname, gtype = info
+                        guest_lines.append(f'  {gtype} {gname} ({gid})')
                     else:
                         guest_lines.append(f'  ID {gid}')
-                reason_parts.append('Guests:\n' + '\n'.join(guest_lines))
+                if guest_lines:
+                    reason_parts.append('VM/CT:\n' + '\n'.join(guest_lines))
         
         details = []
         if storage:
@@ -837,6 +840,11 @@ class JournalWatcher:
         # dedup each other, while the SAME job doesn't fire twice.
         guest_key = '_'.join(sorted(guests)) if guests else 'unknown'
         
+        # If this was a full job (primary pattern), record timestamp to
+        # suppress subsequent per-guest "Starting Backup of VM" messages
+        if match:
+            self._last_backup_job_ts = time.time()
+        
         self._emit('backup_start', 'INFO', {
             'vmid': ', '.join(guests),
             'vmname': '',
@@ -847,18 +855,33 @@ class JournalWatcher:
     
     def _resolve_vm_name(self, vmid: str) -> str:
         """Try to resolve a VMID to its name from PVE config files."""
+        info = self._resolve_vm_info(vmid)
+        return info[0] if info else ''
+
+    def _resolve_vm_info(self, vmid: str):
+        """Resolve a VMID to (name, type) from PVE config files.
+        
+        Returns tuple (name, 'VM'|'CT') or None if not found.
+        type is determined by which config directory the ID was found in:
+          /etc/pve/qemu-server -> VM
+          /etc/pve/lxc         -> CT
+        """
         if not vmid or not vmid.isdigit():
-            return ''
-        for base in ['/etc/pve/qemu-server', '/etc/pve/lxc']:
+            return None
+        type_map = [
+            ('/etc/pve/qemu-server', 'VM'),
+            ('/etc/pve/lxc', 'CT'),
+        ]
+        for base, gtype in type_map:
             conf = f'{base}/{vmid}.conf'
             try:
                 with open(conf, 'r') as f:
                     for line in f:
                         if line.startswith('name:') or line.startswith('hostname:'):
-                            return line.split(':', 1)[1].strip()
+                            return (line.split(':', 1)[1].strip(), gtype)
             except (OSError, IOError):
                 pass
-        return ''
+        return None
     
     def _check_cluster_events(self, msg: str, syslog_id: str):
         """Detect cluster split-brain and node disconnect."""

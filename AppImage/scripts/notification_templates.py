@@ -73,6 +73,12 @@ def _parse_vzdump_message(message: str) -> Optional[Dict[str, Any]]:
                 filename = padded[col_starts[5]:].strip()
                 
                 if vmid and vmid.isdigit():
+                    # Infer type from filename (vzdump-lxc-NNN or vzdump-qemu-NNN)
+                    vm_type = ''
+                    if 'lxc' in filename:
+                        vm_type = 'lxc'
+                    elif 'qemu' in filename:
+                        vm_type = 'qemu'
                     vms.append({
                         'vmid': vmid,
                         'name': name,
@@ -80,6 +86,7 @@ def _parse_vzdump_message(message: str) -> Optional[Dict[str, Any]]:
                         'time': time_val,
                         'size': size,
                         'filename': filename,
+                        'type': vm_type,
                     })
     
     # ── Strategy 2: log-style (PBS / Proxmox Backup Server) ──
@@ -235,22 +242,49 @@ def _format_vzdump_body(parsed: Dict[str, Any], is_success: bool) -> str:
         status = vm.get('status', '').lower()
         icon = '\u2705' if status == 'ok' else '\u274C'
         
-        parts.append(f"{icon} ID {vm['vmid']} ({vm['name']})")
+        # Determine VM/CT type prefix
+        vm_type = vm.get('type', '')
+        if vm_type == 'lxc':
+            prefix = 'CT'
+        elif vm_type == 'qemu':
+            prefix = 'VM'
+        else:
+            # Try to infer from filename (vzdump-lxc-NNN or vzdump-qemu-NNN)
+            fname = vm.get('filename', '')
+            if 'lxc' in fname or fname.startswith('ct/'):
+                prefix = 'CT'
+            elif 'qemu' in fname or fname.startswith('vm/'):
+                prefix = 'VM'
+            else:
+                prefix = ''
         
-        details = []
+        # Format: "VM Name (ID)" or "CT Name (ID)" -- name first
+        name = vm.get('name', '')
+        vmid = vm.get('vmid', '')
+        if prefix and name:
+            parts.append(f"{icon} {prefix} {name} ({vmid})")
+        elif name:
+            parts.append(f"{icon} {name} ({vmid})")
+        else:
+            parts.append(f"{icon} ID {vmid}")
+        
+        # Size and Duration on same line
+        detail_line = []
         if vm.get('size'):
-            details.append(f"Size: {vm['size']}")
+            detail_line.append(f"Size: {vm['size']}")
         if vm.get('time'):
-            details.append(f"Duration: {vm['time']}")
+            detail_line.append(f"Duration: {vm['time']}")
+        if detail_line:
+            parts.append(' | '.join(detail_line))
+        
+        # PBS/File on separate line
         if vm.get('filename'):
             fname = vm['filename']
-            # PBS archives look like "ct/100/2026-..." or "vm/105/2026-..."
             if re.match(r'^(?:ct|vm)/\d+/', fname):
-                details.append(f"PBS: {fname}")
+                parts.append(f"PBS: {fname}")
             else:
-                details.append(f"File: {fname}")
-        if details:
-            parts.append(' | '.join(details))
+                parts.append(f"File: {fname}")
+        
         parts.append('')  # blank line between VMs
     
     # Summary
@@ -583,6 +617,12 @@ TEMPLATES = {
         'group': 'system',
         'default_enabled': True,
     },
+    'service_fail_batch': {
+        'title': '{hostname}: {service_count} services failed',
+        'body': '{reason}',
+        'group': 'system',
+        'default_enabled': True,
+    },
     'system_mail': {
         'title': '{hostname}: {pve_title}',
         'body': '{reason}',
@@ -683,9 +723,21 @@ TEMPLATES = {
         'group': 'cluster',
         'default_enabled': True,
     },
+    'burst_service_fail': {
+        'title': '{hostname}: {count} services failed in {window}',
+        'body': '{count} service failures detected in {window}.\nThis typically indicates a node reboot or PVE service restart.\n\nAdditional failures:\n{details}',
+        'group': 'system',
+        'default_enabled': True,
+    },
+    'burst_system': {
+        'title': '{hostname}: {count} system problems in {window}',
+        'body': '{count} system problems detected in {window}.\n\nAdditional issues:\n{details}',
+        'group': 'system',
+        'default_enabled': True,
+    },
     'burst_generic': {
         'title': '{hostname}: {count} {event_type} events in {window}',
-        'body': '{count} events of type {event_type} in {window}.\n{entity_list}',
+        'body': '{count} events of type {event_type} in {window}.\n\nAdditional events:\n{details}',
         'group': 'system',
         'default_enabled': True,
     },

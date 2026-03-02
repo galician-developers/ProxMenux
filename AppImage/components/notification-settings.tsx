@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
-import { ChannelGrid } from "./channel-grid"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs"
 import { Input } from "./ui/input"
 import { Label } from "./ui/label"
 import { Badge } from "./ui/badge"
@@ -143,7 +143,6 @@ export function NotificationSettings() {
   const [editMode, setEditMode] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
-  const [selectedChannel, setSelectedChannel] = useState<string | null>(null)
   const [originalConfig, setOriginalConfig] = useState<NotificationConfig>(DEFAULT_CONFIG)
   const [webhookSetup, setWebhookSetup] = useState<{
     status: "idle" | "running" | "success" | "failed"
@@ -671,22 +670,41 @@ matcher: proxmenux-pbs
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Channels</span>
               </div>
 
-              <ChannelGrid
-                enabledChannels={{
-                  telegram: config.channels.telegram?.enabled || false,
-                  gotify: config.channels.gotify?.enabled || false,
-                  discord: config.channels.discord?.enabled || false,
-                  email: config.channels.email?.enabled || false,
-                }}
-                onToggle={(ch, val) => updateChannel(ch, "enabled", val)}
-                selectedChannel={selectedChannel}
-                onSelect={setSelectedChannel}
-              />
+              <div className="rounded-lg border border-border/50 bg-muted/20 p-3">
+              <Tabs defaultValue="telegram" className="w-full">
+                <TabsList className="w-full grid grid-cols-4 h-8">
+                  <TabsTrigger value="telegram" className="text-xs data-[state=active]:text-blue-500">
+                    Telegram
+                  </TabsTrigger>
+                  <TabsTrigger value="gotify" className="text-xs data-[state=active]:text-green-500">
+                    Gotify
+                  </TabsTrigger>
+                  <TabsTrigger value="discord" className="text-xs data-[state=active]:text-indigo-500">
+                    Discord
+                  </TabsTrigger>
+                  <TabsTrigger value="email" className="text-xs data-[state=active]:text-amber-500">
+                    Email
+                  </TabsTrigger>
+                </TabsList>
 
-              {/* ── Telegram Config ── */}
-              {selectedChannel === "telegram" && (
-                <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-3 space-y-3 mt-3">
-                  {config.channels.telegram?.enabled ? (
+                {/* Telegram */}
+                <TabsContent value="telegram" className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium">Enable Telegram</Label>
+                    <button
+                      className={`relative w-9 h-[18px] rounded-full transition-colors ${
+                        config.channels.telegram?.enabled ? "bg-blue-600" : "bg-muted-foreground/30"
+                      } cursor-pointer`}
+                      onClick={() => updateChannel("telegram", "enabled", !config.channels.telegram?.enabled)}
+                      role="switch"
+                      aria-checked={config.channels.telegram?.enabled || false}
+                    >
+                      <span className={`absolute top-[1px] left-[1px] h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                        config.channels.telegram?.enabled ? "translate-x-[18px]" : "translate-x-0"
+                      }`} />
+                    </button>
+                  </div>
+                  {config.channels.telegram?.enabled && (
                     <>
                       <div className="space-y-1.5">
                         <Label className="text-[11px] text-muted-foreground">Bot Token</Label>
@@ -715,6 +733,7 @@ matcher: proxmenux-pbs
                           onChange={e => updateChannel("telegram", "chat_id", e.target.value)}
                         />
                       </div>
+                      {/* Per-channel action bar */}
                       <div className="flex items-center gap-2 pt-2 border-t border-border/50">
                         <button
                           className="h-7 px-3 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
@@ -734,16 +753,27 @@ matcher: proxmenux-pbs
                         </button>
                       </div>
                     </>
-                  ) : (
-                    <p className="text-xs text-muted-foreground text-center py-2">Enable Telegram using the switch on hover to configure it.</p>
                   )}
-                </div>
-              )}
+                </TabsContent>
 
-              {/* ── Gotify Config ── */}
-              {selectedChannel === "gotify" && (
-                <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-3 space-y-3 mt-3">
-                  {config.channels.gotify?.enabled ? (
+                {/* Gotify */}
+                <TabsContent value="gotify" className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium">Enable Gotify</Label>
+                    <button
+                      className={`relative w-9 h-[18px] rounded-full transition-colors ${
+                        config.channels.gotify?.enabled ? "bg-green-600" : "bg-muted-foreground/30"
+                      } cursor-pointer`}
+                      onClick={() => updateChannel("gotify", "enabled", !config.channels.gotify?.enabled)}
+                      role="switch"
+                      aria-checked={config.channels.gotify?.enabled || false}
+                    >
+                      <span className={`absolute top-[1px] left-[1px] h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                        config.channels.gotify?.enabled ? "translate-x-[18px]" : "translate-x-0"
+                      }`} />
+                    </button>
+                  </div>
+                  {config.channels.gotify?.enabled && (
                     <>
                       <div className="space-y-1.5">
                         <Label className="text-[11px] text-muted-foreground">Server URL</Label>
@@ -772,6 +802,7 @@ matcher: proxmenux-pbs
                           </button>
                         </div>
                       </div>
+                      {/* Per-channel action bar */}
                       <div className="flex items-center gap-2 pt-2 border-t border-border/50">
                         <button
                           className="h-7 px-3 text-xs rounded-md bg-green-600 hover:bg-green-700 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
@@ -791,16 +822,27 @@ matcher: proxmenux-pbs
                         </button>
                       </div>
                     </>
-                  ) : (
-                    <p className="text-xs text-muted-foreground text-center py-2">Enable Gotify using the switch on hover to configure it.</p>
                   )}
-                </div>
-              )}
+                </TabsContent>
 
-              {/* ── Discord Config ── */}
-              {selectedChannel === "discord" && (
-                <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-3 space-y-3 mt-3">
-                  {config.channels.discord?.enabled ? (
+                {/* Discord */}
+                <TabsContent value="discord" className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium">Enable Discord</Label>
+                    <button
+                      className={`relative w-9 h-[18px] rounded-full transition-colors ${
+                        config.channels.discord?.enabled ? "bg-indigo-600" : "bg-muted-foreground/30"
+                      } cursor-pointer`}
+                      onClick={() => updateChannel("discord", "enabled", !config.channels.discord?.enabled)}
+                      role="switch"
+                      aria-checked={config.channels.discord?.enabled || false}
+                    >
+                      <span className={`absolute top-[1px] left-[1px] h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                        config.channels.discord?.enabled ? "translate-x-[18px]" : "translate-x-0"
+                      }`} />
+                    </button>
+                  </div>
+                  {config.channels.discord?.enabled && (
                     <>
                       <div className="space-y-1.5">
                         <Label className="text-[11px] text-muted-foreground">Webhook URL</Label>
@@ -820,6 +862,7 @@ matcher: proxmenux-pbs
                           </button>
                         </div>
                       </div>
+                      {/* Per-channel action bar */}
                       <div className="flex items-center gap-2 pt-2 border-t border-border/50">
                         <button
                           className="h-7 px-3 text-xs rounded-md bg-indigo-600 hover:bg-indigo-700 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
@@ -839,16 +882,27 @@ matcher: proxmenux-pbs
                         </button>
                       </div>
                     </>
-                  ) : (
-                    <p className="text-xs text-muted-foreground text-center py-2">Enable Discord using the switch on hover to configure it.</p>
                   )}
-                </div>
-              )}
+                </TabsContent>
 
-              {/* ── Email Config ── */}
-              {selectedChannel === "email" && (
-                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-3 mt-3">
-                  {config.channels.email?.enabled ? (
+                {/* Email */}
+                <TabsContent value="email" className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium">Enable Email</Label>
+                    <button
+                      className={`relative w-9 h-[18px] rounded-full transition-colors ${
+                        config.channels.email?.enabled ? "bg-amber-600" : "bg-muted-foreground/30"
+                      } cursor-pointer`}
+                      onClick={() => updateChannel("email", "enabled", !config.channels.email?.enabled)}
+                      role="switch"
+                      aria-checked={config.channels.email?.enabled || false}
+                    >
+                      <span className={`absolute top-[1px] left-[1px] h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                        config.channels.email?.enabled ? "translate-x-[18px]" : "translate-x-0"
+                      }`} />
+                    </button>
+                  </div>
+                  {config.channels.email?.enabled && (
                     <>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <div className="space-y-1.5">
@@ -949,6 +1003,7 @@ matcher: proxmenux-pbs
                           For Gmail, use an App Password instead of your account password.
                         </p>
                       </div>
+                      {/* Per-channel action bar */}
                       <div className="flex items-center gap-2 pt-2 border-t border-border/50">
                         <button
                           className="h-7 px-3 text-xs rounded-md bg-amber-600 hover:bg-amber-700 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
@@ -968,11 +1023,9 @@ matcher: proxmenux-pbs
                         </button>
                       </div>
                     </>
-                  ) : (
-                    <p className="text-xs text-muted-foreground text-center py-2">Enable Email using the switch on hover to configure it.</p>
                   )}
-                </div>
-              )}
+                </TabsContent>
+              </Tabs>
 
               {/* Test Result */}
               {testResult && (
@@ -989,6 +1042,7 @@ matcher: proxmenux-pbs
                   <span>{testResult.message}</span>
                 </div>
               )}
+              </div>{/* close bordered channel container */}
             </div>
 
             {/* ── Filters ── */}

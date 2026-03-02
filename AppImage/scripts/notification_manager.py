@@ -126,12 +126,22 @@ class GroupRateLimiter:
 
 
 AGGREGATION_RULES = {
-    'auth_fail':     {'window': 120, 'min_count': 3,  'burst_type': 'burst_auth_fail'},
-    'ip_block':      {'window': 120, 'min_count': 3,  'burst_type': 'burst_ip_block'},
-    'disk_io_error': {'window': 60,  'min_count': 3,  'burst_type': 'burst_disk_io'},
-    'split_brain':   {'window': 300, 'min_count': 2,  'burst_type': 'burst_cluster'},
-    'node_disconnect': {'window': 300, 'min_count': 2, 'burst_type': 'burst_cluster'},
+    'auth_fail':       {'window': 120, 'min_count': 3,  'burst_type': 'burst_auth_fail'},
+    'ip_block':        {'window': 120, 'min_count': 3,  'burst_type': 'burst_ip_block'},
+    'disk_io_error':   {'window': 60,  'min_count': 3,  'burst_type': 'burst_disk_io'},
+    'split_brain':     {'window': 300, 'min_count': 2,  'burst_type': 'burst_cluster'},
+    'node_disconnect': {'window': 300, 'min_count': 2,  'burst_type': 'burst_cluster'},
+    'service_fail':    {'window': 90,  'min_count': 2,  'burst_type': 'burst_service_fail'},
+    'service_fail_batch': {'window': 90, 'min_count': 2, 'burst_type': 'burst_service_fail'},
+    'system_problem':  {'window': 90,  'min_count': 2,  'burst_type': 'burst_system'},
+    'oom_kill':        {'window': 60,  'min_count': 2,  'burst_type': 'burst_generic'},
+    'firewall_issue':  {'window': 60,  'min_count': 2,  'burst_type': 'burst_generic'},
 }
+
+# Default catch-all rule for any event type NOT listed above.
+# This ensures that even unlisted event types get grouped when they
+# burst, avoiding notification floods from any source.
+_DEFAULT_AGGREGATION = {'window': 60, 'min_count': 2, 'burst_type': 'burst_generic'}
 
 
 class BurstAggregator:
@@ -150,11 +160,13 @@ class BurstAggregator:
     def ingest(self, event: NotificationEvent) -> Optional[NotificationEvent]:
         """Add event to aggregation. Returns:
         - None if event is being buffered (wait for window)
-        - Original event if not eligible for aggregation
+        - Original event if first in its bucket (sent immediately)
+        
+        ALL event types are aggregated: specific rules from AGGREGATION_RULES
+        take priority, otherwise the _DEFAULT_AGGREGATION catch-all applies.
+        This prevents notification floods from any source.
         """
-        rule = AGGREGATION_RULES.get(event.event_type)
-        if not rule:
-            return event  # Not aggregable, pass through
+        rule = AGGREGATION_RULES.get(event.event_type, _DEFAULT_AGGREGATION)
         
         bucket_key = f"{event.event_type}:{event.data.get('hostname', '')}"
         
@@ -202,7 +214,11 @@ class BurstAggregator:
     
     def _create_summary(self, events: List[NotificationEvent],
                         rule: dict) -> Optional[NotificationEvent]:
-        """Create a single summary event from multiple events."""
+        """Create a single summary event from multiple events.
+        
+        Includes individual detail lines so the grouped message is
+        self-contained and the user can see exactly what happened.
+        """
         if not events:
             return None
         
@@ -226,12 +242,32 @@ class BurstAggregator:
         
         burst_type = rule.get('burst_type', 'burst_generic')
         
+        # Build detail lines from individual events.
+        # For each event we extract the most informative field to show
+        # a concise one-line summary (e.g. "- service_fail: pvestatd").
+        detail_lines = []
+        for ev in events[1:]:  # Skip first (already sent individually)
+            line = self._summarize_event(ev)
+            if line:
+                detail_lines.append(f"  - {line}")
+        
+        # Cap detail lines to avoid extremely long messages
+        details = ''
+        if detail_lines:
+            if len(detail_lines) > 15:
+                shown = detail_lines[:15]
+                shown.append(f"  ... +{len(detail_lines) - 15} more")
+                details = '\n'.join(shown)
+            else:
+                details = '\n'.join(detail_lines)
+        
         data = {
             'hostname': first.data.get('hostname', socket.gethostname()),
             'count': str(len(events)),
             'window': window_str,
             'entity_list': entity_list,
             'event_type': first.event_type,
+            'details': details,
         }
         
         return NotificationEvent(
@@ -242,6 +278,37 @@ class BurstAggregator:
             entity=first.entity,
             entity_id='burst',
         )
+    
+    @staticmethod
+    def _summarize_event(event: NotificationEvent) -> str:
+        """Extract a concise one-line summary from an event's data."""
+        d = event.data
+        etype = event.event_type
+        
+        # Service failures: show service name
+        if etype in ('service_fail', 'service_fail_batch'):
+            return d.get('service_name', d.get('display_name', etype))
+        
+        # System problems: first 120 chars of reason
+        if 'reason' in d:
+            reason = d['reason'].split('\n')[0][:120]
+            return reason
+        
+        # Auth / IP: show username or IP
+        if 'username' in d:
+            return f"{etype}: {d['username']}"
+        if 'ip' in d:
+            return f"{etype}: {d['ip']}"
+        
+        # VM/CT events: show vmid + name
+        if 'vmid' in d:
+            name = d.get('vmname', '')
+            return f"{etype}: {name} ({d['vmid']})" if name else f"{etype}: {d['vmid']}"
+        
+        # Fallback: event type + entity_id
+        if event.entity_id:
+            return f"{etype}: {event.entity_id}"
+        return etype
 
 
 # ─── Notification Manager ─────────────────────────────────────────
