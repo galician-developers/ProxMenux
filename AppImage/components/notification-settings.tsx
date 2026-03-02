@@ -710,7 +710,8 @@ matcher: proxmenux-pbs
               {/* ── Channel Cards Grid ── */}
               <div className="grid grid-cols-4 gap-3">
                 {CHANNEL_DEFS.map(ch => {
-                  const chCfg = (config.channels as Record<string, ChannelConfig | undefined>)[ch.key]
+                  const channels: Record<string, ChannelConfig | undefined> = config.channels
+                  const chCfg = channels[ch.key]
                   const isEnabled = chCfg?.enabled || false
                   const isSelected = selectedChannel === ch.key
 
