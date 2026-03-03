@@ -223,6 +223,148 @@ export function NotificationSettings() {
     }))
   }
 
+  /** Reusable 10+1 category block rendered inside each channel tab. */
+  const renderChannelCategories = (chName: string, accentColor: string) => {
+    const overrides = config.channel_overrides?.[chName] || { categories: {}, events: {} }
+    const evtByGroup = config.event_types_by_group || {}
+
+    return (
+      <div className="space-y-1.5 border-t border-border/30 pt-3 mt-3">
+        <div className="flex items-center gap-2 mb-2">
+          <Bell className="h-3 w-3 text-muted-foreground" />
+          <Label className="text-[11px] text-muted-foreground">Notification Categories</Label>
+        </div>
+        <div className="space-y-1">
+          {EVENT_CATEGORIES.map(cat => {
+            const isEnabled = overrides.categories[cat.key] ?? true
+            const isExpanded = expandedCategories.has(`${chName}.${cat.key}`)
+            const eventsForGroup = evtByGroup[cat.key] || []
+            const enabledCount = eventsForGroup.filter(
+              e => (overrides.events?.[e.type] ?? e.default_enabled)
+            ).length
+
+            return (
+              <div key={cat.key} className={`rounded-md border transition-colors ${
+                isEnabled ? `border-${accentColor}-500/30 bg-${accentColor}-500/5` : "border-border/50 bg-transparent"
+              }`}>
+                <div className="flex items-center gap-2 p-2">
+                  <button
+                    type="button"
+                    className={`shrink-0 transition-transform ${isExpanded ? "rotate-90" : ""} ${
+                      !isEnabled ? "opacity-30 pointer-events-none" : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    onClick={() => {
+                      if (!isEnabled) return
+                      setExpandedCategories(prev => {
+                        const next = new Set(prev)
+                        const key = `${chName}.${cat.key}`
+                        if (next.has(key)) next.delete(key)
+                        else next.add(key)
+                        return next
+                      })
+                    }}
+                    aria-label={isExpanded ? "Collapse" : "Expand"}
+                  >
+                    <ChevronRight className="h-3 w-3" />
+                  </button>
+
+                  <div className="flex-1 min-w-0">
+                    <span className={`text-[11px] font-medium block ${
+                      isEnabled ? `text-${accentColor}-400` : "text-foreground"
+                    }`}>{cat.label}</span>
+                    <span className="text-[9px] text-muted-foreground">{cat.desc}</span>
+                  </div>
+
+                  {isEnabled && eventsForGroup.length > 0 && (
+                    <span className="text-[9px] text-muted-foreground tabular-nums">
+                      {enabledCount}/{eventsForGroup.length}
+                    </span>
+                  )}
+
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={isEnabled}
+                    disabled={!editMode}
+                    className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
+                      !editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+                    } ${isEnabled ? `bg-${accentColor}-600` : "bg-muted-foreground/30"}`}
+                    onClick={() => {
+                      if (!editMode) return
+                      updateConfig(p => {
+                        const ch = { ...(p.channel_overrides?.[chName] || { categories: {}, events: {} }) }
+                        const newEnabled = !isEnabled
+                        const newEvents = { ...(ch.events || {}) }
+                        // When enabling, turn all sub-events on
+                        if (newEnabled && eventsForGroup.length > 0) {
+                          for (const evt of eventsForGroup) {
+                            newEvents[evt.type] = true
+                          }
+                        }
+                        return {
+                          ...p,
+                          channel_overrides: {
+                            ...p.channel_overrides,
+                            [chName]: { categories: { ...ch.categories, [cat.key]: newEnabled }, events: newEvents },
+                          },
+                        }
+                      })
+                    }}
+                  >
+                    <span className={`pointer-events-none block h-3 w-3 rounded-full bg-background shadow-sm transition-transform ${
+                      isEnabled ? "translate-x-3.5" : "translate-x-0.5"
+                    }`} />
+                  </button>
+                </div>
+
+                {isEnabled && isExpanded && eventsForGroup.length > 0 && (
+                  <div className="border-t border-border/30 px-2 py-1.5 space-y-0.5">
+                    {eventsForGroup.map(evt => {
+                      const evtEnabled = overrides.events?.[evt.type] ?? evt.default_enabled
+                      return (
+                        <div key={evt.type} className="flex items-center justify-between py-0.5 px-2 rounded hover:bg-muted/30 transition-colors">
+                          <span className={`text-[10px] ${evtEnabled ? `text-${accentColor}-400` : "text-muted-foreground"}`}>
+                            {evt.title}
+                          </span>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={evtEnabled}
+                            disabled={!editMode}
+                            className={`relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors ${
+                              !editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+                            } ${evtEnabled ? `bg-${accentColor}-600` : "bg-muted-foreground/30"}`}
+                            onClick={() => {
+                              if (!editMode) return
+                              updateConfig(p => {
+                                const ch = { ...(p.channel_overrides?.[chName] || { categories: {}, events: {} }) }
+                                return {
+                                  ...p,
+                                  channel_overrides: {
+                                    ...p.channel_overrides,
+                                    [chName]: { ...ch, events: { ...(ch.events || {}), [evt.type]: !evtEnabled } },
+                                  },
+                                }
+                              })
+                            }}
+                          >
+                            <span className={`pointer-events-none block h-2.5 w-2.5 rounded-full bg-background shadow-sm transition-transform ${
+                              evtEnabled ? "translate-x-3" : "translate-x-0.5"
+                            }`} />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
   /** Flatten the nested NotificationConfig into the flat key-value map the backend expects. */
   const flattenConfig = (cfg: NotificationConfig): Record<string, string> => {
     const flat: Record<string, string> = {
@@ -244,28 +386,8 @@ export function NotificationSettings() {
         flat[`${chName}.${field}`] = String(value ?? "")
       }
     }
-    // Flatten global event_categories: { vm_ct: true, backup: false } -> events.vm_ct, events.backup
-    for (const [cat, enabled] of Object.entries(cfg.event_categories)) {
-      flat[`events.${cat}`] = String(enabled)
-    }
-    // Flatten global event_toggles: { vm_start: true } -> event.vm_start
-    if (cfg.event_toggles) {
-      for (const [evt, enabled] of Object.entries(cfg.event_toggles)) {
-        flat[`event.${evt}`] = String(enabled)
-      }
-    }
-    // Write defaults for events NOT in toggles
-    if (cfg.event_types_by_group) {
-      for (const events of Object.values(cfg.event_types_by_group)) {
-        for (const evt of (events as Array<{type: string, default_enabled: boolean}>)) {
-          const key = `event.${evt.type}`
-          if (!(key in flat)) {
-            flat[key] = String(evt.default_enabled)
-          }
-        }
-      }
-    }
-    // Flatten per-channel overrides: telegram.events.backup, telegram.event.vm_start, etc.
+    // Per-channel category & event toggles: telegram.events.vm_ct, telegram.event.vm_start, etc.
+    // Each channel independently owns its notification preferences.
     if (cfg.channel_overrides) {
       for (const [chName, overrides] of Object.entries(cfg.channel_overrides)) {
         if (overrides.categories) {
@@ -754,6 +876,7 @@ matcher: proxmenux-pbs
                           onChange={e => updateChannel("telegram", "chat_id", e.target.value)}
                         />
                       </div>
+                      {renderChannelCategories("telegram", "blue")}
                       {/* Per-channel action bar */}
                       <div className="flex items-center gap-2 pt-2 border-t border-border/50">
                         <button
@@ -823,6 +946,7 @@ matcher: proxmenux-pbs
                           </button>
                         </div>
                       </div>
+                      {renderChannelCategories("gotify", "green")}
                       {/* Per-channel action bar */}
                       <div className="flex items-center gap-2 pt-2 border-t border-border/50">
                         <button
@@ -883,6 +1007,7 @@ matcher: proxmenux-pbs
                           </button>
                         </div>
                       </div>
+                      {renderChannelCategories("discord", "indigo")}
                       {/* Per-channel action bar */}
                       <div className="flex items-center gap-2 pt-2 border-t border-border/50">
                         <button
@@ -1024,6 +1149,7 @@ matcher: proxmenux-pbs
                           For Gmail, use an App Password instead of your account password.
                         </p>
                       </div>
+                      {renderChannelCategories("email", "amber")}
                       {/* Per-channel action bar */}
                       <div className="flex items-center gap-2 pt-2 border-t border-border/50">
                         <button
@@ -1064,255 +1190,6 @@ matcher: proxmenux-pbs
                 </div>
               )}
               </div>{/* close bordered channel container */}
-            </div>
-
-            {/* ── Filters ── */}
-            <div className="space-y-3 border-t border-border pt-4">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Filters & Events</span>
-              </div>
-              <div className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-4">
-              {/* Event Categories (global defaults -- per-channel overrides in Channel Filters below) */}
-              <div className="space-y-1.5">
-                <Label className="text-[11px] text-muted-foreground">Event Categories</Label>
-              <div className="space-y-1.5">
-                {EVENT_CATEGORIES.map(cat => {
-                  const isEnabled = config.event_categories[cat.key] ?? true
-                  const isExpanded = expandedCategories.has(cat.key)
-                  const eventsForGroup = config.event_types_by_group?.[cat.key] || []
-                  const enabledCount = eventsForGroup.filter(e => config.event_toggles?.[e.type] ?? e.default_enabled).length
-                  
-                  return (
-                    <div key={cat.key} className={`rounded-md border transition-colors ${
-                      isEnabled ? "border-green-500/30 bg-green-500/5" : "border-border/50 bg-transparent"
-                    }`}>
-                      {/* Category header row */}
-                      <div className="flex items-center gap-2.5 p-2.5">
-                        {/* Expand/collapse button */}
-                        <button
-                          type="button"
-                          className={`shrink-0 transition-transform ${isExpanded ? "rotate-90" : ""} ${
-                            !isEnabled ? "opacity-30 pointer-events-none" : "text-muted-foreground hover:text-foreground"
-                          }`}
-                          onClick={() => {
-                            if (!isEnabled) return
-                            setExpandedCategories(prev => {
-                              const next = new Set(prev)
-                              if (next.has(cat.key)) next.delete(cat.key)
-                              else next.add(cat.key)
-                              return next
-                            })
-                          }}
-                          aria-label={isExpanded ? "Collapse" : "Expand"}
-                        >
-                          <ChevronRight className="h-3.5 w-3.5" />
-                        </button>
-                        
-                        {/* Label + description */}
-                        <div className="flex-1 min-w-0">
-                          <span className={`text-xs font-medium block ${
-                            isEnabled ? "text-green-400" : "text-foreground"
-                          }`}>
-                            {cat.label}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">{cat.desc}</span>
-                        </div>
-                        
-                        {/* Count badge */}
-                        {isEnabled && eventsForGroup.length > 0 && (
-                          <span className="text-[10px] text-muted-foreground tabular-nums">
-                            {enabledCount}/{eventsForGroup.length}
-                          </span>
-                        )}
-                        
-                        {/* Category toggle */}
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={isEnabled}
-                          disabled={!editMode}
-                          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                            !editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
-                          } ${isEnabled ? "bg-green-600" : "bg-muted-foreground/30"}`}
-                          onClick={() => {
-                            if (!editMode) return
-                            const newEnabled = !isEnabled
-                            updateConfig(p => {
-                              const newToggles = { ...(p.event_toggles || {}) }
-                              // When enabling a category, turn all its events on by default
-                              if (newEnabled && eventsForGroup.length > 0) {
-                                for (const evt of eventsForGroup) {
-                                  newToggles[evt.type] = true
-                                }
-                              }
-                              return {
-                                ...p,
-                                event_categories: { ...p.event_categories, [cat.key]: newEnabled },
-                                event_toggles: newToggles,
-                              }
-                            })
-                          }}
-                        >
-                          <span className={`pointer-events-none block h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${
-                            isEnabled ? "translate-x-4" : "translate-x-0.5"
-                          }`} />
-                        </button>
-                      </div>
-                      
-                      {/* Per-event toggles (expanded) */}
-                      {isEnabled && isExpanded && eventsForGroup.length > 0 && (
-                        <div className="border-t border-border/30 px-2.5 py-2 space-y-0.5">
-                          {eventsForGroup.map(evt => {
-                            const evtEnabled = config.event_toggles?.[evt.type] ?? evt.default_enabled
-                            return (
-                              <div key={evt.type} className="flex items-center justify-between py-1 px-2 rounded hover:bg-muted/30 transition-colors">
-                                <span className={`text-[11px] ${evtEnabled ? "text-green-400" : "text-muted-foreground"}`}>
-                                  {evt.title}
-                                </span>
-                                <button
-                                  type="button"
-                                  role="switch"
-                                  aria-checked={evtEnabled}
-                                  disabled={!editMode}
-                                  className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none ${
-                                    !editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
-                                  } ${evtEnabled ? "bg-green-600" : "bg-muted-foreground/30"}`}
-                                  onClick={() => {
-                                    if (!editMode) return
-                                    updateConfig(p => ({
-                                      ...p,
-                                      event_toggles: { ...(p.event_toggles || {}), [evt.type]: !evtEnabled },
-                                    }))
-                                  }}
-                                >
-                                  <span className={`pointer-events-none block h-3 w-3 rounded-full bg-background shadow-sm transition-transform ${
-                                    evtEnabled ? "translate-x-3.5" : "translate-x-0.5"
-                                  }`} />
-                                </button>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-              </div>
-
-              {/* Per-channel overrides */}
-              <div className="space-y-2 border-t border-border/30 pt-3">
-                <Label className="text-[11px] text-muted-foreground">Channel Filters</Label>
-                <p className="text-[10px] text-muted-foreground leading-relaxed">
-                  By default every channel inherits the global settings above. Override specific categories per channel to customize what each destination receives.
-                </p>
-                <div className="space-y-2">
-                  {CHANNEL_TYPES.map(chName => {
-                    const chEnabled = config.channels[chName]?.enabled
-                    if (!chEnabled) return null
-                    const overrides = config.channel_overrides?.[chName] || { categories: {}, events: {} }
-                    const hasOverrides = Object.keys(overrides.categories).length > 0
-                    const chLabel = chName === "email" ? "Email" : chName.charAt(0).toUpperCase() + chName.slice(1)
-                    const chColor = chName === "telegram" ? "blue" : chName === "gotify" ? "green" : chName === "discord" ? "indigo" : "amber"
-
-                    return (
-                      <details key={chName} className="group">
-                        <summary className={`flex items-center justify-between text-[11px] font-medium cursor-pointer hover:text-foreground transition-colors py-1.5 px-2 rounded-md hover:bg-muted/50 ${
-                          hasOverrides ? `text-${chColor}-400` : "text-muted-foreground"
-                        }`}>
-                          <div className="flex items-center gap-2">
-                            <ChevronDown className="h-3 w-3 group-open:rotate-180 transition-transform" />
-                            <span>{chLabel}</span>
-                            {hasOverrides && (
-                              <span className={`text-[9px] px-1.5 py-0.5 rounded-full bg-${chColor}-500/15 text-${chColor}-400`}>
-                                customized
-                              </span>
-                            )}
-                          </div>
-                          {!hasOverrides && (
-                            <span className="text-[9px] text-muted-foreground/60">inherits global</span>
-                          )}
-                        </summary>
-                        <div className="mt-1.5 ml-5 space-y-1">
-                          {EVENT_CATEGORIES.map(cat => {
-                            const globalEnabled = config.event_categories[cat.key] ?? true
-                            const override = overrides.categories[cat.key]
-                            const isCustomized = override !== undefined
-                            const effectiveEnabled = isCustomized ? override : globalEnabled
-
-                            return (
-                              <div key={cat.key} className="flex items-center justify-between py-1 px-2 rounded hover:bg-muted/30">
-                                <div className="flex items-center gap-2">
-                                  <span className={`text-[11px] ${effectiveEnabled ? "text-foreground" : "text-muted-foreground/50"}`}>
-                                    {cat.label}
-                                  </span>
-                                  {!isCustomized && (
-                                    <span className="text-[9px] text-muted-foreground/40">global</span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                  {isCustomized && (
-                                    <button
-                                      type="button"
-                                      className="text-[9px] text-muted-foreground hover:text-foreground px-1"
-                                      disabled={!editMode}
-                                      onClick={() => {
-                                        if (!editMode) return
-                                        updateConfig(p => {
-                                          const ch = { ...(p.channel_overrides?.[chName] || { categories: {}, events: {} }) }
-                                          const cats = { ...ch.categories }
-                                          delete cats[cat.key]
-                                          return { ...p, channel_overrides: { ...p.channel_overrides, [chName]: { ...ch, categories: cats } } }
-                                        })
-                                      }}
-                                    >
-                                      reset
-                                    </button>
-                                  )}
-                                  <button
-                                    type="button"
-                                    role="switch"
-                                    aria-checked={effectiveEnabled}
-                                    disabled={!editMode}
-                                    className={`relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors ${
-                                      !editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
-                                    } ${effectiveEnabled ? `bg-${chColor}-600` : "bg-muted-foreground/30"}`}
-                                    onClick={() => {
-                                      if (!editMode) return
-                                      updateConfig(p => {
-                                        const ch = { ...(p.channel_overrides?.[chName] || { categories: {}, events: {} }) }
-                                        return {
-                                          ...p,
-                                          channel_overrides: {
-                                            ...p.channel_overrides,
-                                            [chName]: { ...ch, categories: { ...ch.categories, [cat.key]: !effectiveEnabled } }
-                                          }
-                                        }
-                                      })
-                                    }}
-                                  >
-                                    <span className={`pointer-events-none block h-2.5 w-2.5 rounded-full bg-background shadow-sm transition-transform ${
-                                      effectiveEnabled ? "translate-x-3" : "translate-x-0.5"
-                                    }`} />
-                                  </button>
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </details>
-                    )
-                  })}
-                  {CHANNEL_TYPES.every(ch => !config.channels[ch]?.enabled) && (
-                    <p className="text-[10px] text-muted-foreground/50 italic py-2">
-                      Enable at least one channel above to configure per-channel filters.
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              </div>{/* close bordered filters container */}
             </div>
 
             {/* ── Proxmox Webhook ── */}

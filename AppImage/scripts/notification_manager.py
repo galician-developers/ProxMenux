@@ -560,26 +560,12 @@ class NotificationManager:
             print(f"[NotificationManager] Aggregation flush error: {e}")
     
     def _process_event(self, event: NotificationEvent):
-        """Process a single event: filter -> aggregate -> cooldown -> rate limit -> dispatch.
+        """Process a single event: aggregate -> cooldown -> rate limit -> dispatch.
         
-        NOTE: Group and per-event filters are checked globally here.
-        Per-channel overrides are applied later in _dispatch_to_channels().
+        Per-channel category/event filters are applied in _dispatch_to_channels().
+        No global category/event filter exists -- each channel decides independently.
         """
         if not self._enabled:
-            return
-        
-        # Check if this event's GROUP is enabled globally.
-        template = TEMPLATES.get(event.event_type, {})
-        event_group = template.get('group', 'other')
-        group_setting = f'events.{event_group}'
-        if self._config.get(group_setting, 'true') == 'false':
-            return
-        
-        # Check if this SPECIFIC event type is enabled globally.
-        # Default comes from the template's default_enabled field.
-        default_enabled = 'true' if template.get('default_enabled', True) else 'false'
-        event_specific = f'event.{event.event_type}'
-        if self._config.get(event_specific, default_enabled) == 'false':
             return
         
         # Try aggregation (may buffer the event)
@@ -592,21 +578,8 @@ class NotificationManager:
         self._dispatch_event(event)
     
     def _process_event_direct(self, event: NotificationEvent):
-        """Process a burst summary event. Bypasses aggregator but applies global filters."""
+        """Process a burst summary event. Bypasses aggregator but applies cooldown + rate limit."""
         if not self._enabled:
-            return
-        
-        # Check group filter
-        template = TEMPLATES.get(event.event_type, {})
-        event_group = template.get('group', 'other')
-        group_setting = f'events.{event_group}'
-        if self._config.get(group_setting, 'true') == 'false':
-            return
-        
-        # Check per-event filter
-        default_enabled = 'true' if template.get('default_enabled', True) else 'false'
-        event_specific = f'event.{event.event_type}'
-        if self._config.get(event_specific, default_enabled) == 'false':
             return
         
         self._dispatch_event(event)
@@ -666,32 +639,32 @@ class NotificationManager:
     
     def _dispatch_to_channels(self, title: str, body: str, severity: str,
                                event_type: str, data: Dict, source: str):
-        """Send notification through configured channels, respecting per-channel overrides.
+        """Send notification through configured channels, respecting per-channel filters.
         
-        Each channel can override global category/event settings:
-          - {channel}.events.{group}  = "true"/"false"  (category override)
-          - {channel}.event.{type}    = "true"/"false"  (per-event override)
-        If no override exists, the channel inherits the global setting (already checked).
+        Each channel owns its own category/event preferences:
+          - {channel}.events.{group}  = "true"/"false"  (category toggle, default "true")
+          - {channel}.event.{type}    = "true"/"false"  (per-event toggle, default from template)
+        No global fallback -- each channel decides independently what it receives.
         """
         with self._lock:
             channels = dict(self._channels)
         
         template = TEMPLATES.get(event_type, {})
         event_group = template.get('group', 'other')
+        default_event_enabled = 'true' if template.get('default_enabled', True) else 'false'
         
         for ch_name, channel in channels.items():
-            # ── Per-channel override check ──
-            # If the channel has an explicit override for this group or event, respect it.
-            # If no override, the global filter already passed (checked in _process_event).
+            # ── Per-channel category check ──
+            # Default: category enabled (true) unless explicitly disabled.
             ch_group_key = f'{ch_name}.events.{event_group}'
-            ch_group_override = self._config.get(ch_group_key)
-            if ch_group_override == 'false':
-                continue  # Channel explicitly disabled this category
+            if self._config.get(ch_group_key, 'true') == 'false':
+                continue  # Channel has this category disabled
             
+            # ── Per-channel event check ──
+            # Default: from template default_enabled, unless explicitly set.
             ch_event_key = f'{ch_name}.event.{event_type}'
-            ch_event_override = self._config.get(ch_event_key)
-            if ch_event_override == 'false':
-                continue  # Channel explicitly disabled this event
+            if self._config.get(ch_event_key, default_event_enabled) == 'false':
+                continue  # Channel has this specific event disabled
             
             try:
                 result = channel.send(title, body, severity, data)
@@ -1178,45 +1151,30 @@ class NotificationManager:
                 ch_cfg[config_key] = self._config.get(f'{ch_type}.{config_key}', '')
             channels[ch_type] = ch_cfg
         
-        # Build event_categories dict (group-level toggle)
-        # EVENT_GROUPS is a dict: { 'vm_ct': {...}, 'services': {...}, 'health': {...}, ... }
-        event_categories = {}
-        for group_key in EVENT_GROUPS:
-            event_categories[group_key] = self._config.get(f'events.{group_key}', 'true') == 'true'
-        
-        # Build per-event toggles: { 'vm_start': true, 'vm_stop': false, ... }
-        event_toggles = {}
-        for event_type, tmpl in TEMPLATES.items():
-            default = tmpl.get('default_enabled', True)
-            saved = self._config.get(f'event.{event_type}', None)
-            if saved is not None:
-                event_toggles[event_type] = saved == 'true'
-            else:
-                event_toggles[event_type] = default
-        
         # Build event_types_by_group for UI rendering
         event_types_by_group = get_event_types_by_group()
         
         # Build per-channel overrides
+        # Each channel independently owns its category and event toggles.
         # Keys: {channel}.events.{group} and {channel}.event.{event_type}
+        # Defaults: categories default to true, events default to template default_enabled.
         channel_overrides = {}
         for ch_type in CHANNEL_TYPES:
             ch_overrides = {'categories': {}, 'events': {}}
             for group_key in EVENT_GROUPS:
-                val = self._config.get(f'{ch_type}.events.{group_key}')
-                if val is not None:
-                    ch_overrides['categories'][group_key] = val == 'true'
-            for event_type_key in TEMPLATES:
-                val = self._config.get(f'{ch_type}.event.{event_type_key}')
-                if val is not None:
-                    ch_overrides['events'][event_type_key] = val == 'true'
+                saved = self._config.get(f'{ch_type}.events.{group_key}')
+                ch_overrides['categories'][group_key] = (saved or 'true') == 'true'
+            for event_type_key, tmpl in TEMPLATES.items():
+                default = 'true' if tmpl.get('default_enabled', True) else 'false'
+                saved = self._config.get(f'{ch_type}.event.{event_type_key}')
+                ch_overrides['events'][event_type_key] = (saved or default) == 'true'
             channel_overrides[ch_type] = ch_overrides
         
         config = {
             'enabled': self._enabled,
             'channels': channels,
-            'event_categories': event_categories,
-            'event_toggles': event_toggles,
+            'event_categories': {},
+            'event_toggles': {},
             'event_types_by_group': event_types_by_group,
             'channel_overrides': channel_overrides,
             'ai_enabled': self._config.get('ai_enabled', 'false') == 'true',
