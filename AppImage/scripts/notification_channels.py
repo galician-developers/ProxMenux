@@ -603,7 +603,7 @@ class EmailChannel(NotificationChannel):
 <div style="max-width:640px;margin:24px auto;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);border:1px solid #d1d5db;">
 
   <!-- Header -->
-  <div style="padding:20px 28px;border-bottom:2px solid #1f2937;">
+  <div style="padding:20px 28px;background:#f8f9fa;border-bottom:1px solid {sev['border']};">
     <table width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr>
         <td>
