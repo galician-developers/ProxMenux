@@ -414,65 +414,21 @@ class EmailChannel(NotificationChannel):
         
         return self._send_with_retry(_do_send)
     
-    @staticmethod
-    def _get_logo_path() -> str:
-        """Locate the ProxMenux logo PNG for email embedding."""
-        import os
-        candidates = [
-            os.path.join(os.path.dirname(__file__), '..', 'public', 'images', 'proxmenux-logo.png'),
-            '/opt/proxmenux-monitor/public/images/proxmenux-logo.png',
-            os.path.join(os.path.dirname(__file__), 'proxmenux-logo.png'),
-        ]
-        for p in candidates:
-            real = os.path.realpath(p)
-            if os.path.isfile(real):
-                return real
-        return ''
-
-    def _build_mime_message(self, subject: str, body: str, severity: str,
-                           data: Optional[Dict] = None):
-        """Build a MIMEMultipart email with embedded logo."""
-        from email.mime.multipart import MIMEMultipart
-        from email.mime.text import MIMEText
-        from email.mime.image import MIMEImage
-        
-        msg = MIMEMultipart('related')
-        msg['Subject'] = subject
-        msg['From'] = self.from_address
-        msg['To'] = ', '.join(self.to_addresses)
-        
-        # Create alternative container (plain text + HTML)
-        alt = MIMEMultipart('alternative')
-        msg.attach(alt)
-        
-        # Plain text version
-        alt.attach(MIMEText(body, 'plain', 'utf-8'))
-        
-        # HTML version
-        html_body = self._format_html(subject, body, severity, data)
-        if html_body:
-            alt.attach(MIMEText(html_body, 'html', 'utf-8'))
-        
-        # Embed logo as CID attachment
-        logo_path = self._get_logo_path()
-        if logo_path:
-            try:
-                with open(logo_path, 'rb') as f:
-                    logo_data = f.read()
-                logo_img = MIMEImage(logo_data, _subtype='png')
-                logo_img.add_header('Content-ID', '<proxmenux-logo>')
-                logo_img.add_header('Content-Disposition', 'inline', filename='proxmenux-logo.png')
-                msg.attach(logo_img)
-            except Exception:
-                pass  # Logo not found -- email still works without it
-        
-        return msg
-
     def _send_smtp(self, subject: str, body: str, severity: str,
                    data: Optional[Dict] = None) -> Tuple[int, str]:
         import smtplib
+        from email.message import EmailMessage
         
-        msg = self._build_mime_message(subject, body, severity, data)
+        msg = EmailMessage()
+        msg['Subject'] = subject
+        msg['From'] = self.from_address
+        msg['To'] = ', '.join(self.to_addresses)
+        msg.set_content(body)
+        
+        # Add HTML alternative
+        html_body = self._format_html(subject, body, severity, data)
+        if html_body:
+            msg.add_alternative(html_body, subtype='html')
         
         server = None
         try:
@@ -523,13 +479,22 @@ class EmailChannel(NotificationChannel):
                        data: Optional[Dict] = None) -> Tuple[int, str]:
         import os
         import subprocess
+        from email.message import EmailMessage
         
         sendmail = '/usr/sbin/sendmail'
         if not os.path.exists(sendmail):
             return 0, 'sendmail not found at /usr/sbin/sendmail'
         
-        msg = self._build_mime_message(subject, body, severity, data)
-        msg.replace_header('From', self.from_address or 'proxmenux@localhost')
+        msg = EmailMessage()
+        msg['Subject'] = subject
+        msg['From'] = self.from_address or 'proxmenux@localhost'
+        msg['To'] = ', '.join(self.to_addresses)
+        msg.set_content(body)
+        
+        # Add HTML alternative
+        html_body = self._format_html(subject, body, severity, data)
+        if html_body:
+            msg.add_alternative(html_body, subtype='html')
         
         try:
             proc = subprocess.run(
@@ -607,13 +572,13 @@ class EmailChannel(NotificationChannel):
         for label, value in detail_rows:
             if label:
                 rows_html += f'''<tr>
-  <td style="padding:8px 12px;font-size:13px;color:#6b7280;font-weight:500;white-space:nowrap;vertical-align:top;border-bottom:1px solid #f3f4f6;">{label}</td>
-  <td style="padding:8px 12px;font-size:13px;color:#1f2937;border-bottom:1px solid #f3f4f6;">{value}</td>
+  <td style="padding:8px 12px;font-size:13px;color:#374151;font-weight:500;white-space:nowrap;vertical-align:top;border-bottom:1px solid #e5e7eb;">{label}</td>
+  <td style="padding:8px 12px;font-size:13px;color:#111827;border-bottom:1px solid #e5e7eb;">{value}</td>
 </tr>'''
             else:
                 # Full-width row (no label, just description text)
                 rows_html += f'''<tr>
-  <td colspan="2" style="padding:8px 12px;font-size:13px;color:#374151;border-bottom:1px solid #f3f4f6;">{value}</td>
+  <td colspan="2" style="padding:8px 12px;font-size:13px;color:#1f2937;border-bottom:1px solid #e5e7eb;">{value}</td>
 </tr>'''
 
         # ── Reason / details block (long text, displayed separately) ──
@@ -621,9 +586,9 @@ class EmailChannel(NotificationChannel):
         reason_html = ''
         if reason and len(reason) > 80:
             reason_html = f'''
-<div style="margin:16px 0 0;padding:12px 16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;">
-  <p style="margin:0 0 4px;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Details</p>
-  <p style="margin:0;font-size:13px;color:#374151;line-height:1.6;white-space:pre-wrap;">{html_mod.escape(reason)}</p>
+<div style="margin:16px 0 0;padding:12px 16px;border:1px solid #d1d5db;border-radius:6px;">
+  <p style="margin:0 0 4px;font-size:11px;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:0.05em;">Details</p>
+  <p style="margin:0;font-size:13px;color:#1f2937;line-height:1.6;white-space:pre-wrap;">{html_mod.escape(reason)}</p>
 </div>'''
 
         # ── Clean subject for display (remove prefix if present) ──
@@ -635,18 +600,15 @@ class EmailChannel(NotificationChannel):
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
 <body style="margin:0;padding:0;background-color:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;">
-<div style="max-width:640px;margin:24px auto;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+<div style="max-width:640px;margin:24px auto;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);border:1px solid #d1d5db;">
 
   <!-- Header -->
-  <div style="background:#1f2937;padding:20px 28px;">
+  <div style="padding:20px 28px;border-bottom:2px solid #1f2937;">
     <table width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr>
-        <td style="width:40px;vertical-align:middle;padding-right:14px;">
-          <img src="cid:proxmenux-logo" alt="M" width="36" height="36" style="display:block;border:0;border-radius:4px;" />
-        </td>
-        <td style="vertical-align:middle;">
-          <h1 style="margin:0;font-size:18px;font-weight:700;color:#ffffff;letter-spacing:-0.02em;">ProxMenux Monitor</h1>
-          <p style="margin:4px 0 0;font-size:12px;color:#9ca3af;">{html_mod.escape(section_label)} Report</p>
+        <td>
+          <h1 style="margin:0;font-size:18px;font-weight:700;color:#111827;letter-spacing:-0.02em;">ProxMenux Monitor</h1>
+          <p style="margin:4px 0 0;font-size:12px;color:#4b5563;">{html_mod.escape(section_label)} Report</p>
         </td>
         <td style="text-align:right;vertical-align:top;">
           <span style="display:inline-block;padding:4px 12px;border-radius:4px;font-size:11px;font-weight:600;letter-spacing:0.05em;color:{sev['color']};background:{sev['bg']};border:1px solid {sev['border']};">{sev['label'].upper()}</span>
@@ -665,17 +627,17 @@ class EmailChannel(NotificationChannel):
     <!-- Metadata -->
     <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;">
       <tr>
-        <td style="font-size:12px;color:#6b7280;">
-          Host: <strong style="color:#1f2937;">{html_mod.escape(data.get('hostname', ''))}</strong>
+        <td style="font-size:12px;color:#4b5563;">
+          Host: <strong style="color:#111827;">{html_mod.escape(data.get('hostname', ''))}</strong>
         </td>
-        <td style="font-size:12px;color:#6b7280;text-align:right;">
+        <td style="font-size:12px;color:#4b5563;text-align:right;">
           {html_mod.escape(ts)}
         </td>
       </tr>
     </table>
 
     <!-- Detail table -->
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #d1d5db;border-radius:6px;overflow:hidden;">
       {rows_html}
     </table>
 
@@ -683,11 +645,11 @@ class EmailChannel(NotificationChannel):
   </div>
 
   <!-- Footer -->
-  <div style="background:#f9fafb;padding:14px 28px;border-top:1px solid #e5e7eb;">
+  <div style="padding:14px 28px;border-top:1px solid #d1d5db;">
     <table width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr>
-        <td style="font-size:11px;color:#9ca3af;">ProxMenux Notification Service</td>
-        <td style="font-size:11px;color:#9ca3af;text-align:right;">proxmenux.com</td>
+        <td style="font-size:11px;color:#4b5563;">ProxMenux Notification Service</td>
+        <td style="font-size:11px;color:#4b5563;text-align:right;">proxmenux.com</td>
       </tr>
     </table>
   </div>
