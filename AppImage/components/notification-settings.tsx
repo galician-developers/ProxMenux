@@ -245,7 +245,7 @@ export function NotificationSettings() {
             ).length
 
             return (
-              <div key={cat.key} className="rounded-lg border border-border transition-all duration-150 hover:border-muted-foreground/50 hover:bg-muted/40">
+              <div key={cat.key} className="rounded-lg border border-border transition-all duration-150 hover:border-muted-foreground/60 hover:bg-muted">
                 {/* Category row -- entire block is clickable to expand/collapse */}
                 <div
                   className="flex items-center gap-2.5 py-2.5 px-3 cursor-pointer"
@@ -322,7 +322,7 @@ export function NotificationSettings() {
                     {eventsForGroup.map(evt => {
                       const evtEnabled = overrides.events?.[evt.type] ?? evt.default_enabled
                       return (
-                        <div key={evt.type} className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-muted/40 transition-colors">
+                        <div key={evt.type} className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-muted transition-colors">
                           <span className={`text-[11px] sm:text-xs ${evtEnabled ? "text-foreground" : "text-muted-foreground"}`}>
                             {evt.title}
                           </span>

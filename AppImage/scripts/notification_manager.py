@@ -630,6 +630,8 @@ class NotificationManager:
         enriched_data = dict(event.data)
         enriched_data['_rendered_fields'] = rendered.get('fields', [])
         enriched_data['_body_html'] = rendered.get('body_html', '')
+        enriched_data['_event_type'] = event.event_type
+        enriched_data['_group'] = TEMPLATES.get(event.event_type, {}).get('group', 'other')
         
         # Send through all active channels
         self._dispatch_to_channels(

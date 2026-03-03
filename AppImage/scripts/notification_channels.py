@@ -408,13 +408,14 @@ class EmailChannel(NotificationChannel):
         
         def _do_send():
             if self.host:
-                return self._send_smtp(subject, message, severity)
+                return self._send_smtp(subject, message, severity, data)
             else:
-                return self._send_sendmail(subject, message, severity)
+                return self._send_sendmail(subject, message, severity, data)
         
         return self._send_with_retry(_do_send)
     
-    def _send_smtp(self, subject: str, body: str, severity: str) -> Tuple[int, str]:
+    def _send_smtp(self, subject: str, body: str, severity: str,
+                   data: Optional[Dict] = None) -> Tuple[int, str]:
         import smtplib
         from email.message import EmailMessage
         
@@ -425,7 +426,7 @@ class EmailChannel(NotificationChannel):
         msg.set_content(body)
         
         # Add HTML alternative
-        html_body = self._format_html(subject, body, severity)
+        html_body = self._format_html(subject, body, severity, data)
         if html_body:
             msg.add_alternative(html_body, subtype='html')
         
@@ -452,7 +453,8 @@ class EmailChannel(NotificationChannel):
         except (OSError, TimeoutError) as e:
             return 0, f'Connection error: {e}'
     
-    def _send_sendmail(self, subject: str, body: str, severity: str) -> Tuple[int, str]:
+    def _send_sendmail(self, subject: str, body: str, severity: str,
+                       data: Optional[Dict] = None) -> Tuple[int, str]:
         import os
         import subprocess
         from email.message import EmailMessage
@@ -467,6 +469,11 @@ class EmailChannel(NotificationChannel):
         msg['To'] = ', '.join(self.to_addresses)
         msg.set_content(body)
         
+        # Add HTML alternative
+        html_body = self._format_html(subject, body, severity, data)
+        if html_body:
+            msg.add_alternative(html_body, subtype='html')
+        
         try:
             proc = subprocess.run(
                 [sendmail, '-t', '-oi'],
@@ -480,42 +487,316 @@ class EmailChannel(NotificationChannel):
         except Exception as e:
             return 0, f'sendmail error: {e}'
     
-    @staticmethod
-    def _format_html(subject: str, body: str, severity: str) -> str:
-        """Create professional HTML email."""
+    # Severity -> accent colour + label
+    _SEV_STYLE = {
+        'CRITICAL': {'color': '#dc2626', 'bg': '#fef2f2', 'border': '#fecaca', 'label': 'Critical'},
+        'WARNING':  {'color': '#d97706', 'bg': '#fffbeb', 'border': '#fde68a', 'label': 'Warning'},
+        'INFO':     {'color': '#2563eb', 'bg': '#eff6ff', 'border': '#bfdbfe', 'label': 'Information'},
+        'OK':       {'color': '#16a34a', 'bg': '#f0fdf4', 'border': '#bbf7d0', 'label': 'Resolved'},
+    }
+    _SEV_DEFAULT = {'color': '#6b7280', 'bg': '#f9fafb', 'border': '#e5e7eb', 'label': 'Notice'}
+
+    # Group -> human-readable section header for the email
+    _GROUP_LABELS = {
+        'vm_ct':     'Virtual Machine / Container',
+        'backup':    'Backup & Snapshot',
+        'resources': 'System Resources',
+        'storage':   'Storage',
+        'network':   'Network',
+        'security':  'Security',
+        'cluster':   'Cluster',
+        'services':  'System Services',
+        'health':    'Health Monitor',
+        'updates':   'System Updates',
+        'other':     'System Notification',
+    }
+
+    def _format_html(self, subject: str, body: str, severity: str,
+                     data: Optional[Dict] = None) -> str:
+        """Build a professional HTML email with structured data sections."""
         import html as html_mod
-        
-        severity_colors = {'CRITICAL': '#dc2626', 'WARNING': '#f59e0b', 'INFO': '#3b82f6'}
-        color = severity_colors.get(severity, '#6b7280')
-        
-        body_html = ''.join(
-            f'<p style="margin:4px 0;color:#374151;">{html_mod.escape(line)}</p>'
-            for line in body.split('\n') if line.strip()
-        )
-        
+        import time as _time
+
+        data = data or {}
+        sev = self._SEV_STYLE.get(severity, self._SEV_DEFAULT)
+
+        # Determine group for section header
+        event_type = data.get('_event_type', '')
+        group = data.get('_group', 'other')
+        section_label = self._GROUP_LABELS.get(group, 'System Notification')
+
+        # Timestamp
+        ts = data.get('timestamp', '') or _time.strftime('%Y-%m-%d %H:%M:%S UTC', _time.gmtime())
+
+        # ── Build structured detail rows from known data fields ──
+        detail_rows = self._build_detail_rows(data, event_type, group, html_mod)
+
+        # ── Fallback: if no structured rows, render body text lines ──
+        if not detail_rows:
+            for line in body.split('\n'):
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                # Try to split "Label: value" patterns
+                if ':' in stripped:
+                    lbl, _, val = stripped.partition(':')
+                    if val.strip() and len(lbl) < 40:
+                        detail_rows.append((html_mod.escape(lbl.strip()), html_mod.escape(val.strip())))
+                        continue
+                detail_rows.append(('', html_mod.escape(stripped)))
+
+        # ── Render detail rows as HTML table ──
+        rows_html = ''
+        for label, value in detail_rows:
+            if label:
+                rows_html += f'''<tr>
+  <td style="padding:8px 12px;font-size:13px;color:#6b7280;font-weight:500;white-space:nowrap;vertical-align:top;border-bottom:1px solid #f3f4f6;">{label}</td>
+  <td style="padding:8px 12px;font-size:13px;color:#1f2937;border-bottom:1px solid #f3f4f6;">{value}</td>
+</tr>'''
+            else:
+                # Full-width row (no label, just description text)
+                rows_html += f'''<tr>
+  <td colspan="2" style="padding:8px 12px;font-size:13px;color:#374151;border-bottom:1px solid #f3f4f6;">{value}</td>
+</tr>'''
+
+        # ── Reason / details block (long text, displayed separately) ──
+        reason = data.get('reason', '')
+        reason_html = ''
+        if reason and len(reason) > 80:
+            reason_html = f'''
+<div style="margin:16px 0 0;padding:12px 16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;">
+  <p style="margin:0 0 4px;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Details</p>
+  <p style="margin:0;font-size:13px;color:#374151;line-height:1.6;white-space:pre-wrap;">{html_mod.escape(reason)}</p>
+</div>'''
+
+        # ── Clean subject for display (remove prefix if present) ──
+        display_title = subject
+        for prefix in [self.subject_prefix, '[CRITICAL]', '[WARNING]', '[INFO]', '[OK]']:
+            display_title = display_title.replace(prefix, '').strip()
+
         return f'''<!DOCTYPE html>
-<html><body style="font-family:-apple-system,Arial,sans-serif;background:#f3f4f6;padding:20px;">
-<div style="max-width:600px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;">
-  <div style="background:{color};padding:16px 24px;">
-    <h2 style="color:#fff;margin:0;font-size:16px;">ProxMenux Monitor</h2>
-    <p style="color:rgba(255,255,255,0.85);margin:4px 0 0;font-size:13px;">{html_mod.escape(severity)} Alert</p>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;">
+<div style="max-width:640px;margin:24px auto;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+
+  <!-- Header -->
+  <div style="background:#1f2937;padding:20px 28px;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td>
+          <h1 style="margin:0;font-size:18px;font-weight:700;color:#ffffff;letter-spacing:-0.02em;">ProxMenux Monitor</h1>
+          <p style="margin:4px 0 0;font-size:12px;color:#9ca3af;">{html_mod.escape(section_label)} Report</p>
+        </td>
+        <td style="text-align:right;vertical-align:top;">
+          <span style="display:inline-block;padding:4px 12px;border-radius:4px;font-size:11px;font-weight:600;letter-spacing:0.05em;color:{sev['color']};background:{sev['bg']};border:1px solid {sev['border']};">{sev['label'].upper()}</span>
+        </td>
+      </tr>
+    </table>
   </div>
-  <div style="padding:24px;">
-    <h3 style="margin:0 0 12px;color:#111827;">{html_mod.escape(subject)}</h3>
-    {body_html}
+
+  <!-- Title bar -->
+  <div style="padding:16px 28px;background:{sev['bg']};border-bottom:1px solid {sev['border']};">
+    <h2 style="margin:0;font-size:15px;font-weight:600;color:{sev['color']};">{html_mod.escape(display_title)}</h2>
   </div>
-  <div style="background:#f9fafb;padding:12px 24px;border-top:1px solid #e5e7eb;">
-    <p style="margin:0;font-size:11px;color:#9ca3af;">Sent by ProxMenux Notification Service</p>
+
+  <!-- Body -->
+  <div style="padding:24px 28px;">
+    <!-- Metadata -->
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;">
+      <tr>
+        <td style="font-size:12px;color:#6b7280;">
+          Host: <strong style="color:#1f2937;">{html_mod.escape(data.get('hostname', ''))}</strong>
+        </td>
+        <td style="font-size:12px;color:#6b7280;text-align:right;">
+          {html_mod.escape(ts)}
+        </td>
+      </tr>
+    </table>
+
+    <!-- Detail table -->
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;">
+      {rows_html}
+    </table>
+
+    {reason_html}
   </div>
+
+  <!-- Footer -->
+  <div style="background:#f9fafb;padding:14px 28px;border-top:1px solid #e5e7eb;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td style="font-size:11px;color:#9ca3af;">ProxMenux Notification Service</td>
+        <td style="font-size:11px;color:#9ca3af;text-align:right;">proxmenux.com</td>
+      </tr>
+    </table>
+  </div>
+
 </div>
-</body></html>'''
+</body>
+</html>'''
+
+    @staticmethod
+    def _build_detail_rows(data: Dict, event_type: str, group: str,
+                           html_mod) -> list:
+        """Build structured (label, value) rows from event data.
+        
+        Returns list of (label_html, value_html) tuples.
+        An empty label means a full-width descriptive row.
+        """
+        esc = html_mod.escape
+        rows = []
+        
+        def _add(label: str, value, fmt: str = ''):
+            """Add a row if value is truthy."""
+            v = str(value).strip() if value else ''
+            if not v or v == '0' and label not in ('Failures',):
+                return
+            if fmt == 'severity':
+                sev_colors = {
+                    'CRITICAL': '#dc2626', 'WARNING': '#d97706',
+                    'INFO': '#2563eb', 'OK': '#16a34a',
+                }
+                c = sev_colors.get(v, '#6b7280')
+                rows.append((esc(label), f'<span style="color:{c};font-weight:600;">{esc(v)}</span>'))
+            elif fmt == 'code':
+                rows.append((esc(label), f'<code style="padding:2px 6px;background:#f3f4f6;border-radius:3px;font-family:monospace;font-size:12px;">{esc(v)}</code>'))
+            elif fmt == 'bold':
+                rows.append((esc(label), f'<strong>{esc(v)}</strong>'))
+            else:
+                rows.append((esc(label), esc(v)))
+
+        # ── Common fields present in most events ──
+        
+        # ── VM / CT events ──
+        if group == 'vm_ct':
+            _add('VM/CT ID', data.get('vmid'), 'code')
+            _add('Name', data.get('vmname'), 'bold')
+            _add('Action', event_type.replace('_', ' ').replace('vm ', 'VM ').replace('ct ', 'CT ').title())
+            _add('Target Node', data.get('target_node'))
+            _add('Reason', data.get('reason'))
+
+        # ── Backup events ──
+        elif group == 'backup':
+            _add('VM/CT ID', data.get('vmid'), 'code')
+            _add('Name', data.get('vmname'), 'bold')
+            _add('Status', 'Failed' if 'fail' in event_type else 'Completed' if 'complete' in event_type else 'Started',
+                 'severity' if 'fail' in event_type else '')
+            _add('Size', data.get('size'))
+            _add('Duration', data.get('duration'))
+            _add('Snapshot', data.get('snapshot_name'), 'code')
+            # For backup_complete/fail with parsed body, add short reason only
+            reason = data.get('reason', '')
+            if reason and len(reason) <= 80:
+                _add('Details', reason)
+
+        # ── Resources ──
+        elif group == 'resources':
+            _add('Metric', event_type.replace('_', ' ').title())
+            _add('Current Value', data.get('value'), 'bold')
+            _add('Threshold', data.get('threshold'))
+            _add('CPU Cores', data.get('cores'))
+            _add('Memory', f"{data.get('used', '')} / {data.get('total', '')}" if data.get('used') else '')
+            _add('Temperature', f"{data.get('value')}C" if 'temp' in event_type else '')
+
+        # ── Storage ──
+        elif group == 'storage':
+            if 'disk_space' in event_type:
+                _add('Mount Point', data.get('mount'), 'code')
+                _add('Usage', f"{data.get('used')}%", 'bold')
+                _add('Available', data.get('available'))
+            elif 'io_error' in event_type:
+                _add('Device', data.get('device'), 'code')
+                _add('Severity', data.get('severity', ''), 'severity')
+            elif 'unavailable' in event_type:
+                _add('Storage Name', data.get('storage_name'), 'bold')
+                _add('Type', data.get('storage_type'), 'code')
+                reason = data.get('reason', '')
+                if reason and len(reason) <= 80:
+                    _add('Details', reason)
+
+        # ── Network ──
+        elif group == 'network':
+            _add('Interface', data.get('interface'), 'code')
+            _add('Latency', f"{data.get('value')}ms" if data.get('value') else '')
+            _add('Threshold', f"{data.get('threshold')}ms" if data.get('threshold') else '')
+            reason = data.get('reason', '')
+            if reason and len(reason) <= 80:
+                _add('Details', reason)
+
+        # ── Security ──
+        elif group == 'security':
+            _add('Event', event_type.replace('_', ' ').title())
+            _add('Source IP', data.get('source_ip'), 'code')
+            _add('Username', data.get('username'), 'code')
+            _add('Service', data.get('service'))
+            _add('Jail', data.get('jail'), 'code')
+            _add('Failures', data.get('failures'))
+            _add('Change', data.get('change_details'))
+
+        # ── Cluster ──
+        elif group == 'cluster':
+            _add('Event', event_type.replace('_', ' ').title())
+            _add('Node', data.get('node_name'), 'bold')
+            _add('Quorum', data.get('quorum'))
+            _add('Nodes Affected', data.get('entity_list'))
+
+        # ── Services ──
+        elif group == 'services':
+            _add('Service', data.get('service_name'), 'code')
+            _add('Process', data.get('process'), 'code')
+            _add('Event', event_type.replace('_', ' ').title())
+            reason = data.get('reason', '')
+            if reason and len(reason) <= 80:
+                _add('Details', reason)
+
+        # ── Health monitor ──
+        elif group == 'health':
+            _add('Category', data.get('category'), 'bold')
+            _add('Severity', data.get('severity', ''), 'severity')
+            if data.get('original_severity'):
+                _add('Previous Severity', data.get('original_severity'), 'severity')
+            _add('Duration', data.get('duration'))
+            _add('Active Issues', data.get('count'))
+            reason = data.get('reason', '')
+            if reason and len(reason) <= 80:
+                _add('Details', reason)
+
+        # ── Updates ──
+        elif group == 'updates':
+            _add('Total Updates', data.get('total_count'), 'bold')
+            _add('Security Updates', data.get('security_count'))
+            _add('Proxmox Updates', data.get('pve_count'))
+            _add('Kernel Updates', data.get('kernel_count'))
+            imp = data.get('important_list', '')
+            if imp:
+                _add('Important Packages', imp, 'code')
+            _add('Current Version', data.get('current_version'), 'code')
+            _add('New Version', data.get('new_version'), 'code')
+
+        # ── Other / unknown ──
+        else:
+            reason = data.get('reason', '')
+            if reason and len(reason) <= 80:
+                _add('Details', reason)
+
+        return rows
     
     def test(self) -> Tuple[bool, str]:
+        import socket as _socket
+        hostname = _socket.gethostname().split('.')[0]
         result = self.send(
             'ProxMenux Test Notification',
             'This is a test notification from ProxMenux Monitor.\n'
             'If you received this, your email channel is working correctly.',
-            'INFO'
+            'INFO',
+            data={
+                'hostname': hostname,
+                '_event_type': 'webhook_test',
+                '_group': 'other',
+                'reason': 'Email notification channel connectivity verified successfully. '
+                          'You will receive alerts from ProxMenux Monitor at this address.',
+            }
         )
         return result.get('success', False), result.get('error', '')
 
