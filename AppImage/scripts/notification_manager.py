@@ -35,7 +35,7 @@ if BASE_DIR not in sys.path:
 
 from notification_channels import create_channel, CHANNEL_TYPES
 from notification_templates import (
-    render_template, format_with_ai, TEMPLATES,
+    render_template, format_with_ai, enrich_with_emojis, TEMPLATES,
     EVENT_GROUPS, get_event_types_by_group, get_default_enabled_events
 )
 from notification_events import (
@@ -667,9 +667,17 @@ class NotificationManager:
                 continue  # Channel has this specific event disabled
             
             try:
-                result = channel.send(title, body, severity, data)
+                # Per-channel emoji enrichment (opt-in via {channel}.rich_format)
+                ch_title, ch_body = title, body
+                rich_key = f'{ch_name}.rich_format'
+                if self._config.get(rich_key, 'false') == 'true':
+                    ch_title, ch_body = enrich_with_emojis(
+                        event_type, title, body, data
+                    )
+                
+                result = channel.send(ch_title, ch_body, severity, data)
                 self._record_history(
-                    event_type, ch_name, title, body, severity,
+                    event_type, ch_name, ch_title, ch_body, severity,
                     result.get('success', False),
                     result.get('error', ''),
                     source
@@ -1146,6 +1154,7 @@ class NotificationManager:
         for ch_type, info in CHANNEL_TYPES.items():
             ch_cfg: Dict[str, Any] = {
                 'enabled': self._config.get(f'{ch_type}.enabled', 'false') == 'true',
+                'rich_format': self._config.get(f'{ch_type}.rich_format', 'false') == 'true',
             }
             for config_key in info['config_keys']:
                 ch_cfg[config_key] = self._config.get(f'{ch_type}.{config_key}', '')

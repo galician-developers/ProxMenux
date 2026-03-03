@@ -18,6 +18,7 @@ import {
 
 interface ChannelConfig {
   enabled: boolean
+  rich_format?: boolean
   bot_token?: string
   chat_id?: string
   url?: string
@@ -651,45 +652,7 @@ export function NotificationSettings() {
               )}
             </div>
 
-            {/* PBS manual section (collapsible) */}
-            <details className="group">
-              <summary className="text-xs font-medium text-muted-foreground cursor-pointer hover:text-foreground transition-colors flex items-center gap-1.5">
-                <ChevronDown className="h-3 w-3 group-open:rotate-180 transition-transform" />
-                <Webhook className="h-3 w-3" />
-                Configure PBS notifications (manual)
-              </summary>
-              <div className="mt-2 p-3 bg-muted/30 rounded-md border border-border space-y-3">
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    PVE backups launched from the PVE interface are covered automatically by the PVE webhook above.
-                  </p>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    However, PBS has its own internal jobs (Verify, Prune, GC, Sync) that generate
-                    separate notifications. These must be configured directly on the PBS server.
-                  </p>
-                </div>
-                <div className="space-y-1.5">
-                  <p className="text-[11px] font-medium text-muted-foreground">
-                    Append to /etc/proxmox-backup/notifications.cfg on the PBS host:
-                  </p>
-                  <pre className="text-[11px] bg-background p-2 rounded border border-border overflow-x-auto font-mono">
-{`webhook: proxmenux-webhook
-\tmethod post
-\turl http://<PVE_IP>:8008/api/notifications/webhook
 
-matcher: proxmenux-pbs
-\ttarget proxmenux-webhook
-\tmatch-severity warning,error`}
-                  </pre>
-                </div>
-                <div className="flex items-start gap-2 p-2 rounded-md bg-blue-500/10 border border-blue-500/20">
-                  <Info className="h-3.5 w-3.5 text-blue-400 shrink-0 mt-0.5" />
-                  <p className="text-[10px] text-blue-400/90 leading-relaxed">
-                    {"Replace <PVE_IP> with the IP of this PVE node (not 127.0.0.1, unless PBS runs on the same host). Append at the end -- do not delete existing content."}
-                  </p>
-                </div>
-              </div>
-            </details>
           </div>
         </CardContent>
       </Card>
@@ -876,6 +839,27 @@ matcher: proxmenux-pbs
                           onChange={e => updateChannel("telegram", "chat_id", e.target.value)}
                         />
                       </div>
+                      {/* Message format */}
+                      <div className="flex items-center justify-between py-1">
+                        <div>
+                          <Label className="text-xs font-medium">Rich messages</Label>
+                          <p className="text-[10px] text-muted-foreground">Enrich notifications with contextual emojis and icons</p>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={config.channels.telegram?.rich_format || false}
+                          disabled={!editMode}
+                          className={`relative w-9 h-[18px] shrink-0 rounded-full transition-colors ${
+                            !editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+                          } ${config.channels.telegram?.rich_format ? "bg-blue-600" : "bg-muted-foreground/20 border border-muted-foreground/40"}`}
+                          onClick={() => { if (editMode) updateChannel("telegram", "rich_format", !config.channels.telegram?.rich_format) }}
+                        >
+                          <span className={`absolute top-[1px] left-[1px] h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                            config.channels.telegram?.rich_format ? "translate-x-[18px]" : "translate-x-0"
+                          }`} />
+                        </button>
+                      </div>
                       {renderChannelCategories("telegram")}
                       {/* Send Test */}
                       <div className="flex items-center gap-2 pt-2 border-t border-border/50">
@@ -939,6 +923,27 @@ matcher: proxmenux-pbs
                           </button>
                         </div>
                       </div>
+                      {/* Message format */}
+                      <div className="flex items-center justify-between py-1">
+                        <div>
+                          <Label className="text-xs font-medium">Rich messages</Label>
+                          <p className="text-[10px] text-muted-foreground">Enrich notifications with contextual emojis and icons</p>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={config.channels.gotify?.rich_format || false}
+                          disabled={!editMode}
+                          className={`relative w-9 h-[18px] shrink-0 rounded-full transition-colors ${
+                            !editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+                          } ${config.channels.gotify?.rich_format ? "bg-blue-600" : "bg-muted-foreground/20 border border-muted-foreground/40"}`}
+                          onClick={() => { if (editMode) updateChannel("gotify", "rich_format", !config.channels.gotify?.rich_format) }}
+                        >
+                          <span className={`absolute top-[1px] left-[1px] h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                            config.channels.gotify?.rich_format ? "translate-x-[18px]" : "translate-x-0"
+                          }`} />
+                        </button>
+                      </div>
                       {renderChannelCategories("gotify")}
                       {/* Send Test */}
                       <div className="flex items-center gap-2 pt-2 border-t border-border/50">
@@ -992,6 +997,27 @@ matcher: proxmenux-pbs
                             {showSecrets["dc_hook"] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
                           </button>
                         </div>
+                      </div>
+                      {/* Message format */}
+                      <div className="flex items-center justify-between py-1">
+                        <div>
+                          <Label className="text-xs font-medium">Rich messages</Label>
+                          <p className="text-[10px] text-muted-foreground">Enrich notifications with contextual emojis and icons</p>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={config.channels.discord?.rich_format || false}
+                          disabled={!editMode}
+                          className={`relative w-9 h-[18px] shrink-0 rounded-full transition-colors ${
+                            !editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+                          } ${config.channels.discord?.rich_format ? "bg-blue-600" : "bg-muted-foreground/20 border border-muted-foreground/40"}`}
+                          onClick={() => { if (editMode) updateChannel("discord", "rich_format", !config.channels.discord?.rich_format) }}
+                        >
+                          <span className={`absolute top-[1px] left-[1px] h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                            config.channels.discord?.rich_format ? "translate-x-[18px]" : "translate-x-0"
+                          }`} />
+                        </button>
                       </div>
                       {renderChannelCategories("discord")}
                       {/* Send Test */}

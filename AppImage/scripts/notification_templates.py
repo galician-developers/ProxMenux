@@ -1019,6 +1019,196 @@ def get_default_enabled_events() -> Dict[str, bool]:
     }
 
 
+# ─── Emoji Enrichment (per-channel opt-in) ──────────────────────
+
+# Category-level header icons
+CATEGORY_EMOJI = {
+    'vm_ct':     '\U0001F5A5\uFE0F',   # desktop computer
+    'backup':    '\U0001F4BE',           # floppy disk (backup)
+    'resources': '\U0001F4CA',           # bar chart
+    'storage':   '\U0001F4BD',           # minidisc / hard disk
+    'network':   '\U0001F310',           # globe with meridians
+    'security':  '\U0001F6E1\uFE0F',    # shield
+    'cluster':   '\U0001F517',           # chain link
+    'services':  '\u2699\uFE0F',         # gear
+    'health':    '\U0001FA7A',           # stethoscope
+    'updates':   '\U0001F504',           # counterclockwise arrows (update)
+    'other':     '\U0001F4E8',           # incoming envelope
+}
+
+# Event-specific title icons  (override category default when present)
+EVENT_EMOJI = {
+    # VM / CT
+    'vm_start':             '\u25B6\uFE0F',    # play button
+    'vm_stop':              '\u23F9\uFE0F',     # stop button
+    'vm_shutdown':          '\u23CF\uFE0F',     # eject
+    'vm_fail':              '\U0001F4A5',        # collision (crash)
+    'vm_restart':           '\U0001F504',        # cycle
+    'ct_start':             '\u25B6\uFE0F',
+    'ct_stop':              '\u23F9\uFE0F',
+    'ct_shutdown':          '\u23CF\uFE0F',
+    'ct_restart':           '\U0001F504',
+    'ct_fail':              '\U0001F4A5',
+    'migration_start':      '\U0001F69A',        # moving truck
+    'migration_complete':   '\u2705',            # check mark
+    'migration_fail':       '\u274C',            # cross mark
+    'replication_fail':     '\u274C',
+    'replication_complete': '\u2705',
+    # Backups
+    'backup_start':         '\U0001F4E6',        # package
+    'backup_complete':      '\u2705',
+    'backup_fail':          '\u274C',
+    'snapshot_complete':    '\U0001F4F8',         # camera with flash
+    'snapshot_fail':        '\u274C',
+    # Resources
+    'cpu_high':             '\U0001F525',         # fire
+    'ram_high':             '\U0001F4A7',         # droplet
+    'temp_high':            '\U0001F321\uFE0F',   # thermometer
+    'load_high':            '\u26A0\uFE0F',       # warning
+    # Storage
+    'disk_space_low':       '\U0001F4C9',         # chart decreasing
+    'disk_io_error':        '\U0001F4A5',
+    'storage_unavailable':  '\U0001F6AB',         # prohibited
+    # Network
+    'network_down':         '\U0001F50C',         # electric plug
+    'network_latency':      '\U0001F422',         # turtle (slow)
+    # Security
+    'auth_fail':            '\U0001F6A8',         # police light
+    'ip_block':             '\U0001F6B7',         # no pedestrians (banned)
+    'firewall_issue':       '\U0001F525',
+    'user_permission_change': '\U0001F511',       # key
+    # Cluster
+    'split_brain':          '\U0001F4A2',         # anger symbol
+    'node_disconnect':      '\U0001F50C',
+    'node_reconnect':       '\u2705',
+    # Services
+    'system_shutdown':      '\u23FB\uFE0F',       # power symbol (Unicode)
+    'system_reboot':        '\U0001F504',
+    'system_problem':       '\u26A0\uFE0F',
+    'service_fail':         '\u274C',
+    'oom_kill':             '\U0001F4A3',         # bomb
+    # Health
+    'new_error':            '\U0001F198',         # SOS
+    'error_resolved':       '\u2705',
+    'error_escalated':      '\U0001F53A',         # red triangle up
+    'health_degraded':      '\u26A0\uFE0F',
+    'health_persistent':    '\U0001F4CB',         # clipboard
+    # Updates
+    'update_summary':       '\U0001F4E6',
+    'pve_update':           '\U0001F195',         # NEW
+    'update_complete':      '\u2705',
+}
+
+# Decorative field-level icons for body text enrichment
+FIELD_EMOJI = {
+    'hostname':     '\U0001F4BB',   # laptop
+    'vmid':         '\U0001F194',   # ID button
+    'vmname':       '\U0001F3F7\uFE0F',  # label
+    'device':       '\U0001F4BD',   # disk
+    'mount':        '\U0001F4C2',   # open folder
+    'source_ip':    '\U0001F310',   # globe
+    'username':     '\U0001F464',   # bust in silhouette
+    'service_name': '\u2699\uFE0F', # gear
+    'node_name':    '\U0001F5A5\uFE0F',  # computer
+    'target_node':  '\U0001F3AF',   # direct hit (target)
+    'category':     '\U0001F4CC',   # pushpin
+    'severity':     '\U0001F6A6',   # traffic light
+    'duration':     '\u23F1\uFE0F', # stopwatch
+    'timestamp':    '\U0001F552',   # clock three
+    'size':         '\U0001F4CF',   # ruler
+    'reason':       '\U0001F4DD',   # memo
+    'value':        '\U0001F4CA',   # chart
+    'threshold':    '\U0001F6A7',   # construction
+    'jail':         '\U0001F512',   # lock
+    'failures':     '\U0001F522',   # input numbers
+    'quorum':       '\U0001F465',   # busts in silhouette
+    'total_count':  '\U0001F4E6',   # package
+    'security_count': '\U0001F6E1\uFE0F',  # shield
+    'pve_count':    '\U0001F4E6',
+    'kernel_count': '\u2699\uFE0F',
+    'important_list': '\U0001F4CB',  # clipboard
+}
+
+
+def enrich_with_emojis(event_type: str, title: str, body: str,
+                       data: Dict[str, Any]) -> tuple:
+    """Replace the plain title/body with emoji-enriched versions.
+    
+    Returns (enriched_title, enriched_body).
+    The function is idempotent: if the title already starts with an emoji,
+    it is returned unchanged.
+    """
+    # Pick the best title icon: event-specific > category > severity circle
+    template = TEMPLATES.get(event_type, {})
+    group = template.get('group', 'other')
+    severity = data.get('severity', 'INFO')
+    
+    icon = EVENT_EMOJI.get(event_type) or CATEGORY_EMOJI.get(group) or SEVERITY_ICONS.get(severity, '')
+    
+    # Build enriched title: replace severity circle with event-specific icon
+    # Current format: "hostname: Something"  -> "ICON hostname: Something"
+    # If title already starts with an emoji (from a previous pass), skip.
+    enriched_title = title
+    if icon and not any(title.startswith(e) for e in SEVERITY_ICONS.values()):
+        enriched_title = f'{icon} {title}'
+    elif icon:
+        # Replace existing severity circle with richer icon
+        for sev_icon in SEVERITY_ICONS.values():
+            if title.startswith(sev_icon):
+                enriched_title = title.replace(sev_icon, icon, 1)
+                break
+    
+    # Build enriched body: prepend field emojis to recognizable lines
+    lines = body.split('\n')
+    enriched_lines = []
+    
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            enriched_lines.append(line)
+            continue
+        
+        # Try to match "FieldName: value" patterns
+        enriched = False
+        for field_key, field_icon in FIELD_EMOJI.items():
+            # Match common label patterns: "Device:", "Duration:", "Size:", etc.
+            label_variants = [
+                field_key.replace('_', ' ').title(),  # "Source Ip" -> not great
+                field_key.replace('_', ' '),           # "source ip"
+            ]
+            # Also add specific known labels
+            _LABEL_MAP = {
+                'vmid': 'VM/CT', 'vmname': 'Name', 'source_ip': 'Source IP',
+                'service_name': 'Service', 'node_name': 'Node',
+                'target_node': 'Target', 'total_count': 'Total updates',
+                'security_count': 'Security updates', 'pve_count': 'Proxmox-related updates',
+                'kernel_count': 'Kernel updates', 'important_list': 'Important packages',
+                'duration': 'Duration', 'severity': 'Previous severity',
+                'original_severity': 'Previous severity',
+            }
+            if field_key in _LABEL_MAP:
+                label_variants.append(_LABEL_MAP[field_key])
+            
+            for label in label_variants:
+                if stripped.lower().startswith(label.lower() + ':'):
+                    enriched_lines.append(f'{field_icon} {stripped}')
+                    enriched = True
+                    break
+                elif stripped.lower().startswith(label.lower() + ' '):
+                    enriched_lines.append(f'{field_icon} {stripped}')
+                    enriched = True
+                    break
+            if enriched:
+                break
+        
+        if not enriched:
+            enriched_lines.append(line)
+    
+    enriched_body = '\n'.join(enriched_lines)
+    
+    return enriched_title, enriched_body
+
+
 # ─── AI Enhancement (Optional) ───────────────────────────────────
 
 class AIEnhancer:
