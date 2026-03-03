@@ -575,12 +575,30 @@ def _temperature_collector_loop():
 
 def _health_collector_loop():
     """Background thread: run full health checks every 5 minutes.
-    Keeps the health cache always fresh and records events/errors in the DB
-    so the future notification service can consume them."""
+    Keeps the health cache always fresh and records events/errors in the DB.
+    Also emits notifications when a health category degrades (OK -> WARNING/CRITICAL)."""
     from health_monitor import health_monitor
     
     # Wait 30s after startup to let other services initialize
     time.sleep(30)
+    
+    # Track previous status per category to detect transitions
+    _prev_statuses = {}
+    # Severity ranking for comparison
+    _SEV_RANK = {'OK': 0, 'INFO': 0, 'UNKNOWN': 1, 'WARNING': 2, 'CRITICAL': 3}
+    # Human-readable category names
+    _CAT_NAMES = {
+        'cpu': 'CPU Usage & Temperature',
+        'memory': 'Memory & Swap',
+        'storage': 'Storage Mounts & Space',
+        'disks': 'Disk I/O & Errors',
+        'network': 'Network Interfaces',
+        'vms': 'VMs & Containers',
+        'services': 'PVE Services',
+        'logs': 'System Logs',
+        'updates': 'System Updates',
+        'security': 'Security',
+    }
     
     while True:
         try:
@@ -598,6 +616,64 @@ def _health_collector_loop():
             health_monitor.cached_results['_bg_detailed'] = result
             health_monitor.last_check_times['_bg_overall'] = time.time()
             health_monitor.last_check_times['_bg_detailed'] = time.time()
+            
+            # ── Health degradation notifications ──
+            # Compare each category's current status to previous cycle.
+            # Notify when a category DEGRADES (OK->WARNING, WARNING->CRITICAL, etc.)
+            # Include the detailed 'reason' so the user knows exactly what triggered it.
+            details = result.get('details', {})
+            degraded = []
+            
+            for cat_key, cat_data in details.items():
+                cur_status = cat_data.get('status', 'OK')
+                prev_status = _prev_statuses.get(cat_key, 'OK')
+                cur_rank = _SEV_RANK.get(cur_status, 0)
+                prev_rank = _SEV_RANK.get(prev_status, 0)
+                
+                if cur_rank > prev_rank and cur_rank >= 2:  # WARNING or CRITICAL
+                    reason = cat_data.get('reason', f'{cat_key} status changed to {cur_status}')
+                    cat_name = _CAT_NAMES.get(cat_key, cat_key)
+                    degraded.append({
+                        'category': cat_name,
+                        'status': cur_status,
+                        'reason': reason,
+                    })
+                
+                _prev_statuses[cat_key] = cur_status
+            
+            # Send grouped notification if any categories degraded
+            if degraded and notification_manager._enabled:
+                hostname = result.get('hostname', '')
+                if not hostname:
+                    import socket as _sock
+                    hostname = _sock.gethostname()
+                
+                if len(degraded) == 1:
+                    d = degraded[0]
+                    title = f"{hostname}: Health {d['status']} - {d['category']}"
+                    body = d['reason']
+                    severity = d['status']
+                else:
+                    # Multiple categories degraded at once -- group them
+                    max_sev = max(degraded, key=lambda x: _SEV_RANK.get(x['status'], 0))['status']
+                    title = f"{hostname}: {len(degraded)} health checks degraded"
+                    lines = []
+                    for d in degraded:
+                        lines.append(f"  [{d['status']}] {d['category']}: {d['reason']}")
+                    body = '\n'.join(lines)
+                    severity = max_sev
+                
+                try:
+                    notification_manager.send_notification(
+                        event_type='health_degraded',
+                        severity=severity,
+                        title=title,
+                        message=body,
+                        data={'hostname': hostname, 'count': str(len(degraded))},
+                        source='health_monitor',
+                    )
+                except Exception as e:
+                    print(f"[ProxMenux] Health notification error: {e}")
         except Exception as e:
             print(f"[ProxMenux] Health collector error: {e}")
         

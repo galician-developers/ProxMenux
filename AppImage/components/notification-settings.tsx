@@ -40,13 +40,18 @@ interface EventTypeInfo {
   default_enabled: boolean
 }
 
+interface ChannelOverrides {
+  categories: Record<string, boolean>
+  events: Record<string, boolean>
+}
+
 interface NotificationConfig {
   enabled: boolean
   channels: Record<string, ChannelConfig>
-  severity_filter: string
   event_categories: Record<string, boolean>
   event_toggles: Record<string, boolean>
   event_types_by_group: Record<string, EventTypeInfo[]>
+  channel_overrides: Record<string, ChannelOverrides>
   ai_enabled: boolean
   ai_provider: string
   ai_api_key: string
@@ -79,22 +84,21 @@ interface HistoryEntry {
   error_message: string | null
 }
 
-const SEVERITY_OPTIONS = [
-  { value: "critical", label: "Critical only" },
-  { value: "warning", label: "Warning + Critical" },
-  { value: "info", label: "All (Info + Warning + Critical)" },
-]
-
 const EVENT_CATEGORIES = [
-  { key: "system", label: "System", desc: "Startup, shutdown, kernel events" },
   { key: "vm_ct", label: "VM / CT", desc: "Start, stop, crash, migration" },
   { key: "backup", label: "Backups", desc: "Backup start, complete, fail" },
   { key: "resources", label: "Resources", desc: "CPU, memory, temperature" },
-  { key: "storage", label: "Storage", desc: "Disk space, I/O errors, SMART" },
+  { key: "storage", label: "Storage", desc: "Disk space, I/O, SMART" },
   { key: "network", label: "Network", desc: "Connectivity, bond, latency" },
-  { key: "security", label: "Security", desc: "Auth failures, fail2ban, firewall" },
+  { key: "security", label: "Security", desc: "Auth failures, Fail2Ban, firewall" },
   { key: "cluster", label: "Cluster", desc: "Quorum, split-brain, HA fencing" },
+  { key: "services", label: "Services", desc: "System services, shutdown, reboot" },
+  { key: "health", label: "Health Monitor", desc: "Health checks, degradation, recovery" },
+  { key: "updates", label: "Updates", desc: "System and PVE updates" },
+  { key: "other", label: "Other", desc: "Uncategorized notifications" },
 ]
+
+const CHANNEL_TYPES = ["telegram", "gotify", "discord", "email"] as const
 
 const AI_PROVIDERS = [
   { value: "openai", label: "OpenAI" },
@@ -109,13 +113,19 @@ const DEFAULT_CONFIG: NotificationConfig = {
     discord: { enabled: false },
     email: { enabled: false },
   },
-  severity_filter: "all",
   event_categories: {
-    system: true, vm_ct: true, backup: true, resources: true,
-    storage: true, network: true, security: true, cluster: true,
+    vm_ct: true, backup: true, resources: true, storage: true,
+    network: true, security: true, cluster: true, services: true,
+    health: true, updates: true, other: true,
   },
   event_toggles: {},
   event_types_by_group: {},
+  channel_overrides: {
+    telegram: { categories: {}, events: {} },
+    gotify: { categories: {}, events: {} },
+    discord: { categories: {}, events: {} },
+    email: { categories: {}, events: {} },
+  },
   ai_enabled: false,
   ai_provider: "openai",
   ai_api_key: "",
@@ -217,7 +227,6 @@ export function NotificationSettings() {
   const flattenConfig = (cfg: NotificationConfig): Record<string, string> => {
     const flat: Record<string, string> = {
       enabled: String(cfg.enabled),
-      severity_filter: cfg.severity_filter,
       ai_enabled: String(cfg.ai_enabled),
       ai_provider: cfg.ai_provider,
       ai_api_key: cfg.ai_api_key,
@@ -235,26 +244,38 @@ export function NotificationSettings() {
         flat[`${chName}.${field}`] = String(value ?? "")
       }
     }
-    // Flatten event_categories: { system: true, backups: false } -> events.system, events.backups
+    // Flatten global event_categories: { vm_ct: true, backup: false } -> events.vm_ct, events.backup
     for (const [cat, enabled] of Object.entries(cfg.event_categories)) {
       flat[`events.${cat}`] = String(enabled)
     }
-    // Flatten event_toggles: { vm_start: true, vm_stop: false } -> event.vm_start, event.vm_stop
-    // Always write ALL toggles to DB so the backend has an explicit record.
-    // This ensures default_enabled changes in templates don't get overridden by stale DB values.
+    // Flatten global event_toggles: { vm_start: true } -> event.vm_start
     if (cfg.event_toggles) {
       for (const [evt, enabled] of Object.entries(cfg.event_toggles)) {
         flat[`event.${evt}`] = String(enabled)
       }
     }
-    // Also write any events NOT in event_toggles using their template defaults.
-    // This covers newly added templates whose default_enabled may be false.
+    // Write defaults for events NOT in toggles
     if (cfg.event_types_by_group) {
       for (const events of Object.values(cfg.event_types_by_group)) {
         for (const evt of (events as Array<{type: string, default_enabled: boolean}>)) {
           const key = `event.${evt.type}`
           if (!(key in flat)) {
             flat[key] = String(evt.default_enabled)
+          }
+        }
+      }
+    }
+    // Flatten per-channel overrides: telegram.events.backup, telegram.event.vm_start, etc.
+    if (cfg.channel_overrides) {
+      for (const [chName, overrides] of Object.entries(cfg.channel_overrides)) {
+        if (overrides.categories) {
+          for (const [cat, enabled] of Object.entries(overrides.categories)) {
+            flat[`${chName}.events.${cat}`] = String(enabled)
+          }
+        }
+        if (overrides.events) {
+          for (const [evt, enabled] of Object.entries(overrides.events)) {
+            flat[`${chName}.event.${evt}`] = String(enabled)
           }
         }
       }
@@ -1052,27 +1073,8 @@ matcher: proxmenux-pbs
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Filters & Events</span>
               </div>
               <div className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-4">
-              {/* Severity */}
+              {/* Event Categories (global defaults -- per-channel overrides in Channel Filters below) */}
               <div className="space-y-1.5">
-                <Label className="text-[11px] text-muted-foreground">Severity Filter</Label>
-                <Select
-                  value={config.severity_filter}
-                  onValueChange={v => updateConfig(p => ({ ...p, severity_filter: v }))}
-                  disabled={!editMode}
-                >
-                  <SelectTrigger className={`h-8 text-xs ${!editMode ? "opacity-60" : ""}`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SEVERITY_OPTIONS.map(opt => (
-                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Event Categories */}
-              <div className="space-y-1.5 border-t border-border/30 pt-3">
                 <Label className="text-[11px] text-muted-foreground">Event Categories</Label>
               <div className="space-y-1.5">
                 {EVENT_CATEGORIES.map(cat => {
@@ -1198,6 +1200,118 @@ matcher: proxmenux-pbs
                 })}
               </div>
               </div>
+
+              {/* Per-channel overrides */}
+              <div className="space-y-2 border-t border-border/30 pt-3">
+                <Label className="text-[11px] text-muted-foreground">Channel Filters</Label>
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                  By default every channel inherits the global settings above. Override specific categories per channel to customize what each destination receives.
+                </p>
+                <div className="space-y-2">
+                  {CHANNEL_TYPES.map(chName => {
+                    const chEnabled = config.channels[chName]?.enabled
+                    if (!chEnabled) return null
+                    const overrides = config.channel_overrides?.[chName] || { categories: {}, events: {} }
+                    const hasOverrides = Object.keys(overrides.categories).length > 0
+                    const chLabel = chName === "email" ? "Email" : chName.charAt(0).toUpperCase() + chName.slice(1)
+                    const chColor = chName === "telegram" ? "blue" : chName === "gotify" ? "green" : chName === "discord" ? "indigo" : "amber"
+
+                    return (
+                      <details key={chName} className="group">
+                        <summary className={`flex items-center justify-between text-[11px] font-medium cursor-pointer hover:text-foreground transition-colors py-1.5 px-2 rounded-md hover:bg-muted/50 ${
+                          hasOverrides ? `text-${chColor}-400` : "text-muted-foreground"
+                        }`}>
+                          <div className="flex items-center gap-2">
+                            <ChevronDown className="h-3 w-3 group-open:rotate-180 transition-transform" />
+                            <span>{chLabel}</span>
+                            {hasOverrides && (
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded-full bg-${chColor}-500/15 text-${chColor}-400`}>
+                                customized
+                              </span>
+                            )}
+                          </div>
+                          {!hasOverrides && (
+                            <span className="text-[9px] text-muted-foreground/60">inherits global</span>
+                          )}
+                        </summary>
+                        <div className="mt-1.5 ml-5 space-y-1">
+                          {EVENT_CATEGORIES.map(cat => {
+                            const globalEnabled = config.event_categories[cat.key] ?? true
+                            const override = overrides.categories[cat.key]
+                            const isCustomized = override !== undefined
+                            const effectiveEnabled = isCustomized ? override : globalEnabled
+
+                            return (
+                              <div key={cat.key} className="flex items-center justify-between py-1 px-2 rounded hover:bg-muted/30">
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-[11px] ${effectiveEnabled ? "text-foreground" : "text-muted-foreground/50"}`}>
+                                    {cat.label}
+                                  </span>
+                                  {!isCustomized && (
+                                    <span className="text-[9px] text-muted-foreground/40">global</span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  {isCustomized && (
+                                    <button
+                                      type="button"
+                                      className="text-[9px] text-muted-foreground hover:text-foreground px-1"
+                                      disabled={!editMode}
+                                      onClick={() => {
+                                        if (!editMode) return
+                                        updateConfig(p => {
+                                          const ch = { ...(p.channel_overrides?.[chName] || { categories: {}, events: {} }) }
+                                          const cats = { ...ch.categories }
+                                          delete cats[cat.key]
+                                          return { ...p, channel_overrides: { ...p.channel_overrides, [chName]: { ...ch, categories: cats } } }
+                                        })
+                                      }}
+                                    >
+                                      reset
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={effectiveEnabled}
+                                    disabled={!editMode}
+                                    className={`relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors ${
+                                      !editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+                                    } ${effectiveEnabled ? `bg-${chColor}-600` : "bg-muted-foreground/30"}`}
+                                    onClick={() => {
+                                      if (!editMode) return
+                                      updateConfig(p => {
+                                        const ch = { ...(p.channel_overrides?.[chName] || { categories: {}, events: {} }) }
+                                        return {
+                                          ...p,
+                                          channel_overrides: {
+                                            ...p.channel_overrides,
+                                            [chName]: { ...ch, categories: { ...ch.categories, [cat.key]: !effectiveEnabled } }
+                                          }
+                                        }
+                                      })
+                                    }}
+                                  >
+                                    <span className={`pointer-events-none block h-2.5 w-2.5 rounded-full bg-background shadow-sm transition-transform ${
+                                      effectiveEnabled ? "translate-x-3" : "translate-x-0.5"
+                                    }`} />
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </details>
+                    )
+                  })}
+                  {CHANNEL_TYPES.every(ch => !config.channels[ch]?.enabled) && (
+                    <p className="text-[10px] text-muted-foreground/50 italic py-2">
+                      Enable at least one channel above to configure per-channel filters.
+                    </p>
+                  )}
+                </div>
+              </div>
+
               </div>{/* close bordered filters container */}
             </div>
 

@@ -69,8 +69,14 @@ GROUP_RATE_LIMITS = {
     'resources': {'max_per_minute': 3,  'max_per_hour': 20},
     'vm_ct':     {'max_per_minute': 10, 'max_per_hour': 60},
     'backup':    {'max_per_minute': 5,  'max_per_hour': 30},
-    'system':    {'max_per_minute': 5,  'max_per_hour': 30},
+    'services':  {'max_per_minute': 5,  'max_per_hour': 30},
+    'health':    {'max_per_minute': 3,  'max_per_hour': 20},
+    'updates':   {'max_per_minute': 3,  'max_per_hour': 15},
+    'other':     {'max_per_minute': 5,  'max_per_hour': 30},
 }
+
+# Default fallback for unknown groups
+_DEFAULT_RATE_LIMIT = {'max_per_minute': 5, 'max_per_hour': 30}
 
 
 class GroupRateLimiter:
@@ -84,7 +90,7 @@ class GroupRateLimiter:
     
     def allow(self, group: str) -> bool:
         """Check if group rate limit allows this event."""
-        limits = GROUP_RATE_LIMITS.get(group, GROUP_RATE_LIMITS['system'])
+        limits = GROUP_RATE_LIMITS.get(group, _DEFAULT_RATE_LIMIT)
         now = time.time()
         
         # Initialize if needed
@@ -554,33 +560,26 @@ class NotificationManager:
             print(f"[NotificationManager] Aggregation flush error: {e}")
     
     def _process_event(self, event: NotificationEvent):
-        """Process a single event: filter -> aggregate -> cooldown -> rate limit -> dispatch."""
+        """Process a single event: filter -> aggregate -> cooldown -> rate limit -> dispatch.
+        
+        NOTE: Group and per-event filters are checked globally here.
+        Per-channel overrides are applied later in _dispatch_to_channels().
+        """
         if not self._enabled:
             return
         
-        # Check if this event's GROUP is enabled in settings.
-        # The UI saves categories by group key: events.vm_ct, events.backup, etc.
+        # Check if this event's GROUP is enabled globally.
         template = TEMPLATES.get(event.event_type, {})
-        event_group = template.get('group', 'system')
+        event_group = template.get('group', 'other')
         group_setting = f'events.{event_group}'
         if self._config.get(group_setting, 'true') == 'false':
             return
         
-        # Check if this SPECIFIC event type is enabled (granular per-event toggle).
-        # Key format: event.{event_type} = "true"/"false"
+        # Check if this SPECIFIC event type is enabled globally.
         # Default comes from the template's default_enabled field.
         default_enabled = 'true' if template.get('default_enabled', True) else 'false'
         event_specific = f'event.{event.event_type}'
         if self._config.get(event_specific, default_enabled) == 'false':
-            return
-        
-        # Check severity filter.
-        # The UI saves severity_filter as: "all", "warning", "critical".
-        # Map to our internal severity names for comparison.
-        severity_map = {'all': 'INFO', 'warning': 'WARNING', 'critical': 'CRITICAL'}
-        raw_filter = self._config.get('severity_filter', 'all')
-        min_severity = severity_map.get(raw_filter.lower(), 'INFO')
-        if not self._meets_severity(event.severity, min_severity):
             return
         
         # Try aggregation (may buffer the event)
@@ -593,28 +592,21 @@ class NotificationManager:
         self._dispatch_event(event)
     
     def _process_event_direct(self, event: NotificationEvent):
-        """Process a burst summary event. Bypasses aggregator but applies ALL other filters."""
+        """Process a burst summary event. Bypasses aggregator but applies global filters."""
         if not self._enabled:
             return
         
-        # Check group filter (same as _process_event)
+        # Check group filter
         template = TEMPLATES.get(event.event_type, {})
-        event_group = template.get('group', 'system')
+        event_group = template.get('group', 'other')
         group_setting = f'events.{event_group}'
         if self._config.get(group_setting, 'true') == 'false':
             return
         
-        # Check per-event filter (same as _process_event)
+        # Check per-event filter
         default_enabled = 'true' if template.get('default_enabled', True) else 'false'
         event_specific = f'event.{event.event_type}'
         if self._config.get(event_specific, default_enabled) == 'false':
-            return
-        
-        # Check severity filter (same mapping as _process_event)
-        severity_map = {'all': 'INFO', 'warning': 'WARNING', 'critical': 'CRITICAL'}
-        raw_filter = self._config.get('severity_filter', 'all')
-        min_severity = severity_map.get(raw_filter.lower(), 'INFO')
-        if not self._meets_severity(event.severity, min_severity):
             return
         
         self._dispatch_event(event)
@@ -636,7 +628,7 @@ class NotificationManager:
         
         # Check group rate limit
         template = TEMPLATES.get(event.event_type, {})
-        group = template.get('group', 'system')
+        group = template.get('group', 'other')
         if not self._group_limiter.allow(group):
             return
         
@@ -674,11 +666,33 @@ class NotificationManager:
     
     def _dispatch_to_channels(self, title: str, body: str, severity: str,
                                event_type: str, data: Dict, source: str):
-        """Send notification through all configured channels."""
+        """Send notification through configured channels, respecting per-channel overrides.
+        
+        Each channel can override global category/event settings:
+          - {channel}.events.{group}  = "true"/"false"  (category override)
+          - {channel}.event.{type}    = "true"/"false"  (per-event override)
+        If no override exists, the channel inherits the global setting (already checked).
+        """
         with self._lock:
             channels = dict(self._channels)
         
+        template = TEMPLATES.get(event_type, {})
+        event_group = template.get('group', 'other')
+        
         for ch_name, channel in channels.items():
+            # ── Per-channel override check ──
+            # If the channel has an explicit override for this group or event, respect it.
+            # If no override, the global filter already passed (checked in _process_event).
+            ch_group_key = f'{ch_name}.events.{event_group}'
+            ch_group_override = self._config.get(ch_group_key)
+            if ch_group_override == 'false':
+                continue  # Channel explicitly disabled this category
+            
+            ch_event_key = f'{ch_name}.event.{event_type}'
+            ch_event_override = self._config.get(ch_event_key)
+            if ch_event_override == 'false':
+                continue  # Channel explicitly disabled this event
+            
             try:
                 result = channel.send(title, body, severity, data)
                 self._record_history(
@@ -856,12 +870,6 @@ class NotificationManager:
             conn.close()
         except Exception:
             pass
-    
-    @staticmethod
-    def _meets_severity(event_severity: str, min_severity: str) -> bool:
-        """Check if event severity meets the minimum threshold."""
-        levels = {'INFO': 0, 'WARNING': 1, 'CRITICAL': 2}
-        return levels.get(event_severity, 0) >= levels.get(min_severity, 0)
     
     # ─── History Recording ──────────────────────────────────────
     
@@ -1171,7 +1179,7 @@ class NotificationManager:
             channels[ch_type] = ch_cfg
         
         # Build event_categories dict (group-level toggle)
-        # EVENT_GROUPS is a dict: { 'system': {...}, 'vm_ct': {...}, ... }
+        # EVENT_GROUPS is a dict: { 'vm_ct': {...}, 'services': {...}, 'health': {...}, ... }
         event_categories = {}
         for group_key in EVENT_GROUPS:
             event_categories[group_key] = self._config.get(f'events.{group_key}', 'true') == 'true'
@@ -1189,13 +1197,28 @@ class NotificationManager:
         # Build event_types_by_group for UI rendering
         event_types_by_group = get_event_types_by_group()
         
+        # Build per-channel overrides
+        # Keys: {channel}.events.{group} and {channel}.event.{event_type}
+        channel_overrides = {}
+        for ch_type in CHANNEL_TYPES:
+            ch_overrides = {'categories': {}, 'events': {}}
+            for group_key in EVENT_GROUPS:
+                val = self._config.get(f'{ch_type}.events.{group_key}')
+                if val is not None:
+                    ch_overrides['categories'][group_key] = val == 'true'
+            for event_type_key in TEMPLATES:
+                val = self._config.get(f'{ch_type}.event.{event_type_key}')
+                if val is not None:
+                    ch_overrides['events'][event_type_key] = val == 'true'
+            channel_overrides[ch_type] = ch_overrides
+        
         config = {
             'enabled': self._enabled,
             'channels': channels,
-            'severity_filter': self._config.get('severity_filter', 'all'),
             'event_categories': event_categories,
             'event_toggles': event_toggles,
             'event_types_by_group': event_types_by_group,
+            'channel_overrides': channel_overrides,
             'ai_enabled': self._config.get('ai_enabled', 'false') == 'true',
             'ai_provider': self._config.get('ai_provider', 'openai'),
             'ai_api_key': self._config.get('ai_api_key', ''),

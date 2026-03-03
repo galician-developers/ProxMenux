@@ -2778,24 +2778,41 @@ class HealthMonitor:
                         return 'INFO'
                     return severity
                 
+                # Build detail strings that include the actual error samples
+                # so the user can see exactly WHAT is triggering the warning.
+                if cascade_count > 0:
+                    cascade_detail = f'{cascade_count} pattern(s) repeating >=15 times: ' + '; '.join(cascade_samples)
+                else:
+                    cascade_detail = 'No cascading errors'
+                
+                if spike_count > 0:
+                    spike_detail = f'{spike_count} pattern(s) with 4x increase: ' + '; '.join(spike_samples)
+                else:
+                    spike_detail = 'No error spikes'
+                
+                if persistent_count > 0:
+                    persist_detail = f'{persistent_count} recurring pattern(s) over 15+ min: ' + '; '.join(persist_samples)
+                else:
+                    persist_detail = 'No persistent patterns'
+                
                 log_checks = {
                     'log_error_cascade': {
                         'status': _log_check_status('log_error_cascade', cascade_count > 0, 'WARNING'),
-                        'detail': f'{cascade_count} pattern(s) repeating >=15 times' if cascade_count > 0 else 'No cascading errors',
+                        'detail': cascade_detail,
                         'dismissable': True,
                         'dismissed': 'log_error_cascade' in dismissed_keys,
                         'error_key': 'log_error_cascade'
                     },
                     'log_error_spike': {
                         'status': _log_check_status('log_error_spike', spike_count > 0, 'WARNING'),
-                        'detail': f'{spike_count} pattern(s) with 4x increase' if spike_count > 0 else 'No error spikes',
+                        'detail': spike_detail,
                         'dismissable': True,
                         'dismissed': 'log_error_spike' in dismissed_keys,
                         'error_key': 'log_error_spike'
                     },
                     'log_persistent_errors': {
                         'status': _log_check_status('log_persistent_errors', persistent_count > 0, 'WARNING'),
-                        'detail': f'{persistent_count} recurring pattern(s) over 15+ min' if persistent_count > 0 else 'No persistent patterns',
+                        'detail': persist_detail,
                         'dismissable': True,
                         'dismissed': 'log_persistent_errors' in dismissed_keys,
                         'error_key': 'log_persistent_errors'

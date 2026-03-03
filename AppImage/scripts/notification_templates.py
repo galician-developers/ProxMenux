@@ -342,25 +342,36 @@ TEMPLATES = {
     'state_change': {
         'title': '{hostname}: {category} changed to {current}',
         'body': '{category} status changed from {previous} to {current}.\n{reason}',
-        'group': 'system',
+        'label': 'Health state changed',
+        'group': 'health',
         'default_enabled': False,
     },
     'new_error': {
         'title': '{hostname}: New {severity} - {category}',
         'body': '{reason}',
-        'group': 'system',
+        'label': 'New health issue',
+        'group': 'health',
         'default_enabled': True,
     },
     'error_resolved': {
         'title': '{hostname}: Resolved - {category}',
         'body': '{reason}\nDuration: {duration}',
-        'group': 'system',
+        'label': 'Health issue resolved',
+        'group': 'health',
         'default_enabled': True,
     },
     'error_escalated': {
         'title': '{hostname}: Escalated to {severity} - {category}',
         'body': '{reason}',
-        'group': 'system',
+        'label': 'Health issue escalated',
+        'group': 'health',
+        'default_enabled': True,
+    },
+    'health_degraded': {
+        'title': '{hostname}: Health check degraded',
+        'body': '{reason}',
+        'label': 'Health check degraded',
+        'group': 'health',
         'default_enabled': True,
     },
     
@@ -368,90 +379,105 @@ TEMPLATES = {
     'vm_start': {
         'title': '{hostname}: VM {vmid} started',
         'body': '{vmname} ({vmid}) has been started.',
+        'label': 'VM started',
         'group': 'vm_ct',
         'default_enabled': True,
     },
     'vm_stop': {
         'title': '{hostname}: VM {vmid} stopped',
         'body': '{vmname} ({vmid}) has been stopped.',
+        'label': 'VM stopped',
         'group': 'vm_ct',
         'default_enabled': False,
     },
     'vm_shutdown': {
         'title': '{hostname}: VM {vmid} shutdown',
         'body': '{vmname} ({vmid}) has been shut down.',
+        'label': 'VM shutdown',
         'group': 'vm_ct',
         'default_enabled': False,
     },
     'vm_fail': {
         'title': '{hostname}: VM {vmid} FAILED',
         'body': '{vmname} ({vmid}) has failed.\n{reason}',
+        'label': 'VM FAILED',
         'group': 'vm_ct',
         'default_enabled': True,
     },
     'vm_restart': {
         'title': '{hostname}: VM {vmid} restarted',
         'body': '{vmname} ({vmid}) has been restarted.',
+        'label': 'VM restarted',
         'group': 'vm_ct',
         'default_enabled': False,
     },
     'ct_start': {
         'title': '{hostname}: CT {vmid} started',
         'body': '{vmname} ({vmid}) has been started.',
+        'label': 'CT started',
         'group': 'vm_ct',
         'default_enabled': True,
     },
     'ct_stop': {
         'title': '{hostname}: CT {vmid} stopped',
         'body': '{vmname} ({vmid}) has been stopped.',
+        'label': 'CT stopped',
         'group': 'vm_ct',
         'default_enabled': False,
     },
     'ct_shutdown': {
         'title': '{hostname}: CT {vmid} shutdown',
         'body': '{vmname} ({vmid}) has been shut down.',
+        'label': 'CT shutdown',
         'group': 'vm_ct',
         'default_enabled': False,
     },
     'ct_restart': {
         'title': '{hostname}: CT {vmid} restarted',
         'body': '{vmname} ({vmid}) has been restarted.',
+        'label': 'CT restarted',
         'group': 'vm_ct',
         'default_enabled': False,
     },
     'ct_fail': {
         'title': '{hostname}: CT {vmid} FAILED',
         'body': '{vmname} ({vmid}) has failed.\n{reason}',
+        'label': 'CT FAILED',
         'group': 'vm_ct',
         'default_enabled': True,
     },
     'migration_start': {
         'title': '{hostname}: Migration started - {vmid}',
         'body': '{vmname} ({vmid}) migration to {target_node} started.',
+        'label': 'Migration started',
         'group': 'vm_ct',
         'default_enabled': True,
     },
     'migration_complete': {
         'title': '{hostname}: Migration complete - {vmid}',
         'body': '{vmname} ({vmid}) migrated successfully to {target_node}.',
+        'label': 'Migration complete',
         'group': 'vm_ct',
         'default_enabled': True,
     },
     'migration_fail': {
         'title': '{hostname}: Migration FAILED - {vmid}',
         'body': '{vmname} ({vmid}) migration to {target_node} failed.\n{reason}',
+        'label': 'Migration FAILED',
         'group': 'vm_ct',
         'default_enabled': True,
     },
     'replication_fail': {
         'title': '{hostname}: Replication FAILED - {vmid}',
         'body': 'Replication of {vmname} ({vmid}) has failed.\n{reason}',
+        'label': 'Replication FAILED',
         'group': 'vm_ct',
         'default_enabled': True,
     },
     'replication_complete': {
         'title': '{hostname}: Replication complete - {vmid}',
         'body': 'Replication of {vmname} ({vmid}) completed successfully.',
+        'label': 'Replication complete',
         'group': 'vm_ct',
         'default_enabled': False,
     },
@@ -460,30 +486,35 @@ TEMPLATES = {
     'backup_start': {
         'title': '{hostname}: Backup started',
         'body': '{reason}',
+        'label': 'Backup started',
         'group': 'backup',
         'default_enabled': False,
     },
     'backup_complete': {
         'title': '{hostname}: Backup complete - {vmid}',
         'body': 'Backup of {vmname} ({vmid}) completed successfully.\nSize: {size}',
+        'label': 'Backup complete',
         'group': 'backup',
         'default_enabled': True,
     },
     'backup_fail': {
         'title': '{hostname}: Backup FAILED - {vmid}',
         'body': 'Backup of {vmname} ({vmid}) has failed.\n{reason}',
+        'label': 'Backup FAILED',
         'group': 'backup',
         'default_enabled': True,
     },
     'snapshot_complete': {
         'title': '{hostname}: Snapshot created - {vmid}',
         'body': 'Snapshot of {vmname} ({vmid}) created: {snapshot_name}',
+        'label': 'Snapshot created',
         'group': 'backup',
         'default_enabled': False,
     },
     'snapshot_fail': {
         'title': '{hostname}: Snapshot FAILED - {vmid}',
         'body': 'Snapshot of {vmname} ({vmid}) failed.\n{reason}',
+        'label': 'Snapshot FAILED',
         'group': 'backup',
         'default_enabled': True,
     },
@@ -492,42 +523,49 @@ TEMPLATES = {
     'cpu_high': {
         'title': '{hostname}: High CPU usage ({value}%)',
         'body': 'CPU usage is at {value}% on {cores} cores.\n{details}',
+        'label': 'High CPU usage',
         'group': 'resources',
         'default_enabled': True,
     },
     'ram_high': {
         'title': '{hostname}: High memory usage ({value}%)',
         'body': 'Memory usage: {used} / {total} ({value}%).\n{details}',
+        'label': 'High memory usage',
         'group': 'resources',
         'default_enabled': True,
     },
     'temp_high': {
         'title': '{hostname}: High temperature ({value}C)',
         'body': 'CPU temperature: {value}C (threshold: {threshold}C).\n{details}',
+        'label': 'High temperature',
         'group': 'resources',
         'default_enabled': True,
     },
     'disk_space_low': {
         'title': '{hostname}: Low disk space on {mount}',
         'body': '{mount}: {used}% used ({available} available).',
+        'label': 'Low disk space',
         'group': 'storage',
         'default_enabled': True,
     },
     'disk_io_error': {
         'title': '{hostname}: Disk failure detected on {device}',
         'body': '{reason}',
+        'label': 'Disk failure / I/O error',
         'group': 'storage',
         'default_enabled': True,
     },
     'storage_unavailable': {
         'title': '{hostname}: Storage unavailable - {storage_name}',
         'body': 'PVE storage "{storage_name}" ({storage_type}) is not available.\n{reason}',
+        'label': 'Storage unavailable',
         'group': 'storage',
         'default_enabled': True,
     },
     'load_high': {
         'title': '{hostname}: High system load ({value})',
         'body': 'System load average: {value} on {cores} cores.\n{details}',
+        'label': 'High system load',
         'group': 'resources',
         'default_enabled': True,
     },
@@ -536,12 +574,14 @@ TEMPLATES = {
     'network_down': {
         'title': '{hostname}: Network connectivity lost',
         'body': 'Network connectivity check failed.\n{reason}',
+        'label': 'Network connectivity lost',
         'group': 'network',
         'default_enabled': True,
     },
     'network_latency': {
         'title': '{hostname}: High network latency ({value}ms)',
         'body': 'Latency to gateway: {value}ms (threshold: {threshold}ms).',
+        'label': 'High network latency',
         'group': 'network',
         'default_enabled': False,
     },
@@ -550,24 +590,28 @@ TEMPLATES = {
     'auth_fail': {
         'title': '{hostname}: Authentication failure',
         'body': 'Failed login attempt from {source_ip}.\nUser: {username}\nService: {service}',
+        'label': 'Authentication failure',
         'group': 'security',
         'default_enabled': True,
     },
     'ip_block': {
         'title': '{hostname}: IP blocked by Fail2Ban',
         'body': 'IP {source_ip} has been banned.\nJail: {jail}\nFailures: {failures}',
+        'label': 'IP blocked by Fail2Ban',
         'group': 'security',
         'default_enabled': True,
     },
     'firewall_issue': {
         'title': '{hostname}: Firewall issue detected',
         'body': '{reason}',
+        'label': 'Firewall issue detected',
         'group': 'security',
         'default_enabled': True,
     },
     'user_permission_change': {
         'title': '{hostname}: User permission changed',
         'body': 'User: {username}\nChange: {change_details}',
+        'label': 'User permission changed',
         'group': 'security',
         'default_enabled': True,
     },
@@ -576,101 +620,128 @@ TEMPLATES = {
     'split_brain': {
         'title': '{hostname}: SPLIT-BRAIN detected',
         'body': 'Cluster split-brain condition detected.\nQuorum status: {quorum}',
+        'label': 'SPLIT-BRAIN detected',
         'group': 'cluster',
         'default_enabled': True,
     },
     'node_disconnect': {
         'title': '{hostname}: Node disconnected',
         'body': 'Node {node_name} has disconnected from the cluster.',
+        'label': 'Node disconnected',
         'group': 'cluster',
         'default_enabled': True,
     },
     'node_reconnect': {
         'title': '{hostname}: Node reconnected',
         'body': 'Node {node_name} has reconnected to the cluster.',
+        'label': 'Node reconnected',
         'group': 'cluster',
         'default_enabled': True,
     },
     
-    # ── System events ──
+    # ── Services events ──
     'system_shutdown': {
         'title': '{hostname}: System shutting down',
         'body': '{reason}',
-        'group': 'system',
+        'label': 'System shutting down',
+        'group': 'services',
         'default_enabled': True,
     },
     'system_reboot': {
         'title': '{hostname}: System rebooting',
         'body': '{reason}',
-        'group': 'system',
+        'label': 'System rebooting',
+        'group': 'services',
         'default_enabled': True,
     },
     'system_problem': {
         'title': '{hostname}: System problem detected',
         'body': '{reason}',
-        'group': 'system',
+        'label': 'System problem detected',
+        'group': 'services',
         'default_enabled': True,
     },
     'service_fail': {
         'title': '{hostname}: Service failed - {service_name}',
         'body': '{reason}',
-        'group': 'system',
+        'label': 'Service failed',
+        'group': 'services',
         'default_enabled': True,
     },
+    'oom_kill': {
+        'title': '{hostname}: OOM Kill - {process}',
+        'body': '{reason}',
+        'label': 'Out of memory kill',
+        'group': 'services',
+        'default_enabled': True,
+    },
+    
+    # ── Hidden internal templates (not shown in UI) ──
     'service_fail_batch': {
         'title': '{hostname}: {service_count} services failed',
         'body': '{reason}',
-        'group': 'system',
+        'label': 'Service fail batch',
+        'group': 'services',
         'default_enabled': True,
+        'hidden': True,
     },
     'system_mail': {
         'title': '{hostname}: {pve_title}',
         'body': '{reason}',
-        'group': 'system',
+        'label': 'PVE system mail',
+        'group': 'other',
         'default_enabled': True,
+        'hidden': True,
+    },
+    'webhook_test': {
+        'title': '{hostname}: Webhook test received',
+        'body': 'PVE webhook connectivity test successful.\n{reason}',
+        'label': 'Webhook test',
+        'group': 'other',
+        'default_enabled': True,
+        'hidden': True,
     },
     'update_available': {
         'title': '{hostname}: Updates available',
         'body': 'Total updates: {total_count}\nSecurity: {security_count}\nProxmox: {pve_count}\nKernel: {kernel_count}\nImportant: {important_list}',
-        'group': 'system',
-        'default_enabled': False,  # Superseded by update_summary
-    },
-    'update_complete': {
-        'title': '{hostname}: Update completed',
-        'body': '{details}',
-        'group': 'system',
+        'label': 'Updates available (legacy)',
+        'group': 'updates',
         'default_enabled': False,
+        'hidden': True,
     },
-    
-    # ── Unknown persistent (from health monitor) ──
     'unknown_persistent': {
         'title': '{hostname}: Check unavailable - {category}',
         'body': 'Health check for {category} has been unavailable for 3+ cycles.\n{reason}',
-        'group': 'system',
+        'label': 'Check unavailable',
+        'group': 'health',
         'default_enabled': False,
+        'hidden': True,
     },
     
-    # ── Persistent Health Issues (daily digest) ──
+    # ── Health Monitor events ──
     'health_persistent': {
         'title': '{hostname}: {count} active health issue(s)',
         'body': 'The following health issues remain active:\n{issue_list}\n\nThis digest is sent once every 24 hours while issues persist.',
-        'group': 'system',
+        'label': 'Active health issues (daily)',
+        'group': 'health',
         'default_enabled': True,
     },
     'health_issue_new': {
         'title': '{hostname}: New health issue - {category}',
         'body': 'New {severity} issue detected:\n{reason}',
-        'group': 'system',
+        'label': 'New health issue',
+        'group': 'health',
         'default_enabled': True,
     },
     'health_issue_resolved': {
         'title': '{hostname}: Resolved - {category}',
         'body': '{category} issue has been resolved.\n{reason}\nDuration: {duration}',
-        'group': 'system',
+        'label': 'Health issue resolved',
+        'group': 'health',
         'default_enabled': True,
     },
     
-    # ── Update notifications (enriched) ──
+    # ── Update notifications ──
     'update_summary': {
         'title': '{hostname}: Updates available',
         'body': (
@@ -680,80 +751,99 @@ TEMPLATES = {
             'Kernel updates: {kernel_count}\n'
             'Important packages: {important_list}'
         ),
-        'group': 'system',
+        'label': 'Updates available',
+        'group': 'updates',
         'default_enabled': True,
     },
     'pve_update': {
         'title': '{hostname}: Proxmox VE {new_version} available',
         'body': 'Proxmox VE {current_version} -> {new_version}\n{details}',
-        'group': 'system',
+        'label': 'Proxmox VE update available',
+        'group': 'updates',
         'default_enabled': True,
     },
-    
-    # ── PVE webhook test ──
-    'webhook_test': {
-        'title': '{hostname}: Webhook test received',
-        'body': 'PVE webhook connectivity test successful.\n{reason}',
-        'group': 'system',
-        'default_enabled': True,
+    'update_complete': {
+        'title': '{hostname}: Update completed',
+        'body': '{details}',
+        'label': 'Update completed',
+        'group': 'updates',
+        'default_enabled': False,
     },
     
-    # ── Burst aggregation summaries ──
+    # ── Burst aggregation summaries (hidden -- auto-generated by BurstAggregator) ──
+    # These inherit enabled state from their parent event type at dispatch time.
     'burst_auth_fail': {
         'title': '{hostname}: {count} auth failures in {window}',
         'body': '{count} authentication failures detected in {window}.\nSources: {entity_list}',
+        'label': 'Auth failures burst',
         'group': 'security',
         'default_enabled': True,
+        'hidden': True,
     },
     'burst_ip_block': {
         'title': '{hostname}: Fail2Ban banned {count} IPs in {window}',
         'body': '{count} IPs banned by Fail2Ban in {window}.\nIPs: {entity_list}',
+        'label': 'IP block burst',
         'group': 'security',
         'default_enabled': True,
+        'hidden': True,
     },
     'burst_disk_io': {
         'title': '{hostname}: {count} disk I/O errors on {entity_list}',
         'body': '{count} I/O errors detected in {window}.\nDevices: {entity_list}',
+        'label': 'Disk I/O burst',
         'group': 'storage',
         'default_enabled': True,
+        'hidden': True,
     },
     'burst_cluster': {
         'title': '{hostname}: Cluster flapping detected ({count} changes)',
         'body': 'Cluster state changed {count} times in {window}.\nNodes: {entity_list}',
+        'label': 'Cluster flapping burst',
         'group': 'cluster',
         'default_enabled': True,
+        'hidden': True,
     },
     'burst_service_fail': {
         'title': '{hostname}: {count} services failed in {window}',
         'body': '{count} service failures detected in {window}.\nThis typically indicates a node reboot or PVE service restart.\n\nAdditional failures:\n{details}',
-        'group': 'system',
+        'label': 'Service fail burst',
+        'group': 'services',
         'default_enabled': True,
+        'hidden': True,
     },
     'burst_system': {
         'title': '{hostname}: {count} system problems in {window}',
         'body': '{count} system problems detected in {window}.\n\nAdditional issues:\n{details}',
-        'group': 'system',
+        'label': 'System problems burst',
+        'group': 'services',
         'default_enabled': True,
+        'hidden': True,
     },
     'burst_generic': {
         'title': '{hostname}: {count} {event_type} events in {window}',
         'body': '{count} events of type {event_type} in {window}.\n\nAdditional events:\n{details}',
-        'group': 'system',
+        'label': 'Generic burst',
+        'group': 'other',
         'default_enabled': True,
+        'hidden': True,
     },
 }
 
 # ─── Event Groups (for UI filtering) ─────────────────────────────
 
 EVENT_GROUPS = {
-    'system':    {'label': 'System',     'description': 'System health, services, updates'},
-    'vm_ct':     {'label': 'VM / CT',    'description': 'Virtual machines and containers'},
-    'backup':    {'label': 'Backup',     'description': 'Backups and snapshots'},
-    'resources': {'label': 'Resources',  'description': 'CPU, memory, temperature, load'},
-    'storage':   {'label': 'Storage',    'description': 'Disk space and I/O'},
-    'network':   {'label': 'Network',    'description': 'Connectivity and latency'},
-    'security':  {'label': 'Security',   'description': 'Authentication, firewall, bans'},
-    'cluster':   {'label': 'Cluster',    'description': 'Cluster health and quorum'},
+    'vm_ct':     {'label': 'VM / CT',         'description': 'Start, stop, crash, migration'},
+    'backup':    {'label': 'Backups',         'description': 'Backup start, complete, fail'},
+    'resources': {'label': 'Resources',       'description': 'CPU, memory, temperature'},
+    'storage':   {'label': 'Storage',         'description': 'Disk space, I/O, SMART'},
+    'network':   {'label': 'Network',         'description': 'Connectivity, bond, latency'},
+    'security':  {'label': 'Security',        'description': 'Auth failures, Fail2Ban, firewall'},
+    'cluster':   {'label': 'Cluster',         'description': 'Quorum, split-brain, HA fencing'},
+    'services':  {'label': 'Services',        'description': 'System services, shutdown, reboot'},
+    'health':    {'label': 'Health Monitor',  'description': 'Health checks, degradation, recovery'},
+    'updates':   {'label': 'Updates',         'description': 'System and PVE updates'},
+    'other':     {'label': 'Other',           'description': 'Uncategorized notifications'},
 }
 
 
@@ -777,14 +867,16 @@ def render_template(event_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
     
     template = TEMPLATES.get(event_type)
     if not template:
+        # Catch-all: unknown event types always get delivered (group 'other')
+        # so no Proxmox notification is ever silently dropped.
         fallback_body = data.get('message', data.get('reason', str(data)))
         severity = data.get('severity', 'INFO')
         return {
             'title': f"{_get_hostname()}: {event_type}",
             'body': fallback_body, 'body_text': fallback_body,
             'body_html': f'<p>{html_mod.escape(str(fallback_body))}</p>',
-            'fields': [], 'tags': [severity, 'system', event_type],
-            'severity': severity, 'group': 'system',
+            'fields': [], 'tags': [severity, 'other', event_type],
+            'severity': severity, 'group': 'other',
         }
     
     # Ensure hostname is always available
@@ -883,24 +975,36 @@ def render_template(event_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
 def get_event_types_by_group() -> Dict[str, list]:
     """Get all event types organized by group, for UI rendering.
     
+    Hidden templates (burst aggregations, internal types) are excluded
+    from the UI. They still work in the backend and inherit enabled
+    state from their parent event type.
+    
     Returns:
-        {group_key: [{'type': event_type, 'title': template_title, 
+        {group_key: [{'type': event_type, 'title': label, 
                        'default_enabled': bool}, ...]}
     """
     result = {}
     for event_type, template in TEMPLATES.items():
-        group = template.get('group', 'system')
+        # Skip hidden templates (bursts, internal, deprecated)
+        if template.get('hidden', False):
+            continue
+        
+        group = template.get('group', 'other')
         if group not in result:
             result[group] = []
-        import re
-        # Clean title: remove {hostname}: prefix and any remaining {placeholders}
-        title = template['title'].replace('{hostname}', '').strip(': ')
-        title = re.sub(r'\s*\{[^}]+\}', '', title).strip(' -:')
-        if not title:
-            title = event_type.replace('_', ' ').title()
+        
+        # Use explicit label if available, otherwise derive from title
+        label = template.get('label', '')
+        if not label:
+            import re
+            label = template['title'].replace('{hostname}', '').strip(': ')
+            label = re.sub(r'\s*\{[^}]+\}', '', label).strip(' -:')
+        if not label:
+            label = event_type.replace('_', ' ').title()
+        
         result[group].append({
             'type': event_type,
-            'title': title,
+            'title': label,
             'default_enabled': template.get('default_enabled', True),
         })
     return result
