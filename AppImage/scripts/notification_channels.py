@@ -433,10 +433,13 @@ class EmailChannel(NotificationChannel):
         try:
             if self.tls_mode == 'ssl':
                 server = smtplib.SMTP_SSL(self.host, self.port, timeout=self.timeout)
+                server.ehlo()
             else:
                 server = smtplib.SMTP(self.host, self.port, timeout=self.timeout)
+                server.ehlo()
                 if self.tls_mode == 'starttls':
                     server.starttls()
+                    server.ehlo()  # Re-identify after TLS upgrade
             
             if self.username and self.password:
                 server.login(self.username, self.password)
