@@ -430,31 +430,50 @@ class EmailChannel(NotificationChannel):
         if html_body:
             msg.add_alternative(html_body, subtype='html')
         
+        server = None
         try:
+            import ssl as _ssl
+            
             if self.tls_mode == 'ssl':
-                server = smtplib.SMTP_SSL(self.host, self.port, timeout=self.timeout)
+                ctx = _ssl.create_default_context()
+                server = smtplib.SMTP_SSL(self.host, self.port,
+                                          timeout=self.timeout, context=ctx)
                 server.ehlo()
             else:
                 server = smtplib.SMTP(self.host, self.port, timeout=self.timeout)
                 server.ehlo()
                 if self.tls_mode == 'starttls':
-                    server.starttls()
-                    server.ehlo()  # Re-identify after TLS upgrade
+                    ctx = _ssl.create_default_context()
+                    server.starttls(context=ctx)
+                    server.ehlo()  # Re-identify after TLS -- server re-announces AUTH
             
             if self.username and self.password:
                 server.login(self.username, self.password)
             
             server.send_message(msg)
             server.quit()
+            server = None
             return 200, 'OK'
         except smtplib.SMTPAuthenticationError as e:
-            return 0, f'SMTP authentication failed: {e}'
+            return 0, f'SMTP authentication failed (check username/password or app-specific password): {e}'
+        except smtplib.SMTPNotSupportedError as e:
+            return 0, (f'SMTP AUTH not supported by server. '
+                       f'This may mean the server requires OAuth2 or an App Password '
+                       f'instead of regular credentials: {e}')
         except smtplib.SMTPConnectError as e:
             return 0, f'SMTP connection failed: {e}'
         except smtplib.SMTPException as e:
             return 0, f'SMTP error: {e}'
+        except _ssl.SSLError as e:
+            return 0, f'TLS/SSL error (check TLS mode and port): {e}'
         except (OSError, TimeoutError) as e:
             return 0, f'Connection error: {e}'
+        finally:
+            if server:
+                try:
+                    server.quit()
+                except Exception:
+                    pass
     
     def _send_sendmail(self, subject: str, body: str, severity: str,
                        data: Optional[Dict] = None) -> Tuple[int, str]:
