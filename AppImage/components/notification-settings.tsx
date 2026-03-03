@@ -224,17 +224,17 @@ export function NotificationSettings() {
   }
 
   /** Reusable 10+1 category block rendered inside each channel tab. */
-  const renderChannelCategories = (chName: string, accentColor: string) => {
+  const renderChannelCategories = (chName: string) => {
     const overrides = config.channel_overrides?.[chName] || { categories: {}, events: {} }
     const evtByGroup = config.event_types_by_group || {}
 
     return (
       <div className="space-y-1.5 border-t border-border/30 pt-3 mt-3">
         <div className="flex items-center gap-2 mb-2">
-          <Bell className="h-3 w-3 text-muted-foreground" />
+          <Bell className="h-3.5 w-3.5 text-muted-foreground" />
           <Label className="text-[11px] text-muted-foreground">Notification Categories</Label>
         </div>
-        <div className="space-y-1">
+        <div className="space-y-0 divide-y divide-border/50">
           {EVENT_CATEGORIES.map(cat => {
             const isEnabled = overrides.categories[cat.key] ?? true
             const isExpanded = expandedCategories.has(`${chName}.${cat.key}`)
@@ -244,58 +244,58 @@ export function NotificationSettings() {
             ).length
 
             return (
-              <div key={cat.key} className={`rounded-md border transition-colors ${
-                isEnabled ? `border-${accentColor}-500/30 bg-${accentColor}-500/5` : "border-border/50 bg-transparent"
-              }`}>
-                <div className="flex items-center gap-2 p-2">
-                  <button
-                    type="button"
-                    className={`shrink-0 transition-transform ${isExpanded ? "rotate-90" : ""} ${
-                      !isEnabled ? "opacity-30 pointer-events-none" : "text-muted-foreground hover:text-foreground"
-                    }`}
-                    onClick={() => {
-                      if (!isEnabled) return
-                      setExpandedCategories(prev => {
-                        const next = new Set(prev)
-                        const key = `${chName}.${cat.key}`
-                        if (next.has(key)) next.delete(key)
-                        else next.add(key)
-                        return next
-                      })
-                    }}
-                    aria-label={isExpanded ? "Collapse" : "Expand"}
-                  >
-                    <ChevronRight className="h-3 w-3" />
-                  </button>
+              <div key={cat.key}>
+                {/* Category row -- entire block is clickable to expand/collapse */}
+                <div
+                  className={`flex items-center gap-2.5 py-2.5 px-2 rounded-md cursor-pointer transition-colors ${
+                    isEnabled ? "hover:bg-muted/40" : "hover:bg-muted/20"
+                  }`}
+                  onClick={() => {
+                    if (!isEnabled) return
+                    setExpandedCategories(prev => {
+                      const next = new Set(prev)
+                      const key = `${chName}.${cat.key}`
+                      if (next.has(key)) next.delete(key)
+                      else next.add(key)
+                      return next
+                    })
+                  }}
+                >
+                  {/* Expand arrow */}
+                  <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${
+                    isExpanded ? "rotate-90" : ""
+                  } ${!isEnabled ? "opacity-20" : "text-muted-foreground"}`} />
 
+                  {/* Label */}
                   <div className="flex-1 min-w-0">
-                    <span className={`text-[11px] font-medium block ${
-                      isEnabled ? `text-${accentColor}-400` : "text-foreground"
+                    <span className={`text-xs sm:text-sm font-medium block ${
+                      isEnabled ? "text-green-500" : "text-foreground"
                     }`}>{cat.label}</span>
-                    <span className="text-[9px] text-muted-foreground">{cat.desc}</span>
                   </div>
 
+                  {/* Count badge */}
                   {isEnabled && eventsForGroup.length > 0 && (
-                    <span className="text-[9px] text-muted-foreground tabular-nums">
+                    <span className="text-[10px] text-muted-foreground tabular-nums">
                       {enabledCount}/{eventsForGroup.length}
                     </span>
                   )}
 
+                  {/* Toggle -- same style as channel enable toggle */}
                   <button
                     type="button"
                     role="switch"
                     aria-checked={isEnabled}
                     disabled={!editMode}
-                    className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
+                    className={`relative w-9 h-[18px] shrink-0 rounded-full transition-colors ${
                       !editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
-                    } ${isEnabled ? `bg-${accentColor}-600` : "bg-muted-foreground/30"}`}
-                    onClick={() => {
+                    } ${isEnabled ? "bg-blue-600" : "bg-muted-foreground/30"}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
                       if (!editMode) return
                       updateConfig(p => {
                         const ch = { ...(p.channel_overrides?.[chName] || { categories: {}, events: {} }) }
                         const newEnabled = !isEnabled
                         const newEvents = { ...(ch.events || {}) }
-                        // When enabling, turn all sub-events on
                         if (newEnabled && eventsForGroup.length > 0) {
                           for (const evt of eventsForGroup) {
                             newEvents[evt.type] = true
@@ -311,19 +311,20 @@ export function NotificationSettings() {
                       })
                     }}
                   >
-                    <span className={`pointer-events-none block h-3 w-3 rounded-full bg-background shadow-sm transition-transform ${
-                      isEnabled ? "translate-x-3.5" : "translate-x-0.5"
+                    <span className={`absolute top-[1px] left-[1px] h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                      isEnabled ? "translate-x-[18px]" : "translate-x-0"
                     }`} />
                   </button>
                 </div>
 
+                {/* Sub-event toggles */}
                 {isEnabled && isExpanded && eventsForGroup.length > 0 && (
-                  <div className="border-t border-border/30 px-2 py-1.5 space-y-0.5">
+                  <div className="border-t border-border/30 ml-6 mr-2 py-1.5 space-y-0.5">
                     {eventsForGroup.map(evt => {
                       const evtEnabled = overrides.events?.[evt.type] ?? evt.default_enabled
                       return (
-                        <div key={evt.type} className="flex items-center justify-between py-0.5 px-2 rounded hover:bg-muted/30 transition-colors">
-                          <span className={`text-[10px] ${evtEnabled ? `text-${accentColor}-400` : "text-muted-foreground"}`}>
+                        <div key={evt.type} className="flex items-center justify-between py-1 px-2 rounded hover:bg-muted/30 transition-colors">
+                          <span className={`text-[11px] sm:text-xs ${evtEnabled ? "text-foreground" : "text-muted-foreground"}`}>
                             {evt.title}
                           </span>
                           <button
@@ -331,9 +332,9 @@ export function NotificationSettings() {
                             role="switch"
                             aria-checked={evtEnabled}
                             disabled={!editMode}
-                            className={`relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors ${
+                            className={`relative w-9 h-[18px] shrink-0 rounded-full transition-colors ${
                               !editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
-                            } ${evtEnabled ? `bg-${accentColor}-600` : "bg-muted-foreground/30"}`}
+                            } ${evtEnabled ? "bg-blue-600" : "bg-muted-foreground/30"}`}
                             onClick={() => {
                               if (!editMode) return
                               updateConfig(p => {
@@ -348,8 +349,8 @@ export function NotificationSettings() {
                               })
                             }}
                           >
-                            <span className={`pointer-events-none block h-2.5 w-2.5 rounded-full bg-background shadow-sm transition-transform ${
-                              evtEnabled ? "translate-x-3" : "translate-x-0.5"
+                            <span className={`absolute top-[1px] left-[1px] h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                              evtEnabled ? "translate-x-[18px]" : "translate-x-0"
                             }`} />
                           </button>
                         </div>
@@ -876,7 +877,7 @@ matcher: proxmenux-pbs
                           onChange={e => updateChannel("telegram", "chat_id", e.target.value)}
                         />
                       </div>
-                      {renderChannelCategories("telegram", "blue")}
+                      {renderChannelCategories("telegram")}
                       {/* Per-channel action bar */}
                       <div className="flex items-center gap-2 pt-2 border-t border-border/50">
                         <button
@@ -946,7 +947,7 @@ matcher: proxmenux-pbs
                           </button>
                         </div>
                       </div>
-                      {renderChannelCategories("gotify", "green")}
+                      {renderChannelCategories("gotify")}
                       {/* Per-channel action bar */}
                       <div className="flex items-center gap-2 pt-2 border-t border-border/50">
                         <button
@@ -1007,7 +1008,7 @@ matcher: proxmenux-pbs
                           </button>
                         </div>
                       </div>
-                      {renderChannelCategories("discord", "indigo")}
+                      {renderChannelCategories("discord")}
                       {/* Per-channel action bar */}
                       <div className="flex items-center gap-2 pt-2 border-t border-border/50">
                         <button
@@ -1149,7 +1150,7 @@ matcher: proxmenux-pbs
                           For Gmail, use an App Password instead of your account password.
                         </p>
                       </div>
-                      {renderChannelCategories("email", "amber")}
+                      {renderChannelCategories("email")}
                       {/* Per-channel action bar */}
                       <div className="flex items-center gap-2 pt-2 border-t border-border/50">
                         <button
@@ -1190,136 +1191,6 @@ matcher: proxmenux-pbs
                 </div>
               )}
               </div>{/* close bordered channel container */}
-            </div>
-
-            {/* ── Proxmox Webhook ── */}
-            <div className="space-y-3 border-t border-border pt-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Webhook className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Proxmox Webhook</span>
-              </div>
-              <div className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-medium">PVE Webhook Configuration</span>
-                </div>
-                {!editMode && (
-                  <button
-                    className="h-6 px-2.5 text-[10px] rounded-md border border-border bg-background hover:bg-muted transition-colors flex items-center gap-1.5"
-                    onClick={async () => {
-                      try {
-                        setWebhookSetup({ status: "running", fallback_commands: [], error: "" })
-                        const setup = await fetchApi<{
-                          configured: boolean; secret?: string; fallback_commands?: string[]; error?: string
-                        }>("/api/notifications/proxmox/setup-webhook", { method: "POST" })
-                        if (setup.configured) {
-                          setWebhookSetup({ status: "success", fallback_commands: [], error: "" })
-                          if (setup.secret) {
-                            const updated = { ...config, webhook_secret: setup.secret }
-                            setConfig(updated)
-                            setOriginalConfig(updated)
-                          }
-                        } else {
-                          setWebhookSetup({ status: "failed", fallback_commands: setup.fallback_commands || [], error: setup.error || "" })
-                        }
-                      } catch {
-                        setWebhookSetup({ status: "failed", fallback_commands: [], error: "Request failed" })
-                      }
-                    }}
-                    disabled={webhookSetup.status === "running"}
-                  >
-                    {webhookSetup.status === "running" ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Webhook className="h-2.5 w-2.5" />}
-                    Re-configure PVE
-                  </button>
-                )}
-              </div>
-
-              {/* Setup status inline */}
-              {webhookSetup.status === "success" && (
-                <div className="flex items-center gap-2 p-1.5 rounded bg-green-500/10 border border-green-500/20">
-                  <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
-                  <p className="text-[10px] text-green-400">PVE webhook configured successfully.</p>
-                </div>
-              )}
-              {webhookSetup.status === "failed" && (
-                <div className="space-y-1.5">
-                  <div className="flex items-start gap-2 p-1.5 rounded bg-amber-500/10 border border-amber-500/20">
-                    <AlertTriangle className="h-3 w-3 text-amber-400 shrink-0 mt-0.5" />
-                    <p className="text-[10px] text-amber-400">PVE auto-config failed: {webhookSetup.error}</p>
-                  </div>
-                  {webhookSetup.fallback_commands.length > 0 && (
-                    <pre className="text-[10px] bg-background p-1.5 rounded border border-border overflow-x-auto font-mono">
-{webhookSetup.fallback_commands.join('\n')}
-                    </pre>
-                  )}
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <Label className="text-[11px] text-muted-foreground">Shared Secret</Label>
-                <div className="flex items-center gap-1.5">
-                  <Input
-                    type={showSecrets["wh_secret"] ? "text" : "password"}
-                    className="h-7 text-xs font-mono"
-                    placeholder="Required for webhook authentication"
-                    value={config.webhook_secret || ""}
-                    onChange={e => updateConfig(p => ({ ...p, webhook_secret: e.target.value }))}
-                    disabled={!editMode}
-                  />
-                  <button
-                    className="h-7 w-7 flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors shrink-0"
-                    onClick={() => toggleSecret("wh_secret")}
-                  >
-                    {showSecrets["wh_secret"] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                  </button>
-                </div>
-                <p className="text-[10px] text-muted-foreground">
-                  {"Used for remote connections only (e.g. PBS on another host). Local PVE webhook runs on localhost and does not need this header."}
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-[11px] text-muted-foreground">Allowed IPs (optional, remote only)</Label>
-                <Input
-                  className="h-7 text-xs font-mono"
-                  placeholder="10.0.0.5, 192.168.1.10 (empty = allow all)"
-                  value={config.webhook_allowed_ips || ""}
-                  onChange={e => updateConfig(p => ({ ...p, webhook_allowed_ips: e.target.value }))}
-                  disabled={!editMode}
-                />
-                <p className="text-[10px] text-muted-foreground">
-                  {"Localhost (127.0.0.1) is always allowed. This restricts remote callers only."}
-                </p>
-              </div>
-              </div>{/* close bordered webhook container */}
-
-              {/* PBS manual guide (collapsible) */}
-              <details className="group">
-                <summary className="text-[11px] font-medium text-muted-foreground cursor-pointer hover:text-foreground transition-colors flex items-center gap-1.5 py-1">
-                  <ChevronDown className="h-3 w-3 group-open:rotate-180 transition-transform" />
-                  Configure PBS notifications (manual)
-                </summary>
-                <div className="mt-1.5 p-2.5 bg-muted/30 rounded-md border border-border space-y-2">
-                  <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    Backups launched from PVE are covered by the PVE webhook. PBS internal jobs
-                    (Verify, Prune, GC, Sync) require separate configuration on the PBS server.
-                  </p>
-                  <p className="text-[10px] font-medium text-muted-foreground">
-                    Append to /etc/proxmox-backup/notifications.cfg:
-                  </p>
-                  <pre className="text-[10px] bg-background p-2 rounded border border-border overflow-x-auto font-mono">
-{`webhook: proxmenux-webhook
-\tmethod post
-\turl http://<PVE_IP>:8008/api/notifications/webhook
-
-matcher: proxmenux-pbs
-\ttarget proxmenux-webhook
-\tmatch-severity warning,error`}
-                  </pre>
-                  <p className="text-[10px] text-muted-foreground">
-                    {"Replace <PVE_IP> with this node's IP. Append at the end -- do not delete existing content."}
-                  </p>
-                </div>
-              </details>
             </div>
 
             {/* ── Advanced: AI Enhancement ── */}
@@ -1419,71 +1290,7 @@ matcher: proxmenux-pbs
               )}
             </div>
 
-            {/* ── Notification History ── */}
-            <div>
-              <button
-                className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors w-full py-1"
-                onClick={() => setShowHistory(!showHistory)}
-              >
-                {showHistory ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                <span className="font-medium uppercase tracking-wider">Recent History</span>
-                {history.length > 0 && (
-                  <Badge variant="outline" className="text-[9px] ml-1">{history.length}</Badge>
-                )}
-              </button>
 
-              {showHistory && (
-                <div className="mt-3 space-y-2">
-                  {history.length === 0 ? (
-                    <p className="text-xs text-muted-foreground text-center py-4">No notifications sent yet</p>
-                  ) : (
-                    <>
-                      <div className="flex items-center justify-end">
-                        <button
-                          className="h-6 px-2 text-[10px] rounded-md text-muted-foreground hover:text-red-400 transition-colors flex items-center gap-1"
-                          onClick={handleClearHistory}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                          Clear
-                        </button>
-                      </div>
-                      <div className="space-y-1 max-h-48 overflow-y-auto">
-                        {history.map(entry => (
-                          <div
-                            key={entry.id}
-                            className="flex items-center gap-2 p-2 rounded-md bg-muted/30 border border-border/50"
-                          >
-                            {entry.success ? (
-                              <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
-                            ) : (
-                              <XCircle className="h-3 w-3 text-red-500 shrink-0" />
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <span className="text-[11px] font-medium truncate block">{entry.title || entry.event_type}</span>
-                              <span className="text-[10px] text-muted-foreground">
-                                {entry.channel} - {new Date(entry.sent_at).toLocaleString()}
-                              </span>
-                            </div>
-                            <Badge
-                              variant="outline"
-                              className={`text-[9px] shrink-0 ${
-                                entry.severity === "critical"
-                                  ? "border-red-500/30 text-red-400"
-                                  : entry.severity === "warning"
-                                  ? "border-amber-500/30 text-amber-400"
-                                  : "border-blue-500/30 text-blue-400"
-                              }`}
-                            >
-                              {entry.severity}
-                            </Badge>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
           </>
         )}
 
@@ -1492,7 +1299,7 @@ matcher: proxmenux-pbs
           <Info className="h-3.5 w-3.5 text-blue-400 shrink-0 mt-0.5" />
           <p className="text-[11px] text-muted-foreground leading-relaxed">
             {config.enabled
-              ? "Notifications are active. Events matching your severity filter and category selection will be sent to configured channels."
+              ? "Notifications are active. Each channel sends events based on its own category and event selection."
               : "Enable notifications to receive alerts about system events, health status changes, and security incidents via Telegram, Gotify, Discord, or Email."}
           </p>
         </div>
