@@ -235,7 +235,7 @@ export function NotificationSettings() {
           <Label className="text-[11px] text-muted-foreground">Notification Categories</Label>
         </div>
         <div className="space-y-2">
-          {EVENT_CATEGORIES.map(cat => {
+          {EVENT_CATEGORIES.filter(cat => cat.key !== "other").map(cat => {
             const isEnabled = overrides.categories[cat.key] ?? true
             const isExpanded = expandedCategories.has(`${chName}.${cat.key}`)
             const eventsForGroup = evtByGroup[cat.key] || []
@@ -244,7 +244,7 @@ export function NotificationSettings() {
             ).length
 
             return (
-              <div key={cat.key} className="rounded-lg border border-border transition-colors hover:border-border/80 hover:bg-muted/30">
+              <div key={cat.key} className="rounded-lg border border-border transition-all duration-150 hover:border-muted-foreground/50 hover:bg-muted/40">
                 {/* Category row -- entire block is clickable to expand/collapse */}
                 <div
                   className="flex items-center gap-2.5 py-2.5 px-3 cursor-pointer"
@@ -286,7 +286,7 @@ export function NotificationSettings() {
                     disabled={!editMode}
                     className={`relative w-9 h-[18px] shrink-0 rounded-full transition-colors ${
                       !editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
-                    } ${isEnabled ? "bg-blue-600" : "bg-muted-foreground/30"}`}
+                    } ${isEnabled ? "bg-blue-600" : "bg-muted-foreground/20 border border-muted-foreground/40"}`}
                     onClick={(e) => {
                       e.stopPropagation()
                       if (!editMode) return
@@ -321,7 +321,7 @@ export function NotificationSettings() {
                     {eventsForGroup.map(evt => {
                       const evtEnabled = overrides.events?.[evt.type] ?? evt.default_enabled
                       return (
-                        <div key={evt.type} className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-muted/30 transition-colors">
+                        <div key={evt.type} className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-muted/40 transition-colors">
                           <span className={`text-[11px] sm:text-xs ${evtEnabled ? "text-foreground" : "text-muted-foreground"}`}>
                             {evt.title}
                           </span>
@@ -332,7 +332,7 @@ export function NotificationSettings() {
                             disabled={!editMode}
                             className={`relative w-9 h-[18px] shrink-0 rounded-full transition-colors ${
                               !editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
-                            } ${evtEnabled ? "bg-blue-600" : "bg-muted-foreground/30"}`}
+                            } ${evtEnabled ? "bg-blue-600" : "bg-muted-foreground/20 border border-muted-foreground/40"}`}
                             onClick={() => {
                               if (!editMode) return
                               updateConfig(p => {
@@ -788,7 +788,7 @@ matcher: proxmenux-pbs
           </div>
           <button
             className={`relative w-10 h-5 rounded-full transition-colors ${
-              config.enabled ? "bg-blue-600" : "bg-muted-foreground/30"
+              config.enabled ? "bg-blue-600" : "bg-muted-foreground/20 border border-muted-foreground/40"
             } ${!editMode ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
             onClick={() => editMode && updateConfig(p => ({ ...p, enabled: !p.enabled }))}
             disabled={!editMode}
@@ -835,7 +835,7 @@ matcher: proxmenux-pbs
                     <Label className="text-xs font-medium">Enable Telegram</Label>
                     <button
                       className={`relative w-9 h-[18px] rounded-full transition-colors ${
-                        config.channels.telegram?.enabled ? "bg-blue-600" : "bg-muted-foreground/30"
+                        config.channels.telegram?.enabled ? "bg-blue-600" : "bg-muted-foreground/20 border border-muted-foreground/40"
                       } ${!editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
                       onClick={() => { if (editMode) updateChannel("telegram", "enabled", !config.channels.telegram?.enabled) }}
                       disabled={!editMode}
@@ -898,7 +898,7 @@ matcher: proxmenux-pbs
                     <Label className="text-xs font-medium">Enable Gotify</Label>
                     <button
                       className={`relative w-9 h-[18px] rounded-full transition-colors ${
-                        config.channels.gotify?.enabled ? "bg-blue-600" : "bg-muted-foreground/30"
+                        config.channels.gotify?.enabled ? "bg-blue-600" : "bg-muted-foreground/20 border border-muted-foreground/40"
                       } ${!editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
                       onClick={() => { if (editMode) updateChannel("gotify", "enabled", !config.channels.gotify?.enabled) }}
                       disabled={!editMode}
@@ -961,7 +961,7 @@ matcher: proxmenux-pbs
                     <Label className="text-xs font-medium">Enable Discord</Label>
                     <button
                       className={`relative w-9 h-[18px] rounded-full transition-colors ${
-                        config.channels.discord?.enabled ? "bg-blue-600" : "bg-muted-foreground/30"
+                        config.channels.discord?.enabled ? "bg-blue-600" : "bg-muted-foreground/20 border border-muted-foreground/40"
                       } ${!editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
                       onClick={() => { if (editMode) updateChannel("discord", "enabled", !config.channels.discord?.enabled) }}
                       disabled={!editMode}
@@ -1015,7 +1015,7 @@ matcher: proxmenux-pbs
                     <Label className="text-xs font-medium">Enable Email</Label>
                     <button
                       className={`relative w-9 h-[18px] rounded-full transition-colors ${
-                        config.channels.email?.enabled ? "bg-blue-600" : "bg-muted-foreground/30"
+                        config.channels.email?.enabled ? "bg-blue-600" : "bg-muted-foreground/20 border border-muted-foreground/40"
                       } ${!editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
                       onClick={() => { if (editMode) updateChannel("email", "enabled", !config.channels.email?.enabled) }}
                       disabled={!editMode}
@@ -1187,7 +1187,7 @@ matcher: proxmenux-pbs
                     </div>
                     <button
                       className={`relative w-9 h-[18px] rounded-full transition-colors ${
-                        config.ai_enabled ? "bg-purple-600" : "bg-muted-foreground/30"
+                        config.ai_enabled ? "bg-purple-600" : "bg-muted-foreground/20 border border-muted-foreground/40"
                       } ${!editMode ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
                       onClick={() => editMode && updateConfig(p => ({ ...p, ai_enabled: !p.ai_enabled }))}
                       disabled={!editMode}

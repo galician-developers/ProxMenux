@@ -1433,8 +1433,9 @@ class PollingCollector:
         self._last_update_check = 0
         # In-memory cache: error_key -> last notification timestamp
         self._last_notified: Dict[str, float] = {}
-        # Track known error keys so we can detect truly new ones
-        self._known_errors: set = set()
+        # Track known error keys + metadata so we can detect new ones AND emit recovery
+        # Dict[error_key, dict(category, severity, reason, first_seen, error_key)]
+        self._known_errors: Dict[str, dict] = {}
         self._first_poll_done = False
     
     def start(self):
@@ -1492,14 +1493,20 @@ class PollingCollector:
             return
         
         now = time.time()
-        current_keys = set()
+        current_keys: Dict[str, dict] = {}
         
         for error in errors:
             error_key = error.get('error_key', '')
             if not error_key:
                 continue
             
-            current_keys.add(error_key)
+            current_keys[error_key] = {
+                'category': error.get('category', ''),
+                'severity': error.get('severity', 'WARNING'),
+                'reason': error.get('reason', ''),
+                'first_seen': error.get('first_seen', ''),
+                'error_key': error_key,
+            }
             category = error.get('category', '')
             severity = error.get('severity', 'WARNING')
             reason = error.get('reason', '')
@@ -1605,9 +1612,66 @@ class PollingCollector:
             self._last_notified[error_key] = now
             self._persist_last_notified(error_key, now)
         
-        # Remove tracking for errors that resolved
-        resolved = self._known_errors - current_keys
-        for key in resolved:
+        # ── Emit recovery notifications for errors that resolved ──
+        resolved_keys = set(self._known_errors.keys()) - set(current_keys.keys())
+        for key in resolved_keys:
+            old_meta = self._known_errors.get(key, {})
+            category = old_meta.get('category', '')
+            reason = old_meta.get('reason', '')
+            first_seen = old_meta.get('first_seen', '')
+            
+            # Skip recovery for INFO/OK - they never triggered an alert
+            if old_meta.get('severity', '') in ('INFO', 'OK'):
+                self._last_notified.pop(key, None)
+                continue
+            
+            # Skip recovery on first poll (we don't know what was before)
+            if not self._first_poll_done:
+                self._last_notified.pop(key, None)
+                continue
+            
+            # Calculate duration
+            duration = ''
+            if first_seen:
+                try:
+                    from datetime import datetime
+                    fs_dt = datetime.fromisoformat(first_seen)
+                    delta = datetime.now() - fs_dt
+                    total_sec = int(delta.total_seconds())
+                    if total_sec < 60:
+                        duration = f'{total_sec}s'
+                    elif total_sec < 3600:
+                        duration = f'{total_sec // 60}m'
+                    elif total_sec < 86400:
+                        h = total_sec // 3600
+                        m = (total_sec % 3600) // 60
+                        duration = f'{h}h {m}m'
+                    else:
+                        d = total_sec // 86400
+                        h = (total_sec % 86400) // 3600
+                        duration = f'{d}d {h}h'
+                except Exception:
+                    duration = 'unknown'
+            
+            entity, eid = self._ENTITY_MAP.get(category, ('node', ''))
+            
+            data = {
+                'hostname': self._hostname,
+                'category': category,
+                'reason': f'{reason} (recovered)' if reason else 'Condition resolved',
+                'error_key': key,
+                'severity': 'OK',
+                'original_severity': old_meta.get('severity', 'WARNING'),
+                'first_seen': first_seen,
+                'duration': duration,
+                'is_recovery': True,
+            }
+            
+            self._queue.put(NotificationEvent(
+                'error_resolved', 'OK', data, source='health',
+                entity=entity, entity_id=eid or key,
+            ))
+            
             self._last_notified.pop(key, None)
         
         self._known_errors = current_keys

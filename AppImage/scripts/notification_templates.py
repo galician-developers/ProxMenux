@@ -355,8 +355,8 @@ TEMPLATES = {
     },
     'error_resolved': {
         'title': '{hostname}: Resolved - {category}',
-        'body': '{reason}\nDuration: {duration}',
-        'label': 'Health issue resolved',
+        'body': 'The {category} issue has been resolved.\n{reason}\nPrevious severity: {original_severity}\nDuration: {duration}',
+        'label': 'Recovery notification',
         'group': 'health',
         'default_enabled': True,
     },
@@ -739,6 +739,7 @@ TEMPLATES = {
         'label': 'Health issue resolved',
         'group': 'health',
         'default_enabled': True,
+        'hidden': True,  # Use error_resolved instead (avoids duplicate in UI)
     },
     
     # ── Update notifications ──
