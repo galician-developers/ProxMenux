@@ -769,8 +769,15 @@ class EmailChannel(NotificationChannel):
             _add('Proxmox Updates', data.get('pve_count'))
             _add('Kernel Updates', data.get('kernel_count'))
             imp = data.get('important_list', '')
-            if imp:
-                _add('Important Packages', imp, 'code')
+            if imp and imp != 'none':
+                # Render each package on its own line inside a single cell
+                pkg_lines = [l.strip() for l in imp.split('\n') if l.strip()]
+                if pkg_lines:
+                    pkg_html = '<br>'.join(
+                        f'<code style="padding:1px 5px;background:#f3f4f6;border-radius:3px;font-family:monospace;font-size:12px;">{esc(p)}</code>'
+                        for p in pkg_lines
+                    )
+                    rows.append((esc('Important Packages'), pkg_html))
             _add('Current Version', data.get('current_version'), 'code')
             _add('New Version', data.get('new_version'), 'code')
 

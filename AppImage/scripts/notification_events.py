@@ -1780,7 +1780,7 @@ class PollingCollector:
                 'security_count': str(len(security_pkgs)),
                 'pve_count': str(len(pve_pkgs)),
                 'kernel_count': str(len(kernel_pkgs)),
-                'important_list': ', '.join(important_lines) if important_lines else 'none',
+                'important_list': '\n'.join(important_lines) if important_lines else 'none',
                 'package_list': ', '.join(important_lines[:6]) if important_lines else '',
             }
             

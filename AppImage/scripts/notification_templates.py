@@ -703,7 +703,7 @@ TEMPLATES = {
     },
     'update_available': {
         'title': '{hostname}: Updates available',
-        'body': 'Total updates: {total_count}\nSecurity: {security_count}\nProxmox: {pve_count}\nKernel: {kernel_count}\nImportant: {important_list}',
+        'body': 'Total updates: {total_count}\nSecurity: {security_count}\nProxmox: {pve_count}\nKernel: {kernel_count}\nImportant packages:\n{important_list}',
         'label': 'Updates available (legacy)',
         'group': 'updates',
         'default_enabled': False,
@@ -750,7 +750,7 @@ TEMPLATES = {
             'Security updates: {security_count}\n'
             'Proxmox-related updates: {pve_count}\n'
             'Kernel updates: {kernel_count}\n'
-            'Important packages: {important_list}'
+            'Important packages:\n{important_list}'
         ),
         'label': 'Updates available',
         'group': 'updates',
