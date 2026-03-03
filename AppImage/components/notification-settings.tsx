@@ -234,7 +234,7 @@ export function NotificationSettings() {
           <Bell className="h-3.5 w-3.5 text-muted-foreground" />
           <Label className="text-[11px] text-muted-foreground">Notification Categories</Label>
         </div>
-        <div className="space-y-0 divide-y divide-border/50">
+        <div className="space-y-2">
           {EVENT_CATEGORIES.map(cat => {
             const isEnabled = overrides.categories[cat.key] ?? true
             const isExpanded = expandedCategories.has(`${chName}.${cat.key}`)
@@ -244,12 +244,10 @@ export function NotificationSettings() {
             ).length
 
             return (
-              <div key={cat.key}>
+              <div key={cat.key} className="rounded-lg border border-border transition-colors hover:border-border/80 hover:bg-muted/30">
                 {/* Category row -- entire block is clickable to expand/collapse */}
                 <div
-                  className={`flex items-center gap-2.5 py-2.5 px-2 rounded-md cursor-pointer transition-colors ${
-                    isEnabled ? "hover:bg-muted/40" : "hover:bg-muted/20"
-                  }`}
+                  className="flex items-center gap-2.5 py-2.5 px-3 cursor-pointer"
                   onClick={() => {
                     if (!isEnabled) return
                     setExpandedCategories(prev => {
@@ -319,11 +317,11 @@ export function NotificationSettings() {
 
                 {/* Sub-event toggles */}
                 {isEnabled && isExpanded && eventsForGroup.length > 0 && (
-                  <div className="border-t border-border/30 ml-6 mr-2 py-1.5 space-y-0.5">
+                  <div className="border-t border-border px-3 py-1.5 space-y-0.5">
                     {eventsForGroup.map(evt => {
                       const evtEnabled = overrides.events?.[evt.type] ?? evt.default_enabled
                       return (
-                        <div key={evt.type} className="flex items-center justify-between py-1 px-2 rounded hover:bg-muted/30 transition-colors">
+                        <div key={evt.type} className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-muted/30 transition-colors">
                           <span className={`text-[11px] sm:text-xs ${evtEnabled ? "text-foreground" : "text-muted-foreground"}`}>
                             {evt.title}
                           </span>
@@ -838,8 +836,9 @@ matcher: proxmenux-pbs
                     <button
                       className={`relative w-9 h-[18px] rounded-full transition-colors ${
                         config.channels.telegram?.enabled ? "bg-blue-600" : "bg-muted-foreground/30"
-                      } cursor-pointer`}
-                      onClick={() => updateChannel("telegram", "enabled", !config.channels.telegram?.enabled)}
+                      } ${!editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                      onClick={() => { if (editMode) updateChannel("telegram", "enabled", !config.channels.telegram?.enabled) }}
+                      disabled={!editMode}
                       role="switch"
                       aria-checked={config.channels.telegram?.enabled || false}
                     >
@@ -878,16 +877,8 @@ matcher: proxmenux-pbs
                         />
                       </div>
                       {renderChannelCategories("telegram")}
-                      {/* Per-channel action bar */}
+                      {/* Send Test */}
                       <div className="flex items-center gap-2 pt-2 border-t border-border/50">
-                        <button
-                          className="h-7 px-3 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
-                          onClick={handleSave}
-                          disabled={saving || !hasChanges}
-                        >
-                          {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
-                          Save
-                        </button>
                         <button
                           className="h-7 px-3 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors flex items-center gap-1.5 disabled:opacity-50"
                           onClick={() => handleTest("telegram")}
@@ -907,9 +898,10 @@ matcher: proxmenux-pbs
                     <Label className="text-xs font-medium">Enable Gotify</Label>
                     <button
                       className={`relative w-9 h-[18px] rounded-full transition-colors ${
-                        config.channels.gotify?.enabled ? "bg-green-600" : "bg-muted-foreground/30"
-                      } cursor-pointer`}
-                      onClick={() => updateChannel("gotify", "enabled", !config.channels.gotify?.enabled)}
+                        config.channels.gotify?.enabled ? "bg-blue-600" : "bg-muted-foreground/30"
+                      } ${!editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                      onClick={() => { if (editMode) updateChannel("gotify", "enabled", !config.channels.gotify?.enabled) }}
+                      disabled={!editMode}
                       role="switch"
                       aria-checked={config.channels.gotify?.enabled || false}
                     >
@@ -948,16 +940,8 @@ matcher: proxmenux-pbs
                         </div>
                       </div>
                       {renderChannelCategories("gotify")}
-                      {/* Per-channel action bar */}
+                      {/* Send Test */}
                       <div className="flex items-center gap-2 pt-2 border-t border-border/50">
-                        <button
-                          className="h-7 px-3 text-xs rounded-md bg-green-600 hover:bg-green-700 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
-                          onClick={handleSave}
-                          disabled={saving || !hasChanges}
-                        >
-                          {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
-                          Save
-                        </button>
                         <button
                           className="h-7 px-3 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors flex items-center gap-1.5 disabled:opacity-50"
                           onClick={() => handleTest("gotify")}
@@ -977,9 +961,10 @@ matcher: proxmenux-pbs
                     <Label className="text-xs font-medium">Enable Discord</Label>
                     <button
                       className={`relative w-9 h-[18px] rounded-full transition-colors ${
-                        config.channels.discord?.enabled ? "bg-indigo-600" : "bg-muted-foreground/30"
-                      } cursor-pointer`}
-                      onClick={() => updateChannel("discord", "enabled", !config.channels.discord?.enabled)}
+                        config.channels.discord?.enabled ? "bg-blue-600" : "bg-muted-foreground/30"
+                      } ${!editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                      onClick={() => { if (editMode) updateChannel("discord", "enabled", !config.channels.discord?.enabled) }}
+                      disabled={!editMode}
                       role="switch"
                       aria-checked={config.channels.discord?.enabled || false}
                     >
@@ -1009,16 +994,8 @@ matcher: proxmenux-pbs
                         </div>
                       </div>
                       {renderChannelCategories("discord")}
-                      {/* Per-channel action bar */}
+                      {/* Send Test */}
                       <div className="flex items-center gap-2 pt-2 border-t border-border/50">
-                        <button
-                          className="h-7 px-3 text-xs rounded-md bg-indigo-600 hover:bg-indigo-700 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
-                          onClick={handleSave}
-                          disabled={saving || !hasChanges}
-                        >
-                          {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
-                          Save
-                        </button>
                         <button
                           className="h-7 px-3 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors flex items-center gap-1.5 disabled:opacity-50"
                           onClick={() => handleTest("discord")}
@@ -1038,9 +1015,10 @@ matcher: proxmenux-pbs
                     <Label className="text-xs font-medium">Enable Email</Label>
                     <button
                       className={`relative w-9 h-[18px] rounded-full transition-colors ${
-                        config.channels.email?.enabled ? "bg-amber-600" : "bg-muted-foreground/30"
-                      } cursor-pointer`}
-                      onClick={() => updateChannel("email", "enabled", !config.channels.email?.enabled)}
+                        config.channels.email?.enabled ? "bg-blue-600" : "bg-muted-foreground/30"
+                      } ${!editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                      onClick={() => { if (editMode) updateChannel("email", "enabled", !config.channels.email?.enabled) }}
+                      disabled={!editMode}
                       role="switch"
                       aria-checked={config.channels.email?.enabled || false}
                     >
@@ -1151,16 +1129,8 @@ matcher: proxmenux-pbs
                         </p>
                       </div>
                       {renderChannelCategories("email")}
-                      {/* Per-channel action bar */}
+                      {/* Send Test */}
                       <div className="flex items-center gap-2 pt-2 border-t border-border/50">
-                        <button
-                          className="h-7 px-3 text-xs rounded-md bg-amber-600 hover:bg-amber-700 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
-                          onClick={handleSave}
-                          disabled={saving || !hasChanges}
-                        >
-                          {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
-                          Save
-                        </button>
                         <button
                           className="h-7 px-3 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors flex items-center gap-1.5 disabled:opacity-50"
                           onClick={() => handleTest("email")}
