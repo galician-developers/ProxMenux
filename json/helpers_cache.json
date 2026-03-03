@@ -230,22 +230,6 @@
     "type": "ct"
   },
   {
-    "name": "Alpine-Tinyauth",
-    "slug": "alpine-tinyauth",
-    "desc": "Tinyauth is a simple authentication middleware that adds simple username/password login or OAuth with Google, Github and any generic provider to all of your docker apps.",
-    "script": "ct/alpine-tinyauth.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/alpine-tinyauth.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/alpine-tinyauth.sh",
-    "os": "alpine",
-    "categories": [
-      6
-    ],
-    "notes": [
-      "The default credentials are located in `/opt/tinyauth/credentials.txt`."
-    ],
-    "type": "ct"
-  },
-  {
     "name": "Ampache",
     "slug": "ampache",
     "desc": "Ampache is a web-based audio streaming application and file manager that allows you to access your music & videos from anywhere. It features a powerful music catalog, multiple user support, transcoding, streaming, and more.",
@@ -7112,6 +7096,38 @@
     }
   },
   {
+    "name": "Tinyauth",
+    "slug": "tinyauth",
+    "desc": "Tinyauth is a simple authentication middleware that adds simple username/password login or OAuth with Google, Github and any generic provider to all of your docker apps.",
+    "script": "ct/alpine-tinyauth.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/alpine-tinyauth.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/alpine-tinyauth.sh",
+    "os": "alpine",
+    "categories": [
+      6
+    ],
+    "notes": [
+      "The default credentials are located in `/opt/tinyauth/credentials.txt`."
+    ],
+    "type": "ct"
+  },
+  {
+    "name": "Tinyauth",
+    "slug": "tinyauth",
+    "desc": "Tinyauth is a simple authentication middleware that adds simple username/password login or OAuth with Google, Github and any generic provider to all of your docker apps.",
+    "script": "ct/tinyauth.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/tinyauth.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/tinyauth.sh",
+    "os": "debian",
+    "categories": [
+      6
+    ],
+    "notes": [
+      "The default credentials are located in `/opt/tinyauth/credentials.txt`."
+    ],
+    "type": "ct"
+  },
+  {
     "name": "Traccar",
     "slug": "traccar",
     "desc": "Traccar is an open source GPS tracking system. It supports more than 200 GPS protocols and more than 2000 models of GPS tracking devices.",
@@ -7489,22 +7505,6 @@
     ],
     "notes": [
       "Unbound Configuration Path: `/etc/unbound/unbound.conf.d/unbound.conf`"
-    ],
-    "type": "ct"
-  },
-  {
-    "name": "UniFi Network Server",
-    "slug": "unifi",
-    "desc": "UniFi Network Server is a software that helps manage and monitor UniFi networks (Wi-Fi, Ethernet, etc.) by providing an intuitive user interface and advanced features. It allows network administrators to configure, monitor, and upgrade network devices, as well as view network statistics, client devices, and historical events. The aim of the application is to make the management of UniFi networks easier and more efficient.",
-    "script": "ct/unifi.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/unifi.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/unifi.sh",
-    "os": "debian",
-    "categories": [
-      4
-    ],
-    "notes": [
-      "For non-AVX CPUs, MongoDB 4.4 is installed. Please note this is a legacy solution that may present security risks and could become unsupported in future updates."
     ],
     "type": "ct"
   },
