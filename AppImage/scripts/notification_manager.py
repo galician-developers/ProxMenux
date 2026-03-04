@@ -767,10 +767,28 @@ class NotificationManager:
         # Same as Proxmox's notification policy.  The JournalWatcher already
         # gates these through SMART verification + its own 24h dedup, but
         # this acts as defense-in-depth in case a disk event arrives from
-        # another source (PollingCollector, hooks, etc.).
+        # another source (PollingCollector, hooks, health monitor, etc.).
         _DISK_EVENTS = {'disk_io_error', 'storage_unavailable'}
         if event.event_type in _DISK_EVENTS and cooldown_str is None:
             cooldown = 86400  # 24 hours
+        
+        # Health monitor state_change events: per-category cooldowns.
+        # Different health categories need different re-notification intervals.
+        # This is the defense-in-depth layer matching HealthEventWatcher's
+        # _CATEGORY_COOLDOWNS to prevent semi-cascades across all categories.
+        _HEALTH_CATEGORY_COOLDOWNS = {
+            'disks': 86400, 'smart': 86400, 'zfs': 86400,   # 24h
+            'storage': 3600, 'temperature': 3600, 'logs': 3600,
+            'security': 3600, 'disk': 3600,                  # 1h
+            'network': 1800, 'pve_services': 1800,
+            'vms': 1800, 'cpu': 1800, 'memory': 1800,       # 30m
+            'updates': 86400,                                 # 24h
+        }
+        if event.event_type == 'state_change' and event.source == 'health':
+            cat = (event.data or {}).get('category', '')
+            cat_cd = _HEALTH_CATEGORY_COOLDOWNS.get(cat)
+            if cat_cd and cooldown_str is None:
+                cooldown = max(cooldown, cat_cd)
         
         # Backup/replication events: each execution is unique and should
         # always be delivered. A 10s cooldown prevents exact duplicates

@@ -1418,6 +1418,34 @@ def get_storage_info():
             # print(f"Error getting partition info: {e}")
             pass
         
+        # ── Register disks in observation system + enrich with observation counts ──
+        try:
+            active_dev_names = list(physical_disks.keys())
+            obs_counts = health_persistence.get_disks_observation_counts()
+            
+            for disk_name, disk_info in physical_disks.items():
+                # Register each disk we see
+                health_persistence.register_disk(
+                    device_name=disk_name,
+                    serial=disk_info.get('serial', ''),
+                    model=disk_info.get('model', ''),
+                    size_bytes=disk_info.get('size_bytes'),
+                )
+                
+                # Attach observation count: try serial match first, then device name
+                serial = disk_info.get('serial', '')
+                count = obs_counts.get(f'serial:{serial}', 0) if serial else 0
+                if count == 0:
+                    count = obs_counts.get(disk_name, 0)
+                disk_info['observations_count'] = count
+            
+            # Mark disks no longer present as removed
+            health_persistence.mark_removed_disks(active_dev_names)
+            # Auto-dismiss stale observations (> 30 days old)
+            health_persistence.cleanup_stale_observations()
+        except Exception:
+            pass
+        
         storage_data['disks'] = list(physical_disks.values())
         
         return storage_data

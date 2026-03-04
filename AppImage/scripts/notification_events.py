@@ -690,6 +690,68 @@ class JournalWatcher:
         except Exception:
             return 'UNKNOWN'
     
+    def _record_smartd_observation(self, title: str, message: str):
+        """Extract device info from a smartd system-mail and record as disk observation."""
+        try:
+            import re as _re
+            from health_persistence import health_persistence
+            
+            # Extract device path: "Device: /dev/sdh [SAT]" or "Device: /dev/sda"
+            dev_match = _re.search(r'Device:\s*/dev/(\S+?)[\s\[\],]', message)
+            device = dev_match.group(1) if dev_match else ''
+            if not device:
+                return
+            # Strip partition suffix and SAT prefix
+            base_dev = _re.sub(r'\d+$', '', device)
+            
+            # Extract serial: "S/N:WD-WX72A30AA72R"
+            sn_match = _re.search(r'S/N:\s*(\S+)', message)
+            serial = sn_match.group(1) if sn_match else ''
+            
+            # Extract model: appears before S/N on the "Device info:" line
+            model = ''
+            model_match = _re.search(r'Device info:\s*\n?\s*(.+?)(?:,\s*S/N:)', message)
+            if model_match:
+                model = model_match.group(1).strip()
+            
+            # Extract error signature from title: "SMART error (FailedReadSmartSelfTestLog)"
+            sig_match = _re.search(r'SMART error\s*\((\w+)\)', title)
+            if sig_match:
+                error_signature = sig_match.group(1)
+                error_type = 'smart_error'
+            else:
+                # Fallback: extract the "warning/error logged" line
+                warn_match = _re.search(
+                    r'warning/error was logged.*?:\s*\n?\s*(.+)', message, _re.IGNORECASE)
+                if warn_match:
+                    error_signature = _re.sub(r'[^a-zA-Z0-9_]', '_',
+                                              warn_match.group(1).strip())[:80]
+                else:
+                    error_signature = _re.sub(r'[^a-zA-Z0-9_]', '_', title)[:80]
+                error_type = 'smart_error'
+            
+            # Build a clean raw_message for display
+            raw_msg = f"Device: /dev/{base_dev}"
+            if model:
+                raw_msg += f" ({model})"
+            if serial:
+                raw_msg += f" S/N:{serial}"
+            warn_line_m = _re.search(
+                r'The following warning/error.*?:\s*\n?\s*(.+)', message, _re.IGNORECASE)
+            if warn_line_m:
+                raw_msg += f"\n{warn_line_m.group(1).strip()}"
+            
+            health_persistence.record_disk_observation(
+                device_name=base_dev,
+                serial=serial,
+                error_type=error_type,
+                error_signature=error_signature,
+                raw_message=raw_msg,
+                severity='warning',
+            )
+        except Exception as e:
+            print(f"[DiskIOEventProcessor] Error recording smartd observation: {e}")
+
     @staticmethod
     def _translate_ata_error(msg: str) -> str:
         """Translate common ATA/SCSI error codes to human-readable descriptions."""
@@ -1393,15 +1455,42 @@ class PollingCollector:
     Tracking is stored in ``notification_last_sent`` (same DB).
     """
     
-    DIGEST_INTERVAL = 86400       # 24 h between re-notifications
+    DIGEST_INTERVAL = 86400       # 24 h default between re-notifications
     UPDATE_CHECK_INTERVAL = 86400 # 24 h between update scans
     NEW_ERROR_WINDOW = 120        # seconds – errors younger than this are "new"
     
+    # Per-category anti-oscillation cooldowns (seconds).
+    # When an error resolves briefly and reappears, we still respect this
+    # interval before notifying again.  This prevents "semi-cascades" where
+    # the same root cause generates many slightly different notifications.
+    #
+    # Key = health_persistence category name
+    # Value = minimum seconds between notifications for the same error_key
+    _CATEGORY_COOLDOWNS = {
+        'disks':        86400,   # 24h - I/O errors are persistent hardware issues
+        'smart':        86400,   # 24h - SMART errors same as I/O
+        'zfs':          86400,   # 24h - ZFS pool issues are persistent
+        'storage':      3600,    # 1h  - storage availability can oscillate
+        'network':      1800,    # 30m - network can flap
+        'pve_services': 1800,    # 30m - services can restart/oscillate
+        'temperature':  3600,    # 1h  - temp can fluctuate near thresholds
+        'logs':         3600,    # 1h  - repeated log patterns
+        'vms':          1800,    # 30m - VM state oscillation
+        'security':     3600,    # 1h  - auth failures tend to be bursty
+        'cpu':          1800,    # 30m - CPU spikes can be transient
+        'memory':       1800,    # 30m - memory pressure oscillation
+        'disk':         3600,    # 1h  - disk space can fluctuate near threshold
+        'updates':      86400,   # 24h - update info doesn't change fast
+    }
+    
     _ENTITY_MAP = {
         'cpu': ('node', ''), 'memory': ('node', ''), 'temperature': ('node', ''),
-        'disk': ('storage', ''), 'network': ('network', ''),
+        'load': ('node', ''),
+        'disk': ('storage', ''), 'disks': ('storage', ''), 'smart': ('storage', ''),
+        'zfs': ('storage', ''), 'storage': ('storage', ''),
+        'network': ('network', ''),
         'pve_services': ('node', ''), 'security': ('user', ''),
-        'updates': ('node', ''), 'storage': ('storage', ''),
+        'updates': ('node', ''), 'logs': ('node', ''), 'vms': ('vm', ''),
     }
     
     # Map health-persistence category names to our TEMPLATES event types.
@@ -1412,14 +1501,14 @@ class PollingCollector:
         'load': 'load_high',
         'temperature': 'temp_high',
         'disk': 'disk_space_low',
+        'disks': 'disk_io_error',         # I/O errors from health monitor
+        'smart': 'disk_io_error',         # SMART errors from health monitor
+        'zfs': 'disk_io_error',           # ZFS pool/disk errors
         'storage': 'storage_unavailable',
         'network': 'network_down',
         'pve_services': 'service_fail',
         'security': 'auth_fail',
         'updates': 'update_summary',
-        'zfs': 'disk_io_error',
-        'smart': 'disk_io_error',
-        'disks': 'disk_io_error',
         'logs': 'system_problem',
         'vms': 'system_problem',
     }
@@ -1547,34 +1636,46 @@ class PollingCollector:
             # Determine if we should notify
             is_new = error_key not in self._known_errors
             last_sent = self._last_notified.get(error_key, 0)
-            is_due = (now - last_sent) >= self.DIGEST_INTERVAL
+            cat_cooldown = self._CATEGORY_COOLDOWNS.get(category, self.DIGEST_INTERVAL)
+            is_due = (now - last_sent) >= cat_cooldown
             
-            # For re-notifications (not new): skip if stale OR not due
+            # Anti-oscillation: even if "new" (resolved then reappeared),
+            # respect the per-category cooldown interval.  This prevents
+            # "semi-cascades" where the same root cause generates multiple
+            # slightly different notifications across health check cycles.
+            # Each category has its own appropriate cooldown (30m for network,
+            # 24h for disks, 1h for temperature, etc.).
+            if not is_due:
+                continue
+            
+            # For re-notifications (not new): also skip if stale
             if not is_new:
-                if error_is_stale or not is_due:
+                if error_is_stale:
                     continue
             
             # Map to our event type
             event_type = self._CATEGORY_TO_EVENT_TYPE.get(category, 'system_problem')
             entity, eid = self._ENTITY_MAP.get(category, ('node', ''))
             
-            # ── SMART gate for disk errors ──
-            # If the health monitor recorded a disk error but SMART is NOT
-            # FAILED, skip the notification entirely.  Disk notifications
-            # should ONLY be sent when SMART confirms a real hardware failure.
-            # This prevents WARNING-level disk errors (SMART: unavailable)
-            # from being emitted as notifications at all.
+            # ── Disk I/O notification policy ──
+            # Disk I/O errors are ALWAYS notified (even when SMART says Passed)
+            # because recurring I/O errors are real issues that should not be hidden.
+            # The 24h cooldown is enforced per-device by NotificationManager
+            # (event_type 'disk_io_error' gets 86400s cooldown).
+            # For transient/INFO-level disk events (SMART OK, low error count),
+            # the health monitor already resolves them, so they won't appear here.
             if category in ('disks', 'smart', 'zfs'):
-                details = error.get('details', {})
-                if isinstance(details, str):
+                details_raw = error.get('details', {})
+                if isinstance(details_raw, str):
                     try:
-                        details = json.loads(details)
+                        details_raw = json.loads(details_raw)
                     except (json.JSONDecodeError, TypeError):
-                        details = {}
-                smart_status = details.get('smart_status', '') if isinstance(details, dict) else ''
-                if smart_status != 'FAILED':
-                    # SMART is PASSED, UNKNOWN, or unavailable -- don't notify
-                    continue
+                        details_raw = {}
+                if isinstance(details_raw, dict):
+                    # Extract device name for a stable entity_id (24h cooldown key)
+                    dev = details_raw.get('device', details_raw.get('disk', ''))
+                    if dev:
+                        eid = f'disk_{dev}'  # Stable per-device fingerprint
             
             # Updates are always informational notifications except
             # system_age which can be WARNING (365+ days) or CRITICAL (548+ days).
@@ -2020,11 +2121,12 @@ class ProxmoxHookWatcher:
             msg_lower = (message or '').lower()
             title_lower_sm = (title or '').lower()
             
-            # ── Filter smartd noise ──
-            # FailedReadSmartErrorLog: smartd can't read the error log -- this is
-            # a firmware quirk on some WD/Seagate drives, NOT a disk failure.
-            # FailedReadSmartData: similar firmware issue.
-            # These should NOT generate notifications.
+            # ── Record disk observation regardless of noise filter ──
+            # Even "noise" events are recorded as observations so the user
+            # can see them in the Storage UI.  We just don't send notifications.
+            self._record_smartd_observation(title or '', message or '')
+            
+            # ── Filter smartd noise (suppress notification, not observation) ──
             smartd_noise = [
                 'failedreadsmarterrorlog',
                 'failedreadsmartdata',

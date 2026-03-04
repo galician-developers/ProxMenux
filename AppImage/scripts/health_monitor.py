@@ -135,19 +135,22 @@ class HealthMonitor:
         # These are logged at ERR level but are common on SATA controllers
         # during hot-plug, link renegotiation, or cable noise. They are NOT
         # indicative of disk failure unless SMART also reports problems.
-        r'ata\d+.*SError.*BadCRC',
-        r'ata\d+.*Emask 0x10.*ATA bus error',
-        r'failed command: (READ|WRITE) FPDMA QUEUED',
+        # NOTE: patterns are matched against line.lower(), so use lowercase.
+        r'ata\d+.*serror.*badcrc',
+        r'ata\d+.*emask 0x10.*ata bus error',
+        r'failed command: (read|write) fpdma queued',
         r'ata\d+.*hard resetting link',
         r'ata\d+.*link is slow',
-        r'ata\d+.*COMRESET',
+        r'ata\d+.*comreset',
         
         # ── ProxMenux self-referential noise ──
         # The monitor reporting its OWN service failures is circular --
         # it cannot meaningfully alert about itself.
-        r'proxmenux-monitor\.service.*Failed',
+        # NOTE: patterns are matched against line.lower(), so use lowercase.
+        r'proxmenux-monitor\.service.*failed',
         r'proxmenux-monitor\.service.*exit-code',
-        r'ProxMenux-Monitor.*Failed at step EXEC',
+        r'proxmenux-monitor.*failed at step exec',
+        r'proxmenux-monitor\.appimage',
         
         # ── PVE scheduler operational noise ──
         # pvescheduler emits "could not update job state" every minute
@@ -1147,6 +1150,42 @@ class HealthMonitor:
         
         return storages
     
+    @staticmethod
+    def _make_io_obs_signature(disk: str, sample: str) -> str:
+        """Create a stable observation signature for I/O errors on a disk.
+        
+        All ATA errors on the same disk (exception Emask, revalidation failed,
+        hard resetting link, SError, etc.) map to ONE signature per error family.
+        This ensures that "Emask 0x1 SAct 0xc1000000" and "Emask 0x1 SAct 0x804000"
+        and "revalidation failed" all dedup into the same observation.
+        """
+        if not sample:
+            return f'io_{disk}_generic'
+        
+        s = sample.lower()
+        
+        # Classify into error families (order matters: first match wins)
+        families = [
+            # ATA controller errors: exception, emask, revalidation, reset
+            # All these are symptoms of the same underlying connection issue
+            (r'exception\s+emask|emask\s+0x|revalidation failed|hard resetting link|'
+             r'serror.*badcrc|comreset|link is slow|status.*drdy',
+             'ata_connection_error'),
+            # SCSI / block-layer errors
+            (r'i/o error|blk_update_request|medium error|sense key',
+             'block_io_error'),
+            # Failed commands (READ/WRITE FPDMA QUEUED)
+            (r'failed command|fpdma queued',
+             'ata_failed_command'),
+        ]
+        
+        for pattern, family in families:
+            if re.search(pattern, s):
+                return f'io_{disk}_{family}'
+        
+        # Fallback: generic per-disk
+        return f'io_{disk}_generic'
+
     def _resolve_ata_to_disk(self, ata_port: str) -> str:
         """Resolve an ATA controller name (e.g. 'ata8') to a block device (e.g. 'sda').
         
@@ -1443,6 +1482,26 @@ class HealthMonitor:
                             smart_health = self._check_all_disks_smart(smart_health)
                         
                         smart_ok = smart_health == 'PASSED'
+                        
+                        # ── Record disk observation (always, even if transient) ──
+                        # Signature must be stable across cycles: strip volatile
+                        # data (hex values, counts, timestamps) to dedup properly.
+                        # e.g. "ata8.00: exception Emask 0x1 SAct 0xc1000000"
+                        # and  "ata8.00: revalidation failed (errno=-2)"
+                        # both map to the same per-device I/O observation.
+                        try:
+                            obs_sig = self._make_io_obs_signature(disk, sample)
+                            obs_severity = 'critical' if smart_health == 'FAILED' else 'warning'
+                            health_persistence.record_disk_observation(
+                                device_name=disk,
+                                serial=None,
+                                error_type='io_error',
+                                error_signature=obs_sig,
+                                raw_message=f'{display}: {error_count} I/O event(s) in 5 min (SMART: {smart_health})\n{sample}',
+                                severity=obs_severity,
+                            )
+                        except Exception:
+                            pass
                         
                         # Transient-only errors (e.g. SError with auto-recovery)
                         # are always INFO regardless of SMART
