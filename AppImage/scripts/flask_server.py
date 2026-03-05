@@ -2434,28 +2434,28 @@ def api_storage_summary():
         return jsonify({'error': str(e)}), 500
     # END OF CHANGE FOR /api/storage/summary
 
-    @app.route('/api/storage/observations', methods=['GET'])
-    @require_auth
-    def api_storage_observations():
-        """Get disk observations (permanent error history) for a specific disk or all disks."""
-        try:
-            device = request.args.get('device', '')
-            serial = request.args.get('serial', '')
-            
-            # Strip /dev/ prefix if present
-            if device.startswith('/dev/'):
-                device = device[5:]
-            
-            observations = health_persistence.get_disk_observations(
-                device_name=device or None,
-                serial=serial or None
-            )
-            
-            return jsonify({'observations': observations})
-        except Exception as e:
-            return jsonify({'observations': [], 'error': str(e)}), 500
+@app.route('/api/storage/observations', methods=['GET'])
+@require_auth
+def api_storage_observations():
+    """Get disk observations (permanent error history) for a specific disk or all disks."""
+    try:
+        device = request.args.get('device', '')
+        serial = request.args.get('serial', '')
+        
+        # Strip /dev/ prefix if present
+        if device.startswith('/dev/'):
+            device = device[5:]
+        
+        observations = health_persistence.get_disk_observations(
+            device_name=device or None,
+            serial=serial or None
+        )
+        
+        return jsonify({'observations': observations})
+    except Exception as e:
+        return jsonify({'observations': [], 'error': str(e)}), 500
 
-    def get_interface_type(interface_name):
+def get_interface_type(interface_name):
     """Detect the type of network interface"""
     try:
         # Skip loopback
