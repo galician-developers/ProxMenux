@@ -266,19 +266,19 @@ export function StorageOverview() {
     setDetailsOpen(true)
     setDiskObservations([])
 
-    if (disk.observations_count && disk.observations_count > 0) {
-      setLoadingObservations(true)
-      try {
-        const params = new URLSearchParams()
-        if (disk.name) params.set('device', disk.name)
-        if (disk.serial && disk.serial !== 'Unknown') params.set('serial', disk.serial)
-        const data = await fetchApi<{ observations: DiskObservation[] }>(`/api/storage/observations?${params.toString()}`)
-        setDiskObservations(data.observations || [])
-      } catch {
-        setDiskObservations([])
-      } finally {
-        setLoadingObservations(false)
-      }
+    // Always attempt to fetch observations -- the count enrichment may lag
+    // behind the actual observation recording (especially for USB disks).
+    setLoadingObservations(true)
+    try {
+      const params = new URLSearchParams()
+      if (disk.name) params.set('device', disk.name)
+      if (disk.serial && disk.serial !== 'Unknown') params.set('serial', disk.serial)
+      const data = await fetchApi<{ observations: DiskObservation[] }>(`/api/storage/observations?${params.toString()}`)
+      setDiskObservations(data.observations || [])
+    } catch {
+      setDiskObservations([])
+    } finally {
+      setLoadingObservations(false)
     }
   }
 

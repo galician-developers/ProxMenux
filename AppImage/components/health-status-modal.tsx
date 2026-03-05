@@ -428,7 +428,7 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
               className="flex items-center justify-between gap-1.5 sm:gap-2 text-[10px] sm:text-xs py-1.5 px-2 sm:px-3 rounded-md hover:bg-muted/40 transition-colors"
             >
               <div className="flex items-start gap-1.5 sm:gap-2 min-w-0 flex-1">
-                <span className="mt-0.5 shrink-0">{getStatusIcon(checkData.status, "sm")}</span>
+                <span className="mt-0.5 shrink-0">{getStatusIcon(checkData.dismissed ? "INFO" : checkData.status, "sm")}</span>
                 <span className="font-medium shrink-0">{formatCheckLabel(checkKey)}</span>
                 <span className="text-muted-foreground break-words whitespace-pre-wrap min-w-0">{checkData.detail}</span>
                 {checkData.dismissed && (

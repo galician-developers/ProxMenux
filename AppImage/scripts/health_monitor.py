@@ -1095,27 +1095,11 @@ class HealthMonitor:
             if not has_io:
                 checks['io_errors'] = {'status': 'OK', 'detail': 'No I/O errors in dmesg'}
         if self.capabilities.get('has_smart') and 'smart_health' not in checks:
-            if smart_warnings_found:
-                # Collect the actual warning details for the sub-check
-                smart_details_parts = []
-                smart_error_keys = []
-                for disk_path, issue in disk_health_issues.items():
-                    for sl in (issue.get('smart_lines') or [])[:3]:
-                        smart_details_parts.append(sl)
-                    if issue.get('error_key'):
-                        smart_error_keys.append(issue['error_key'])
-                detail_text = '; '.join(smart_details_parts[:3]) if smart_details_parts else 'SMART warning in journal'
-                # Use the same error_key as the per-disk check so a single dismiss
-                # covers both the /Dev/Sda sub-check AND the SMART Health sub-check
-                shared_key = smart_error_keys[0] if smart_error_keys else 'smart_health_journal'
-                checks['smart_health'] = {
-                    'status': 'WARNING',
-                    'detail': detail_text,
-                    'dismissable': True,
-                    'error_key': shared_key,
-                }
-            else:
+            if not smart_warnings_found:
                 checks['smart_health'] = {'status': 'OK', 'detail': 'No SMART warnings in journal'}
+            # When smart_warnings_found is True, the per-disk sub-checks
+            # (/Dev/Sda etc.) already carry all the detail and dismiss logic.
+            # Adding a separate smart_health WARNING would just duplicate them.
         if self.capabilities.get('has_zfs') and 'zfs_pools' not in checks:
             checks['zfs_pools'] = {'status': 'OK', 'detail': 'ZFS pools healthy'}
         if self.capabilities.get('has_lvm') and 'lvm_volumes' not in checks and 'lvm_check' not in checks:
