@@ -480,7 +480,8 @@ class HealthPersistence:
                                 ('updates', 'pending_updates'), ('updates', 'kernel_pve'),
                                 ('security', 'security_'), 
                                 ('pve_services', 'pve_service_'), ('vms', 'vmct_'), ('vms', 'vm_'), ('vms', 'ct_'),
-                                ('disks', 'disk_'), ('logs', 'log_'), ('network', 'net_'),
+                                ('disks', 'disk_'), ('disks', 'smart_'), ('disks', 'zfs_pool_'),
+                                ('logs', 'log_'), ('network', 'net_'),
                                 ('temperature', 'temp_')]:
                 if error_key == prefix or error_key.startswith(prefix):
                     category = cat

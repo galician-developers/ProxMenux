@@ -973,10 +973,10 @@ class HealthMonitor:
                 zfs_error_key = f'zfs_pool_{real_pool}'
                 zfs_reason = f'ZFS pool {real_pool}: {pool_info["reason"]}'
                 try:
-                    if not health_persistence.is_error_active(zfs_error_key, category='zfs'):
+                    if not health_persistence.is_error_active(zfs_error_key, category='disks'):
                         health_persistence.record_error(
                             error_key=zfs_error_key,
-                            category='zfs',
+                            category='disks',
                             severity=pool_info.get('status', 'WARNING'),
                             reason=zfs_reason,
                             details={
@@ -1102,7 +1102,12 @@ class HealthMonitor:
                     for sl in (issue.get('smart_lines') or [])[:3]:
                         smart_details_parts.append(sl)
                 detail_text = '; '.join(smart_details_parts[:3]) if smart_details_parts else 'SMART warning in journal'
-                checks['smart_health'] = {'status': 'WARNING', 'detail': detail_text}
+                checks['smart_health'] = {
+                    'status': 'WARNING',
+                    'detail': detail_text,
+                    'dismissable': True,
+                    'error_key': 'smart_health_journal',
+                }
             else:
                 checks['smart_health'] = {'status': 'OK', 'detail': 'No SMART warnings in journal'}
         if self.capabilities.get('has_zfs') and 'zfs_pools' not in checks:
@@ -3907,6 +3912,8 @@ class HealthMonitor:
                     'io_lines': unique_io[:5],
                     'sample': sample_line,
                     'source': 'journal',
+                    'dismissable': True,
+                    'error_key': f'smart_{disk_name}',
                 }
                 
                 # Record as disk observation for the permanent history

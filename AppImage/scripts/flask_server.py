@@ -2432,9 +2432,30 @@ def api_storage_summary():
         return jsonify(storage_data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-# END OF CHANGE FOR /api/storage/summary
+    # END OF CHANGE FOR /api/storage/summary
 
-def get_interface_type(interface_name):
+    @app.route('/api/storage/observations', methods=['GET'])
+    @require_auth
+    def api_storage_observations():
+        """Get disk observations (permanent error history) for a specific disk or all disks."""
+        try:
+            device = request.args.get('device', '')
+            serial = request.args.get('serial', '')
+            
+            # Strip /dev/ prefix if present
+            if device.startswith('/dev/'):
+                device = device[5:]
+            
+            observations = health_persistence.get_disk_observations(
+                device_name=device or None,
+                serial=serial or None
+            )
+            
+            return jsonify({'observations': observations})
+        except Exception as e:
+            return jsonify({'observations': [], 'error': str(e)}), 500
+
+    def get_interface_type(interface_name):
     """Detect the type of network interface"""
     try:
         # Skip loopback
@@ -6514,6 +6535,21 @@ def api_health():
         'timestamp': datetime.now().isoformat(),
         'version': '1.0.2'
     })
+
+@app.route('/api/health/acknowledge', methods=['POST'])
+@require_auth
+def api_health_acknowledge():
+    """Acknowledge/dismiss a health error by error_key."""
+    try:
+        data = request.get_json()
+        error_key = data.get('error_key', '')
+        if not error_key:
+            return jsonify({'error': 'error_key is required'}), 400
+        
+        result = health_persistence.acknowledge_error(error_key)
+        return jsonify({'success': True, 'result': result})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/prometheus', methods=['GET'])
 @require_auth
