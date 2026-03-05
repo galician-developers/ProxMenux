@@ -1331,6 +1331,23 @@
     }
   },
   {
+    "name": "ddclient",
+    "slug": "ddclient",
+    "desc": "ddclient is a Perl client used to update dynamic DNS entries for accounts on a wide range of dynamic DNS service providers. It supports multiple protocols and providers, allowing automatic IP address updates for your domain names.",
+    "script": "ct/ddclient.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/ddclient.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/ddclient.sh",
+    "os": "debian",
+    "categories": [
+      4
+    ],
+    "notes": [
+      "After installation, edit `/etc/ddclient.conf` with your dynamic DNS provider credentials",
+      "Sample configuration is created for Namecheap but can be modified for other providers"
+    ],
+    "type": "ct"
+  },
+  {
     "name": "Debian",
     "slug": "debian",
     "desc": "Debian Linux is a distribution that emphasizes free software. It supports many hardware platforms.",
@@ -4210,6 +4227,25 @@
     }
   },
   {
+    "name": "NetBird",
+    "slug": "netbird",
+    "desc": "NetBird is an open source VPN management platform that creates secure peer-to-peer networks using WireGuard. It enables secure connectivity between devices anywhere in the world without complex firewall configurations or port forwarding. NetBird offers features like zero-configuration networking, SSO integration, access control policies, and a centralized management dashboard. It's designed to be simple to deploy and manage, making it ideal for connecting remote teams, securing IoT devices, or building secure infrastructure networks.",
+    "script": "ct/netbird.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/netbird.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/netbird.sh",
+    "os": "debian",
+    "categories": [
+      4
+    ],
+    "notes": [
+      "The NetBird client (agent) allows a peer to join a pre-existing NetBird deployment. If a NetBird deployment is not yet available, there are both managed and self-hosted options available.",
+      "After installation, enter the container and run `netbird` to view the commands.",
+      "Use a Setup Key from your NetBird dashboard or SSO login to authenticate during setup or in the container.",
+      "Check connection status with `netbird status`."
+    ],
+    "type": "ct"
+  },
+  {
     "name": "NetBox",
     "slug": "netbox",
     "desc": "NetBox is the source of truth for everything on your network, from physical components like power systems and cabling to virtual assets like IP addresses and VLANs. Network automation and observability tools depend on NetBox’s authoritative data to roll out configurations, monitor changes, and accelerate operations across the enterprise",
@@ -5067,6 +5103,26 @@
       "Show Login Credentials, type `cat ~/paperless-ngx.creds` in the LXC console",
       "Script installs English as default OCR language. To install additional languages, use `apt-get install tesseract-ocr-[lang]`, where [lang] is the language code (e.g. `apt-get install tesseract-ocr-deu`).",
       "Paperless-NGX use uv, so all calls need to start with `uv run` f.e. `uv run python3 manage.py document_exporter $path` instead `python3 manage.py`"
+    ],
+    "type": "ct"
+  },
+  {
+    "name": "Papra",
+    "slug": "papra",
+    "desc": "Papra is a modern, self-hosted document management system with full-text search, OCR support, and automatic document processing. Built with Node.js and featuring a clean web interface for organizing and managing your documents.",
+    "script": "ct/papra.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/papra.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/papra.sh",
+    "os": "debian",
+    "categories": [
+      12
+    ],
+    "notes": [
+      "First visit will prompt you to create an account",
+      "Tesseract OCR is pre-installed for all languages",
+      "Documents are stored in /opt/papra/app-data/documents",
+      "Ingestion folder available at /opt/papra/ingestion for automatic document import",
+      "Email functionality runs in dry-run mode by default"
     ],
     "type": "ct"
   },
@@ -6794,22 +6850,6 @@
       23
     ],
     "notes": [],
-    "type": "ct"
-  },
-  {
-    "name": "Suwayomi-Server",
-    "slug": "suwayomi-server",
-    "desc": "A free and open source manga reader server that runs extensions built for Mihon (Tachiyomi).",
-    "script": "ct/suwayomiserver.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/suwayomiserver.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/suwayomiserver.sh",
-    "os": "debian",
-    "categories": [
-      13
-    ],
-    "notes": [
-      "This application can be conflicting with Kaspersky products. You maybe need to disable Kaspersky in order to use this application."
-    ],
     "type": "ct"
   },
   {
