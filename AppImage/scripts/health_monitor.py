@@ -1098,15 +1098,21 @@ class HealthMonitor:
             if smart_warnings_found:
                 # Collect the actual warning details for the sub-check
                 smart_details_parts = []
+                smart_error_keys = []
                 for disk_path, issue in disk_health_issues.items():
                     for sl in (issue.get('smart_lines') or [])[:3]:
                         smart_details_parts.append(sl)
+                    if issue.get('error_key'):
+                        smart_error_keys.append(issue['error_key'])
                 detail_text = '; '.join(smart_details_parts[:3]) if smart_details_parts else 'SMART warning in journal'
+                # Use the same error_key as the per-disk check so a single dismiss
+                # covers both the /Dev/Sda sub-check AND the SMART Health sub-check
+                shared_key = smart_error_keys[0] if smart_error_keys else 'smart_health_journal'
                 checks['smart_health'] = {
                     'status': 'WARNING',
                     'detail': detail_text,
                     'dismissable': True,
-                    'error_key': 'smart_health_journal',
+                    'error_key': shared_key,
                 }
             else:
                 checks['smart_health'] = {'status': 'OK', 'detail': 'No SMART warnings in journal'}
@@ -1118,8 +1124,45 @@ class HealthMonitor:
         if not issues:
             return {'status': 'OK', 'checks': checks}
         
+        # ── Mark dismissed checks ──
+        # If an error_key in a check has been acknowledged (dismissed) in the
+        # persistence DB, mark the check as dismissed so the frontend renders
+        # it in blue instead of showing WARNING + Dismiss button.
+        # Also recalculate category status: if ALL warning/critical checks are
+        # dismissed, downgrade the category to OK.
+        try:
+            all_dismissed = True
+            for check_key, check_val in checks.items():
+                ek = check_val.get('error_key')
+                if not ek:
+                    continue
+                check_status = (check_val.get('status') or 'OK').upper()
+                if check_status in ('WARNING', 'CRITICAL'):
+                    if health_persistence.is_error_acknowledged(ek):
+                        check_val['dismissed'] = True
+                    else:
+                        all_dismissed = False
+            
+            # If every non-OK check is dismissed, downgrade the category
+            non_ok_checks = [v for v in checks.values()
+                             if (v.get('status') or 'OK').upper() in ('WARNING', 'CRITICAL')]
+            if non_ok_checks and all(v.get('dismissed') for v in non_ok_checks):
+                # All issues are dismissed -- category shows as OK to avoid
+                # persistent WARNING after user has acknowledged.
+                return {
+                    'status': 'OK',
+                    'reason': '; '.join(issues[:3]),
+                    'details': storage_details,
+                    'checks': checks,
+                    'all_dismissed': True,
+                }
+        except Exception:
+            pass
+        
         # Determine overall status
-        has_critical = any(d.get('status') == 'CRITICAL' for d in storage_details.values())
+        has_critical = any(
+            d.get('status') == 'CRITICAL' for d in storage_details.values()
+        )
         
         return {
             'status': 'CRITICAL' if has_critical else 'WARNING',

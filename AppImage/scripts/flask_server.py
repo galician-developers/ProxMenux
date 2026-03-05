@@ -1160,6 +1160,54 @@ def serve_images(filename):
 # Moved helper functions for system info up
 # def get_system_info(): ... (moved up)
 
+def get_disk_connection_type(disk_name):
+    """Detect how a disk is connected: usb, sata, nvme, sas, or unknown.
+    
+    Uses /sys/block/<disk>/device symlink to resolve the bus path.
+    Examples:
+      /sys/.../usb3/...   -> 'usb'
+      /sys/.../ata2/...   -> 'sata'
+      nvme0n1             -> 'nvme'
+      /sys/.../host0/...  -> 'sas' (SAS/SCSI)
+    """
+    try:
+        if disk_name.startswith('nvme'):
+            return 'nvme'
+        
+        device_path = f'/sys/block/{disk_name}/device'
+        if os.path.exists(device_path):
+            real_path = os.path.realpath(device_path)
+            if '/usb' in real_path:
+                return 'usb'
+            if '/ata' in real_path:
+                return 'sata'
+            if '/sas' in real_path:
+                return 'sas'
+        
+        # Fallback: check removable flag
+        removable_path = f'/sys/block/{disk_name}/removable'
+        if os.path.exists(removable_path):
+            with open(removable_path) as f:
+                if f.read().strip() == '1':
+                    return 'usb'
+        
+        return 'internal'
+    except Exception:
+        return 'unknown'
+
+
+def is_disk_removable(disk_name):
+    """Check if a disk is removable (USB sticks, external drives, etc.)."""
+    try:
+        removable_path = f'/sys/block/{disk_name}/removable'
+        if os.path.exists(removable_path):
+            with open(removable_path) as f:
+                return f.read().strip() == '1'
+        return False
+    except Exception:
+        return False
+
+
 def get_storage_info():
     """Get storage and disk information"""
     try:
@@ -1213,6 +1261,9 @@ def get_storage_info():
                         else:
                             size_str = f"{disk_size_gb:.1f}G"
                         
+                        conn_type = get_disk_connection_type(disk_name)
+                        removable = is_disk_removable(disk_name)
+                        
                         physical_disks[disk_name] = {
                             'name': disk_name,
                             'size': disk_size_kb,  # In KB for formatMemory() in Storage Summary
@@ -1227,13 +1278,15 @@ def get_storage_info():
                             'reallocated_sectors': smart_data.get('reallocated_sectors', 0),
                             'pending_sectors': smart_data.get('pending_sectors', 0),
                             'crc_errors': smart_data.get('crc_errors', 0),
-                            'rotation_rate': smart_data.get('rotation_rate', 0),  # Added
-                            'power_cycles': smart_data.get('power_cycles', 0),   # Added
-                            'percentage_used': smart_data.get('percentage_used'), # Added
-                            'media_wearout_indicator': smart_data.get('media_wearout_indicator'), # Added
-                            'wear_leveling_count': smart_data.get('wear_leveling_count'), # Added
-                            'total_lbas_written': smart_data.get('total_lbas_written'), # Added
-                            'ssd_life_left': smart_data.get('ssd_life_left') # Added
+                            'rotation_rate': smart_data.get('rotation_rate', 0),
+                            'power_cycles': smart_data.get('power_cycles', 0),
+                            'percentage_used': smart_data.get('percentage_used'),
+                            'media_wearout_indicator': smart_data.get('media_wearout_indicator'),
+                            'wear_leveling_count': smart_data.get('wear_leveling_count'),
+                            'total_lbas_written': smart_data.get('total_lbas_written'),
+                            'ssd_life_left': smart_data.get('ssd_life_left'),
+                            'connection_type': conn_type,
+                            'removable': removable,
                         }
                         
         except Exception as e:

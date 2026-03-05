@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { HardDrive, Database, AlertTriangle, CheckCircle2, XCircle, Square, Thermometer, Archive, Info, Clock } from "lucide-react"
+import { HardDrive, Database, AlertTriangle, CheckCircle2, XCircle, Square, Thermometer, Archive, Info, Clock, Usb } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -42,6 +42,8 @@ interface DiskInfo {
     error_type?: string  // 'io' | 'filesystem'
   }
   observations_count?: number
+  connection_type?: 'usb' | 'sata' | 'nvme' | 'sas' | 'internal' | 'unknown'
+  removable?: boolean
 }
 
 interface DiskObservation {
@@ -421,21 +423,26 @@ export function StorageOverview() {
 
   const getDiskTypesBreakdown = () => {
     if (!storageData || !storageData.disks) {
-      return { nvme: 0, ssd: 0, hdd: 0 }
+      return { nvme: 0, ssd: 0, hdd: 0, usb: 0 }
     }
 
     let nvme = 0
     let ssd = 0
     let hdd = 0
+    let usb = 0
 
     storageData.disks.forEach((disk) => {
+      if (disk.connection_type === 'usb') {
+        usb++
+        return
+      }
       const diskType = getDiskType(disk.name, disk.rotation_rate)
       if (diskType === "NVMe") nvme++
       else if (diskType === "SSD") ssd++
       else if (diskType === "HDD") hdd++
     })
 
-    return { nvme, ssd, hdd }
+    return { nvme, ssd, hdd, usb }
   }
 
   const getWearProgressColor = (wearPercent: number): string => {
@@ -623,6 +630,12 @@ export function StorageOverview() {
                     <span className="text-blue-500">{diskTypesBreakdown.hdd} HDD</span>
                   </>
                 )}
+                {diskTypesBreakdown.usb > 0 && (
+                  <>
+                    {(diskTypesBreakdown.nvme > 0 || diskTypesBreakdown.ssd > 0 || diskTypesBreakdown.hdd > 0) && ", "}
+                    <span className="text-orange-400">{diskTypesBreakdown.usb} USB</span>
+                  </>
+                )}
               </p>
               <p className="text-xs">
                 <span className="text-green-500">{diskHealthBreakdown.normal} normal</span>
@@ -780,7 +793,7 @@ export function StorageOverview() {
         </Card>
       )}
 
-      {/* Physical Disks */}
+      {/* Physical Disks (internal only) */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -790,7 +803,7 @@ export function StorageOverview() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {storageData.disks.map((disk) => (
+            {storageData.disks.filter(d => d.connection_type !== 'usb').map((disk) => (
               <div key={disk.name}>
                 <div
                   className="sm:hidden border border-white/10 rounded-lg p-4 cursor-pointer bg-white/5 transition-colors"
@@ -981,13 +994,163 @@ export function StorageOverview() {
         </CardContent>
       </Card>
 
+      {/* External Storage (USB) */}
+      {storageData.disks.filter(d => d.connection_type === 'usb').length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Usb className="h-5 w-5" />
+              External Storage (USB)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {storageData.disks.filter(d => d.connection_type === 'usb').map((disk) => (
+                <div key={disk.name}>
+                  {/* Mobile card */}
+                  <div
+                    className="sm:hidden border border-white/10 rounded-lg p-4 cursor-pointer bg-white/5 transition-colors"
+                    onClick={() => handleDiskClick(disk)}
+                  >
+                    <div className="space-y-2 mb-3">
+                      <div className="flex items-center gap-2">
+                        <Usb className="h-5 w-5 text-orange-400 flex-shrink-0" />
+                        <h3 className="font-semibold">/dev/{disk.name}</h3>
+                        <Badge className="bg-orange-500/10 text-orange-400 border-orange-500/20 text-[10px] px-1.5">USB</Badge>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 pl-7">
+                        {disk.model && disk.model !== "Unknown" && (
+                          <p className="text-sm text-muted-foreground truncate flex-1 min-w-0">{disk.model}</p>
+                        )}
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                          {disk.temperature > 0 && (
+                            <div className="flex items-center gap-1">
+                              <Thermometer className={`h-4 w-4 ${getTempColor(disk.temperature, disk.name, disk.rotation_rate)}`} />
+                              <span className={`text-sm font-medium ${getTempColor(disk.temperature, disk.name, disk.rotation_rate)}`}>
+                                {disk.temperature}°C
+                              </span>
+                            </div>
+                          )}
+                          {getHealthBadge(disk.health)}
+                          {disk.observations_count && disk.observations_count > 0 && (
+                            <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 gap-1 text-[10px] px-1.5 py-0">
+                              <Info className="h-3 w-3" />
+                              {disk.observations_count}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Desktop card */}
+                  <div
+                    className="hidden sm:block border border-white/10 rounded-lg p-4 cursor-pointer hover:bg-white/5 transition-colors"
+                    onClick={() => handleDiskClick(disk)}
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Usb className="h-5 w-5 text-orange-400" />
+                        <h3 className="font-semibold">/dev/{disk.name}</h3>
+                        <Badge className="bg-orange-500/10 text-orange-400 border-orange-500/20 text-[10px] px-1.5">USB</Badge>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {disk.temperature > 0 && (
+                          <div className="flex items-center gap-1">
+                            <Thermometer className={`h-4 w-4 ${getTempColor(disk.temperature, disk.name, disk.rotation_rate)}`} />
+                            <span className={`text-sm font-medium ${getTempColor(disk.temperature, disk.name, disk.rotation_rate)}`}>
+                              {disk.temperature}°C
+                            </span>
+                          </div>
+                        )}
+                        {getHealthBadge(disk.health)}
+                        {disk.observations_count && disk.observations_count > 0 && (
+                          <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 gap-1 text-[10px] px-1.5 py-0">
+                            <Info className="h-3 w-3" />
+                            {disk.observations_count}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    {disk.model && disk.model !== "Unknown" && (
+                      <p className="text-sm text-muted-foreground mb-3 ml-7">{disk.model}</p>
+                    )}
+
+                    {disk.io_errors && disk.io_errors.count > 0 && (
+                      <div className={`flex items-start gap-2 p-2 rounded text-xs mb-3 ${
+                        disk.io_errors.severity === 'CRITICAL'
+                          ? 'bg-red-500/10 text-red-400 border border-red-500/20'
+                          : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
+                      }`}>
+                        <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                        <div>
+                          {disk.io_errors.error_type === 'filesystem' ? (
+                            <>
+                              <span className="font-medium">Filesystem corruption detected</span>
+                              {disk.io_errors.reason && (
+                                <p className="mt-0.5 opacity-90 whitespace-pre-line">{disk.io_errors.reason}</p>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <span className="font-medium">{disk.io_errors.count} I/O error{disk.io_errors.count !== 1 ? 's' : ''} in 5 min</span>
+                              {disk.io_errors.sample && (
+                                <p className="mt-0.5 opacity-80 font-mono truncate max-w-md">{disk.io_errors.sample}</p>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      {disk.size_formatted && (
+                        <div>
+                          <p className="text-sm text-muted-foreground">Size</p>
+                          <p className="font-medium">{disk.size_formatted}</p>
+                        </div>
+                      )}
+                      {disk.smart_status && disk.smart_status !== "unknown" && (
+                        <div>
+                          <p className="text-sm text-muted-foreground">SMART Status</p>
+                          <p className="font-medium capitalize">{disk.smart_status}</p>
+                        </div>
+                      )}
+                      {disk.power_on_hours !== undefined && disk.power_on_hours > 0 && (
+                        <div>
+                          <p className="text-sm text-muted-foreground">Power On Time</p>
+                          <p className="font-medium">{formatHours(disk.power_on_hours)}</p>
+                        </div>
+                      )}
+                      {disk.serial && disk.serial !== "Unknown" && (
+                        <div>
+                          <p className="text-sm text-muted-foreground">Serial</p>
+                          <p className="font-medium text-xs">{disk.serial}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Disk Details Dialog */}
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <HardDrive className="h-5 w-5" />
+              {selectedDisk?.connection_type === 'usb' ? (
+                <Usb className="h-5 w-5 text-orange-400" />
+              ) : (
+                <HardDrive className="h-5 w-5" />
+              )}
               Disk Details: /dev/{selectedDisk?.name}
+              {selectedDisk?.connection_type === 'usb' && (
+                <Badge className="bg-orange-500/10 text-orange-400 border-orange-500/20 text-[10px] px-1.5">USB</Badge>
+              )}
             </DialogTitle>
             <DialogDescription>Complete SMART information and health status</DialogDescription>
           </DialogHeader>

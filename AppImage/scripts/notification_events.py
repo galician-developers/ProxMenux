@@ -1731,6 +1731,16 @@ class PollingCollector:
                 self._last_notified.pop(key, None)
                 continue
             
+            # Skip recovery if the error was manually acknowledged (dismissed)
+            # by the user. Acknowledged != resolved -- the problem may still
+            # exist, the user just chose to suppress notifications for it.
+            try:
+                if health_persistence.is_error_acknowledged(key):
+                    self._last_notified.pop(key, None)
+                    continue
+            except Exception:
+                pass
+            
             # Calculate duration
             duration = ''
             if first_seen:

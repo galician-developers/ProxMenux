@@ -580,6 +580,35 @@ class HealthPersistence:
         conn.close()
         return result
     
+    def is_error_acknowledged(self, error_key: str) -> bool:
+        """Check if an error_key has been acknowledged and is still within suppression window."""
+        try:
+            conn = self._get_conn()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                'SELECT acknowledged, resolved_at, suppression_hours FROM errors WHERE error_key = ?',
+                (error_key,))
+            row = cursor.fetchone()
+            conn.close()
+            if not row:
+                return False
+            if not row['acknowledged']:
+                return False
+            # Check if still within suppression window
+            resolved_at = row['resolved_at']
+            sup_hours = row['suppression_hours'] or self.DEFAULT_SUPPRESSION_HOURS
+            if resolved_at:
+                try:
+                    resolved_dt = datetime.fromisoformat(resolved_at)
+                    if datetime.now() > resolved_dt + timedelta(hours=sup_hours):
+                        return False  # Suppression expired
+                except Exception:
+                    pass
+            return True
+        except Exception:
+            return False
+    
     def get_active_errors(self, category: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get all active (unresolved) errors, optionally filtered by category"""
         conn = self._get_conn()
@@ -1358,6 +1387,22 @@ class HealthPersistence:
             print(f"[HealthPersistence] Error getting observations: {e}")
             return []
 
+    def get_all_observed_devices(self) -> List[Dict[str, Any]]:
+        """Return a list of unique device_name + serial pairs that have observations."""
+        try:
+            conn = self._get_conn()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT DISTINCT device_name, serial
+                FROM disk_observations
+                WHERE dismissed = 0
+            ''')
+            rows = cursor.fetchall()
+            conn.close()
+            return [{'device_name': r[0], 'serial': r[1] or ''} for r in rows]
+        except Exception:
+            return []
+    
     def get_disks_observation_counts(self) -> Dict[str, int]:
         """Return {device_name: count} of active observations per disk.
         
