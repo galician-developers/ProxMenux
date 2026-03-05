@@ -290,7 +290,7 @@ export function StorageOverview() {
   }
 
   const obsTypeLabel = (t: string) =>
-    ({ smart_error: 'SMART Error', io_error: 'I/O Error', connection_error: 'Connection Error' }[t] || t)
+    ({ smart_error: 'SMART Error', io_error: 'I/O Error', filesystem_error: 'Filesystem Error', zfs_pool_error: 'ZFS Pool Error', connection_error: 'Connection Error' }[t] || t)
 
   const getStorageTypeBadge = (type: string) => {
     const typeColors: Record<string, string> = {

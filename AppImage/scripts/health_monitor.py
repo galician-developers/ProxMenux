@@ -967,15 +967,96 @@ class HealthMonitor:
             for pool_name, pool_info in zfs_pool_issues.items():
                 issues.append(f'{pool_name}: {pool_info["reason"]}')
                 storage_details[pool_name] = pool_info
+                
+                # Record error for notification system
+                real_pool = pool_info.get('pool_name', pool_name)
+                zfs_error_key = f'zfs_pool_{real_pool}'
+                zfs_reason = f'ZFS pool {real_pool}: {pool_info["reason"]}'
+                try:
+                    if not health_persistence.is_error_active(zfs_error_key, category='zfs'):
+                        health_persistence.record_error(
+                            error_key=zfs_error_key,
+                            category='zfs',
+                            severity=pool_info.get('status', 'WARNING'),
+                            reason=zfs_reason,
+                            details={
+                                'pool_name': real_pool,
+                                'health': pool_info.get('health', ''),
+                                'device': f'zpool:{real_pool}',
+                                'dismissable': False,
+                            }
+                        )
+                except Exception:
+                    pass
+                
+                # Record as permanent disk observation
+                try:
+                    health_persistence.record_disk_observation(
+                        device_name=f'zpool_{real_pool}',
+                        serial=None,
+                        error_type='zfs_pool_error',
+                        error_signature=f'zfs_{real_pool}_{pool_info.get("health", "unknown")}',
+                        raw_message=zfs_reason,
+                        severity=pool_info.get('status', 'WARNING').lower(),
+                    )
+                except Exception:
+                    pass
+        else:
+            # ZFS pools are healthy -- clear any previously recorded ZFS errors
+            if self.capabilities.get('has_zfs'):
+                try:
+                    active_errors = health_persistence.get_active_errors()
+                    for error in active_errors:
+                        if error.get('error_key', '').startswith('zfs_pool_'):
+                            health_persistence.clear_error(error['error_key'])
+                except Exception:
+                    pass
         
         # Check disk health from Proxmox task log or system logs (SMART, etc.)
         disk_health_issues = self._check_disk_health_from_events()
+        smart_warnings_found = False
         if disk_health_issues:
             for disk, issue in disk_health_issues.items():
                 # Only add if not already covered by critical mountpoint issues
                 if disk not in storage_details or storage_details[disk].get('status') == 'OK':
                     issues.append(f'{disk}: {issue["reason"]}')
                     storage_details[disk] = issue
+                
+                # Track if any SMART warnings were found (for smart_health sub-check)
+                if issue.get('smart_lines'):
+                    smart_warnings_found = True
+                
+                # Record error with full details for notification system
+                # Avoid duplicate: if dmesg I/O errors already cover this disk
+                # (disk_{device}), skip the journal SMART notification to prevent
+                # the user getting two alerts for the same underlying problem.
+                device = issue.get('device', disk.replace('/dev/', ''))
+                io_error_key = f'disk_{device}'
+                error_key = f'smart_{device}'
+                reason = f'{disk}: {issue["reason"]}'
+                try:
+                    if (not health_persistence.is_error_active(io_error_key, category='disks') and
+                        not health_persistence.is_error_active(error_key, category='disks')):
+                        health_persistence.record_error(
+                            error_key=error_key,
+                            category='disks',
+                            severity=issue.get('status', 'WARNING'),
+                            reason=reason,
+                            details={
+                                'disk': device,
+                                'device': disk,
+                                'block_device': device,
+                                'serial': '',
+                                'smart_status': 'WARNING',
+                                'smart_lines': issue.get('smart_lines', []),
+                                'io_lines': issue.get('io_lines', []),
+                                'sample': issue.get('sample', ''),
+                                'source': 'journal',
+                                'dismissable': True,
+                            }
+                        )
+                except Exception:
+                    pass
         
         # Check LVM status
         lvm_status = self._check_lvm()
@@ -1014,7 +1095,16 @@ class HealthMonitor:
             if not has_io:
                 checks['io_errors'] = {'status': 'OK', 'detail': 'No I/O errors in dmesg'}
         if self.capabilities.get('has_smart') and 'smart_health' not in checks:
-            checks['smart_health'] = {'status': 'OK', 'detail': 'No SMART warnings in journal'}
+            if smart_warnings_found:
+                # Collect the actual warning details for the sub-check
+                smart_details_parts = []
+                for disk_path, issue in disk_health_issues.items():
+                    for sl in (issue.get('smart_lines') or [])[:3]:
+                        smart_details_parts.append(sl)
+                detail_text = '; '.join(smart_details_parts[:3]) if smart_details_parts else 'SMART warning in journal'
+                checks['smart_health'] = {'status': 'WARNING', 'detail': detail_text}
+            else:
+                checks['smart_health'] = {'status': 'OK', 'detail': 'No SMART warnings in journal'}
         if self.capabilities.get('has_zfs') and 'zfs_pools' not in checks:
             checks['zfs_pools'] = {'status': 'OK', 'detail': 'ZFS pools healthy'}
         if self.capabilities.get('has_lvm') and 'lvm_volumes' not in checks and 'lvm_check' not in checks:
@@ -2743,6 +2833,7 @@ class HealthMonitor:
                                         details={
                                             'disk': base_device,
                                             'device': f'/dev/{fs_device}',
+                                            'block_device': base_device,
                                             'error_type': 'filesystem',
                                             'error_count': 1,
                                             'sample': line[:200],
@@ -2751,6 +2842,31 @@ class HealthMonitor:
                                             'device_exists': device_exists,
                                         }
                                     )
+                                
+                                # Record filesystem error as permanent disk observation
+                                try:
+                                    obs_serial = None
+                                    try:
+                                        sm = subprocess.run(
+                                            ['smartctl', '-i', f'/dev/{base_device}'],
+                                            capture_output=True, text=True, timeout=3)
+                                        if sm.returncode in (0, 4):
+                                            for sline in sm.stdout.split('\n'):
+                                                if 'Serial Number' in sline or 'Serial number' in sline:
+                                                    obs_serial = sline.split(':')[-1].strip()
+                                                    break
+                                    except Exception:
+                                        pass
+                                    health_persistence.record_disk_observation(
+                                        device_name=base_device,
+                                        serial=obs_serial,
+                                        error_type='filesystem_error',
+                                        error_signature=f'fs_error_{fs_device}_{pattern_key}',
+                                        raw_message=enriched_reason[:500],
+                                        severity=fs_severity.lower(),
+                                    )
+                                except Exception:
+                                    pass
                     
                     recent_patterns[pattern] += 1
                     
@@ -3654,50 +3770,195 @@ class HealthMonitor:
     def _check_disk_health_from_events(self) -> Dict[str, Any]:
         """
         Check for disk health warnings/errors from system logs (journalctl).
-        Looks for SMART warnings and specific disk errors.
-        Returns dict of disk issues found.
+        Looks for SMART warnings, smartd messages, and specific disk errors.
+        
+        Returns dict keyed by '/dev/sdX' with detailed issue info including
+        the actual log lines that triggered the warning, so notifications
+        and the health monitor show actionable information.
         """
-        disk_issues = {}
+        disk_issues: Dict[str, Any] = {}
         
         try:
             # Check journalctl for warnings/errors related to disks in the last hour
+            # Include smartd (SMART daemon) messages explicitly
             result = subprocess.run(
-                ['journalctl', '--since', '1 hour ago', '--no-pager', '-p', 'warning'],
+                ['journalctl', '--since', '1 hour ago', '--no-pager', '-p', 'warning',
+                 '--output=short-precise'],
                 capture_output=True,
                 text=True,
-                timeout=3
+                timeout=5
             )
             
-            if result.returncode == 0:
-                for line in result.stdout.split('\n'):
-                    line_lower = line.lower()
+            if result.returncode != 0:
+                return disk_issues
+            
+            # Collect all relevant lines per disk
+            # disk_lines[disk_name] = {'smart_lines': [], 'io_lines': [], 'severity': 'WARNING'}
+            disk_lines: Dict[str, Dict] = {}
+            
+            for line in result.stdout.split('\n'):
+                if not line.strip():
+                    continue
+                line_lower = line.lower()
+                
+                # Extract disk name -- multiple patterns for different log formats:
+                #   /dev/sdh, /dev/nvme0n1
+                #   Device: /dev/sdh [SAT]  (smartd format)
+                #   smartd[1234]: Device: /dev/sdh ...
+                disk_match = re.search(
+                    r'(?:/dev/|Device:?\s*/dev/)(sd[a-z]+|nvme\d+n\d+|hd[a-z]+)',
+                    line)
+                if not disk_match:
+                    # Fallback for smartd messages that reference disk names differently
+                    if 'smartd' in line_lower or 'smart' in line_lower:
+                        disk_match = re.search(r'\b(sd[a-z]+|nvme\d+n\d+)\b', line)
+                if not disk_match:
+                    continue
+                disk_name = disk_match.group(1)
+                
+                if disk_name not in disk_lines:
+                    disk_lines[disk_name] = {
+                        'smart_lines': [], 'io_lines': [],
+                        'severity': 'WARNING'
+                    }
+                
+                # Classify the log line
+                # SMART warnings: smartd messages, SMART attribute warnings, etc.
+                if ('smart' in line_lower and
+                    any(kw in line_lower for kw in
+                        ['warning', 'error', 'fail', 'exceeded', 'threshold',
+                         'reallocat', 'pending', 'uncorrect', 'crc', 'offline',
+                         'temperature', 'current_pending', 'reported_uncorrect'])):
+                    # Extract the meaningful part of the log line (after hostname)
+                    msg_part = line.split(': ', 2)[-1] if ': ' in line else line
+                    disk_lines[disk_name]['smart_lines'].append(msg_part.strip())
+                
+                # smartd daemon messages (e.g. "smartd[1234]: Device: /dev/sdh ...")
+                elif 'smartd' in line_lower:
+                    msg_part = line.split(': ', 2)[-1] if ': ' in line else line
+                    disk_lines[disk_name]['smart_lines'].append(msg_part.strip())
+                
+                # Disk I/O / medium errors
+                elif any(kw in line_lower for kw in
+                         ['disk error', 'ata error', 'medium error', 'io error',
+                          'i/o error', 'blk_update_request', 'sense key']):
+                    msg_part = line.split(': ', 2)[-1] if ': ' in line else line
+                    disk_lines[disk_name]['io_lines'].append(msg_part.strip())
+                    disk_lines[disk_name]['severity'] = 'CRITICAL'
+            
+            # Build issues with detailed reasons
+            for disk_name, info in disk_lines.items():
+                dev_path = f'/dev/{disk_name}'
+                smart_lines = info['smart_lines']
+                io_lines = info['io_lines']
+                severity = info['severity']
+                
+                if not smart_lines and not io_lines:
+                    continue
+                
+                # Build a descriptive reason from the actual log entries
+                # Deduplicate similar messages (keep unique ones)
+                seen_msgs = set()
+                unique_smart = []
+                for msg in smart_lines:
+                    # Normalize for dedup: strip timestamps and volatile parts
+                    norm = re.sub(r'\d{4}-\d{2}-\d{2}|\d{2}:\d{2}:\d{2}', '', msg).strip()
+                    if norm not in seen_msgs:
+                        seen_msgs.add(norm)
+                        unique_smart.append(msg)
+                
+                unique_io = []
+                for msg in io_lines:
+                    norm = re.sub(r'\d{4}-\d{2}-\d{2}|\d{2}:\d{2}:\d{2}', '', msg).strip()
+                    if norm not in seen_msgs:
+                        seen_msgs.add(norm)
+                        unique_io.append(msg)
+                
+                # Compose the reason with actual details
+                parts = []
+                if unique_smart:
+                    if len(unique_smart) == 1:
+                        parts.append(unique_smart[0])
+                    else:
+                        parts.append(f'{len(unique_smart)} SMART warnings')
+                        # Include the first 3 most relevant entries
+                        for entry in unique_smart[:3]:
+                            parts.append(f'  - {entry}')
+                
+                if unique_io:
+                    if len(unique_io) == 1:
+                        parts.append(unique_io[0])
+                    else:
+                        parts.append(f'{len(unique_io)} I/O errors')
+                        for entry in unique_io[:3]:
+                            parts.append(f'  - {entry}')
+                
+                reason = '\n'.join(parts) if parts else 'SMART/disk warning in system logs'
+                
+                # Keep first sample line for observation recording
+                sample_line = (unique_smart[0] if unique_smart else
+                               unique_io[0] if unique_io else '')
+                
+                disk_issues[dev_path] = {
+                    'status': severity,
+                    'reason': reason,
+                    'device': disk_name,
+                    'smart_lines': unique_smart[:5],
+                    'io_lines': unique_io[:5],
+                    'sample': sample_line,
+                    'source': 'journal',
+                }
+                
+                # Record as disk observation for the permanent history
+                try:
+                    obs_type = 'smart_error' if unique_smart else 'io_error'
+                    # Build a stable signature from the error family, not the volatile details
+                    if unique_smart:
+                        sig_base = 'smart_journal'
+                        # Classify SMART warnings by type
+                        all_text = ' '.join(unique_smart).lower()
+                        if any(kw in all_text for kw in ['reallocat', 'pending', 'uncorrect']):
+                            sig_base = 'smart_sector_issues'
+                        elif 'temperature' in all_text:
+                            sig_base = 'smart_temperature'
+                        elif 'crc' in all_text or 'udma' in all_text:
+                            sig_base = 'smart_crc_errors'
+                        elif 'fail' in all_text:
+                            sig_base = 'smart_test_failed'
+                    else:
+                        sig_base = 'journal_io_error'
                     
-                    # Check for SMART warnings/errors
-                    if 'smart' in line_lower and ('warning' in line_lower or 'error' in line_lower or 'fail' in line_lower):
-                        # Extract disk name using regex for common disk identifiers
-                        disk_match = re.search(r'/dev/(sd[a-z]|nvme\d+n\d+|hd\d+)', line)
-                        if disk_match:
-                            disk_name = disk_match.group(1)
-                            # Prioritize CRITICAL if already warned, otherwise set to WARNING
-                            if disk_name not in disk_issues or disk_issues[f'/dev/{disk_name}']['status'] != 'CRITICAL':
-                                disk_issues[f'/dev/{disk_name}'] = {
-                                    'status': 'WARNING',
-                                    'reason': 'SMART warning detected'
-                                }
+                    obs_sig = f'{sig_base}_{disk_name}'
                     
-                    # Check for specific disk I/O or medium errors
-                    if any(keyword in line_lower for keyword in ['disk error', 'ata error', 'medium error', 'io error']):
-                        disk_match = re.search(r'/dev/(sd[a-z]|nvme\d+n\d+|hd\d+)', line)
-                        if disk_match:
-                            disk_name = disk_match.group(1)
-                            disk_issues[f'/dev/{disk_name}'] = {
-                                'status': 'CRITICAL',
-                                'reason': 'Disk error detected'
-                            }
+                    # Try to get serial for proper cross-referencing
+                    obs_serial = None
+                    try:
+                        sm = subprocess.run(
+                            ['smartctl', '-i', dev_path],
+                            capture_output=True, text=True, timeout=3)
+                        if sm.returncode in (0, 4):
+                            for sline in sm.stdout.split('\n'):
+                                if 'Serial Number' in sline or 'Serial number' in sline:
+                                    obs_serial = sline.split(':')[-1].strip()
+                                    break
+                    except Exception:
+                        pass
+                    
+                    health_persistence.record_disk_observation(
+                        device_name=disk_name,
+                        serial=obs_serial,
+                        error_type=obs_type,
+                        error_signature=obs_sig,
+                        raw_message=f'/dev/{disk_name}: {reason}',
+                        severity=severity.lower(),
+                    )
+                except Exception:
+                    pass
+        
+        except subprocess.TimeoutExpired:
+            print("[HealthMonitor] journalctl timed out in _check_disk_health_from_events")
         except Exception as e:
             print(f"[HealthMonitor] Error checking disk health from events: {e}")
-            # Return empty dict on error, as this check isn't system-critical itself
-            pass
         
         return disk_issues
     
