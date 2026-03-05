@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { HardDrive, Database, AlertTriangle, CheckCircle2, XCircle, Square, Thermometer, Archive } from "lucide-react"
+import { HardDrive, Database, AlertTriangle, CheckCircle2, XCircle, Square, Thermometer, Archive, Info, Clock } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -41,6 +41,22 @@ interface DiskInfo {
     reason: string
     error_type?: string  // 'io' | 'filesystem'
   }
+  observations_count?: number
+}
+
+interface DiskObservation {
+  id: number
+  error_type: string
+  error_signature: string
+  first_occurrence: string
+  last_occurrence: string
+  occurrence_count: number
+  raw_message: string
+  severity: string
+  dismissed: boolean
+  device_name: string
+  serial: string
+  model: string
 }
 
 interface ZFSPool {
@@ -98,6 +114,8 @@ export function StorageOverview() {
   const [loading, setLoading] = useState(true)
   const [selectedDisk, setSelectedDisk] = useState<DiskInfo | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
+  const [diskObservations, setDiskObservations] = useState<DiskObservation[]>([])
+  const [loadingObservations, setLoadingObservations] = useState(false)
 
   const fetchStorageData = async () => {
     try {
@@ -241,10 +259,38 @@ export function StorageOverview() {
     return badgeStyles[diskType]
   }
 
-  const handleDiskClick = (disk: DiskInfo) => {
+  const handleDiskClick = async (disk: DiskInfo) => {
     setSelectedDisk(disk)
     setDetailsOpen(true)
+    setDiskObservations([])
+
+    if (disk.observations_count && disk.observations_count > 0) {
+      setLoadingObservations(true)
+      try {
+        const params = new URLSearchParams()
+        if (disk.name) params.set('device', disk.name)
+        if (disk.serial && disk.serial !== 'Unknown') params.set('serial', disk.serial)
+        const data = await fetchApi<{ observations: DiskObservation[] }>(`/api/storage/observations?${params.toString()}`)
+        setDiskObservations(data.observations || [])
+      } catch {
+        setDiskObservations([])
+      } finally {
+        setLoadingObservations(false)
+      }
+    }
   }
+
+  const formatObsDate = (iso: string) => {
+    if (!iso) return 'N/A'
+    try {
+      const d = new Date(iso)
+      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+        + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+    } catch { return iso }
+  }
+
+  const obsTypeLabel = (t: string) =>
+    ({ smart_error: 'SMART Error', io_error: 'I/O Error', connection_error: 'Connection Error' }[t] || t)
 
   const getStorageTypeBadge = (type: string) => {
     const typeColors: Record<string, string> = {
@@ -778,6 +824,12 @@ export function StorageOverview() {
                             </span>
                           </div>
                         )}
+                        {disk.observations_count && disk.observations_count > 0 && (
+                          <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 gap-1 text-[10px] px-1.5 py-0">
+                            <Info className="h-3 w-3" />
+                            {disk.observations_count}
+                          </Badge>
+                        )}
                         {getHealthBadge(disk.health)}
                       </div>
                     </div>
@@ -858,6 +910,12 @@ export function StorageOverview() {
                             </span>
                           </div>
                         )}
+                        {disk.observations_count && disk.observations_count > 0 && (
+                          <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 gap-1 text-[10px] px-1.5 py-0">
+                            <Info className="h-3 w-3" />
+                            {disk.observations_count}
+                          </Badge>
+                        )}
                         {getHealthBadge(disk.health)}
                       </div>
                     </div>
@@ -925,7 +983,7 @@ export function StorageOverview() {
 
       {/* Disk Details Dialog */}
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <HardDrive className="h-5 w-5" />
@@ -950,7 +1008,15 @@ export function StorageOverview() {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Health Status</p>
-                  <div className="mt-1">{getHealthBadge(selectedDisk.health)}</div>
+                  <div className="flex items-center gap-2 mt-1">
+                    {getHealthBadge(selectedDisk.health)}
+                    {selectedDisk.observations_count && selectedDisk.observations_count > 0 && (
+                      <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 gap-1 text-[10px] px-1.5 py-0">
+                        <Info className="h-3 w-3" />
+                        {selectedDisk.observations_count} obs.
+                      </Badge>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1054,6 +1120,70 @@ export function StorageOverview() {
                   </div>
                 </div>
               </div>
+
+              {/* Observations Section */}
+              {(diskObservations.length > 0 || loadingObservations) && (
+                <div className="border-t pt-4">
+                  <h4 className="font-semibold mb-3 flex items-center gap-2">
+                    <Info className="h-4 w-4 text-blue-400" />
+                    Observations
+                    <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px] px-1.5 py-0">
+                      {diskObservations.length}
+                    </Badge>
+                  </h4>
+                  {loadingObservations ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                      <div className="h-4 w-4 rounded-full border-2 border-transparent border-t-blue-400 animate-spin" />
+                      Loading observations...
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-60 overflow-y-auto">
+                      {diskObservations.map((obs) => (
+                        <div
+                          key={obs.id}
+                          className={`rounded-lg border p-3 text-sm ${
+                            obs.severity === 'critical'
+                              ? 'bg-red-500/5 border-red-500/20'
+                              : 'bg-blue-500/5 border-blue-500/20'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge className={`text-[10px] px-1.5 py-0 ${
+                                obs.severity === 'critical'
+                                  ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                                  : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                              }`}>
+                                {obsTypeLabel(obs.error_type)}
+                              </Badge>
+                              {obs.occurrence_count > 1 && (
+                                <span className="text-xs text-muted-foreground">
+                                  {'Occurred ' + obs.occurrence_count + 'x'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <p className="mt-1.5 text-xs whitespace-pre-line opacity-90 font-mono leading-relaxed">
+                            {obs.raw_message}
+                          </p>
+                          <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {'First: ' + formatObsDate(obs.first_occurrence)}
+                            </span>
+                            {obs.occurrence_count > 1 && (
+                              <span className="flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                {'Last: ' + formatObsDate(obs.last_occurrence)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </DialogContent>

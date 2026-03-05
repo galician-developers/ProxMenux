@@ -1002,16 +1002,25 @@ class HealthMonitor:
                 **{k: v for k, v in val.items() if k not in ('status', 'reason')}
             }
         
+        # ALWAYS add descriptive entries for capabilities this server has.
+        # When everything is OK, they show as OK.  When there are issues,
+        # they still appear so the user can see the full picture (e.g.
+        # LVM is OK even though I/O errors exist on a disk).
+        if 'root_filesystem' not in checks:
+            checks['root_filesystem'] = checks.pop('/', None) or {'status': 'OK', 'detail': 'Mounted read-write, space OK'}
+        if 'io_errors' not in checks:
+            # Only add OK if no disk I/O errors are present in checks
+            has_io = any(v.get('error_count') or 'I/O' in str(v.get('detail', '')) for v in checks.values())
+            if not has_io:
+                checks['io_errors'] = {'status': 'OK', 'detail': 'No I/O errors in dmesg'}
+        if self.capabilities.get('has_smart') and 'smart_health' not in checks:
+            checks['smart_health'] = {'status': 'OK', 'detail': 'No SMART warnings in journal'}
+        if self.capabilities.get('has_zfs') and 'zfs_pools' not in checks:
+            checks['zfs_pools'] = {'status': 'OK', 'detail': 'ZFS pools healthy'}
+        if self.capabilities.get('has_lvm') and 'lvm_volumes' not in checks and 'lvm_check' not in checks:
+            checks['lvm_volumes'] = {'status': 'OK', 'detail': 'LVM volumes OK'}
+        
         if not issues:
-            # Add descriptive OK entries only for capabilities this server actually has
-            checks['root_filesystem'] = checks.get('/', {'status': 'OK', 'detail': 'Mounted read-write, space OK'})
-            checks['io_errors'] = {'status': 'OK', 'detail': 'No I/O errors in dmesg'}
-            if self.capabilities.get('has_smart'):
-                checks['smart_health'] = {'status': 'OK', 'detail': 'No SMART warnings in journal'}
-            if self.capabilities.get('has_zfs'):
-                checks['zfs_pools'] = {'status': 'OK', 'detail': 'ZFS pools healthy'}
-            if self.capabilities.get('has_lvm'):
-                checks['lvm_volumes'] = {'status': 'OK', 'detail': 'LVM volumes OK'}
             return {'status': 'OK', 'checks': checks}
         
         # Determine overall status
@@ -1233,6 +1242,36 @@ class HealthMonitor:
                         if m2:
                             return m2.group(1)
         except (OSError, subprocess.TimeoutExpired):
+            pass
+        
+        # Method 3: Use /sys/block/sd* and trace back to ATA host number
+        # ata8 => host7 (N-1) or host8 depending on controller numbering
+        try:
+            for sd in sorted(os.listdir('/sys/block')):
+                if not sd.startswith('sd'):
+                    continue
+                # /sys/block/sdX/device -> ../../hostN/targetN:0:0/N:0:0:0
+                dev_link = f'/sys/block/{sd}/device'
+                if os.path.islink(dev_link):
+                    real_path = os.path.realpath(dev_link)
+                    # Check if 'ataX' appears in the device path
+                    if f'/{ata_port}/' in real_path or f'/ata{port_num}/' in real_path:
+                        return sd
+                    # Also check host number mapping: ata8 -> host7 (N-1 convention)
+                    for offset in (0, -1):
+                        host_n = int(port_num) + offset
+                        if host_n >= 0 and f'/host{host_n}/' in real_path:
+                            # Verify: check if ataX appears in the chain
+                            parent = real_path
+                            while parent and parent != '/':
+                                parent = os.path.dirname(parent)
+                                if os.path.basename(parent) == ata_port:
+                                    return sd
+                                # Check 1 level: /sys/devices/.../ataX/hostY/...
+                                ata_check = os.path.join(os.path.dirname(parent), ata_port)
+                                if os.path.exists(ata_check):
+                                    return sd
+        except (OSError, IOError, ValueError):
             pass
         
         return ata_port  # Return original if resolution fails
@@ -1483,6 +1522,39 @@ class HealthMonitor:
                         
                         smart_ok = smart_health == 'PASSED'
                         
+                        # Resolve ATA name to block device early so we can use it
+                        # in both record_error details AND record_disk_observation.
+                        resolved_block = disk
+                        resolved_serial = None
+                        if disk.startswith('ata'):
+                            resolved_block = self._resolve_ata_to_disk(disk)
+                            # Get serial from the resolved device
+                            try:
+                                dev_path = f'/dev/{resolved_block}' if resolved_block != disk else None
+                                if dev_path:
+                                    sm = subprocess.run(
+                                        ['smartctl', '-i', dev_path],
+                                        capture_output=True, text=True, timeout=3)
+                                    if sm.returncode in (0, 4):
+                                        for sline in sm.stdout.split('\n'):
+                                            if 'Serial Number' in sline or 'Serial number' in sline:
+                                                resolved_serial = sline.split(':')[-1].strip()
+                                                break
+                            except Exception:
+                                pass
+                        else:
+                            try:
+                                sm = subprocess.run(
+                                    ['smartctl', '-i', f'/dev/{disk}'],
+                                    capture_output=True, text=True, timeout=3)
+                                if sm.returncode in (0, 4):
+                                    for sline in sm.stdout.split('\n'):
+                                        if 'Serial Number' in sline or 'Serial number' in sline:
+                                            resolved_serial = sline.split(':')[-1].strip()
+                                            break
+                            except Exception:
+                                pass
+                        
                         # ── Record disk observation (always, even if transient) ──
                         # Signature must be stable across cycles: strip volatile
                         # data (hex values, counts, timestamps) to dedup properly.
@@ -1493,8 +1565,8 @@ class HealthMonitor:
                             obs_sig = self._make_io_obs_signature(disk, sample)
                             obs_severity = 'critical' if smart_health == 'FAILED' else 'warning'
                             health_persistence.record_disk_observation(
-                                device_name=disk,
-                                serial=None,
+                                device_name=resolved_block,
+                                serial=resolved_serial,
                                 error_type='io_error',
                                 error_signature=obs_sig,
                                 raw_message=f'{display}: {error_count} I/O event(s) in 5 min (SMART: {smart_health})\n{sample}',
@@ -1551,6 +1623,8 @@ class HealthMonitor:
                                 severity=severity,
                                 reason=reason,
                                 details={'disk': disk, 'device': display,
+                                         'block_device': resolved_block,
+                                         'serial': resolved_serial or '',
                                          'error_count': error_count,
                                          'smart_status': smart_health,
                                          'sample': sample, 'dismissable': False}
@@ -1584,6 +1658,8 @@ class HealthMonitor:
                                     severity=severity,
                                     reason=reason,
                                     details={'disk': disk, 'device': display,
+                                             'block_device': resolved_block,
+                                             'serial': resolved_serial or '',
                                              'error_count': error_count,
                                              'smart_status': smart_health,
                                              'sample': sample, 'dismissable': True}

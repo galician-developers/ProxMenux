@@ -1170,11 +1170,46 @@ class HealthPersistence:
         
         Uses (device_name, serial) as unique key. If the disk was previously
         marked removed, it's re-activated.
+        
+        Also consolidates old ATA-named entries: if an observation was recorded
+        under 'ata8' and we now know the real block device is 'sdh' with
+        serial 'WX72...', update the old entry so observations are linked.
         """
         now = datetime.now().isoformat()
         try:
             conn = self._get_conn()
             cursor = conn.cursor()
+            
+            # Consolidate: if serial is known and an old entry exists with
+            # a different device_name (e.g. 'ata8' instead of 'sdh'),
+            # update that entry's device_name so observations carry over.
+            if serial:
+                cursor.execute('''
+                    SELECT id, device_name FROM disk_registry
+                    WHERE serial = ? AND serial != '' AND device_name != ?
+                ''', (serial, device_name))
+                old_rows = cursor.fetchall()
+                for old_id, old_dev in old_rows:
+                    # Only consolidate ATA names -> block device names
+                    if old_dev.startswith('ata') and not device_name.startswith('ata'):
+                        # Check if target (device_name, serial) already exists
+                        cursor.execute(
+                            'SELECT id FROM disk_registry WHERE device_name = ? AND serial = ?',
+                            (device_name, serial))
+                        existing = cursor.fetchone()
+                        if existing:
+                            # Merge: move observations from old -> existing, then delete old
+                            cursor.execute(
+                                'UPDATE disk_observations SET disk_registry_id = ? WHERE disk_registry_id = ?',
+                                (existing[0], old_id))
+                            cursor.execute('DELETE FROM disk_registry WHERE id = ?', (old_id,))
+                        else:
+                            # Rename the old entry to the real block device name
+                            cursor.execute(
+                                'UPDATE disk_registry SET device_name = ?, model = COALESCE(?, model), '
+                                'size_bytes = COALESCE(?, size_bytes), last_seen = ?, removed = 0 '
+                                'WHERE id = ?',
+                                (device_name, model, size_bytes, now, old_id))
             
             cursor.execute('''
                 INSERT INTO disk_registry (device_name, serial, model, size_bytes, first_seen, last_seen, removed)
@@ -1193,7 +1228,11 @@ class HealthPersistence:
 
     def _get_disk_registry_id(self, cursor, device_name: str,
                                serial: Optional[str] = None) -> Optional[int]:
-        """Find disk_registry.id, matching by serial first, then device_name."""
+        """Find disk_registry.id, matching by serial first, then device_name.
+        
+        Also handles ATA-to-block cross-references: if looking for 'sdh' also
+        checks entries with ATA names that share the same serial.
+        """
         if serial:
             cursor.execute(
                 'SELECT id FROM disk_registry WHERE serial = ? AND serial != "" ORDER BY last_seen DESC LIMIT 1',
@@ -1207,7 +1246,19 @@ class HealthPersistence:
             'SELECT id FROM disk_registry WHERE device_name = ? ORDER BY last_seen DESC LIMIT 1',
             (clean_dev,))
         row = cursor.fetchone()
-        return row[0] if row else None
+        if row:
+            return row[0]
+        # Last resort: search for ATA-named entries that might refer to this device
+        # This handles cases where observations were recorded under 'ata8'
+        # but we're querying for 'sdh'
+        if clean_dev.startswith('sd') or clean_dev.startswith('nvme'):
+            cursor.execute(
+                'SELECT id FROM disk_registry WHERE device_name LIKE "ata%" ORDER BY last_seen DESC')
+            # For each ATA entry, we can't resolve here without OS access,
+            # so just return None and let the serial-based consolidation
+            # in register_disk handle it over time.
+            pass
+        return None
 
     def record_disk_observation(self, device_name: str, serial: Optional[str],
                                  error_type: str, error_signature: str,

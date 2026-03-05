@@ -1253,21 +1253,79 @@ def get_storage_info():
                         details = {}
                 
                 err_device = details.get('disk', '')
+                # Prefer the pre-resolved block device name (e.g. 'sdh' instead of 'ata8')
+                block_device = details.get('block_device', '')
+                err_serial = details.get('serial', '')
                 error_count = details.get('error_count', 0)
                 sample = details.get('sample', '')
                 severity = err.get('severity', 'WARNING')
                 
                 # Match error to physical disk.
-                # err_device can be 'sda', 'nvme0n1', or 'ata8' (if resolution failed)
+                # Priority: block_device > serial > err_device > ATA resolution
                 matched_disk = None
-                if err_device in physical_disks:
+                
+                # 1. Direct match via pre-resolved block_device
+                if block_device and block_device in physical_disks:
+                    matched_disk = block_device
+                
+                # 2. Match by serial (most reliable across reboots/device renaming)
+                if not matched_disk and err_serial:
+                    for dk, dinfo in physical_disks.items():
+                        if dinfo.get('serial', '').lower() == err_serial.lower():
+                            matched_disk = dk
+                            break
+                
+                # 3. Direct match via err_device
+                if not matched_disk and err_device in physical_disks:
                     matched_disk = err_device
-                else:
-                    # Try partial match: 'sda' matches disk 'sda'
+                
+                # 4. Partial match
+                if not matched_disk:
                     for dk in physical_disks:
                         if dk == err_device or err_device.startswith(dk):
                             matched_disk = dk
                             break
+                
+                # 5. ATA name resolution as last resort: 'ata8' -> 'sdh' via /sys
+                if not matched_disk and err_device.startswith('ata'):
+                    # Method A: Use /sys/class/ata_port to find the block device
+                    try:
+                        ata_path = f'/sys/class/ata_port/{err_device}'
+                        if os.path.exists(ata_path):
+                            device_path = os.path.realpath(ata_path)
+                            for root, dirs, files in os.walk(os.path.dirname(device_path)):
+                                if 'block' in dirs:
+                                    devs = os.listdir(os.path.join(root, 'block'))
+                                    for bd in devs:
+                                        if bd in physical_disks:
+                                            matched_disk = bd
+                                            break
+                                if matched_disk:
+                                    break
+                    except (OSError, IOError):
+                        pass
+                    # Method B: Walk /sys/block/sd* and check if ataX in device path
+                    if not matched_disk:
+                        try:
+                            for sd in os.listdir('/sys/block'):
+                                if not sd.startswith('sd'):
+                                    continue
+                                dev_link = f'/sys/block/{sd}/device'
+                                if os.path.islink(dev_link):
+                                    real_p = os.path.realpath(dev_link)
+                                    if f'/{err_device}/' in real_p:
+                                        if sd in physical_disks:
+                                            matched_disk = sd
+                                            break
+                        except (OSError, IOError):
+                            pass
+                    # Method C: Check error details for display name hint
+                    if not matched_disk:
+                        display = details.get('display', '')
+                        if display.startswith('/dev/'):
+                            dev_hint = display.replace('/dev/', '')
+                            if dev_hint in physical_disks:
+                                matched_disk = dev_hint
                 
                 if matched_disk:
                     physical_disks[matched_disk]['io_errors'] = {
@@ -1421,17 +1479,22 @@ def get_storage_info():
         # ── Register disks in observation system + enrich with observation counts ──
         try:
             active_dev_names = list(physical_disks.keys())
-            obs_counts = health_persistence.get_disks_observation_counts()
             
+            # Register disks FIRST so that old ATA-named entries get
+            # consolidated into block device names via serial matching.
             for disk_name, disk_info in physical_disks.items():
-                # Register each disk we see
                 health_persistence.register_disk(
                     device_name=disk_name,
                     serial=disk_info.get('serial', ''),
                     model=disk_info.get('model', ''),
                     size_bytes=disk_info.get('size_bytes'),
                 )
-                
+            
+            # Fetch observation counts AFTER registration so consolidated
+            # entries are already merged (ata8 -> sdh).
+            obs_counts = health_persistence.get_disks_observation_counts()
+            
+            for disk_name, disk_info in physical_disks.items():
                 # Attach observation count: try serial match first, then device name
                 serial = disk_info.get('serial', '')
                 count = obs_counts.get(f'serial:{serial}', 0) if serial else 0
