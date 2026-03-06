@@ -667,12 +667,12 @@ class JournalWatcher:
             # ── Gate 2: 24-hour dedup per device ──
             now = time.time()
             last_notified = self._disk_io_notified.get(resolved, 0)
-        if now - last_notified < self._DISK_IO_COOLDOWN:
-            return  # Already notified for this disk recently
-        self._disk_io_notified[resolved] = now
-        self._save_disk_io_notified(resolved, now)
-        
-        # ── Build enriched notification ──
+            if now - last_notified < self._DISK_IO_COOLDOWN:
+                return  # Already notified for this disk recently
+            self._disk_io_notified[resolved] = now
+            self._save_disk_io_notified(resolved, now)
+            
+            # ── Build enriched notification ──
             device_info = self._identify_block_device(resolved)
             
             parts = []
