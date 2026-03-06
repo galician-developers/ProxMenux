@@ -177,16 +177,26 @@ const generateLatencyReport = (report: ReportData) => {
   
   let chartSvg = '<p style="text-align:center;color:#64748b;padding:20px;">Not enough data points for chart</p>'
   if (chartData.length >= 2) {
-    const minVal = Math.min(...chartData)
-    const maxVal = Math.max(...chartData)
-    const range = maxVal - minVal || 1
+    const rawMin = Math.min(...chartData)
+    const rawMax = Math.max(...chartData)
+    // Ensure a minimum range of 10ms or 20% of the average to avoid flat lines
+    const avgVal = chartData.reduce((a, b) => a + b, 0) / chartData.length
+    const minRange = Math.max(10, avgVal * 0.2)
+    const range = Math.max(rawMax - rawMin, minRange)
+    // Center the data if range was expanded
+    const midPoint = (rawMin + rawMax) / 2
+    const minVal = midPoint - range / 2
+    const maxVal = midPoint + range / 2
+    
     const width = 700
     const height = 120
-    const padding = 30
+    const padding = 40
+    const chartHeight = height - padding * 2
+    const chartWidth = width - padding * 2
     
     const points = chartData.map((val, i) => {
-      const x = padding + (i / (chartData.length - 1)) * (width - padding * 2)
-      const y = height - padding - ((val - minVal) / range) * (height - padding * 2)
+      const x = padding + (i / (chartData.length - 1)) * chartWidth
+      const y = padding + chartHeight - ((val - minVal) / range) * chartHeight
       return `${x},${y}`
     }).join(' ')
     
@@ -203,9 +213,9 @@ const generateLatencyReport = (report: ReportData) => {
         <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height - padding}" stroke="#e2e8f0" stroke-width="1"/>
         <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="#e2e8f0" stroke-width="1"/>
         <line x1="${padding}" y1="${height / 2}" x2="${width - padding}" y2="${height / 2}" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="4"/>
-        <text x="${padding - 5}" y="${padding + 4}" font-size="9" fill="#64748b" text-anchor="end">${maxVal.toFixed(0)}ms</text>
-        <text x="${padding - 5}" y="${height / 2 + 3}" font-size="9" fill="#64748b" text-anchor="end">${((minVal + maxVal) / 2).toFixed(0)}ms</text>
-        <text x="${padding - 5}" y="${height - padding + 4}" font-size="9" fill="#64748b" text-anchor="end">${minVal.toFixed(0)}ms</text>
+        <text x="${padding - 5}" y="${padding + 4}" font-size="9" fill="#64748b" text-anchor="end">${Math.round(maxVal)}ms</text>
+        <text x="${padding - 5}" y="${height / 2 + 3}" font-size="9" fill="#64748b" text-anchor="end">${Math.round((minVal + maxVal) / 2)}ms</text>
+        <text x="${padding - 5}" y="${height - padding + 4}" font-size="9" fill="#64748b" text-anchor="end">${Math.round(minVal)}ms</text>
         <polygon points="${areaPoints}" fill="url(#areaGrad)"/>
         <polyline points="${points}" fill="none" stroke="${statusColor}" stroke-width="2"/>
         <text x="${width / 2}" y="${height - 5}" font-size="9" fill="#64748b" text-anchor="middle">${chartData.length} samples</text>
@@ -223,7 +233,7 @@ const generateLatencyReport = (report: ReportData) => {
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1a2e; background: #fff; font-size: 13px; line-height: 1.5; }
 
-  @page { margin: 15mm 15mm 20mm 15mm; size: A4; }
+  @page { margin: 10mm 12mm 12mm 12mm; size: A4; }
   @media print {
     .no-print { display: none !important; }
     .page-break { page-break-before: always; }
@@ -240,7 +250,7 @@ const generateLatencyReport = (report: ReportData) => {
     .rpt-footer { color: #4b5563; }
   }
   @media screen {
-    body { max-width: 1000px; margin: 0 auto; padding: 24px 32px; padding-top: 64px; }
+    body { max-width: 900px; margin: 0 auto; padding: 16px 20px; padding-top: 56px; }
   }
 
   /* Top bar for screen only */
@@ -636,36 +646,6 @@ ${report.isRealtime && report.realtimeResults.length > 0 ? `
     ProxMenux Monitor - Network Performance Report
   </div>
   <div>Generated: ${now} | Report ID: PMXL-${Date.now().toString(36).toUpperCase()}</div>
-</div>
-    <div class="card">
-      <div class="card-label">Samples per Test</div>
-      <div class="card-value" style="font-size:12px;">3 consecutive pings</div>
-    </div>
-    <div class="card">
-      <div class="card-label">Target</div>
-      <div class="card-value" style="font-size:12px;">${report.targetLabel}</div>
-    </div>
-    <div class="card">
-      <div class="card-label">Target IP</div>
-      <div class="card-value" style="font-size:12px;">${report.target === 'gateway' ? 'Default Gateway' : report.target === 'cloudflare' ? '1.1.1.1' : '8.8.8.8'}</div>
-    </div>
-  </div>
-  <div class="info-box">
-    <h4>Performance Rating</h4>
-    <p>${
-      statusText === 'Excellent' ? 'Network latency is excellent. No action required.' :
-      statusText === 'Good' ? 'Network latency is within acceptable parameters.' :
-      statusText === 'Fair' ? 'Network latency is elevated. Consider investigating network congestion or routing issues.' :
-      statusText === 'Poor' ? 'Network latency is critically high. Immediate investigation recommended.' :
-      'Unable to determine network status.'
-    }</p>
-  </div>
-</div>
-
-<!-- Footer -->
-<div class="rpt-footer">
-  <div>Generated by ProxMenux Monitor</div>
-  <div>Network Latency Report | ${now}</div>
 </div>
 
 </body>
