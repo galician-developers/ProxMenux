@@ -260,11 +260,67 @@ const generateLatencyReport = (report: ReportData) => {
     font-size: 13px;
   }
   .top-bar button {
-    background: #06b6d4; color: #fff; border: none; padding: 8px 20px; border-radius: 6px;
-    font-size: 13px; font-weight: 600; cursor: pointer;
+  background: #06b6d4; color: #fff; border: none; padding: 8px 20px; border-radius: 6px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
   }
   .top-bar button:hover { background: #0891b2; }
+  .top-bar .close-btn {
+    background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); 
+    padding: 6px 12px; border-radius: 6px; display: flex; align-items: center; gap: 6px; 
+    cursor: pointer; font-size: 13px; font-weight: 500;
+  }
+  .top-bar .close-btn:hover { background: rgba(255,255,255,0.2); }
+  .top-bar .close-btn .close-text { display: none; }
+  .hide-mobile { }
   @media print { .top-bar { display: none; } body { padding-top: 0; } }
+  @media screen and (max-width: 600px) {
+    .top-bar { padding: 10px 12px; }
+    .hide-mobile { display: none !important; }
+    .top-bar .close-btn { padding: 8px 16px; font-size: 14px; }
+    .top-bar .close-btn .close-text { display: inline; }
+    body { padding: 12px; padding-top: 60px; }
+    
+    /* Header responsive */
+    .rpt-header { flex-direction: column; gap: 12px; text-align: center; }
+    .rpt-header-left { flex-direction: column; gap: 8px; }
+    .rpt-header-left img { width: 50px; height: 50px; }
+    .rpt-header-left h1 { font-size: 20px; }
+    .rpt-header-right { text-align: center; font-size: 11px; }
+    
+    /* Executive Summary responsive */
+    .exec-box { flex-direction: column; gap: 16px; padding: 16px; }
+    .latency-gauge { width: 100%; }
+    .latency-gauge svg { width: 140px; height: 94px; }
+    .gauge-num { font-size: 28px; }
+    .exec-text h3 { font-size: 16px; text-align: center; }
+    .exec-text p { font-size: 13px; text-align: center; }
+    .latency-range { justify-content: center; flex-wrap: wrap; gap: 16px; }
+    .range-item { align-items: center; text-align: center; }
+    
+    /* Grids responsive */
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .card { padding: 10px; }
+    .card-value { font-size: 16px; }
+    .card-label { font-size: 9px; }
+    
+    /* Section titles */
+    .section-title { font-size: 12px; }
+    
+    /* Tables responsive */
+    .chk-tbl { font-size: 11px; }
+    .chk-tbl th, .chk-tbl td { padding: 6px 8px; }
+    
+    /* Thresholds */
+    .threshold-item p { font-size: 12px; }
+    
+    /* Info box */
+    .info-box { padding: 12px; }
+    .info-box h4 { font-size: 12px; }
+    .info-box p { font-size: 12px; }
+    
+    /* Footer */
+    .rpt-footer { flex-direction: column; gap: 4px; text-align: center; font-size: 9px; }
+  }
 
   /* Header */
   .rpt-header {
@@ -427,16 +483,20 @@ function pmxPrint(){
   }
 }
 </script>
-<div class="top-bar no-print">
-  <div style="display:flex;align-items:center;gap:12px;">
-    <strong>ProxMenux Network Latency Report</strong>
-    <span id="pmx-print-hint" style="font-size:11px;opacity:0.7;">Review the report, then print or save as PDF</span>
+  <div class="top-bar no-print">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button onclick="window.close();window.history.back();" class="close-btn" title="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        <span class="close-text">Close</span>
+      </button>
+      <strong class="hide-mobile">ProxMenux Network Latency Report</strong>
+      <span id="pmx-print-hint" class="hide-mobile" style="font-size:11px;opacity:0.7;">Review the report, then print or save as PDF</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span class="hide-mobile" style="font-size:11px;opacity:0.5;">⌘P / Ctrl+P</span>
+      <button onclick="pmxPrint()">Print / Save as PDF</button>
+    </div>
   </div>
-  <div style="display:flex;align-items:center;gap:8px;">
-    <span style="font-size:11px;opacity:0.5;">⌘P / Ctrl+P</span>
-    <button onclick="pmxPrint()">Print / Save as PDF</button>
-  </div>
-</div>
 
 <!-- Header -->
 <div class="rpt-header">
@@ -813,50 +873,50 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-background border-border">
         <DialogHeader>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <DialogTitle className="flex items-center gap-2 text-foreground">
-              <Wifi className="h-5 w-5 text-blue-500" />
-              Network Latency
-            </DialogTitle>
-            <div className="flex flex-wrap items-center gap-2">
-              <Select value={target} onValueChange={setTarget}>
-                <SelectTrigger className="w-[180px] h-8 text-xs">
+          <DialogTitle className="flex items-center gap-2 text-foreground">
+            <Wifi className="h-5 w-5 text-blue-500" />
+            Network Latency
+          </DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-wrap items-center gap-2 mt-1">
+            <Select value={target} onValueChange={setTarget}>
+              <SelectTrigger className="w-[180px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TARGET_OPTIONS.map(opt => (
+                  <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {!isRealtime && (
+              <Select value={timeframe} onValueChange={setTimeframe}>
+                <SelectTrigger className="w-[100px] h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TARGET_OPTIONS.map(opt => (
+                  {TIMEFRAME_OPTIONS.map(opt => (
                     <SelectItem key={opt.value} value={opt.value} className="text-xs">
                       {opt.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {!isRealtime && (
-                <Select value={timeframe} onValueChange={setTimeframe}>
-                  <SelectTrigger className="w-[100px] h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TIMEFRAME_OPTIONS.map(opt => (
-                      <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-              {isRealtime && (
-                <>
-                  {realtimeTesting ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={stopRealtimeTest}
-                      className="gap-2 text-red-500 border-red-500/30 hover:bg-red-500/10"
-                    >
-                      <Square className="h-3 w-3 fill-current" />
-                      Stop
-                    </Button>
+            )}
+            {isRealtime && (
+              <>
+                {realtimeTesting ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={stopRealtimeTest}
+                    className="gap-2 text-red-500 border-red-500/30 hover:bg-red-500/10"
+                  >
+                    <Square className="h-3 w-3 fill-current" />
+                    Stop
+                  </Button>
                   ) : (
                     <Button
                       variant="outline"
@@ -870,28 +930,26 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
                   )}
                 </>
               )}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => generateLatencyReport({
-                  target,
-                  targetLabel: TARGET_OPTIONS.find(t => t.value === target)?.label || target,
-                  isRealtime,
-                  stats,
-                  realtimeResults,
-                  data,
-                  timeframe,
-                  testDuration: isRealtime ? testDuration : undefined,
-                })}
-                disabled={isRealtime ? realtimeResults.length === 0 : data.length === 0}
-                className="gap-2"
-              >
-                <FileText className="h-4 w-4" />
-                Report
-              </Button>
-            </div>
-          </div>
-        </DialogHeader>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => generateLatencyReport({
+              target,
+              targetLabel: TARGET_OPTIONS.find(t => t.value === target)?.label || target,
+              isRealtime,
+              stats,
+              realtimeResults,
+              data,
+              timeframe,
+              testDuration: isRealtime ? testDuration : undefined,
+            })}
+            disabled={isRealtime ? realtimeResults.length === 0 : data.length === 0}
+            className="gap-2"
+          >
+            <FileText className="h-4 w-4" />
+            Report
+          </Button>
+        </div>
 
         {/* Progress bar for realtime test */}
         {isRealtime && realtimeTesting && (
