@@ -170,6 +170,49 @@ const generateLatencyReport = (report: ReportData) => {
     endTime: new Date(report.data[report.data.length - 1].timestamp * 1000).toLocaleString(),
   } : null
 
+  // Generate chart SVG
+  const chartData = report.isRealtime 
+    ? report.realtimeResults.map(r => r.latency_avg || 0)
+    : report.data.map(d => d.value || 0)
+  
+  let chartSvg = '<p style="text-align:center;color:#64748b;padding:20px;">Not enough data points for chart</p>'
+  if (chartData.length >= 2) {
+    const minVal = Math.min(...chartData)
+    const maxVal = Math.max(...chartData)
+    const range = maxVal - minVal || 1
+    const width = 700
+    const height = 120
+    const padding = 30
+    
+    const points = chartData.map((val, i) => {
+      const x = padding + (i / (chartData.length - 1)) * (width - padding * 2)
+      const y = height - padding - ((val - minVal) / range) * (height - padding * 2)
+      return `${x},${y}`
+    }).join(' ')
+    
+    const areaPoints = `${padding},${height - padding} ${points} ${width - padding},${height - padding}`
+    
+    chartSvg = `
+      <svg width="100%" viewBox="0 0 ${width} ${height}" style="display:block;">
+        <defs>
+          <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="${statusColor}" stop-opacity="0.3"/>
+            <stop offset="100%" stop-color="${statusColor}" stop-opacity="0.05"/>
+          </linearGradient>
+        </defs>
+        <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height - padding}" stroke="#e2e8f0" stroke-width="1"/>
+        <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="#e2e8f0" stroke-width="1"/>
+        <line x1="${padding}" y1="${height / 2}" x2="${width - padding}" y2="${height / 2}" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="4"/>
+        <text x="${padding - 5}" y="${padding + 4}" font-size="9" fill="#64748b" text-anchor="end">${maxVal.toFixed(0)}ms</text>
+        <text x="${padding - 5}" y="${height / 2 + 3}" font-size="9" fill="#64748b" text-anchor="end">${((minVal + maxVal) / 2).toFixed(0)}ms</text>
+        <text x="${padding - 5}" y="${height - padding + 4}" font-size="9" fill="#64748b" text-anchor="end">${minVal.toFixed(0)}ms</text>
+        <polygon points="${areaPoints}" fill="url(#areaGrad)"/>
+        <polyline points="${points}" fill="none" stroke="${statusColor}" stroke-width="2"/>
+        <text x="${width / 2}" y="${height - 5}" font-size="9" fill="#64748b" text-anchor="middle">${chartData.length} samples</text>
+      </svg>
+    `
+  }
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -248,11 +291,22 @@ const generateLatencyReport = (report: ReportData) => {
   .exec-text h3 { font-size: 16px; margin-bottom: 4px; }
   .exec-text p { font-size: 12px; color: #64748b; line-height: 1.5; }
 
-  /* Score bar */
-  .score-bar-wrap { margin: 10px 0 6px; }
-  .score-bar-bg { height: 10px; background: #e2e8f0; border-radius: 5px; position: relative; overflow: hidden; }
-  .score-bar-fill { height: 100%; border-radius: 5px; }
-  .score-bar-labels { display: flex; justify-content: space-between; font-size: 9px; color: #94a3b8; margin-top: 3px; }
+  /* Latency gauge */
+  .latency-gauge {
+    display: flex; flex-direction: column; align-items: center; flex-shrink: 0; width: 160px;
+  }
+  .gauge-value { display: flex; align-items: baseline; gap: 2px; margin-top: -10px; }
+  .gauge-num { font-size: 32px; font-weight: 800; line-height: 1; }
+  .gauge-unit { font-size: 14px; font-weight: 600; opacity: 0.8; }
+  .gauge-status { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-top: 2px; }
+  
+  /* Latency range display */
+  .latency-range {
+    display: flex; gap: 24px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0;
+  }
+  .range-item { display: flex; flex-direction: column; gap: 2px; }
+  .range-label { font-size: 10px; font-weight: 600; color: #94a3b8; text-transform: uppercase; }
+  .range-value { font-size: 16px; font-weight: 700; }
 
   /* Grids */
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
@@ -296,6 +350,58 @@ const generateLatencyReport = (report: ReportData) => {
   .rpt-footer {
     margin-top: 32px; padding-top: 12px; border-top: 1px solid #e2e8f0;
     display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8;
+  }
+
+  /* Print styles */
+  @media print {
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body { padding: 10mm; font-size: 10pt; }
+    .no-print { display: none !important; }
+    .container { max-width: 100%; padding: 0; }
+    
+    /* Prevent page breaks inside elements */
+    .section { page-break-inside: avoid; break-inside: avoid; }
+    .exec-box { page-break-inside: avoid; break-inside: avoid; }
+    .card { page-break-inside: avoid; break-inside: avoid; }
+    .threshold-item { page-break-inside: avoid; break-inside: avoid; }
+    .info-box { page-break-inside: avoid; break-inside: avoid; }
+    .chk-tbl { page-break-inside: avoid; break-inside: avoid; }
+    .latency-gauge { page-break-inside: avoid; break-inside: avoid; }
+    .latency-range { page-break-inside: avoid; break-inside: avoid; }
+    
+    /* Force page breaks before major sections if needed */
+    .section { page-break-before: auto; }
+    
+    /* Keep headers with their content */
+    .section-title { page-break-after: avoid; break-after: avoid; }
+    
+    /* Ensure grids don't break awkwardly */
+    .grid-2, .grid-3, .grid-4 { page-break-inside: avoid; break-inside: avoid; }
+    
+    /* Table rows - try to keep together */
+    .chk-tbl tr { page-break-inside: avoid; break-inside: avoid; }
+    .chk-tbl thead { display: table-header-group; }
+    
+    /* Footer always at bottom */
+    .rpt-footer { 
+      page-break-inside: avoid; break-inside: avoid;
+      margin-top: 20px;
+    }
+    
+    /* Reduce spacing for print */
+    .section { margin-bottom: 15px; }
+    .exec-box { padding: 12px; }
+    
+    /* Ensure SVG charts print correctly */
+    svg { max-width: 100%; height: auto; }
+  }
+
+  /* Mobile print adjustments */
+  @media print and (max-width: 600px) {
+    .exec-box { flex-direction: column; gap: 15px; }
+    .latency-gauge { width: 100%; }
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr 1fr; }
+    .latency-range { flex-wrap: wrap; gap: 12px; }
   }
 </style>
 </head>
@@ -343,10 +449,27 @@ function pmxPrint(){
 <div class="section">
   <div class="section-title">1. Executive Summary</div>
   <div class="exec-box">
-    <div class="score-ring" style="border-color:${statusColor};color:${statusColor};">
-      <div class="score-num">${report.isRealtime ? (realtimeStats?.current?.toFixed(0) ?? 'N/A') : report.stats.current}</div>
-      <div class="score-unit">ms</div>
-      <div class="score-lbl">${statusText}</div>
+    <div class="latency-gauge">
+      <svg viewBox="0 0 120 80" width="160" height="107">
+        <!-- Gauge background arc -->
+        <path d="M 10 70 A 50 50 0 0 1 110 70" fill="none" stroke="#e2e8f0" stroke-width="8" stroke-linecap="round"/>
+        <!-- Colored segments: Excellent (green), Good (green), Fair (yellow), Poor (red) -->
+        <path d="M 10 70 A 50 50 0 0 1 35 28" fill="none" stroke="#16a34a" stroke-width="8" stroke-linecap="round"/>
+        <path d="M 35 28 A 50 50 0 0 1 60 20" fill="none" stroke="#22c55e" stroke-width="8"/>
+        <path d="M 60 20 A 50 50 0 0 1 85 28" fill="none" stroke="#ca8a04" stroke-width="8"/>
+        <path d="M 85 28 A 50 50 0 0 1 110 70" fill="none" stroke="#dc2626" stroke-width="8" stroke-linecap="round"/>
+        <!-- Needle -->
+        <line x1="60" y1="70" x2="${60 + 40 * Math.cos(Math.PI - (Math.min(300, report.isRealtime ? (realtimeStats?.avg ?? 0) : parseFloat(String(report.stats.avg))) / 300) * Math.PI)}" y2="${70 - 40 * Math.sin(Math.PI - (Math.min(300, report.isRealtime ? (realtimeStats?.avg ?? 0) : parseFloat(String(report.stats.avg))) / 300) * Math.PI)}" stroke="${statusColor}" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="60" cy="70" r="6" fill="${statusColor}"/>
+        <!-- Labels -->
+        <text x="8" y="78" font-size="7" fill="#64748b">0</text>
+        <text x="105" y="78" font-size="7" fill="#64748b">300+</text>
+      </svg>
+      <div class="gauge-value" style="color:${statusColor};">
+        <span class="gauge-num">${report.isRealtime ? (realtimeStats?.avg?.toFixed(0) ?? 'N/A') : report.stats.avg}</span>
+        <span class="gauge-unit">ms</span>
+      </div>
+      <div class="gauge-status" style="color:${statusColor};">${statusText}</div>
     </div>
     <div class="exec-text">
       <h3>Network Latency Assessment${report.isRealtime ? ' (Real-time)' : ''}</h3>
@@ -360,16 +483,19 @@ function pmxPrint(){
              Average latency: <strong style="color:${statusColor}">${report.stats.avg} ms</strong>.`
         }
       </p>
-      <div class="score-bar-wrap">
-        <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:3px;">
-          <span style="color:#64748b;">Min: ${report.isRealtime ? (realtimeStats?.min?.toFixed(1) ?? 'N/A') : report.stats.min} ms</span>
-          <span style="color:#64748b;">Avg: ${report.isRealtime ? (realtimeStats?.avg?.toFixed(1) ?? 'N/A') : report.stats.avg} ms</span>
-          <span style="color:${statusColor};font-weight:700;">Max: ${report.isRealtime ? (realtimeStats?.max?.toFixed(1) ?? 'N/A') : report.stats.max} ms</span>
+      <div class="latency-range">
+        <div class="range-item">
+          <span class="range-label">Minimum</span>
+          <span class="range-value" style="color:#16a34a;">${report.isRealtime ? (realtimeStats?.min?.toFixed(1) ?? 'N/A') : report.stats.min} ms</span>
         </div>
-        <div class="score-bar-bg">
-          <div class="score-bar-fill" style="width:${Math.min(100, ((report.isRealtime ? (realtimeStats?.avg ?? 0) : report.stats.avg) / 300) * 100)}%;background:${statusColor};"></div>
+        <div class="range-item">
+          <span class="range-label">Average</span>
+          <span class="range-value" style="color:${statusColor};">${report.isRealtime ? (realtimeStats?.avg?.toFixed(1) ?? 'N/A') : report.stats.avg} ms</span>
         </div>
-        <div class="score-bar-labels"><span>0ms - Excellent</span><span>100ms - Fair</span><span>200ms - Poor</span><span>300ms+</span></div>
+        <div class="range-item">
+          <span class="range-label">Maximum</span>
+          <span class="range-value" style="color:#dc2626;">${report.isRealtime ? (realtimeStats?.max?.toFixed(1) ?? 'N/A') : report.stats.max} ms</span>
+        </div>
       </div>
     </div>
   </div>
@@ -441,83 +567,17 @@ ${report.isRealtime && report.realtimeResults.length > 0 ? `
 </div>
 ` : ''}
 
-<!-- Reference Thresholds -->
-<div class="section">
-  <div class="section-title">${report.isRealtime ? '4' : '3'}. Reference Thresholds</div>
-  <div class="threshold-item">
-    <div class="threshold-dot" style="background:#16a34a;"></div>
-    <p><strong>Excellent (&lt; 50ms):</strong> Optimal for real-time applications, gaming, and video calls.</p>
-  </div>
-  <div class="threshold-item">
-    <div class="threshold-dot" style="background:#16a34a;"></div>
-    <p><strong>Good (50-100ms):</strong> Acceptable for most applications with minimal impact.</p>
-  </div>
-  <div class="threshold-item">
-    <div class="threshold-dot" style="background:#ca8a04;"></div>
-    <p><strong>Fair (100-200ms):</strong> Noticeable delay. May affect VoIP and interactive applications.</p>
-  </div>
-  <div class="threshold-item">
-    <div class="threshold-dot" style="background:#dc2626;"></div>
-    <p><strong>Poor (&gt; 200ms):</strong> Significant latency. Investigation recommended.</p>
-  </div>
-</div>
-
 <!-- Latency Chart -->
 <div class="section">
-  <div class="section-title">\${report.isRealtime ? '4' : '3'}. Latency Graph</div>
+  <div class="section-title">${report.isRealtime ? '4' : '3'}. Latency Graph</div>
   <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;">
-    \${(() => {
-      const chartData = report.isRealtime 
-        ? report.realtimeResults.map(r => r.latency_avg || 0)
-        : report.data.map(d => d.value || 0);
-      if (chartData.length < 2) return '<p style="text-align:center;color:#64748b;padding:20px;">Not enough data points for chart</p>';
-      
-      const minVal = Math.min(...chartData);
-      const maxVal = Math.max(...chartData);
-      const range = maxVal - minVal || 1;
-      const width = 700;
-      const height = 120;
-      const padding = 30;
-      
-      const points = chartData.map((val, i) => {
-        const x = padding + (i / (chartData.length - 1)) * (width - padding * 2);
-        const y = height - padding - ((val - minVal) / range) * (height - padding * 2);
-        return \`\${x},\${y}\`;
-      }).join(' ');
-      
-      const areaPoints = \`\${padding},\${height - padding} \${points} \${width - padding},\${height - padding}\`;
-      
-      return \`
-        <svg width="100%" viewBox="0 0 \${width} \${height}" style="display:block;">
-          <defs>
-            <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="\${statusColor}" stop-opacity="0.3"/>
-              <stop offset="100%" stop-color="\${statusColor}" stop-opacity="0.05"/>
-            </linearGradient>
-          </defs>
-          <!-- Grid lines -->
-          <line x1="\${padding}" y1="\${padding}" x2="\${padding}" y2="\${height - padding}" stroke="#e2e8f0" stroke-width="1"/>
-          <line x1="\${padding}" y1="\${height - padding}" x2="\${width - padding}" y2="\${height - padding}" stroke="#e2e8f0" stroke-width="1"/>
-          <line x1="\${padding}" y1="\${height / 2}" x2="\${width - padding}" y2="\${height / 2}" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="4"/>
-          <!-- Y-axis labels -->
-          <text x="\${padding - 5}" y="\${padding + 4}" font-size="9" fill="#64748b" text-anchor="end">\${maxVal.toFixed(0)}ms</text>
-          <text x="\${padding - 5}" y="\${height / 2 + 3}" font-size="9" fill="#64748b" text-anchor="end">\${((minVal + maxVal) / 2).toFixed(0)}ms</text>
-          <text x="\${padding - 5}" y="\${height - padding + 4}" font-size="9" fill="#64748b" text-anchor="end">\${minVal.toFixed(0)}ms</text>
-          <!-- Area fill -->
-          <polygon points="\${areaPoints}" fill="url(#areaGrad)"/>
-          <!-- Line -->
-          <polyline points="\${points}" fill="none" stroke="\${statusColor}" stroke-width="2"/>
-          <!-- Labels -->
-          <text x="\${width / 2}" y="\${height - 5}" font-size="9" fill="#64748b" text-anchor="middle">\${chartData.length} samples</text>
-        </svg>
-      \`;
-    })()}
+    ${chartSvg}
   </div>
 </div>
 
 <!-- Reference Thresholds -->
 <div class="section">
-  <div class="section-title">\${report.isRealtime ? '5' : '4'}. Performance Thresholds</div>
+  <div class="section-title">${report.isRealtime ? '5' : '4'}. Performance Thresholds</div>
   <div class="threshold-item">
     <div class="threshold-dot" style="background:#16a34a;"></div>
     <p><strong>Excellent (&lt; 50ms):</strong> Optimal for real-time applications, gaming, and video calls.</p>
@@ -538,7 +598,7 @@ ${report.isRealtime && report.realtimeResults.length > 0 ? `
 
 <!-- Methodology -->
 <div class="section">
-  <div class="section-title">\${report.isRealtime ? '6' : '5'}. Methodology</div>
+  <div class="section-title">${report.isRealtime ? '6' : '5'}. Methodology</div>
   <div class="grid-2">
     <div class="card">
       <div class="card-label">Test Method</div>
@@ -550,16 +610,16 @@ ${report.isRealtime && report.realtimeResults.length > 0 ? `
     </div>
     <div class="card">
       <div class="card-label">Target</div>
-      <div class="card-value" style="font-size:12px;">\${report.targetLabel}</div>
+      <div class="card-value" style="font-size:12px;">${report.targetLabel}</div>
     </div>
     <div class="card">
       <div class="card-label">Target IP</div>
-      <div class="card-value" style="font-size:12px;">\${report.target === 'gateway' ? 'Default Gateway' : report.target === 'cloudflare' ? '1.1.1.1' : '8.8.8.8'}</div>
+      <div class="card-value" style="font-size:12px;">${report.target === 'gateway' ? 'Default Gateway' : report.target === 'cloudflare' ? '1.1.1.1' : '8.8.8.8'}</div>
     </div>
   </div>
   <div class="info-box">
     <h4>Performance Assessment</h4>
-    <p>\${
+    <p>${
       statusText === 'Excellent' ? 'Network latency is excellent. No action required.' :
       statusText === 'Good' ? 'Network latency is within acceptable parameters.' :
       statusText === 'Fair' ? 'Network latency is elevated. Consider investigating network congestion or routing issues.' :
@@ -572,10 +632,10 @@ ${report.isRealtime && report.realtimeResults.length > 0 ? `
 <!-- Footer -->
 <div class="rpt-footer">
   <div>
-    <img src="\${logoUrl}" alt="ProxMenux" style="height:20px;vertical-align:middle;margin-right:8px;" onerror="this.style.display='none'" />
+    <img src="${logoUrl}" alt="ProxMenux" style="height:20px;vertical-align:middle;margin-right:8px;" onerror="this.style.display='none'" />
     ProxMenux Monitor - Network Performance Report
   </div>
-  <div>Generated: \${now} | Report ID: PMXL-\${Date.now().toString(36).toUpperCase()}</div>
+  <div>Generated: ${now} | Report ID: PMXL-${Date.now().toString(36).toUpperCase()}</div>
 </div>
     <div class="card">
       <div class="card-label">Samples per Test</div>
