@@ -286,8 +286,12 @@ export function StorageOverview() {
     if (!iso) return 'N/A'
     try {
       const d = new Date(iso)
-      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-        + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+      const day = d.getDate().toString().padStart(2, '0')
+      const month = (d.getMonth() + 1).toString().padStart(2, '0')
+      const year = d.getFullYear()
+      const hours = d.getHours().toString().padStart(2, '0')
+      const mins = d.getMinutes().toString().padStart(2, '0')
+      return `${day}/${month}/${year} ${hours}:${mins}`
     } catch { return iso }
   }
 
@@ -1287,13 +1291,16 @@ export function StorageOverview() {
               {/* Observations Section */}
               {(diskObservations.length > 0 || loadingObservations) && (
                 <div className="border-t pt-4">
-                  <h4 className="font-semibold mb-3 flex items-center gap-2">
+                  <h4 className="font-semibold mb-2 flex items-center gap-2">
                     <Info className="h-4 w-4 text-blue-400" />
                     Observations
                     <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px] px-1.5 py-0">
                       {diskObservations.length}
                     </Badge>
                   </h4>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    The following observations have been recorded for this disk:
+                  </p>
                   {loadingObservations ? (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
                       <div className="h-4 w-4 rounded-full border-2 border-transparent border-t-blue-400 animate-spin" />
@@ -1310,36 +1317,37 @@ export function StorageOverview() {
                               : 'bg-blue-500/5 border-blue-500/20'
                           }`}
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <Badge className={`text-[10px] px-1.5 py-0 ${
-                                obs.severity === 'critical'
-                                  ? 'bg-red-500/10 text-red-400 border-red-500/20'
-                                  : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                              }`}>
-                                {obsTypeLabel(obs.error_type)}
-                              </Badge>
-                              {obs.occurrence_count > 1 && (
-                                <span className="text-xs text-muted-foreground">
-                                  {'Occurred ' + obs.occurrence_count + 'x'}
-                                </span>
-                              )}
-                            </div>
+                          {/* Header with type badge */}
+                          <div className="flex items-center gap-2 flex-wrap mb-2">
+                            <Badge className={`text-[10px] px-1.5 py-0 ${
+                              obs.severity === 'critical'
+                                ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                                : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                            }`}>
+                              {obsTypeLabel(obs.error_type)}
+                            </Badge>
                           </div>
-                          <p className="mt-1.5 text-xs whitespace-pre-line opacity-90 font-mono leading-relaxed">
+                          
+                          {/* Error message - responsive text wrap */}
+                          <p className="text-xs whitespace-pre-wrap break-words opacity-90 font-mono leading-relaxed mb-3">
                             {obs.raw_message}
                           </p>
-                          <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground">
+                          
+                          {/* Dates - stacked on mobile, inline on desktop */}
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-[10px] text-muted-foreground border-t border-white/5 pt-2">
                             <span className="flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              {'First: ' + formatObsDate(obs.first_occurrence)}
+                              <Clock className="h-3 w-3 flex-shrink-0" />
+                              <span className="break-words">First: {formatObsDate(obs.first_occurrence)}</span>
                             </span>
-                            {obs.occurrence_count > 1 && (
-                              <span className="flex items-center gap-1">
-                                <Clock className="h-3 w-3" />
-                                {'Last: ' + formatObsDate(obs.last_occurrence)}
-                              </span>
-                            )}
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-3 w-3 flex-shrink-0" />
+                              <span className="break-words">Last: {formatObsDate(obs.last_occurrence)}</span>
+                            </span>
+                          </div>
+                          
+                          {/* Occurrences count */}
+                          <div className="text-[10px] text-muted-foreground mt-1">
+                            Occurrences: <span className="font-medium text-foreground">{obs.occurrence_count}</span>
                           </div>
                         </div>
                       ))}

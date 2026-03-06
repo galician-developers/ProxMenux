@@ -268,26 +268,30 @@ def _format_vzdump_body(parsed: Dict[str, Any], is_success: bool) -> str:
         else:
             parts.append(f"{icon} ID {vmid}")
         
-        # Size and Duration on same line
+        # Size and Duration on same line with icons
         detail_line = []
         if vm.get('size'):
-            detail_line.append(f"Size: {vm['size']}")
+            detail_line.append(f"\U0001F4CF Size: {vm['size']}")
         if vm.get('time'):
-            detail_line.append(f"Duration: {vm['time']}")
+            detail_line.append(f"\u23F1\uFE0F Duration: {vm['time']}")
         if detail_line:
             parts.append(' | '.join(detail_line))
         
-        # PBS/File on separate line
+        # PBS/File on separate line with icon
         if vm.get('filename'):
             fname = vm['filename']
             if re.match(r'^(?:ct|vm)/\d+/', fname):
-                parts.append(f"PBS: {fname}")
+                parts.append(f"\U0001F5C4\uFE0F PBS: {fname}")
             else:
-                parts.append(f"File: {fname}")
+                parts.append(f"\U0001F4C1 File: {fname}")
+        
+        # Error reason if failed
+        if status != 'ok' and vm.get('error'):
+            parts.append(f"\u26A0\uFE0F {vm['error']}")
         
         parts.append('')  # blank line between VMs
     
-    # Summary
+    # Summary line with icons
     vm_count = parsed.get('vm_count', 0)
     if vm_count > 0 or parsed.get('total_size'):
         ok_count = sum(1 for v in parsed.get('vms', [])
@@ -296,16 +300,16 @@ def _format_vzdump_body(parsed: Dict[str, Any], is_success: bool) -> str:
         
         summary_parts = []
         if vm_count:
-            summary_parts.append(f"{vm_count} backup(s)")
+            summary_parts.append(f"\U0001F4CA {vm_count} backups")
         if fail_count:
-            summary_parts.append(f"{fail_count} failed")
+            summary_parts.append(f"\u274C {fail_count} failed")
         if parsed.get('total_size'):
-            summary_parts.append(f"Total: {parsed['total_size']}")
+            summary_parts.append(f"\U0001F4E6 Total: {parsed['total_size']}")
         if parsed.get('total_time'):
-            summary_parts.append(f"Time: {parsed['total_time']}")
+            summary_parts.append(f"\u23F1\uFE0F Time: {parsed['total_time']}")
         
         if summary_parts:
-            parts.append('--- ' + ' | '.join(summary_parts))
+            parts.append(' | '.join(summary_parts))
     
     return '\n'.join(parts)
 
@@ -355,7 +359,7 @@ TEMPLATES = {
     },
     'error_resolved': {
         'title': '{hostname}: Resolved - {category}',
-        'body': 'The {category} issue has been resolved.\n{reason}\nPrevious severity: {original_severity}\nDuration: {duration}',
+        'body': 'The {category} issue has been resolved.\n{reason}\n\U0001F6A6 Previous severity: {original_severity}\n\u23F1\uFE0F Duration: {duration}',
         'label': 'Recovery notification',
         'group': 'health',
         'default_enabled': True,
@@ -484,7 +488,7 @@ TEMPLATES = {
     
     # ── Backup / Snapshot events ──
     'backup_start': {
-        'title': '{hostname}: Backup started',
+        'title': '{hostname}: Backup started [{storage}]',
         'body': '{reason}',
         'label': 'Backup started',
         'group': 'backup',

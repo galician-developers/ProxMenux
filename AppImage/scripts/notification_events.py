@@ -129,9 +129,63 @@ class JournalWatcher:
         if self._running:
             return
         self._running = True
+        self._load_disk_io_notified()  # Restore 24h dedup timestamps from DB
         self._thread = threading.Thread(target=self._watch_loop, daemon=True,
                                         name='journal-watcher')
         self._thread.start()
+    
+    def _load_disk_io_notified(self):
+        """Load disk I/O notification timestamps from DB to survive restarts."""
+        try:
+            db_path = Path('/usr/local/share/proxmenux/health_monitor.db')
+            if not db_path.exists():
+                return
+            conn = sqlite3.connect(str(db_path), timeout=10)
+            conn.execute('PRAGMA journal_mode=WAL')
+            cursor = conn.cursor()
+            # Ensure table exists
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS notification_last_sent (
+                    fingerprint TEXT PRIMARY KEY,
+                    last_sent_ts REAL NOT NULL
+                )
+            ''')
+            conn.commit()
+            cursor.execute(
+                "SELECT fingerprint, last_sent_ts FROM notification_last_sent "
+                "WHERE fingerprint LIKE 'diskio_%' OR fingerprint LIKE 'fs_%'"
+            )
+            now = time.time()
+            for fp, ts in cursor.fetchall():
+                # Only load if within the 24h window (don't load stale entries)
+                if now - ts < self._DISK_IO_COOLDOWN:
+                    self._disk_io_notified[fp] = ts
+            conn.close()
+        except Exception as e:
+            print(f"[JournalWatcher] Failed to load disk_io_notified: {e}")
+    
+    def _save_disk_io_notified(self, key: str, ts: float):
+        """Persist a disk I/O notification timestamp to DB."""
+        try:
+            db_path = Path('/usr/local/share/proxmenux/health_monitor.db')
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(str(db_path), timeout=10)
+            conn.execute('PRAGMA journal_mode=WAL')
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS notification_last_sent (
+                    fingerprint TEXT PRIMARY KEY,
+                    last_sent_ts REAL NOT NULL
+                )
+            ''')
+            cursor.execute(
+                "INSERT OR REPLACE INTO notification_last_sent (fingerprint, last_sent_ts) VALUES (?, ?)",
+                (key, ts)
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[JournalWatcher] Failed to save disk_io_notified: {e}")
     
     def stop(self):
         """Stop the journal watcher."""
@@ -377,8 +431,9 @@ class JournalWatcher:
                         # UNKNOWN -- can't verify, be conservative
                         severity = 'WARNING'
                     
-                    # Mark dedup timestamp now that we'll send
+                    # Mark dedup timestamp now that we'll send (persist to DB)
                     self._disk_io_notified[fs_dedup_key] = now_fs
+                    self._save_disk_io_notified(fs_dedup_key, now_fs)
                     
                     # Identify what this device is (model, type, mountpoint)
                     device_info = self._identify_block_device(device)
@@ -612,11 +667,12 @@ class JournalWatcher:
             # ── Gate 2: 24-hour dedup per device ──
             now = time.time()
             last_notified = self._disk_io_notified.get(resolved, 0)
-            if now - last_notified < self._DISK_IO_COOLDOWN:
-                return  # Already notified for this disk recently
-            self._disk_io_notified[resolved] = now
-            
-            # ── Build enriched notification ──
+        if now - last_notified < self._DISK_IO_COOLDOWN:
+            return  # Already notified for this disk recently
+        self._disk_io_notified[resolved] = now
+        self._save_disk_io_notified(resolved, now)
+        
+        # ── Build enriched notification ──
             device_info = self._identify_block_device(resolved)
             
             parts = []
@@ -887,13 +943,11 @@ class JournalWatcher:
         
         details = []
         if storage:
-            details.append(f'Storage: {storage}')
+            details.append(f'\U0001F5C4\uFE0F Storage: {storage}')
         if mode:
-            details.append(f'Mode: {mode}')
-        if compress:
-            details.append(f'Compression: {compress}')
+            details.append(f'\u2699\uFE0F Mode: {mode}')
         if details:
-            reason_parts.append(' | '.join(details))
+            reason_parts.append('  |  '.join(details))
         
         reason = '\n'.join(reason_parts) if reason_parts else 'Backup job started'
         
@@ -913,6 +967,7 @@ class JournalWatcher:
             'hostname': self._hostname,
             'user': '',
             'reason': reason,
+            'storage': storage or 'local',
         }, entity='backup', entity_id=f'vzdump_{guest_key}')
     
     def _resolve_vm_name(self, vmid: str) -> str:
@@ -1766,10 +1821,35 @@ class PollingCollector:
             
             entity, eid = self._ENTITY_MAP.get(category, ('node', ''))
             
+            # For resolved notifications, use only the first line of reason
+            # (the title/summary) to avoid repeating verbose details.
+            # Also extract a clean device identifier if present.
+            reason_lines = (reason or '').split('\n')
+            reason_summary = reason_lines[0] if reason_lines else ''
+            
+            # Try to extract device info for a clean "Device: xxx (recovered)" line
+            device_line = ''
+            for line in reason_lines:
+                if 'Device:' in line or 'Device not currently' in line or '/dev/' in line:
+                    # Extract the most useful device description
+                    if 'not currently detected' in line.lower():
+                        device_line = 'Device not currently detected -- may be a disconnected USB or temporary device'
+                        break
+                    elif 'Device:' in line:
+                        device_line = line.strip()
+                        break
+            
+            if reason_summary and device_line:
+                clean_reason = f'{reason_summary}\n{device_line} (recovered)'
+            elif reason_summary:
+                clean_reason = f'{reason_summary} (recovered)'
+            else:
+                clean_reason = 'Condition resolved'
+            
             data = {
                 'hostname': self._hostname,
                 'category': category,
-                'reason': f'{reason} (recovered)' if reason else 'Condition resolved',
+                'reason': clean_reason,
                 'error_key': key,
                 'severity': 'OK',
                 'original_severity': old_meta.get('severity', 'WARNING'),
