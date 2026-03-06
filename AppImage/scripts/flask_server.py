@@ -23,7 +23,7 @@ import time
 import threading
 import urllib.parse
 import hardware_monitor
-import health_persistence
+from health_persistence import health_persistence
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from functools import wraps
