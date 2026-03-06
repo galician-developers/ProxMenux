@@ -273,13 +273,9 @@ export function StorageOverview() {
       const params = new URLSearchParams()
       if (disk.name) params.set('device', disk.name)
       if (disk.serial && disk.serial !== 'Unknown') params.set('serial', disk.serial)
-      const url = `/api/storage/observations?${params.toString()}`
-      console.log("[v0] Fetching observations:", url, "disk:", disk.name, disk.serial)
-      const data = await fetchApi<{ observations: DiskObservation[] }>(url)
-      console.log("[v0] Observations response:", data)
+      const data = await fetchApi<{ observations: DiskObservation[] }>(`/api/storage/observations?${params.toString()}`)
       setDiskObservations(data.observations || [])
-    } catch (err) {
-      console.error("[v0] Observations fetch error:", err)
+    } catch {
       setDiskObservations([])
     } finally {
       setLoadingObservations(false)
@@ -845,10 +841,10 @@ export function StorageOverview() {
                             </span>
                           </div>
                         )}
-                        {disk.observations_count && disk.observations_count > 0 && (
-                          <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 gap-1 text-[10px] px-1.5 py-0">
+                        {(disk.observations_count ?? 0) > 0 && (
+                          <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 gap-1">
                             <Info className="h-3 w-3" />
-                            {disk.observations_count}
+                            {disk.observations_count} obs.
                           </Badge>
                         )}
                         {getHealthBadge(disk.health)}
@@ -931,10 +927,10 @@ export function StorageOverview() {
                             </span>
                           </div>
                         )}
-                        {disk.observations_count && disk.observations_count > 0 && (
-                          <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 gap-1 text-[10px] px-1.5 py-0">
+                        {(disk.observations_count ?? 0) > 0 && (
+                          <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 gap-1">
                             <Info className="h-3 w-3" />
-                            {disk.observations_count}
+                            {disk.observations_count} obs.
                           </Badge>
                         )}
                         {getHealthBadge(disk.health)}
@@ -1040,7 +1036,7 @@ export function StorageOverview() {
                             </div>
                           )}
                           {getHealthBadge(disk.health)}
-                          {disk.observations_count && disk.observations_count > 0 && (
+                          {(disk.observations_count ?? 0) > 0 && (
                             <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 gap-1 text-[10px] px-1.5 py-0">
                               <Info className="h-3 w-3" />
                               {disk.observations_count}
@@ -1072,10 +1068,10 @@ export function StorageOverview() {
                           </div>
                         )}
                         {getHealthBadge(disk.health)}
-                        {disk.observations_count && disk.observations_count > 0 && (
-                          <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 gap-1 text-[10px] px-1.5 py-0">
+                        {(disk.observations_count ?? 0) > 0 && (
+                          <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 gap-1">
                             <Info className="h-3 w-3" />
-                            {disk.observations_count}
+                            {disk.observations_count} obs.
                           </Badge>
                         )}
                       </div>
@@ -1181,11 +1177,11 @@ export function StorageOverview() {
                   <p className="text-sm text-muted-foreground">Health Status</p>
                   <div className="flex items-center gap-2 mt-1">
                     {getHealthBadge(selectedDisk.health)}
-                    {selectedDisk.observations_count && selectedDisk.observations_count > 0 && (
-                      <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 gap-1 text-[10px] px-1.5 py-0">
-                        <Info className="h-3 w-3" />
-                        {selectedDisk.observations_count} obs.
-                      </Badge>
+                    {(selectedDisk.observations_count ?? 0) > 0 && (
+<Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 gap-1">
+                      <Info className="h-3 w-3" />
+                      {selectedDisk.observations_count} obs.
+                    </Badge>
                     )}
                   </div>
                 </div>
