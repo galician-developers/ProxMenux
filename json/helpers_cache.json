@@ -6244,7 +6244,8 @@
     "notes": [
       "Check our configuration guide for help: `https://github.com/community-scripts/ProxmoxVE/discussions/2388`",
       "To set admin password on Debian, type `cd /var/lib/rustdesk-api && rustdesk-api reset-admin-pwd <yournewpasswordhere>` inside LXC.",
-      "To see admin password on Alpine, type `cat ~/rustdesk.creds` inside LXC."
+      "To see admin password on Alpine, type `cat ~/rustdesk.creds` inside LXC.",
+      "This script uses hbbs/hbbr builds from `lejianwen/rustdesk-server` (instead of the official repo) for full compatibility with the RustDesk API (SSO/OAuth). See `https://github.com/community-scripts/ProxmoxVE/issues/12079`."
     ],
     "type": "ct"
   },
@@ -6262,7 +6263,8 @@
     "notes": [
       "Check our configuration guide for help: `https://github.com/community-scripts/ProxmoxVE/discussions/2388`",
       "To set admin password on Debian, type `cd /var/lib/rustdesk-api && rustdesk-api reset-admin-pwd <yournewpasswordhere>` inside LXC.",
-      "To see admin password on Alpine, type `cat ~/rustdesk.creds` inside LXC."
+      "To see admin password on Alpine, type `cat ~/rustdesk.creds` inside LXC.",
+      "This script uses hbbs/hbbr builds from `lejianwen/rustdesk-server` (instead of the official repo) for full compatibility with the RustDesk API (SSO/OAuth). See `https://github.com/community-scripts/ProxmoxVE/issues/12079`."
     ],
     "type": "ct"
   },
