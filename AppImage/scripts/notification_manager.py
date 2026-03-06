@@ -655,18 +655,28 @@ class NotificationManager:
         event_group = template.get('group', 'other')
         default_event_enabled = 'true' if template.get('default_enabled', True) else 'false'
         
+        print(f"[v0] _dispatch_to_channels called: event_type={event_type}, group={event_group}, channels={list(channels.keys())}")
+        
         for ch_name, channel in channels.items():
             # ── Per-channel category check ──
             # Default: category enabled (true) unless explicitly disabled.
             ch_group_key = f'{ch_name}.events.{event_group}'
-            if self._config.get(ch_group_key, 'true') == 'false':
+            ch_group_val = self._config.get(ch_group_key, 'true')
+            print(f"[v0] Channel {ch_name}: {ch_group_key}={ch_group_val}")
+            if ch_group_val == 'false':
+                print(f"[v0] Channel {ch_name}: SKIPPED - category {event_group} disabled")
                 continue  # Channel has this category disabled
             
             # ── Per-channel event check ──
             # Default: from template default_enabled, unless explicitly set.
             ch_event_key = f'{ch_name}.event.{event_type}'
-            if self._config.get(ch_event_key, default_event_enabled) == 'false':
+            ch_event_val = self._config.get(ch_event_key, default_event_enabled)
+            print(f"[v0] Channel {ch_name}: {ch_event_key}={ch_event_val} (default={default_event_enabled})")
+            if ch_event_val == 'false':
+                print(f"[v0] Channel {ch_name}: SKIPPED - event {event_type} disabled")
                 continue  # Channel has this specific event disabled
+            
+            print(f"[v0] Channel {ch_name}: SENDING notification for {event_type}")
             
             try:
                 # Per-channel emoji enrichment (opt-in via {channel}.rich_format)
