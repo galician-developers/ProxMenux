@@ -4,12 +4,14 @@ import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card"
 import { Badge } from "./ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog"
-import { Wifi, Activity, Network, Router, AlertCircle, Zap } from 'lucide-react'
+import { Wifi, Activity, Network, Router, AlertCircle, Zap, Timer } from 'lucide-react'
 import useSWR from "swr"
 import { NetworkTrafficChart } from "./network-traffic-chart"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
 import { fetchApi } from "../lib/api-config"
 import { formatNetworkTraffic, getNetworkUnit } from "../lib/format-network"
+import { LatencyDetailModal } from "./latency-detail-modal"
+import { LineChart, Line, ResponsiveContainer, YAxis } from "recharts"
 
 interface NetworkData {
   interfaces: NetworkInterface[]
@@ -150,8 +152,19 @@ export function NetworkMetrics() {
   const [modalTimeframe, setModalTimeframe] = useState<"hour" | "day" | "week" | "month" | "year">("day")
   const [networkTotals, setNetworkTotals] = useState<{ received: number; sent: number }>({ received: 0, sent: 0 })
   const [interfaceTotals, setInterfaceTotals] = useState<{ received: number; sent: number }>({ received: 0, sent: 0 })
+  const [latencyModalOpen, setLatencyModalOpen] = useState(false)
 
   const [networkUnit, setNetworkUnit] = useState<"Bytes" | "Bits">(() => getNetworkUnit())
+  
+  // Latency history for sparkline (last hour)
+  const { data: latencyData } = useSWR<{
+    data: Array<{ timestamp: number; value: number }>
+    stats: { min: number; max: number; avg: number; current: number }
+    target: string
+  }>("/api/network/latency/history?target=gateway&timeframe=hour", 
+    (url: string) => fetchApi(url), 
+    { refreshInterval: 60000, revalidateOnFocus: false }
+  )
 
   useEffect(() => {
     setNetworkUnit(getNetworkUnit())
@@ -330,48 +343,87 @@ export function NetworkMetrics() {
           </CardContent>
         </Card>
 
+        {/* Merged Network Config & Health Card */}
         <Card className="bg-card border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Network Configuration</CardTitle>
-            <Network className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Network Status</CardTitle>
+            <Badge variant="outline" className={healthColor}>
+              {healthStatus}
+            </Badge>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              <div className="flex flex-col">
+              <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">Hostname</span>
-                <span className="text-sm font-medium text-foreground truncate">{hostname}</span>
+                <span className="text-xs font-medium text-foreground truncate max-w-[120px]">{hostname}</span>
               </div>
-              <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground">Domain</span>
-                <span className="text-sm font-medium text-foreground truncate">{domain}</span>
-              </div>
-              <div className="flex flex-col">
+              <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">Primary DNS</span>
-                <span className="text-sm font-medium text-foreground truncate">{primaryDNS}</span>
+                <span className="text-xs font-medium text-foreground font-mono">{primaryDNS}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Packet Loss</span>
+                <span className="text-xs font-medium text-foreground">{avgPacketLoss}%</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Errors</span>
+                <span className="text-xs font-medium text-foreground">{totalErrors}</span>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-card border-border">
+        {/* Latency Card with Sparkline */}
+        <Card 
+          className="bg-card border-border cursor-pointer hover:bg-muted/50 transition-colors"
+          onClick={() => setLatencyModalOpen(true)}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Network Health</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Network Latency</CardTitle>
+            <Timer className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <Badge variant="outline" className={healthColor}>
-              {healthStatus}
-            </Badge>
-            <div className="flex flex-col gap-1 mt-2 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Packet Loss:</span>
-                <span className="font-medium text-foreground">{avgPacketLoss}%</span>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xl lg:text-2xl font-bold text-foreground">
+                {latencyData?.stats?.current ?? 0} <span className="text-sm font-normal text-muted-foreground">ms</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Errors:</span>
-                <span className="font-medium text-foreground">{totalErrors}</span>
-              </div>
+              <Badge 
+                variant="outline" 
+                className={
+                  (latencyData?.stats?.current ?? 0) < 50 
+                    ? "bg-green-500/10 text-green-500 border-green-500/20"
+                    : (latencyData?.stats?.current ?? 0) < 100
+                    ? "bg-green-500/10 text-green-500 border-green-500/20"
+                    : (latencyData?.stats?.current ?? 0) < 200
+                    ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/20"
+                    : "bg-red-500/10 text-red-500 border-red-500/20"
+                }
+              >
+                {(latencyData?.stats?.current ?? 0) < 50 ? "Excellent" : 
+                 (latencyData?.stats?.current ?? 0) < 100 ? "Good" :
+                 (latencyData?.stats?.current ?? 0) < 200 ? "Fair" : "Poor"}
+              </Badge>
             </div>
+            {/* Sparkline */}
+            {latencyData?.data && latencyData.data.length > 0 && (
+              <div className="h-[40px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={latencyData.data.slice(-30)}>
+                    <YAxis hide domain={['dataMin - 5', 'dataMax + 5']} />
+                    <Line
+                      type="monotone"
+                      dataKey="value"
+                      stroke={(latencyData?.stats?.current ?? 0) < 100 ? "#22c55e" : (latencyData?.stats?.current ?? 0) < 200 ? "#f59e0b" : "#ef4444"}
+                      strokeWidth={1.5}
+                      dot={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground mt-1">
+              Avg: {latencyData?.stats?.avg ?? 0}ms | Max: {latencyData?.stats?.max ?? 0}ms
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -1091,6 +1143,12 @@ export function NetworkMetrics() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Latency Detail Modal */}
+      <LatencyDetailModal
+        open={latencyModalOpen}
+        onOpenChange={setLatencyModalOpen}
+      />
     </div>
   )
 }

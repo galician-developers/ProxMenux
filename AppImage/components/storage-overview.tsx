@@ -1307,7 +1307,7 @@ export function StorageOverview() {
                       Loading observations...
                     </div>
                   ) : (
-                    <div className="space-y-3 max-h-60 overflow-y-auto">
+                    <div className="space-y-3">
                       {diskObservations.map((obs) => (
                         <div
                           key={obs.id}

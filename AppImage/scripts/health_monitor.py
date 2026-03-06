@@ -2006,7 +2006,11 @@ class HealthMonitor:
             return {'status': 'UNKNOWN', 'reason': f'Network check unavailable: {str(e)}', 'checks': {}}
     
     def _check_network_latency(self) -> Optional[Dict[str, Any]]:
-        """Check network latency to 1.1.1.1 (cached)"""
+        """Check network latency to 1.1.1.1 using 3 consecutive pings.
+        
+        Uses 3 pings to avoid false positives from transient network spikes.
+        Reports the average latency and only warns if all 3 exceed threshold.
+        """
         cache_key = 'network_latency'
         current_time = time.time()
         
@@ -2015,42 +2019,60 @@ class HealthMonitor:
                 return self.cached_results.get(cache_key)
         
         try:
+            # Use 3 pings to get reliable latency measurement
             result = subprocess.run(
-                ['ping', '-c', '1', '-W', '1', '1.1.1.1'],
+                ['ping', '-c', '3', '-W', '2', '1.1.1.1'],
                 capture_output=True,
                 text=True,
-                timeout=self.NETWORK_TIMEOUT
+                timeout=self.NETWORK_TIMEOUT + 6  # Allow time for 3 pings
             )
             
             if result.returncode == 0:
+                # Parse individual ping times
+                latencies = []
                 for line in result.stdout.split('\n'):
                     if 'time=' in line:
                         try:
                             latency_str = line.split('time=')[1].split()[0]
-                            latency = float(latency_str)
-                            
-                            if latency > self.NETWORK_LATENCY_CRITICAL:
-                                status = 'CRITICAL'
-                                reason = f'Latency {latency:.1f}ms >{self.NETWORK_LATENCY_CRITICAL}ms'
-                            elif latency > self.NETWORK_LATENCY_WARNING:
-                                status = 'WARNING'
-                                reason = f'Latency {latency:.1f}ms >{self.NETWORK_LATENCY_WARNING}ms'
-                            else:
-                                status = 'OK'
-                                reason = None
-                            
-                            latency_result = {
-                                'status': status,
-                                'latency_ms': round(latency, 1)
-                            }
-                            if reason:
-                                latency_result['reason'] = reason
-                            
-                            self.cached_results[cache_key] = latency_result
-                            self.last_check_times[cache_key] = current_time
-                            return latency_result
+                            latencies.append(float(latency_str))
                         except:
                             pass
+                
+                if latencies:
+                    # Calculate average latency
+                    avg_latency = sum(latencies) / len(latencies)
+                    max_latency = max(latencies)
+                    min_latency = min(latencies)
+                    
+                    # Count how many pings exceeded thresholds
+                    critical_count = sum(1 for l in latencies if l > self.NETWORK_LATENCY_CRITICAL)
+                    warning_count = sum(1 for l in latencies if l > self.NETWORK_LATENCY_WARNING)
+                    
+                    # Only report WARNING/CRITICAL if majority of pings exceed threshold
+                    # This prevents false positives from single transient spikes
+                    if critical_count >= 2:  # 2 or more of 3 pings are critical
+                        status = 'CRITICAL'
+                        reason = f'Latency {avg_latency:.1f}ms avg >{self.NETWORK_LATENCY_CRITICAL}ms (min:{min_latency:.0f} max:{max_latency:.0f})'
+                    elif warning_count >= 2:  # 2 or more of 3 pings exceed warning
+                        status = 'WARNING'
+                        reason = f'Latency {avg_latency:.1f}ms avg >{self.NETWORK_LATENCY_WARNING}ms (min:{min_latency:.0f} max:{max_latency:.0f})'
+                    else:
+                        status = 'OK'
+                        reason = None
+                    
+                    latency_result = {
+                        'status': status,
+                        'latency_ms': round(avg_latency, 1),
+                        'latency_min': round(min_latency, 1),
+                        'latency_max': round(max_latency, 1),
+                        'samples': len(latencies),
+                    }
+                    if reason:
+                        latency_result['reason'] = reason
+                    
+                    self.cached_results[cache_key] = latency_result
+                    self.last_check_times[cache_key] = current_time
+                    return latency_result
             
             # If ping failed (timeout, unreachable) - distinguish the reason
             stderr_lower = (result.stderr or '').lower() if hasattr(result, 'stderr') else ''

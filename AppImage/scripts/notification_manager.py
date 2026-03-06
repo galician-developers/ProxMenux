@@ -902,10 +902,21 @@ class NotificationManager:
     def send_notification(self, event_type: str, severity: str,
                           title: str, message: str,
                           data: Optional[Dict] = None,
-                          source: str = 'api') -> Dict[str, Any]:
+                          source: str = 'api',
+                          skip_toggle_check: bool = False) -> Dict[str, Any]:
         """Send a notification directly (bypasses queue and cooldown).
         
         Used by CLI and API for explicit sends.
+        
+        Args:
+            event_type: Type of event (must match TEMPLATES key)
+            severity: INFO, WARNING, CRITICAL
+            title: Notification title
+            message: Notification body
+            data: Extra data for template rendering
+            source: Origin of notification (api, cli, health_monitor, etc.)
+            skip_toggle_check: If True, send even if event toggle is disabled.
+                               Use for 'custom' or 'other' events that should always send.
         """
         if not self._channels:
             self._load_config()
@@ -916,6 +927,17 @@ class NotificationManager:
                 'error': 'No channels configured or enabled',
                 'channels_sent': [],
             }
+        
+        # Check if this event type is enabled (unless explicitly skipped)
+        # 'custom' and 'other' events always send (used for manual/script notifications)
+        if not skip_toggle_check and event_type not in ('custom', 'other'):
+            if not self.is_event_enabled(event_type):
+                return {
+                    'success': False,
+                    'error': f'Event type "{event_type}" is disabled in notification settings',
+                    'channels_sent': [],
+                    'skipped': True,
+                }
         
         # Render template if available
         if event_type in TEMPLATES and not message:
@@ -1075,6 +1097,54 @@ class NotificationManager:
             self.stop()
         
         return {'success': True, 'enabled': enabled}
+    
+    def is_event_enabled(self, event_type: str) -> bool:
+        """Check if a specific event type is enabled for notifications.
+        
+        Returns True if ANY active channel has this event enabled.
+        Returns False only if ALL channels have explicitly disabled this event.
+        Used by callers like health_polling_thread to skip notifications
+        for disabled events.
+        
+        The UI stores toggles per-channel as '{channel}.event.{event_type}'.
+        We check all configured channels - if any has it enabled, return True.
+        """
+        if not self._config:
+            self._load_config()
+        
+        # Get template info for default state
+        tmpl = TEMPLATES.get(event_type, {})
+        default_enabled = 'true' if tmpl.get('default_enabled', True) else 'false'
+        event_group = tmpl.get('group', 'other')
+        
+        # Check each configured channel
+        # A channel is "active" if it has .enabled = true
+        channel_types = ['telegram', 'gotify', 'discord', 'email', 'ntfy', 'pushover', 'slack']
+        active_channels = []
+        
+        for ch_name in channel_types:
+            if self._config.get(f'{ch_name}.enabled', 'false') == 'true':
+                active_channels.append(ch_name)
+        
+        # If no channels are configured, consider events as "disabled"
+        # (no point generating notifications with no destination)
+        if not active_channels:
+            return False
+        
+        # Check if ANY active channel has this event enabled
+        for ch_name in active_channels:
+            # First check category toggle for this channel
+            ch_group_key = f'{ch_name}.events.{event_group}'
+            if self._config.get(ch_group_key, 'true') == 'false':
+                continue  # Category disabled for this channel
+            
+            # Then check event-specific toggle
+            ch_event_key = f'{ch_name}.event.{event_type}'
+            if self._config.get(ch_event_key, default_enabled) == 'true':
+                return True  # At least one channel has it enabled
+        
+        # All active channels have this event disabled
+        return False
     
     def list_channels(self) -> Dict[str, Any]:
         """List all channel types with their configuration status."""
