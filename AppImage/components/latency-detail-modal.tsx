@@ -462,14 +462,121 @@ ${report.isRealtime && report.realtimeResults.length > 0 ? `
   </div>
 </div>
 
+<!-- Latency Chart -->
+<div class="section">
+  <div class="section-title">\${report.isRealtime ? '4' : '3'}. Latency Graph</div>
+  <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;">
+    \${(() => {
+      const chartData = report.isRealtime 
+        ? report.realtimeResults.map(r => r.latency_avg || 0)
+        : report.data.map(d => d.value || 0);
+      if (chartData.length < 2) return '<p style="text-align:center;color:#64748b;padding:20px;">Not enough data points for chart</p>';
+      
+      const minVal = Math.min(...chartData);
+      const maxVal = Math.max(...chartData);
+      const range = maxVal - minVal || 1;
+      const width = 700;
+      const height = 120;
+      const padding = 30;
+      
+      const points = chartData.map((val, i) => {
+        const x = padding + (i / (chartData.length - 1)) * (width - padding * 2);
+        const y = height - padding - ((val - minVal) / range) * (height - padding * 2);
+        return \`\${x},\${y}\`;
+      }).join(' ');
+      
+      const areaPoints = \`\${padding},\${height - padding} \${points} \${width - padding},\${height - padding}\`;
+      
+      return \`
+        <svg width="100%" viewBox="0 0 \${width} \${height}" style="display:block;">
+          <defs>
+            <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="\${statusColor}" stop-opacity="0.3"/>
+              <stop offset="100%" stop-color="\${statusColor}" stop-opacity="0.05"/>
+            </linearGradient>
+          </defs>
+          <!-- Grid lines -->
+          <line x1="\${padding}" y1="\${padding}" x2="\${padding}" y2="\${height - padding}" stroke="#e2e8f0" stroke-width="1"/>
+          <line x1="\${padding}" y1="\${height - padding}" x2="\${width - padding}" y2="\${height - padding}" stroke="#e2e8f0" stroke-width="1"/>
+          <line x1="\${padding}" y1="\${height / 2}" x2="\${width - padding}" y2="\${height / 2}" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="4"/>
+          <!-- Y-axis labels -->
+          <text x="\${padding - 5}" y="\${padding + 4}" font-size="9" fill="#64748b" text-anchor="end">\${maxVal.toFixed(0)}ms</text>
+          <text x="\${padding - 5}" y="\${height / 2 + 3}" font-size="9" fill="#64748b" text-anchor="end">\${((minVal + maxVal) / 2).toFixed(0)}ms</text>
+          <text x="\${padding - 5}" y="\${height - padding + 4}" font-size="9" fill="#64748b" text-anchor="end">\${minVal.toFixed(0)}ms</text>
+          <!-- Area fill -->
+          <polygon points="\${areaPoints}" fill="url(#areaGrad)"/>
+          <!-- Line -->
+          <polyline points="\${points}" fill="none" stroke="\${statusColor}" stroke-width="2"/>
+          <!-- Labels -->
+          <text x="\${width / 2}" y="\${height - 5}" font-size="9" fill="#64748b" text-anchor="middle">\${chartData.length} samples</text>
+        </svg>
+      \`;
+    })()}
+  </div>
+</div>
+
+<!-- Reference Thresholds -->
+<div class="section">
+  <div class="section-title">\${report.isRealtime ? '5' : '4'}. Performance Thresholds</div>
+  <div class="threshold-item">
+    <div class="threshold-dot" style="background:#16a34a;"></div>
+    <p><strong>Excellent (&lt; 50ms):</strong> Optimal for real-time applications, gaming, and video calls.</p>
+  </div>
+  <div class="threshold-item">
+    <div class="threshold-dot" style="background:#16a34a;"></div>
+    <p><strong>Good (50-100ms):</strong> Acceptable for most applications with minimal impact.</p>
+  </div>
+  <div class="threshold-item">
+    <div class="threshold-dot" style="background:#ca8a04;"></div>
+    <p><strong>Fair (100-200ms):</strong> Noticeable delay. May affect VoIP and interactive applications.</p>
+  </div>
+  <div class="threshold-item">
+    <div class="threshold-dot" style="background:#dc2626;"></div>
+    <p><strong>Poor (&gt; 200ms):</strong> Significant latency. Investigation recommended.</p>
+  </div>
+</div>
+
 <!-- Methodology -->
 <div class="section">
-  <div class="section-title">${report.isRealtime ? '5' : '4'}. Methodology</div>
+  <div class="section-title">\${report.isRealtime ? '6' : '5'}. Methodology</div>
   <div class="grid-2">
     <div class="card">
       <div class="card-label">Test Method</div>
       <div class="card-value" style="font-size:12px;">ICMP Echo Request (Ping)</div>
     </div>
+    <div class="card">
+      <div class="card-label">Samples per Test</div>
+      <div class="card-value" style="font-size:12px;">3 consecutive pings</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Target</div>
+      <div class="card-value" style="font-size:12px;">\${report.targetLabel}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Target IP</div>
+      <div class="card-value" style="font-size:12px;">\${report.target === 'gateway' ? 'Default Gateway' : report.target === 'cloudflare' ? '1.1.1.1' : '8.8.8.8'}</div>
+    </div>
+  </div>
+  <div class="info-box">
+    <h4>Performance Assessment</h4>
+    <p>\${
+      statusText === 'Excellent' ? 'Network latency is excellent. No action required.' :
+      statusText === 'Good' ? 'Network latency is within acceptable parameters.' :
+      statusText === 'Fair' ? 'Network latency is elevated. Consider investigating network congestion or routing issues.' :
+      statusText === 'Poor' ? 'Network latency is critically high. Immediate investigation recommended.' :
+      'Unable to determine network status.'
+    }</p>
+  </div>
+</div>
+
+<!-- Footer -->
+<div class="rpt-footer">
+  <div>
+    <img src="\${logoUrl}" alt="ProxMenux" style="height:20px;vertical-align:middle;margin-right:8px;" onerror="this.style.display='none'" />
+    ProxMenux Monitor - Network Performance Report
+  </div>
+  <div>Generated: \${now} | Report ID: PMXL-\${Date.now().toString(36).toUpperCase()}</div>
+</div>
     <div class="card">
       <div class="card-label">Samples per Test</div>
       <div class="card-value" style="font-size:12px;">3 consecutive pings</div>
@@ -655,8 +762,12 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
 
   const statusInfo = getStatusInfo(displayStats.current)
 
-  // Calculate test duration for report
-  const testDuration = testStartTime ? Math.round((Date.now() - testStartTime) / 1000) : 0
+  // Calculate test duration for report based on first and last result timestamps
+  const testDuration = realtimeResults.length >= 2 
+    ? Math.round(((realtimeResults[realtimeResults.length - 1].timestamp || Date.now()) - (realtimeResults[0].timestamp || Date.now())) / 1000)
+    : realtimeResults.length === 1 
+    ? 5 // Single sample = 5 seconds (one test)
+    : 0
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
