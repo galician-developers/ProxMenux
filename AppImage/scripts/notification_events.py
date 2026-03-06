@@ -246,6 +246,10 @@ class JournalWatcher:
         syslog_id = entry.get('SYSLOG_IDENTIFIER', '')
         priority = int(entry.get('PRIORITY', 6))
         
+        # Debug: log auth-related messages
+        if 'auth' in msg.lower() or 'password' in msg.lower():
+            print(f"[v0] JournalWatcher received auth message: syslog_id={syslog_id}, msg={msg[:80]}")
+        
         self._check_auth_failure(msg, syslog_id, entry)
         self._check_fail2ban(msg, syslog_id)
         self._check_kernel_critical(msg, syslog_id, priority)
@@ -275,10 +279,15 @@ class JournalWatcher:
             (r'pvedaemon\[.*authentication failure.*rhost=(\S+)', 'pve'),
         ]
         
+        # Debug: check if message contains auth failure
+        if 'authentication failure' in msg.lower() or 'failed password' in msg.lower():
+            print(f"[v0] _check_auth_failure processing: {msg[:100]}")
+        
         for pattern, service in patterns:
             match = re.search(pattern, msg, re.IGNORECASE)
             if match:
                 groups = match.groups()
+                print(f"[v0] Auth pattern matched: service={service}, groups={groups}")
                 if service == 'ssh':
                     username, source_ip = groups[0], groups[1]
                 elif service == 'pam':
@@ -287,6 +296,7 @@ class JournalWatcher:
                     source_ip = groups[0]
                     username = 'unknown'
                 
+                print(f"[v0] Emitting auth_fail: ip={source_ip}, user={username}, service={service}")
                 self._emit('auth_fail', 'WARNING', {
                     'source_ip': source_ip,
                     'username': username,
@@ -1129,6 +1139,7 @@ class JournalWatcher:
         now = time.time()
         last = self._recent_events.get(event.fingerprint, 0)
         if now - last < self._dedup_window:
+            print(f"[v0] _emit SKIPPED (dedup): {event_type} fingerprint={event.fingerprint[:20]}")
             return  # Skip duplicate within 30s window
         
         self._recent_events[event.fingerprint] = now
@@ -1140,6 +1151,7 @@ class JournalWatcher:
                 k: v for k, v in self._recent_events.items() if v > cutoff
             }
         
+        print(f"[v0] _emit QUEUED: {event_type} to queue (queue size: {self._queue.qsize()})")
         self._queue.put(event)
 
 
