@@ -4,6 +4,7 @@ Provides REST API endpoints for authentication management
 """
 
 import logging
+import logging.handlers
 import os
 import subprocess
 import threading
@@ -13,12 +14,24 @@ import auth_manager
 import jwt
 import datetime
 
-# Dedicated logger for auth failures (Fail2Ban reads this)
+# Dedicated logger for auth failures (Fail2Ban reads this file)
 auth_logger = logging.getLogger("proxmenux-auth")
-_auth_handler = logging.FileHandler("/var/log/proxmenux-auth.log")
-_auth_handler.setFormatter(logging.Formatter("%(asctime)s proxmenux-auth: %(message)s"))
-auth_logger.addHandler(_auth_handler)
 auth_logger.setLevel(logging.WARNING)
+
+# Handler 1: File for Fail2Ban
+_auth_file_handler = logging.FileHandler("/var/log/proxmenux-auth.log")
+_auth_file_handler.setFormatter(logging.Formatter("%(asctime)s proxmenux-auth: %(message)s"))
+auth_logger.addHandler(_auth_file_handler)
+
+# Handler 2: Syslog for JournalWatcher notifications
+# This sends to the systemd journal so notification_events.py can detect auth failures
+try:
+    _auth_syslog_handler = logging.handlers.SysLogHandler(address='/dev/log', facility=logging.handlers.SysLogHandler.LOG_AUTH)
+    _auth_syslog_handler.setFormatter(logging.Formatter("proxmenux-auth: %(message)s"))
+    _auth_syslog_handler.ident = "proxmenux-auth"
+    auth_logger.addHandler(_auth_syslog_handler)
+except Exception:
+    pass  # Syslog may not be available in all environments
 
 
 def _get_client_ip():
