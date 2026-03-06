@@ -273,9 +273,13 @@ export function StorageOverview() {
       const params = new URLSearchParams()
       if (disk.name) params.set('device', disk.name)
       if (disk.serial && disk.serial !== 'Unknown') params.set('serial', disk.serial)
-      const data = await fetchApi<{ observations: DiskObservation[] }>(`/api/storage/observations?${params.toString()}`)
+      const url = `/api/storage/observations?${params.toString()}`
+      console.log("[v0] Fetching observations:", url, "disk:", disk.name, disk.serial)
+      const data = await fetchApi<{ observations: DiskObservation[] }>(url)
+      console.log("[v0] Observations response:", data)
       setDiskObservations(data.observations || [])
-    } catch {
+    } catch (err) {
+      console.error("[v0] Observations fetch error:", err)
       setDiskObservations([])
     } finally {
       setLoadingObservations(false)

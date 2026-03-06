@@ -1236,9 +1236,12 @@ def get_storage_info():
                     if len(parts) >= 3 and parts[2] == 'disk':
                         disk_name = parts[0]
                         
+                        # Skip virtual/RAM-based block devices
                         if disk_name.startswith('zd'):
-                            # print(f"[v0] Skipping ZFS zvol device: {disk_name}")
-                            pass
+                            # ZFS zvol devices
+                            continue
+                        if disk_name.startswith('zram'):
+                            # zram compressed RAM devices (used by log2ram, etc.)
                             continue
                         
                         disk_size_bytes = int(parts[1])
@@ -2436,8 +2439,10 @@ def api_storage_summary():
                 if len(parts) >= 3 and parts[2] == 'disk':
                     disk_name = parts[0]
                     
-                    # Skip ZFS zvol devices
+                    # Skip virtual/RAM-based block devices
                     if disk_name.startswith('zd'):
+                        continue
+                    if disk_name.startswith('zram'):
                         continue
                     
                     disk_size_bytes = int(parts[1])
