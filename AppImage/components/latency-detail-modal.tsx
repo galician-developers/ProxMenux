@@ -323,16 +323,26 @@ const generateLatencyReport = (report: ReportData) => {
   .exec-text h3 { font-size: 16px; margin-bottom: 4px; }
   .exec-text p { font-size: 12px; color: #64748b; line-height: 1.5; }
 
-  /* Latency gauge - responsive */
+  /* Latency gauge - CSS only, no SVG */
   .latency-gauge {
     display: flex; flex-direction: column; align-items: center; flex-shrink: 0;
-    width: 120px; max-width: 120px;
+    width: 96px;
   }
-  .latency-gauge svg { width: 100%; height: auto; }
-  .gauge-value { display: flex; align-items: baseline; gap: 2px; margin-top: -8px; }
-  .gauge-num { font-size: 24px; font-weight: 800; line-height: 1; }
+  .gauge-ring {
+    width: 96px; height: 96px; border-radius: 50%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; flex-shrink: 0;
+    position: relative;
+  }
+  .gauge-ring::before {
+    content: ''; position: absolute; inset: 0; border-radius: 50%;
+    background: conic-gradient(from 180deg, #16a34a 0deg 60deg, #22c55e 60deg 90deg, #ca8a04 90deg 135deg, #dc2626 135deg 180deg, #e2e8f0 180deg 360deg);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 8px), #000 calc(100% - 8px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 8px), #000 calc(100% - 8px));
+  }
+  .gauge-value { display: flex; align-items: baseline; gap: 2px; z-index: 1; }
+  .gauge-num { font-size: 28px; font-weight: 800; line-height: 1; }
   .gauge-unit { font-size: 12px; font-weight: 600; opacity: 0.8; }
-  .gauge-status { font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-top: 2px; }
+  .gauge-status { font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-top: 2px; z-index: 1; }
   
   /* Latency range display */
   .latency-range {
@@ -343,15 +353,7 @@ const generateLatencyReport = (report: ReportData) => {
   .range-label { font-size: 9px; font-weight: 600; color: #94a3b8; text-transform: uppercase; }
   .range-value { font-size: 14px; font-weight: 700; }
   
-  /* Print styles for gauge */
-  @media print {
-    .latency-gauge { width: 140px; max-width: 140px; }
-    .gauge-num { font-size: 28px; }
-    .gauge-unit { font-size: 13px; }
-    .gauge-status { font-size: 10px; }
-    .latency-range { gap: 20px; }
-    .range-value { font-size: 16px; }
-  }
+
 
   /* Grids */
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
@@ -494,26 +496,13 @@ const generateLatencyReport = (report: ReportData) => {
   <div class="section-title">1. Executive Summary</div>
   <div class="exec-box">
     <div class="latency-gauge">
-      <svg viewBox="0 0 120 80">
-        <!-- Gauge background arc -->
-        <path d="M 10 70 A 50 50 0 0 1 110 70" fill="none" stroke="#e2e8f0" stroke-width="8" stroke-linecap="round"/>
-        <!-- Colored segments: Excellent (green), Good (green), Fair (yellow), Poor (red) -->
-        <path d="M 10 70 A 50 50 0 0 1 35 28" fill="none" stroke="#16a34a" stroke-width="8" stroke-linecap="round"/>
-        <path d="M 35 28 A 50 50 0 0 1 60 20" fill="none" stroke="#22c55e" stroke-width="8"/>
-        <path d="M 60 20 A 50 50 0 0 1 85 28" fill="none" stroke="#ca8a04" stroke-width="8"/>
-        <path d="M 85 28 A 50 50 0 0 1 110 70" fill="none" stroke="#dc2626" stroke-width="8" stroke-linecap="round"/>
-        <!-- Needle -->
-        <line x1="60" y1="70" x2="${60 + 40 * Math.cos(Math.PI - (Math.min(300, report.isRealtime ? (realtimeStats?.avg ?? 0) : parseFloat(String(report.stats.avg))) / 300) * Math.PI)}" y2="${70 - 40 * Math.sin(Math.PI - (Math.min(300, report.isRealtime ? (realtimeStats?.avg ?? 0) : parseFloat(String(report.stats.avg))) / 300) * Math.PI)}" stroke="${statusColor}" stroke-width="3" stroke-linecap="round"/>
-        <circle cx="60" cy="70" r="6" fill="${statusColor}"/>
-        <!-- Labels -->
-        <text x="8" y="78" font-size="7" fill="#64748b">0</text>
-        <text x="105" y="78" font-size="7" fill="#64748b">300+</text>
-      </svg>
-      <div class="gauge-value" style="color:${statusColor};">
-        <span class="gauge-num">${report.isRealtime ? (realtimeStats?.avg?.toFixed(0) ?? 'N/A') : report.stats.avg}</span>
-        <span class="gauge-unit">ms</span>
+      <div class="gauge-ring" style="border: 4px solid ${statusColor};">
+        <div class="gauge-value" style="color:${statusColor};">
+          <span class="gauge-num">${report.isRealtime ? (realtimeStats?.avg?.toFixed(0) ?? 'N/A') : report.stats.avg}</span>
+          <span class="gauge-unit">ms</span>
+        </div>
+        <div class="gauge-status" style="color:${statusColor};">${statusText}</div>
       </div>
-      <div class="gauge-status" style="color:${statusColor};">${statusText}</div>
     </div>
     <div class="exec-text">
       <h3>Network Latency Assessment${report.isRealtime ? ' (Real-time)' : ''}</h3>
