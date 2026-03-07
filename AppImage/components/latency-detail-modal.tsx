@@ -279,6 +279,18 @@ const generateLatencyReport = (report: ReportData) => {
     .top-bar .close-btn { padding: 8px 16px; font-size: 14px; }
     .top-bar .close-btn .close-text { display: inline; }
     body { padding-top: 60px; }
+    /* Scale gauge for mobile preview */
+    .latency-gauge { width: 120px; flex-shrink: 0; }
+    .latency-gauge svg { width: 120px; height: 80px; }
+    .gauge-num { font-size: 24px; }
+    .gauge-unit { font-size: 10px; }
+    .gauge-status { font-size: 8px; }
+    .exec-box { gap: 12px; padding: 14px; flex-wrap: nowrap; }
+    .exec-text h3 { font-size: 14px; }
+    .exec-text p { font-size: 10px; }
+    .latency-range { gap: 8px; }
+    .range-label { font-size: 9px; }
+    .range-value { font-size: 14px; }
   }
 
   /* Header */
@@ -837,9 +849,9 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
             Network Latency
           </DialogTitle>
         </DialogHeader>
-        <div className="flex items-center gap-2 mt-1 flex-nowrap">
+        <div className="flex items-center gap-2 mt-1 flex-nowrap overflow-x-auto">
           <Select value={target} onValueChange={setTarget}>
-            <SelectTrigger className="w-[200px] h-8 text-xs shrink-0">
+            <SelectTrigger className="w-[160px] sm:w-[200px] h-8 text-xs shrink-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
