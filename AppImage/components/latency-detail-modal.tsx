@@ -275,12 +275,6 @@ const generateLatencyReport = (report: ReportData) => {
     font-size: 14px; font-weight: 600; cursor: pointer;
   }
   .top-bar button:hover { background: #0891b2; }
-  .top-bar .close-btn {
-    background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); 
-    padding: 8px 14px; border-radius: 6px; display: flex; align-items: center; gap: 6px; 
-    cursor: pointer; font-size: 14px; font-weight: 500;
-  }
-  .top-bar .close-btn:hover { background: rgba(255,255,255,0.2); }
   @media (min-width: 640px) {
     .top-bar { padding: 12px 24px; }
     .top-bar-subtitle { display: block; }
@@ -441,21 +435,12 @@ const generateLatencyReport = (report: ReportData) => {
 <!-- Top bar for screen -->
 <div class="top-bar no-print">
   <div class="top-bar-left">
-    <button class="close-btn" onclick="window.close()">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M18 6L6 18M6 6l12 12"/>
-      </svg>
-      <span>Close</span>
-    </button>
     <div>
       <div class="top-bar-title">ProxMenux Network Latency Report</div>
       <div class="top-bar-subtitle">Review the report, then print or save as PDF</div>
     </div>
   </div>
-  <div style="display:flex;align-items:center;gap:12px;">
-    <span class="top-bar-subtitle">Ctrl+P</span>
-    <button onclick="window.print()">Print / Save as PDF</button>
-  </div>
+  <button onclick="window.print()">Print / Save as PDF</button>
 </div>
 
 <!-- Header -->
@@ -999,7 +984,15 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
                     stroke="#6b7280" 
                     fontSize={10}
                     tickLine={false}
-                    domain={[(dataMin: number) => Math.max(0, dataMin - Math.max(5, dataMin * 0.5)), (dataMax: number) => dataMax + Math.max(10, dataMax * 0.3)]}
+                    domain={[(dataMin: number, dataMax: number) => {
+                      const range = dataMax - dataMin
+                      const padding = Math.max(range * 0.3, dataMin * 0.2)
+                      return Math.max(0, dataMin - padding)
+                    }, (dataMin: number, dataMax: number) => {
+                      const range = dataMax - dataMin
+                      const padding = Math.max(range * 0.3, dataMax * 0.2)
+                      return dataMax + padding
+                    }]}
                     tickFormatter={(v) => `${v.toFixed(1)}ms`}
                   />
                   <Tooltip content={<CustomTooltip />} />
@@ -1048,7 +1041,15 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
                   stroke="#6b7280" 
                   fontSize={10}
                   tickLine={false}
-                  domain={[(dataMin: number) => Math.max(0, dataMin - Math.max(5, dataMin * 0.5)), (dataMax: number) => dataMax + Math.max(10, dataMax * 0.3)]}
+                  domain={[(dataMin: number, dataMax: number) => {
+                    const range = dataMax - dataMin
+                    const padding = Math.max(range * 0.3, dataMin * 0.2)
+                    return Math.max(0, dataMin - padding)
+                  }, (dataMin: number, dataMax: number) => {
+                    const range = dataMax - dataMin
+                    const padding = Math.max(range * 0.3, dataMax * 0.2)
+                    return dataMax + padding
+                  }]}
                   tickFormatter={(v) => `${v.toFixed(1)}ms`}
                 />
                 <Tooltip content={<CustomTooltip />} />

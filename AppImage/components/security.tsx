@@ -1005,13 +1005,6 @@ export function Security() {
     font-size: 14px; font-weight: 600; cursor: pointer;
   }
   .top-bar button:hover { background: #0891b2; }
-  .top-bar .close-btn {
-    background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); 
-    padding: 8px 14px; border-radius: 6px; display: flex; align-items: center; gap: 6px; 
-    cursor: pointer; font-size: 14px; font-weight: 500;
-  }
-  .top-bar .close-btn:hover { background: rgba(255,255,255,0.2); }
-  .top-bar .close-text { display: inline; }
   .hide-mobile { }
   @media (min-width: 640px) {
     .top-bar { padding: 12px 24px; }
@@ -1131,18 +1124,11 @@ function pmxPrint(){
 </script>
 <div class="top-bar no-print">
   <div style="display:flex;align-items:center;gap:12px;">
-    <button onclick="window.close();window.history.back();" class="close-btn" title="Close">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-      <span class="close-text">Close</span>
-    </button>
-    <strong class="hide-mobile">ProxMenux Security Audit Report</strong>
+    <strong>ProxMenux Security Audit Report</strong>
     <span id="pmx-print-hint" class="hide-mobile" style="font-size:11px;opacity:0.7;">Review the report, then print or save as PDF</span>
   </div>
-  <div style="display:flex;align-items:center;gap:8px;">
-    <span class="hide-mobile" style="font-size:11px;opacity:0.5;">\u2318P / Ctrl+P</span>
   <button onclick="pmxPrint()">Print / Save as PDF</button>
-  </div>
-  </div>
+</div>
 
 <!-- Header -->
 <div class="rpt-header">
