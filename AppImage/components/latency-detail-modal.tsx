@@ -170,9 +170,17 @@ const generateLatencyReport = (report: ReportData) => {
     endTime: new Date(report.data[report.data.length - 1].timestamp * 1000).toLocaleString(),
   } : null
 
-  // Generate chart SVG
-  const chartData = report.isRealtime 
-    ? report.realtimeResults.map(r => r.latency_avg || 0)
+  // Generate chart SVG - expand realtime to all 3 values (min, avg, max) per sample
+  const chartData = report.isRealtime
+    ? report.realtimeResults.flatMap(r => {
+        const points: number[] = []
+        if (r.latency_min !== null) points.push(r.latency_min)
+        if (r.latency_avg !== null && r.latency_avg !== r.latency_min && r.latency_avg !== r.latency_max) {
+          points.push(r.latency_avg)
+        }
+        if (r.latency_max !== null) points.push(r.latency_max)
+        return points.length > 0 ? points : [r.latency_avg ?? 0]
+      })
     : report.data.map(d => d.value || 0)
   
   let chartSvg = '<p style="text-align:center;color:#64748b;padding:20px;">Not enough data points for chart</p>'
@@ -695,11 +703,10 @@ ${report.isRealtime && report.realtimeResults.length > 0 ? `
 </body>
 </html>`
 
-  const printWindow = window.open('', '_blank')
-  if (printWindow) {
-    printWindow.document.write(html)
-    printWindow.document.close()
-  }
+  // Use Blob URL for Safari-safe preview (avoids document.write issues on mobile)
+  const blob = new Blob([html], { type: "text/html" })
+  const url = URL.createObjectURL(blob)
+  window.open(url, "_blank")
 }
 
 export function LatencyDetailModal({ open, onOpenChange, currentLatency }: LatencyDetailModalProps) {
@@ -822,11 +829,21 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
     time: new Date(point.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   }))
 
-  const realtimeChartData = realtimeResults.map((r, i) => ({
-    time: new Date(r.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-    value: r.latency_avg,
-    packet_loss: r.packet_loss,
-  }))
+  // Expand each sample to 3 data points (min, avg, max) for accurate representation
+  const realtimeChartData = realtimeResults.flatMap((r, i) => {
+    const time = new Date(r.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    const points = []
+    if (r.latency_min !== null) points.push({ time, value: r.latency_min, packet_loss: r.packet_loss })
+    if (r.latency_avg !== null && r.latency_avg !== r.latency_min && r.latency_avg !== r.latency_max) {
+      points.push({ time, value: r.latency_avg, packet_loss: r.packet_loss })
+    }
+    if (r.latency_max !== null) points.push({ time, value: r.latency_max, packet_loss: r.packet_loss })
+    // If no valid points, add avg as fallback
+    if (points.length === 0 && r.latency_avg !== null) {
+      points.push({ time, value: r.latency_avg, packet_loss: r.packet_loss })
+    }
+    return points
+  })
 
   // Calculate realtime stats
   const realtimeStats = realtimeResults.length > 0 ? {
