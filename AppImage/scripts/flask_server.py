@@ -631,7 +631,7 @@ def init_latency_db():
         return False
 
 def _measure_latency(target_ip: str) -> dict:
-    """Ping a target and return latency stats."""
+    """Ping a target and return latency stats. Uses 3 pings and returns the average to avoid false positives."""
     try:
         result = subprocess.run(
             ['ping', '-c', '3', '-W', '2', target_ip],
@@ -652,18 +652,16 @@ def _measure_latency(target_ip: str) -> dict:
                 return {
                     'success': True,
                     'avg': round(sum(latencies) / len(latencies), 1),
-                    'min': round(min(latencies), 1),
-                    'max': round(max(latencies), 1),
                     'packet_loss': round((3 - len(latencies)) / 3 * 100, 1)
                 }
         
         # Ping failed - 100% packet loss
-        return {'success': False, 'avg': None, 'min': None, 'max': None, 'packet_loss': 100.0}
+        return {'success': False, 'avg': None, 'packet_loss': 100.0}
     except Exception:
-        return {'success': False, 'avg': None, 'min': None, 'max': None, 'packet_loss': 100.0}
+        return {'success': False, 'avg': None, 'packet_loss': 100.0}
 
 def _record_latency():
-    """Record latency to the default gateway."""
+    """Record latency to the default gateway. Only stores the average of 3 pings."""
     try:
         gateway = _get_default_gateway()
         stats = _measure_latency(gateway)
@@ -671,9 +669,9 @@ def _record_latency():
         conn = _get_temp_db()
         conn.execute(
             """INSERT INTO latency_history 
-               (timestamp, target, latency_avg, latency_min, latency_max, packet_loss) 
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (int(time.time()), 'gateway', stats['avg'], stats['min'], stats['max'], stats['packet_loss'])
+               (timestamp, target, latency_avg, packet_loss) 
+               VALUES (?, ?, ?, ?)""",
+            (int(time.time()), 'gateway', stats['avg'], stats['packet_loss'])
         )
         conn.commit()
         conn.close()
@@ -718,20 +716,18 @@ def get_latency_history(target='gateway', timeframe='hour'):
         
         if interval is None:
             cursor = conn.execute(
-                """SELECT timestamp, latency_avg, latency_min, latency_max, packet_loss 
+                """SELECT timestamp, latency_avg, packet_loss 
                    FROM latency_history 
                    WHERE timestamp >= ? AND target = ? 
                    ORDER BY timestamp ASC""",
                 (since, target)
             )
             rows = cursor.fetchall()
-            data = [{"timestamp": r[0], "value": r[1], "min": r[2], "max": r[3], "packet_loss": r[4]} for r in rows if r[1] is not None]
+            data = [{"timestamp": r[0], "value": r[1], "packet_loss": r[2]} for r in rows if r[1] is not None]
         else:
             cursor = conn.execute(
                 """SELECT (timestamp / ?) * ? as bucket, 
                           ROUND(AVG(latency_avg), 1) as avg_val,
-                          ROUND(MIN(latency_min), 1) as min_val,
-                          ROUND(MAX(latency_max), 1) as max_val,
                           ROUND(AVG(packet_loss), 1) as avg_loss
                    FROM latency_history 
                    WHERE timestamp >= ? AND target = ?
@@ -740,19 +736,17 @@ def get_latency_history(target='gateway', timeframe='hour'):
                 (interval, interval, since, target)
             )
             rows = cursor.fetchall()
-            data = [{"timestamp": r[0], "value": r[1], "min": r[2], "max": r[3], "packet_loss": r[4]} for r in rows if r[1] is not None]
+            data = [{"timestamp": r[0], "value": r[1], "packet_loss": r[2]} for r in rows if r[1] is not None]
         
         conn.close()
         
-        # Compute stats
+        # Compute stats using the averaged values shown in the graph
         if data:
             values = [d["value"] for d in data if d["value"] is not None]
             if values:
-                mins = [d["min"] for d in data if d.get("min") is not None]
-                maxs = [d["max"] for d in data if d.get("max") is not None]
                 stats = {
-                    "min": round(min(mins) if mins else min(values), 1),
-                    "max": round(max(maxs) if maxs else max(values), 1),
+                    "min": round(min(values), 1),
+                    "max": round(max(values), 1),
                     "avg": round(sum(values) / len(values), 1),
                     "current": values[-1] if values else 0
                 }
