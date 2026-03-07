@@ -235,7 +235,7 @@ const generateLatencyReport = (report: ReportData) => {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=1024">
 <title>Network Latency Report - ${report.targetLabel}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
