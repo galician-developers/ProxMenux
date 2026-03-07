@@ -759,22 +759,62 @@ def get_latency_history(target='gateway', timeframe='hour'):
     except Exception as e:
         return {"data": [], "stats": {"min": 0, "max": 0, "avg": 0, "current": 0}, "target": target}
 
-def get_current_latency(target='gateway'):
-    """Get the most recent latency measurement for a target."""
+def get_latest_gateway_latency():
+    """Get the most recent gateway latency from the database (no new ping).
+    Used by health monitor to avoid duplicate pings."""
     try:
-        # If gateway, resolve to actual IP
+        conn = _get_temp_db()
+        cursor = conn.execute(
+            """SELECT timestamp, latency_avg, packet_loss FROM latency_history
+               WHERE target = 'gateway' ORDER BY timestamp DESC LIMIT 1"""
+        )
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            timestamp, latency_avg, packet_loss = row
+            age = int(time.time()) - timestamp
+            # Only return if data is fresh (less than 2 minutes old)
+            if age <= 120:
+                return {
+                    'latency_avg': latency_avg,
+                    'packet_loss': packet_loss,
+                    'timestamp': timestamp,
+                    'age_seconds': age,
+                    'fresh': True
+                }
+        return {'fresh': False, 'latency_avg': None}
+    except Exception:
+        return {'fresh': False, 'latency_avg': None}
+
+def get_current_latency(target='gateway'):
+    """Get the most recent latency measurement for a target.
+    For gateway: reads from database (already monitored every 60s).
+    For cloudflare/google: does a fresh ping (on-demand only)."""
+    try:
+        # Gateway uses stored data to avoid duplicate pings
         if target == 'gateway':
             target_ip = _get_default_gateway()
+            stored = get_latest_gateway_latency()
+            if stored.get('fresh'):
+                return {
+                    'target': target,
+                    'target_ip': target_ip,
+                    'latency_avg': stored['latency_avg'],
+                    'packet_loss': stored['packet_loss'],
+                    'status': 'ok' if stored['latency_avg'] and stored['latency_avg'] < 100 else 'warning'
+                }
+            # Fallback: do fresh measurement if no stored data
+            stats = _measure_latency(target_ip)
         else:
+            # Cloudflare/Google: fresh ping (not continuously monitored)
             target_ip = LATENCY_TARGETS.get(target, target)
+            stats = _measure_latency(target_ip)
         
-        stats = _measure_latency(target_ip)
         return {
             'target': target,
             'target_ip': target_ip,
             'latency_avg': stats['avg'],
-            'latency_min': stats['min'],
-            'latency_max': stats['max'],
             'packet_loss': stats['packet_loss'],
             'status': 'ok' if stats['success'] and stats['avg'] and stats['avg'] < 100 else 'warning' if stats['success'] else 'error'
         }

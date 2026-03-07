@@ -1967,10 +1967,11 @@ class HealthMonitor:
                 latency_ms = latency_status.get('latency_ms', 'N/A')
                 latency_sev = latency_status.get('status', 'OK')
                 interface_details['connectivity'] = latency_status
-                connectivity_check = {
-                    'status': latency_sev if latency_sev not in ['UNKNOWN'] else 'OK',
-                    'detail': f'Latency {latency_ms}ms to 1.1.1.1' if isinstance(latency_ms, (int, float)) else latency_status.get('reason', 'Unknown'),
-                }
+        target_display = latency_status.get('target', 'gateway')
+        connectivity_check = {
+            'status': latency_sev if latency_sev not in ['UNKNOWN'] else 'OK',
+            'detail': f'Latency {latency_ms}ms to {target_display}' if isinstance(latency_ms, (int, float)) else latency_status.get('reason', 'Unknown'),
+        }
                 if latency_sev not in ['OK', 'INFO', 'UNKNOWN']:
                     issues.append(latency_status.get('reason', 'Network latency issue'))
             else:
@@ -2006,101 +2007,69 @@ class HealthMonitor:
             return {'status': 'UNKNOWN', 'reason': f'Network check unavailable: {str(e)}', 'checks': {}}
     
     def _check_network_latency(self) -> Optional[Dict[str, Any]]:
-        """Check network latency to 1.1.1.1 using 3 consecutive pings.
+        """Check network latency using the gateway latency already monitored.
         
-        Uses 3 pings to avoid false positives from transient network spikes.
-        Reports the average latency and only warns if all 3 exceed threshold.
+        Uses the latency data from flask_server's continuous monitoring (every 60s)
+        instead of doing a separate ping to avoid duplicate network checks.
+        The gateway latency is based on the average of 3 pings to avoid false positives.
         """
         cache_key = 'network_latency'
         current_time = time.time()
         
+        # Use shorter cache since we're reading from DB (no network overhead)
         if cache_key in self.last_check_times:
-            if current_time - self.last_check_times[cache_key] < 60:
+            if current_time - self.last_check_times[cache_key] < 30:
                 return self.cached_results.get(cache_key)
         
         try:
-            # Use 3 pings to get reliable latency measurement
-            result = subprocess.run(
-                ['ping', '-c', '3', '-W', '2', '1.1.1.1'],
-                capture_output=True,
-                text=True,
-                timeout=self.NETWORK_TIMEOUT + 6  # Allow time for 3 pings
-            )
+            # Import and use the stored gateway latency from flask_server
+            import sys
+            import os
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            from flask_server import get_latest_gateway_latency, _get_default_gateway
             
-            if result.returncode == 0:
-                # Parse individual ping times
-                latencies = []
-                for line in result.stdout.split('\n'):
-                    if 'time=' in line:
-                        try:
-                            latency_str = line.split('time=')[1].split()[0]
-                            latencies.append(float(latency_str))
-                        except:
-                            pass
+            stored = get_latest_gateway_latency()
+            gateway_ip = _get_default_gateway() or 'gateway'
+            
+            if stored.get('fresh') and stored.get('latency_avg') is not None:
+                avg_latency = stored['latency_avg']
+                packet_loss = stored.get('packet_loss', 0)
                 
-                if latencies:
-                    # Calculate average latency
-                    avg_latency = sum(latencies) / len(latencies)
-                    max_latency = max(latencies)
-                    min_latency = min(latencies)
-                    
-                    # Count how many pings exceeded thresholds
-                    critical_count = sum(1 for l in latencies if l > self.NETWORK_LATENCY_CRITICAL)
-                    warning_count = sum(1 for l in latencies if l > self.NETWORK_LATENCY_WARNING)
-                    
-                    # Only report WARNING/CRITICAL if majority of pings exceed threshold
-                    # This prevents false positives from single transient spikes
-                    if critical_count >= 2:  # 2 or more of 3 pings are critical
-                        status = 'CRITICAL'
-                        reason = f'Latency {avg_latency:.1f}ms avg >{self.NETWORK_LATENCY_CRITICAL}ms (min:{min_latency:.0f} max:{max_latency:.0f})'
-                    elif warning_count >= 2:  # 2 or more of 3 pings exceed warning
-                        status = 'WARNING'
-                        reason = f'Latency {avg_latency:.1f}ms avg >{self.NETWORK_LATENCY_WARNING}ms (min:{min_latency:.0f} max:{max_latency:.0f})'
-                    else:
-                        status = 'OK'
-                        reason = None
-                    
-                    latency_result = {
-                        'status': status,
-                        'latency_ms': round(avg_latency, 1),
-                        'latency_min': round(min_latency, 1),
-                        'latency_max': round(max_latency, 1),
-                        'samples': len(latencies),
-                    }
-                    if reason:
-                        latency_result['reason'] = reason
-                    
-                    self.cached_results[cache_key] = latency_result
-                    self.last_check_times[cache_key] = current_time
-                    return latency_result
+                # Check for packet loss first
+                if packet_loss is not None and packet_loss >= 50:
+                    status = 'CRITICAL'
+                    reason = f'High packet loss ({packet_loss:.0f}%) to gateway'
+                elif packet_loss is not None and packet_loss > 0:
+                    status = 'WARNING'
+                    reason = f'Packet loss ({packet_loss:.0f}%) to gateway'
+                # Check latency thresholds
+                elif avg_latency > self.NETWORK_LATENCY_CRITICAL:
+                    status = 'CRITICAL'
+                    reason = f'Latency {avg_latency:.1f}ms >{self.NETWORK_LATENCY_CRITICAL}ms to gateway'
+                elif avg_latency > self.NETWORK_LATENCY_WARNING:
+                    status = 'WARNING'
+                    reason = f'Latency {avg_latency:.1f}ms >{self.NETWORK_LATENCY_WARNING}ms to gateway'
+                else:
+                    status = 'OK'
+                    reason = None
+                
+                latency_result = {
+                    'status': status,
+                    'latency_ms': round(avg_latency, 1),
+                    'target': gateway_ip,
+                }
+                if reason:
+                    latency_result['reason'] = reason
+                
+                self.cached_results[cache_key] = latency_result
+                self.last_check_times[cache_key] = current_time
+                return latency_result
             
-            # If ping failed (timeout, unreachable) - distinguish the reason
-            stderr_lower = (result.stderr or '').lower() if hasattr(result, 'stderr') else ''
-            if 'unreachable' in stderr_lower or 'network is unreachable' in stderr_lower:
-                fail_reason = 'Network unreachable - no route to 1.1.1.1'
-            elif result.returncode == 1:
-                fail_reason = 'Packet loss to 1.1.1.1 (100% loss)'
-            else:
-                fail_reason = f'Ping failed (exit code {result.returncode})'
+            # No fresh data available - return unknown (monitoring may not be running)
+            return {'status': 'UNKNOWN', 'reason': 'No recent latency data available'}
             
-            packet_loss_result = {
-                'status': 'CRITICAL',
-                'reason': fail_reason
-            }
-            self.cached_results[cache_key] = packet_loss_result
-            self.last_check_times[cache_key] = current_time
-            return packet_loss_result
-            
-        except subprocess.TimeoutExpired:
-            timeout_result = {
-                'status': 'WARNING',
-                'reason': f'Ping timeout (>{self.NETWORK_TIMEOUT}s) - possible high latency'
-            }
-            self.cached_results[cache_key] = timeout_result
-            self.last_check_times[cache_key] = current_time
-            return timeout_result
-        except Exception:
-            return {'status': 'UNKNOWN', 'reason': 'Ping command failed'}
+        except Exception as e:
+            return {'status': 'UNKNOWN', 'reason': f'Latency check unavailable: {str(e)}'}
     
     def _is_vzdump_active(self) -> bool:
         """Check if a vzdump (backup) job is currently running."""
