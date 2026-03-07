@@ -431,13 +431,9 @@ const generateLatencyReport = (report: ReportData) => {
     svg { max-width: 100%; height: auto; }
   }
 
-  /* Mobile print adjustments */
-  @media print and (max-width: 600px) {
-    .exec-box { flex-direction: column; gap: 15px; }
-    .latency-gauge { width: 100%; }
-    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr 1fr; }
-    .latency-range { flex-wrap: wrap; gap: 12px; }
-  }
+  /* NOTE: No mobile-specific print overrides — print layout is always A4/desktop
+     regardless of the device generating the PDF. The @media print block above
+     handles all necessary print adjustments. */
 </style>
 </head>
 <body>
