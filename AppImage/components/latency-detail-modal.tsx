@@ -238,7 +238,7 @@ const generateLatencyReport = (report: ReportData) => {
     .no-print { display: none !important; }
     .page-break { page-break-before: always; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    body { font-size: 11px; padding: 0; max-width: none; }
+    body { font-size: 11px; }
     .section { margin-bottom: 16px; }
     .rpt-header-left p, .rpt-header-right { color: #374151; }
     .rpt-header-right .rid { color: #4b5563; }
@@ -248,18 +248,6 @@ const generateLatencyReport = (report: ReportData) => {
     .card-sub { color: #374151; }
     .chk-tbl th { color: #374151; }
     .rpt-footer { color: #4b5563; }
-    /* Reset gauge to print size - override any screen responsive styles */
-    .latency-gauge { width: 160px !important; max-width: 160px !important; }
-    .latency-gauge svg { max-width: 160px !important; }
-    .gauge-num { font-size: 32px !important; }
-    .gauge-unit { font-size: 14px !important; }
-    .gauge-status { font-size: 10px !important; }
-    .exec-box { gap: 24px !important; padding: 20px !important; }
-    .exec-text h3 { font-size: 16px !important; }
-    .exec-text p { font-size: 12px !important; }
-    .latency-range { gap: 24px !important; }
-    .range-label { font-size: 11px !important; }
-    .range-value { font-size: 18px !important; }
   }
   @media screen {
     body { max-width: 1000px; margin: 0 auto; padding: 24px 32px; padding-top: 64px; }
@@ -291,19 +279,6 @@ const generateLatencyReport = (report: ReportData) => {
     .top-bar .close-btn { padding: 8px 16px; font-size: 14px; }
     .top-bar .close-btn .close-text { display: inline; }
     body { padding-top: 60px; }
-    /* Scale gauge for mobile preview */
-    .latency-gauge { width: 100px; max-width: 100px; flex-shrink: 0; }
-    .latency-gauge svg { max-width: 100px !important; }
-    .gauge-num { font-size: 20px; }
-    .gauge-unit { font-size: 9px; }
-    .gauge-status { font-size: 7px; }
-    .exec-box { gap: 10px; padding: 12px; flex-wrap: nowrap; }
-    .exec-text h3 { font-size: 13px; }
-    .exec-text p { font-size: 9px; }
-    .latency-range { gap: 6px; flex-wrap: wrap; }
-    .range-label { font-size: 8px; }
-    .range-value { font-size: 12px; }
-    .range-item { min-width: auto; }
   }
 
   /* Header */
