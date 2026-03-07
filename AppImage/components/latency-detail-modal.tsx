@@ -249,6 +249,18 @@ const generateLatencyReport = (report: ReportData) => {
     .card-sub { color: #374151; }
     .chk-tbl th { color: #374151; }
     .rpt-footer { color: #4b5563; }
+    /* Reset mobile screen styles for print */
+    .exec-box { gap: 24px !important; padding: 20px !important; }
+    .latency-gauge { max-width: 160px !important; }
+    .latency-gauge svg { width: 160px !important; height: 107px !important; }
+    .gauge-num { font-size: 32px !important; }
+    .gauge-unit { font-size: 14px !important; }
+    .gauge-status { font-size: 10px !important; }
+    .exec-text h3 { font-size: 16px !important; }
+    .exec-text p { font-size: 12px !important; }
+    .latency-range { gap: 24px !important; }
+    .range-label { font-size: 11px !important; }
+    .range-value { font-size: 18px !important; }
   }
   @media screen {
     body { max-width: 1000px; margin: 0 auto; padding: 24px 32px; padding-top: 64px; }
@@ -279,7 +291,19 @@ const generateLatencyReport = (report: ReportData) => {
     .hide-mobile { display: none !important; }
     .top-bar .close-btn { padding: 8px 16px; font-size: 14px; }
     .top-bar .close-btn .close-text { display: inline; }
-    body { padding-top: 60px; }
+    body { padding-top: 60px; padding-left: 12px; padding-right: 12px; }
+    /* Scale content for mobile preview */
+    .exec-box { gap: 12px; padding: 12px; }
+    .latency-gauge { max-width: 100px; }
+    .latency-gauge svg { width: 100px; height: 67px; }
+    .gauge-num { font-size: 22px; }
+    .gauge-unit { font-size: 10px; }
+    .gauge-status { font-size: 8px; }
+    .exec-text h3 { font-size: 14px; }
+    .exec-text p { font-size: 10px; }
+    .latency-range { gap: 12px; }
+    .range-label { font-size: 9px; }
+    .range-value { font-size: 14px; }
   }
 
   /* Header */
