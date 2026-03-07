@@ -19,10 +19,10 @@ const TIMEFRAME_OPTIONS = [
 ]
 
 const TARGET_OPTIONS = [
-  { value: "gateway", label: "Gateway (Router)", realtime: false },
-  { value: "cloudflare", label: "Cloudflare (1.1.1.1)", realtime: true },
-  { value: "google", label: "Google DNS (8.8.8.8)", realtime: true },
-]
+  { value: "gateway", label: "Gateway (Router)", shortLabel: "Gateway", realtime: false },
+  { value: "cloudflare", label: "Cloudflare (1.1.1.1)", shortLabel: "Cloudflare", realtime: true },
+  { value: "google", label: "Google DNS (8.8.8.8)", shortLabel: "Google DNS", realtime: true },
+  ]
 
 // Realtime test configuration
 const REALTIME_TEST_DURATION = 120 // 2 minutes in seconds
@@ -479,7 +479,7 @@ function pmxPrint(){
   <div class="section-title">1. Executive Summary</div>
   <div class="exec-box">
     <div class="latency-gauge">
-      <svg viewBox="0 0 120 80" style="width:100%;height:auto;max-width:160px;">
+      <svg viewBox="0 0 120 80" width="160" height="107">
         <!-- Gauge background arc -->
         <path d="M 10 70 A 50 50 0 0 1 110 70" fill="none" stroke="#e2e8f0" stroke-width="8" stroke-linecap="round"/>
         <!-- Colored segments: Excellent (green), Good (green), Fair (yellow), Poor (red) -->
@@ -837,10 +837,12 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
             Network Latency
           </DialogTitle>
         </DialogHeader>
-        <div className="flex items-center gap-2 mt-1 flex-nowrap overflow-x-auto">
+        <div className="flex items-center gap-2 mt-1 flex-nowrap">
           <Select value={target} onValueChange={setTarget}>
-            <SelectTrigger className="w-[160px] sm:w-[200px] h-8 text-xs shrink-0">
-              <SelectValue />
+            <SelectTrigger className="w-[140px] sm:w-[180px] h-8 text-xs shrink-0">
+              <span className="truncate">
+                {TARGET_OPTIONS.find(t => t.value === target)?.shortLabel || target}
+              </span>
             </SelectTrigger>
             <SelectContent>
               {TARGET_OPTIONS.map(opt => (
