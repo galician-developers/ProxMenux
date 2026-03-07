@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { fetchApi } from "../lib/api-config"
 import { formatNetworkTraffic, getNetworkUnit } from "../lib/format-network"
 import { LatencyDetailModal } from "./latency-detail-modal"
-import { LineChart, Line, ResponsiveContainer, YAxis } from "recharts"
+import { AreaChart, Area, LineChart, Line, ResponsiveContainer, YAxis } from "recharts"
 
 interface NetworkData {
   interfaces: NetworkInterface[]
@@ -408,16 +408,23 @@ export function NetworkMetrics() {
             {latencyData?.data && latencyData.data.length > 0 && (
               <div className="h-[40px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={latencyData.data.slice(-30)}>
+                  <AreaChart data={latencyData.data.slice(-30)} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="latencySparkGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} />
+                        <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
                     <YAxis hide domain={['dataMin - 5', 'dataMax + 5']} />
-                    <Line
+                    <Area
                       type="monotone"
                       dataKey="value"
                       stroke="#3b82f6"
                       strokeWidth={1.5}
+                      fill="url(#latencySparkGradient)"
                       dot={false}
                     />
-                  </LineChart>
+                  </AreaChart>
                 </ResponsiveContainer>
               </div>
             )}

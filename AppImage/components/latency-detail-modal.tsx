@@ -980,7 +980,13 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
           {isRealtime ? (
             realtimeChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={realtimeChartData}>
+                <AreaChart data={realtimeChartData}>
+                  <defs>
+                    <linearGradient id="latencyRealtimeGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
                   <XAxis 
                     dataKey="time" 
@@ -997,15 +1003,16 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
                     tickFormatter={(v) => `${v}ms`}
                   />
                   <Tooltip content={<CustomTooltip />} />
-                  <Line
+                  <Area
                     type="monotone"
                     dataKey="value"
                     stroke="#3b82f6"
                     strokeWidth={2}
+                    fill="url(#latencyRealtimeGradient)"
                     dot={{ fill: '#3b82f6', strokeWidth: 0, r: 3 }}
                     activeDot={{ r: 5, fill: '#3b82f6' }}
                   />
-                </LineChart>
+                </AreaChart>
               </ResponsiveContainer>
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
