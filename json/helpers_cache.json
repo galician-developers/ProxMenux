@@ -6451,7 +6451,7 @@
       19
     ],
     "notes": [
-      "This instance uses BoltDB",
+      "This instance uses SQLite",
       "Admin password: `cat ~/semaphore.creds`"
     ],
     "type": "ct",
