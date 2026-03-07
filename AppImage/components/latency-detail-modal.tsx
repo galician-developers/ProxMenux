@@ -280,17 +280,18 @@ const generateLatencyReport = (report: ReportData) => {
     .top-bar .close-btn .close-text { display: inline; }
     body { padding-top: 60px; }
     /* Scale gauge for mobile preview */
-    .latency-gauge { width: 120px; flex-shrink: 0; }
-    .latency-gauge svg { width: 120px; height: 80px; }
-    .gauge-num { font-size: 24px; }
-    .gauge-unit { font-size: 10px; }
-    .gauge-status { font-size: 8px; }
-    .exec-box { gap: 12px; padding: 14px; flex-wrap: nowrap; }
-    .exec-text h3 { font-size: 14px; }
-    .exec-text p { font-size: 10px; }
-    .latency-range { gap: 8px; }
-    .range-label { font-size: 9px; }
-    .range-value { font-size: 14px; }
+    .latency-gauge { width: 100px; max-width: 100px; flex-shrink: 0; }
+    .latency-gauge svg { max-width: 100px !important; }
+    .gauge-num { font-size: 20px; }
+    .gauge-unit { font-size: 9px; }
+    .gauge-status { font-size: 7px; }
+    .exec-box { gap: 10px; padding: 12px; flex-wrap: nowrap; }
+    .exec-text h3 { font-size: 13px; }
+    .exec-text p { font-size: 9px; }
+    .latency-range { gap: 6px; flex-wrap: wrap; }
+    .range-label { font-size: 8px; }
+    .range-value { font-size: 12px; }
+    .range-item { min-width: auto; }
   }
 
   /* Header */
@@ -491,7 +492,7 @@ function pmxPrint(){
   <div class="section-title">1. Executive Summary</div>
   <div class="exec-box">
     <div class="latency-gauge">
-      <svg viewBox="0 0 120 80" width="160" height="107">
+      <svg viewBox="0 0 120 80" style="width:100%;height:auto;max-width:160px;">
         <!-- Gauge background arc -->
         <path d="M 10 70 A 50 50 0 0 1 110 70" fill="none" stroke="#e2e8f0" stroke-width="8" stroke-linecap="round"/>
         <!-- Colored segments: Excellent (green), Good (green), Fair (yellow), Poor (red) -->
