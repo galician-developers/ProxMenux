@@ -233,8 +233,9 @@ const generateLatencyReport = (report: ReportData) => {
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1a2e; background: #fff; font-size: 13px; line-height: 1.5; }
 
-  @page { margin: 15mm 15mm 20mm 15mm; size: A4; }
+  @page { margin: 10mm; size: A4; }
   @media print {
+    html, body { margin: 0 !important; padding: 0 !important; }
     .no-print { display: none !important; }
     .page-break { page-break-before: always; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
