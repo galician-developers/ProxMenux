@@ -233,7 +233,7 @@ const generateLatencyReport = (report: ReportData) => {
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1a2e; background: #fff; font-size: 13px; line-height: 1.5; }
 
-  @page { margin: 10mm 12mm 12mm 12mm; size: A4; }
+  @page { margin: 15mm 15mm 20mm 15mm; size: A4; }
   @media print {
     .no-print { display: none !important; }
     .page-break { page-break-before: always; }
@@ -250,7 +250,7 @@ const generateLatencyReport = (report: ReportData) => {
     .rpt-footer { color: #4b5563; }
   }
   @media screen {
-    body { max-width: 850px; margin: 0 auto; padding: 12px 16px; padding-top: 50px; }
+    body { max-width: 1000px; margin: 0 auto; padding: 24px 32px; padding-top: 64px; }
   }
 
   /* Top bar for screen only */
@@ -274,72 +274,43 @@ const generateLatencyReport = (report: ReportData) => {
   .hide-mobile { }
   @media print { .top-bar { display: none; } body { padding-top: 0; } }
   @media screen and (max-width: 600px) {
-    .top-bar { padding: 8px 12px; }
+    .top-bar { padding: 10px 12px; }
     .hide-mobile { display: none !important; }
-    .top-bar .close-btn { padding: 8px 14px; font-size: 13px; }
+    .top-bar .close-btn { padding: 8px 16px; font-size: 14px; }
     .top-bar .close-btn .close-text { display: inline; }
-    body { padding: 10px; padding-top: 52px; }
-    /* Scale down content to fit mobile screen while preserving print layout */
-    .rpt-header { flex-wrap: wrap; gap: 8px; padding: 8px 0; }
-    .rpt-header-left { gap: 8px; }
-    .rpt-header-left img { height: 32px; }
-    .rpt-header-left h1 { font-size: 16px; }
-    .rpt-header-left p { font-size: 9px; }
-    .rpt-header-right { font-size: 9px; }
-    .exec-box { flex-wrap: wrap; gap: 12px; padding: 12px; }
-    .latency-gauge { width: 120px; }
-    .latency-gauge svg { width: 120px; height: 80px; }
-    .gauge-num { font-size: 24px; }
-    .gauge-unit { font-size: 11px; }
-    .gauge-status { font-size: 8px; }
-    .exec-text h3 { font-size: 14px; }
-    .exec-text p { font-size: 11px; }
-    .latency-range { gap: 16px; flex-wrap: wrap; }
-    .range-label { font-size: 9px; }
-    .range-value { font-size: 14px; }
-    .section-title { font-size: 11px; }
-    .card { padding: 8px; }
-    .card-value { font-size: 12px; }
-    .card-c .card-value { font-size: 16px; }
-    .card-label { font-size: 9px; }
-    .grid-4 { grid-template-columns: repeat(4, 1fr); gap: 4px; }
-    .grid-3 { gap: 4px; }
-    .threshold-item p { font-size: 10px; }
-    .info-box { padding: 10px; }
-    .info-box h4, .info-box p { font-size: 10px; }
-    .rpt-footer { font-size: 9px; flex-wrap: wrap; gap: 4px; }
+    body { padding-top: 60px; }
   }
 
   /* Header */
   .rpt-header {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 8px 0; border-bottom: 2px solid #0f172a; margin-bottom: 12px;
+    padding: 18px 0; border-bottom: 3px solid #0f172a; margin-bottom: 22px;
   }
-  .rpt-header-left { display: flex; align-items: center; gap: 10px; }
-  .rpt-header-left img { height: 36px; width: auto; }
-  .rpt-header-left h1 { font-size: 18px; font-weight: 700; color: #0f172a; margin: 0; }
-  .rpt-header-left p { font-size: 9px; color: #64748b; margin: 0; }
-  .rpt-header-right { text-align: right; font-size: 9px; color: #64748b; line-height: 1.4; }
-  .rpt-header-right .rid { font-family: monospace; font-size: 8px; color: #94a3b8; }
+  .rpt-header-left { display: flex; align-items: center; gap: 14px; }
+  .rpt-header-left img { height: 44px; width: auto; }
+  .rpt-header-left h1 { font-size: 22px; font-weight: 700; color: #0f172a; }
+  .rpt-header-left p { font-size: 11px; color: #64748b; }
+  .rpt-header-right { text-align: right; font-size: 11px; color: #64748b; line-height: 1.6; }
+  .rpt-header-right .rid { font-family: monospace; font-size: 10px; color: #94a3b8; }
 
   /* Sections */
-  .section { margin-bottom: 16px; }
+  .section { margin-bottom: 22px; }
   .section-title {
-    font-size: 12px; font-weight: 700; color: #0f172a; text-transform: uppercase;
-    letter-spacing: 0.05em; padding-bottom: 4px; border-bottom: 2px solid #e2e8f0; margin-bottom: 10px;
+    font-size: 14px; font-weight: 700; color: #0f172a; text-transform: uppercase;
+    letter-spacing: 0.05em; padding-bottom: 5px; border-bottom: 2px solid #e2e8f0; margin-bottom: 12px;
   }
 
   /* Executive summary */
   .exec-box {
-    display: flex; align-items: center; gap: 20px; padding: 16px;
-    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 24px; padding: 20px;
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 16px;
   }
   .score-ring {
     width: 96px; height: 96px; border-radius: 50%; display: flex; flex-direction: column;
     align-items: center; justify-content: center; border: 4px solid; flex-shrink: 0;
   }
-  .score-num { font-size: 28px; font-weight: 800; line-height: 1; }
-  .score-unit { font-size: 12px; font-weight: 600; opacity: 0.8; }
+  .score-num { font-size: 32px; font-weight: 800; line-height: 1; }
+  .score-unit { font-size: 14px; font-weight: 600; opacity: 0.8; }
   .score-lbl { font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-top: 2px; }
   .exec-text { flex: 1; }
   .exec-text h3 { font-size: 16px; margin-bottom: 4px; }
@@ -866,9 +837,9 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
             Network Latency
           </DialogTitle>
         </DialogHeader>
-        <div className="flex items-center gap-1.5 sm:gap-2 mt-1 flex-nowrap">
+        <div className="flex items-center gap-2 mt-1 flex-nowrap">
           <Select value={target} onValueChange={setTarget}>
-            <SelectTrigger className="w-auto min-w-[100px] max-w-[140px] sm:max-w-[180px] h-8 text-xs shrink-0">
+            <SelectTrigger className="w-[200px] h-8 text-xs shrink-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -881,7 +852,7 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
           </Select>
           {!isRealtime && (
             <Select value={timeframe} onValueChange={setTimeframe}>
-              <SelectTrigger className="w-auto min-w-[70px] h-8 text-xs shrink-0">
+              <SelectTrigger className="w-[100px] h-8 text-xs shrink-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -899,21 +870,20 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
                 variant="outline"
                 size="sm"
                 onClick={stopRealtimeTest}
-                className="gap-1 text-red-500 border-red-500/30 hover:bg-red-500/10 shrink-0 h-8 px-2"
+                className="gap-1.5 text-red-500 border-red-500/30 hover:bg-red-500/10 shrink-0 h-8 px-3"
               >
                 <Square className="h-3 w-3 fill-current" />
-                <span className="hidden xs:inline">Stop</span>
+                Stop
               </Button>
             ) : (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={restartRealtimeTest}
-                className="gap-1 shrink-0 h-8 px-2"
+                className="gap-1.5 shrink-0 h-8 px-3"
               >
                 <RefreshCw className="h-3 w-3" />
-                <span className="hidden sm:inline">Test Again</span>
-                <span className="sm:hidden hidden xs:inline">Test</span>
+                Test Again
               </Button>
             )
           )}
@@ -931,10 +901,10 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
               testDuration: isRealtime ? testDuration : undefined,
             })}
             disabled={isRealtime ? realtimeResults.length === 0 : data.length === 0}
-            className="gap-1 shrink-0 h-8 px-2 ml-auto"
+            className="gap-1.5 shrink-0 h-8 px-3"
           >
-            <FileText className="h-3 w-3" />
-            <span className="hidden sm:inline">Report</span>
+            <FileText className="h-3.5 w-3.5" />
+            Report
           </Button>
         </div>
 
