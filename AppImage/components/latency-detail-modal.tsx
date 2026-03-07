@@ -214,8 +214,8 @@ const generateLatencyReport = (report: ReportData) => {
       <svg width="100%" viewBox="0 0 ${width} ${height}" style="display:block;">
         <defs>
           <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="${statusColor}" stop-opacity="0.3"/>
-            <stop offset="100%" stop-color="${statusColor}" stop-opacity="0.05"/>
+            <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.3"/>
+            <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.05"/>
           </linearGradient>
         </defs>
         <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height - padding}" stroke="#e2e8f0" stroke-width="1"/>
@@ -225,7 +225,7 @@ const generateLatencyReport = (report: ReportData) => {
         <text x="${padding - 5}" y="${height / 2 + 3}" font-size="9" fill="#64748b" text-anchor="end">${Math.round((minVal + maxVal) / 2)}ms</text>
         <text x="${padding - 5}" y="${height - padding + 4}" font-size="9" fill="#64748b" text-anchor="end">${Math.round(minVal)}ms</text>
         <polygon points="${areaPoints}" fill="url(#areaGrad)"/>
-        <polyline points="${points}" fill="none" stroke="${statusColor}" stroke-width="2"/>
+        <polyline points="${points}" fill="none" stroke="#3b82f6" stroke-width="2"/>
         <text x="${width / 2}" y="${height - 5}" font-size="9" fill="#64748b" text-anchor="middle">${chartData.length} samples</text>
       </svg>
     `
@@ -480,7 +480,7 @@ const generateLatencyReport = (report: ReportData) => {
   <div class="section-title">1. Executive Summary</div>
   <div class="exec-box">
     <div class="latency-gauge">
-      <svg viewBox="0 0 120 80" width="160" height="107">
+      <svg viewBox="0 0 120 90" width="160" height="120">
         <!-- Gauge background arc -->
         <path d="M 10 70 A 50 50 0 0 1 110 70" fill="none" stroke="#e2e8f0" stroke-width="8" stroke-linecap="round"/>
         <!-- Colored segments: Excellent (green), Good (green), Fair (yellow), Poor (red) -->
@@ -492,8 +492,8 @@ const generateLatencyReport = (report: ReportData) => {
         <line x1="60" y1="70" x2="${60 + 40 * Math.cos(Math.PI - (Math.min(300, report.isRealtime ? (realtimeStats?.avg ?? 0) : parseFloat(String(report.stats.avg))) / 300) * Math.PI)}" y2="${70 - 40 * Math.sin(Math.PI - (Math.min(300, report.isRealtime ? (realtimeStats?.avg ?? 0) : parseFloat(String(report.stats.avg))) / 300) * Math.PI)}" stroke="${statusColor}" stroke-width="3" stroke-linecap="round"/>
         <circle cx="60" cy="70" r="6" fill="${statusColor}"/>
         <!-- Labels -->
-        <text x="8" y="78" font-size="7" fill="#64748b">0</text>
-        <text x="105" y="78" font-size="7" fill="#64748b">300+</text>
+        <text x="8" y="87" font-size="7" fill="#64748b">0</text>
+        <text x="98" y="87" font-size="7" fill="#64748b">300+</text>
       </svg>
       <div class="gauge-value" style="color:${statusColor};">
         <span class="gauge-num">${report.isRealtime ? (realtimeStats?.avg?.toFixed(0) ?? 'N/A') : report.stats.avg}</span>

@@ -413,7 +413,7 @@ export function NetworkMetrics() {
                     <Line
                       type="monotone"
                       dataKey="value"
-                      stroke={(latencyData?.stats?.current ?? 0) < 100 ? "#22c55e" : (latencyData?.stats?.current ?? 0) < 200 ? "#f59e0b" : "#ef4444"}
+                      stroke="#3b82f6"
                       strokeWidth={1.5}
                       dot={false}
                     />
