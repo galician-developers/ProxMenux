@@ -574,10 +574,39 @@ const generateLatencyReport = (report: ReportData) => {
   </div>
 </div>
 
-${report.isRealtime && report.realtimeResults.length > 0 ? `
-<!-- 3. Test Results -->
+<!-- 3. Latency Graph (always section 3) -->
 <div class="section">
-  <div class="section-title">3. Detailed Test Results</div>
+  <div class="section-title">3. Latency Graph</div>
+  <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;">
+    ${chartSvg}
+  </div>
+</div>
+
+<!-- 4. Performance Thresholds (always section 4) -->
+<div class="section">
+  <div class="section-title">4. Performance Thresholds</div>
+  <div class="threshold-item">
+    <div class="threshold-dot" style="background:#16a34a;"></div>
+    <p><strong>Excellent (&lt; 50ms):</strong> Optimal for real-time applications, gaming, and video calls.</p>
+  </div>
+  <div class="threshold-item">
+    <div class="threshold-dot" style="background:#16a34a;"></div>
+    <p><strong>Good (50-100ms):</strong> Acceptable for most applications with minimal impact.</p>
+  </div>
+  <div class="threshold-item">
+    <div class="threshold-dot" style="background:#ca8a04;"></div>
+    <p><strong>Fair (100-200ms):</strong> Noticeable delay. May affect VoIP and interactive applications.</p>
+  </div>
+  <div class="threshold-item">
+    <div class="threshold-dot" style="background:#dc2626;"></div>
+    <p><strong>Poor (&gt; 200ms):</strong> Significant latency. Investigation recommended.</p>
+  </div>
+</div>
+
+${report.isRealtime && report.realtimeResults.length > 0 ? `
+<!-- 5. Detailed Test Results (only for Cloudflare / Google DNS) -->
+<div class="section">
+  <div class="section-title">5. Detailed Test Results</div>
   <table class="chk-tbl">
     <thead>
       <tr>
@@ -597,36 +626,7 @@ ${report.isRealtime && report.realtimeResults.length > 0 ? `
 </div>
 ` : ''}
 
-<!-- Latency Chart -->
-<div class="section">
-  <div class="section-title">${report.isRealtime ? '4' : '3'}. Latency Graph</div>
-  <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;">
-    ${chartSvg}
-  </div>
-</div>
-
-<!-- Reference Thresholds -->
-<div class="section">
-  <div class="section-title">${report.isRealtime ? '5' : '4'}. Performance Thresholds</div>
-  <div class="threshold-item">
-    <div class="threshold-dot" style="background:#16a34a;"></div>
-    <p><strong>Excellent (&lt; 50ms):</strong> Optimal for real-time applications, gaming, and video calls.</p>
-  </div>
-  <div class="threshold-item">
-    <div class="threshold-dot" style="background:#16a34a;"></div>
-    <p><strong>Good (50-100ms):</strong> Acceptable for most applications with minimal impact.</p>
-  </div>
-  <div class="threshold-item">
-    <div class="threshold-dot" style="background:#ca8a04;"></div>
-    <p><strong>Fair (100-200ms):</strong> Noticeable delay. May affect VoIP and interactive applications.</p>
-  </div>
-  <div class="threshold-item">
-    <div class="threshold-dot" style="background:#dc2626;"></div>
-    <p><strong>Poor (&gt; 200ms):</strong> Significant latency. Investigation recommended.</p>
-  </div>
-</div>
-
-<!-- Methodology -->
+<!-- Methodology (5 for Gateway, 6 for Cloudflare/Google DNS) -->
 <div class="section">
   <div class="section-title">${report.isRealtime ? '6' : '5'}. Methodology</div>
   <div class="grid-2">
@@ -661,10 +661,7 @@ ${report.isRealtime && report.realtimeResults.length > 0 ? `
 
 <!-- Footer -->
 <div class="rpt-footer">
-  <div>
-    <img src="${logoUrl}" alt="ProxMenux" style="height:20px;vertical-align:middle;margin-right:8px;" onerror="this.style.display='none'" />
-    ProxMenux Monitor - Network Performance Report
-  </div>
+  <div>ProxMenux Monitor - Network Performance Report</div>
   <div>Generated: ${now} | Report ID: PMXL-${Date.now().toString(36).toUpperCase()}</div>
 </div>
 
