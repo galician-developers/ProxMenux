@@ -231,12 +231,11 @@ const generateLatencyReport = (report: ReportData) => {
     `
   }
 
-  // Inner report HTML (will be embedded in iframe) - has viewport=1024 for consistent print
-  const reportHtml = `<!DOCTYPE html>
+  const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=1024">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Network Latency Report - ${report.targetLabel}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -244,9 +243,10 @@ const generateLatencyReport = (report: ReportData) => {
   @page { margin: 10mm; size: A4; }
   @media print {
     html, body { margin: 0 !important; padding: 0 !important; }
+    .no-print { display: none !important; }
     .page-break { page-break-before: always; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    body { font-size: 11px; }
+    body { font-size: 11px; padding-top: 0; }
     .section { margin-bottom: 16px; }
     .rpt-header-left p, .rpt-header-right { color: #374151; }
     .rpt-header-right .rid { color: #4b5563; }
@@ -258,8 +258,34 @@ const generateLatencyReport = (report: ReportData) => {
     .rpt-footer { color: #4b5563; }
   }
   @media screen {
-    body { max-width: 1000px; margin: 0 auto; padding: 24px 32px; }
+    body { max-width: 1000px; margin: 0 auto; padding: 24px 32px; padding-top: 64px; }
   }
+  
+  /* Top bar for screen only */
+  .top-bar {
+    position: fixed; top: 0; left: 0; right: 0; background: #0f172a; color: #e2e8f0;
+    padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; z-index: 100;
+    font-size: 13px;
+  }
+  .top-bar-left { display: flex; align-items: center; gap: 12px; }
+  .top-bar-title { font-weight: 600; }
+  .top-bar-subtitle { font-size: 11px; color: #94a3b8; display: none; }
+  .top-bar button {
+    background: #06b6d4; color: #fff; border: none; padding: 10px 20px; border-radius: 6px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .top-bar button:hover { background: #0891b2; }
+  .top-bar .close-btn {
+    background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); 
+    padding: 8px 14px; border-radius: 6px; display: flex; align-items: center; gap: 6px; 
+    cursor: pointer; font-size: 14px; font-weight: 500;
+  }
+  .top-bar .close-btn:hover { background: rgba(255,255,255,0.2); }
+  @media (min-width: 640px) {
+    .top-bar { padding: 12px 24px; }
+    .top-bar-subtitle { display: block; }
+  }
+  @media print { .top-bar { display: none; } body { padding-top: 0; } }
 
   /* Header */
   .rpt-header {
@@ -282,8 +308,9 @@ const generateLatencyReport = (report: ReportData) => {
 
   /* Executive summary */
   .exec-box {
-    display: flex; align-items: center; gap: 24px; padding: 20px;
+    display: flex; align-items: flex-start; gap: 20px; padding: 20px;
     background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 16px;
+    flex-wrap: wrap;
   }
   .score-ring {
     width: 96px; height: 96px; border-radius: 50%; display: flex; flex-direction: column;
@@ -292,26 +319,39 @@ const generateLatencyReport = (report: ReportData) => {
   .score-num { font-size: 32px; font-weight: 800; line-height: 1; }
   .score-unit { font-size: 14px; font-weight: 600; opacity: 0.8; }
   .score-lbl { font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-top: 2px; }
-  .exec-text { flex: 1; }
+  .exec-text { flex: 1; min-width: 200px; }
   .exec-text h3 { font-size: 16px; margin-bottom: 4px; }
   .exec-text p { font-size: 12px; color: #64748b; line-height: 1.5; }
 
-  /* Latency gauge */
+  /* Latency gauge - responsive */
   .latency-gauge {
-    display: flex; flex-direction: column; align-items: center; flex-shrink: 0; width: 160px;
+    display: flex; flex-direction: column; align-items: center; flex-shrink: 0;
+    width: 120px; max-width: 120px;
   }
-  .gauge-value { display: flex; align-items: baseline; gap: 2px; margin-top: -10px; }
-  .gauge-num { font-size: 32px; font-weight: 800; line-height: 1; }
-  .gauge-unit { font-size: 14px; font-weight: 600; opacity: 0.8; }
-  .gauge-status { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-top: 2px; }
+  .latency-gauge svg { width: 100%; height: auto; }
+  .gauge-value { display: flex; align-items: baseline; gap: 2px; margin-top: -8px; }
+  .gauge-num { font-size: 24px; font-weight: 800; line-height: 1; }
+  .gauge-unit { font-size: 12px; font-weight: 600; opacity: 0.8; }
+  .gauge-status { font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-top: 2px; }
   
   /* Latency range display */
   .latency-range {
-    display: flex; gap: 24px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0;
+    display: flex; gap: 16px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0;
+    flex-wrap: wrap;
   }
-  .range-item { display: flex; flex-direction: column; gap: 2px; }
-  .range-label { font-size: 10px; font-weight: 600; color: #94a3b8; text-transform: uppercase; }
-  .range-value { font-size: 16px; font-weight: 700; }
+  .range-item { display: flex; flex-direction: column; gap: 2px; min-width: 60px; }
+  .range-label { font-size: 9px; font-weight: 600; color: #94a3b8; text-transform: uppercase; }
+  .range-value { font-size: 14px; font-weight: 700; }
+  
+  /* Print styles for gauge */
+  @media print {
+    .latency-gauge { width: 140px; max-width: 140px; }
+    .gauge-num { font-size: 28px; }
+    .gauge-unit { font-size: 13px; }
+    .gauge-status { font-size: 10px; }
+    .latency-range { gap: 20px; }
+    .range-value { font-size: 16px; }
+  }
 
   /* Grids */
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
@@ -412,30 +452,25 @@ const generateLatencyReport = (report: ReportData) => {
 </head>
 <body>
 
-<script>
-function pmxPrint(){
-  try { window.print(); }
-  catch(e) {
-    var isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-    var el = document.getElementById('pmx-print-hint');
-    if(el) el.textContent = isMac ? 'Use Cmd+P to save as PDF' : 'Use Ctrl+P to save as PDF';
-  }
-}
-</script>
-  <div class="top-bar no-print">
-    <div style="display:flex;align-items:center;gap:12px;">
-      <button onclick="window.close();window.history.back();" class="close-btn" title="Close">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-        <span class="close-text">Close</span>
-      </button>
-      <strong class="hide-mobile">ProxMenux Network Latency Report</strong>
-      <span id="pmx-print-hint" class="hide-mobile" style="font-size:11px;opacity:0.7;">Review the report, then print or save as PDF</span>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px;">
-      <span class="hide-mobile" style="font-size:11px;opacity:0.5;">⌘P / Ctrl+P</span>
-      <button onclick="pmxPrint()">Print / Save as PDF</button>
+<!-- Top bar for screen -->
+<div class="top-bar no-print">
+  <div class="top-bar-left">
+    <button class="close-btn" onclick="window.close()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M18 6L6 18M6 6l12 12"/>
+      </svg>
+      <span>Close</span>
+    </button>
+    <div>
+      <div class="top-bar-title">ProxMenux Network Latency Report</div>
+      <div class="top-bar-subtitle">Review the report, then print or save as PDF</div>
     </div>
   </div>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <span class="top-bar-subtitle">Ctrl+P</span>
+    <button onclick="window.print()">Print / Save as PDF</button>
+  </div>
+</div>
 
 <!-- Header -->
 <div class="rpt-header">
@@ -459,7 +494,7 @@ function pmxPrint(){
   <div class="section-title">1. Executive Summary</div>
   <div class="exec-box">
     <div class="latency-gauge">
-      <svg viewBox="0 0 120 80" width="160" height="107">
+      <svg viewBox="0 0 120 80">
         <!-- Gauge background arc -->
         <path d="M 10 70 A 50 50 0 0 1 110 70" fill="none" stroke="#e2e8f0" stroke-width="8" stroke-linecap="round"/>
         <!-- Colored segments: Excellent (green), Good (green), Fair (yellow), Poor (red) -->
@@ -650,80 +685,10 @@ ${report.isRealtime && report.realtimeResults.length > 0 ? `
 </body>
 </html>`
 
-  // Create blob URL for the report content (iframe src)
-  const reportBlob = new Blob([reportHtml], { type: "text/html" })
-  const reportUrl = URL.createObjectURL(reportBlob)
-
-  // Wrapper page with responsive header and iframe containing the report
-  const wrapperHtml = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Network Latency Report - ${report.targetLabel}</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f1f5f9; }
-  .top-bar {
-    position: fixed; top: 0; left: 0; right: 0; background: #0f172a; color: #e2e8f0;
-    padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; z-index: 100;
-    font-size: 13px;
-  }
-  .top-bar-left { display: flex; align-items: center; gap: 12px; }
-  .top-bar-title { font-weight: 600; }
-  .top-bar-subtitle { font-size: 11px; color: #94a3b8; display: none; }
-  .top-bar button {
-    background: #06b6d4; color: #fff; border: none; padding: 10px 20px; border-radius: 6px;
-    font-size: 14px; font-weight: 600; cursor: pointer;
-  }
-  .top-bar button:hover { background: #0891b2; }
-  .top-bar .close-btn {
-    background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); 
-    padding: 8px 14px; border-radius: 6px; display: flex; align-items: center; gap: 6px; 
-    cursor: pointer; font-size: 14px; font-weight: 500;
-  }
-  .top-bar .close-btn:hover { background: rgba(255,255,255,0.2); }
-  .report-frame {
-    position: fixed; top: 56px; left: 0; right: 0; bottom: 0;
-    border: none; width: 100%; height: calc(100vh - 56px);
-  }
-  @media (min-width: 640px) {
-    .top-bar { padding: 12px 24px; }
-    .top-bar-subtitle { display: block; }
-  }
-  @media print {
-    .top-bar { display: none !important; }
-    .report-frame { position: static; top: 0; height: auto; min-height: 100vh; }
-  }
-</style>
-</head>
-<body>
-<div class="top-bar no-print">
-  <div class="top-bar-left">
-    <button class="close-btn" onclick="window.close()">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M18 6L6 18M6 6l12 12"/>
-      </svg>
-      <span>Close</span>
-    </button>
-    <div>
-      <div class="top-bar-title">ProxMenux Network Latency Report</div>
-      <div class="top-bar-subtitle">Review the report, then print or save as PDF</div>
-    </div>
-  </div>
-  <div style="display:flex;align-items:center;gap:12px;">
-    <span class="top-bar-subtitle" style="display:none;">Ctrl+P</span>
-    <button onclick="document.querySelector('.report-frame').contentWindow.print()">Print / Save as PDF</button>
-  </div>
-</div>
-<iframe class="report-frame" src="${reportUrl}"></iframe>
-</body>
-</html>`
-
-  // Open wrapper page
-  const wrapperBlob = new Blob([wrapperHtml], { type: "text/html" })
-  const wrapperUrl = URL.createObjectURL(wrapperBlob)
-  window.open(wrapperUrl, "_blank")
+  // Use Blob URL for Safari-safe preview
+  const blob = new Blob([html], { type: "text/html" })
+  const url = URL.createObjectURL(blob)
+  window.open(url, "_blank")
 }
 
 export function LatencyDetailModal({ open, onOpenChange, currentLatency }: LatencyDetailModalProps) {

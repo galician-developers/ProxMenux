@@ -940,12 +940,11 @@ export function Security() {
     const actionableSuggestions = report.suggestions.length - (report.proxmox_expected_suggestions ?? 0)
     const totalExpected = (report.proxmox_expected_warnings ?? 0) + (report.proxmox_expected_suggestions ?? 0)
 
-    // Inner report HTML (will be embedded in iframe) - has viewport=1024 for consistent print
-    const reportHtml = `<!DOCTYPE html>
+    return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=1024">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Security Audit Report - ${report.hostname || "ProxMenux"}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -953,9 +952,10 @@ export function Security() {
   @page { margin: 10mm; size: A4; }
   @media print {
     html, body { margin: 0 !important; padding: 0 !important; }
+    .no-print { display: none !important; }
     .page-break { page-break-before: always; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    body { font-size: 11px; }
+    body { font-size: 11px; padding-top: 0; }
     .section { margin-bottom: 16px; }
     /* Darken light grays for PDF readability */
     .rpt-header-left p, .rpt-header-right { color: #374151; }
@@ -988,8 +988,39 @@ export function Security() {
     [style*="color:#0891b2"] { color: #0891b2 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
   @media screen {
-    body { max-width: 1000px; margin: 0 auto; padding: 24px 32px; }
+    body { max-width: 1000px; margin: 0 auto; padding: 24px 32px; padding-top: 64px; }
   }
+  
+  /* Top bar for screen only */
+  .top-bar {
+    position: fixed; top: 0; left: 0; right: 0; background: #0f172a; color: #e2e8f0;
+    padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; z-index: 100;
+    font-size: 13px;
+  }
+  .top-bar-left { display: flex; align-items: center; gap: 12px; }
+  .top-bar-title { font-weight: 600; }
+  .top-bar-subtitle { font-size: 11px; color: #94a3b8; display: none; }
+  .top-bar button {
+    background: #06b6d4; color: #fff; border: none; padding: 10px 20px; border-radius: 6px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .top-bar button:hover { background: #0891b2; }
+  .top-bar .close-btn {
+    background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); 
+    padding: 8px 14px; border-radius: 6px; display: flex; align-items: center; gap: 6px; 
+    cursor: pointer; font-size: 14px; font-weight: 500;
+  }
+  .top-bar .close-btn:hover { background: rgba(255,255,255,0.2); }
+  .top-bar .close-text { display: inline; }
+  .hide-mobile { }
+  @media (min-width: 640px) {
+    .top-bar { padding: 12px 24px; }
+    .top-bar-subtitle { display: block; }
+  }
+  @media (max-width: 639px) {
+    .hide-mobile { display: none !important; }
+  }
+  @media print { .top-bar { display: none; } body { padding-top: 0; } }
 
   /* Header */
   .rpt-header {
@@ -1296,76 +1327,6 @@ ${(report.sections && report.sections.length > 0) ? `
   <div style="font-style:italic;">Confidential</div>
 </div>
 
-</body>
-</html>`
-
-    // Create blob URL for the report content (iframe src)
-    const reportBlob = new Blob([reportHtml], { type: "text/html" })
-    const reportUrl = URL.createObjectURL(reportBlob)
-
-    // Wrapper page with responsive header and iframe containing the report
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Security Audit Report - ${report.hostname || "ProxMenux"}</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f1f5f9; }
-  .top-bar {
-    position: fixed; top: 0; left: 0; right: 0; background: #0f172a; color: #e2e8f0;
-    padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; z-index: 100;
-    font-size: 13px;
-  }
-  .top-bar-left { display: flex; align-items: center; gap: 12px; }
-  .top-bar-title { font-weight: 600; }
-  .top-bar-subtitle { font-size: 11px; color: #94a3b8; display: none; }
-  .top-bar button {
-    background: #06b6d4; color: #fff; border: none; padding: 10px 20px; border-radius: 6px;
-    font-size: 14px; font-weight: 600; cursor: pointer;
-  }
-  .top-bar button:hover { background: #0891b2; }
-  .top-bar .close-btn {
-    background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); 
-    padding: 8px 14px; border-radius: 6px; display: flex; align-items: center; gap: 6px; 
-    cursor: pointer; font-size: 14px; font-weight: 500;
-  }
-  .top-bar .close-btn:hover { background: rgba(255,255,255,0.2); }
-  .report-frame {
-    position: fixed; top: 56px; left: 0; right: 0; bottom: 0;
-    border: none; width: 100%; height: calc(100vh - 56px);
-  }
-  @media (min-width: 640px) {
-    .top-bar { padding: 12px 24px; }
-    .top-bar-subtitle { display: block; }
-  }
-  @media print {
-    .top-bar { display: none !important; }
-    .report-frame { position: static; top: 0; height: auto; min-height: 100vh; }
-  }
-</style>
-</head>
-<body>
-<div class="top-bar no-print">
-  <div class="top-bar-left">
-    <button class="close-btn" onclick="window.close()">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M18 6L6 18M6 6l12 12"/>
-      </svg>
-      <span>Close</span>
-    </button>
-    <div>
-      <div class="top-bar-title">ProxMenux Security Audit Report</div>
-      <div class="top-bar-subtitle">Review the report, then print or save as PDF</div>
-    </div>
-  </div>
-  <div style="display:flex;align-items:center;gap:12px;">
-    <span class="top-bar-subtitle" style="display:none;">Ctrl+P</span>
-    <button onclick="document.querySelector('.report-frame').contentWindow.print()">Print / Save as PDF</button>
-  </div>
-</div>
-<iframe class="report-frame" src="${reportUrl}"></iframe>
 </body>
 </html>`
   }
