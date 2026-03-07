@@ -989,36 +989,29 @@ export function Security() {
     [style*="color:#0891b2"] { color: #0891b2 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
   @media screen {
-    body { max-width: 1000px; margin: 0 auto; padding: 24px 32px; padding-top: 64px; }
+    body { max-width: 1000px; margin: 0 auto; padding: 24px 32px; padding-top: 80px; }
   }
 
-  /* Top bar for screen only */
+  /* Top bar for screen only - uses larger sizes to be visible when scaled on mobile */
   .top-bar {
     position: fixed; top: 0; left: 0; right: 0; background: #0f172a; color: #e2e8f0;
-    padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; z-index: 100;
-    font-size: 13px;
+    padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; z-index: 100;
+    font-size: 18px;
   }
   .top-bar button {
-    background: #06b6d4; color: #fff; border: none; padding: 8px 20px; border-radius: 6px;
-    font-size: 13px; font-weight: 600; cursor: pointer;
+    background: #06b6d4; color: #fff; border: none; padding: 14px 32px; border-radius: 8px;
+    font-size: 18px; font-weight: 600; cursor: pointer;
   }
   .top-bar button:hover { background: #0891b2; }
   .top-bar .close-btn {
     background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); 
-    padding: 6px 12px; border-radius: 6px; display: flex; align-items: center; gap: 6px; 
-    cursor: pointer; font-size: 13px; font-weight: 500;
+    padding: 14px 24px; border-radius: 8px; display: flex; align-items: center; gap: 8px; 
+    cursor: pointer; font-size: 18px; font-weight: 500;
   }
   .top-bar .close-btn:hover { background: rgba(255,255,255,0.2); }
-  .top-bar .close-btn .close-text { display: none; }
+  .top-bar .close-btn .close-text { display: inline; }
   .hide-mobile { }
   @media print { .top-bar { display: none; } body { padding-top: 0; } }
-  @media screen and (max-width: 600px) {
-    .top-bar { padding: 10px 12px; }
-    .hide-mobile { display: none !important; }
-    .top-bar .close-btn { padding: 8px 16px; font-size: 14px; }
-    .top-bar .close-btn .close-text { display: inline; }
-    body { padding-top: 60px; }
-  }
 
   /* Header */
   .rpt-header {
