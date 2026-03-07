@@ -984,18 +984,8 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
                     stroke="#6b7280" 
                     fontSize={10}
                     tickLine={false}
-                    domain={[(dataMin: number, dataMax: number) => {
-                      if (isNaN(dataMin) || isNaN(dataMax)) return 0
-                      const range = dataMax - dataMin
-                      const padding = Math.max(range * 0.3, dataMin * 0.2)
-                      return Math.max(0, dataMin - padding)
-                    }, (dataMin: number, dataMax: number) => {
-                      if (isNaN(dataMin) || isNaN(dataMax)) return 100
-                      const range = dataMax - dataMin
-                      const padding = Math.max(range * 0.3, dataMax * 0.2)
-                      return dataMax + padding
-                    }]}
-                    tickFormatter={(v) => typeof v === 'number' && !isNaN(v) ? `${v.toFixed(1)}ms` : '0ms'}
+                    domain={['dataMin - 1', 'dataMax + 2']}
+                    tickFormatter={(v) => `${Number(v).toFixed(1)}ms`}
                   />
                   <Tooltip content={<CustomTooltip />} />
                   <Area
@@ -1043,18 +1033,8 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
                   stroke="#6b7280" 
                   fontSize={10}
                   tickLine={false}
-                  domain={[(dataMin: number, dataMax: number) => {
-                    if (isNaN(dataMin) || isNaN(dataMax)) return 0
-                    const range = dataMax - dataMin
-                    const padding = Math.max(range * 0.3, dataMin * 0.2)
-                    return Math.max(0, dataMin - padding)
-                  }, (dataMin: number, dataMax: number) => {
-                    if (isNaN(dataMin) || isNaN(dataMax)) return 100
-                    const range = dataMax - dataMin
-                    const padding = Math.max(range * 0.3, dataMax * 0.2)
-                    return dataMax + padding
-                  }]}
-                  tickFormatter={(v) => typeof v === 'number' && !isNaN(v) ? `${v.toFixed(1)}ms` : '0ms'}
+                  domain={['dataMin - 1', 'dataMax + 2']}
+                  tickFormatter={(v) => `${Number(v).toFixed(1)}ms`}
                 />
                 <Tooltip content={<CustomTooltip />} />
                 <Area
