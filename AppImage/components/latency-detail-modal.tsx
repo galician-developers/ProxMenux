@@ -250,7 +250,7 @@ const generateLatencyReport = (report: ReportData) => {
     .rpt-footer { color: #4b5563; }
   }
   @media screen {
-    body { max-width: 900px; margin: 0 auto; padding: 16px 20px; padding-top: 56px; }
+    body { max-width: 850px; margin: 0 auto; padding: 12px 16px; padding-top: 50px; }
   }
 
   /* Top bar for screen only */
@@ -274,77 +274,65 @@ const generateLatencyReport = (report: ReportData) => {
   .hide-mobile { }
   @media print { .top-bar { display: none; } body { padding-top: 0; } }
   @media screen and (max-width: 600px) {
-    .top-bar { padding: 10px 12px; }
+    .top-bar { padding: 8px 12px; }
     .hide-mobile { display: none !important; }
-    .top-bar .close-btn { padding: 8px 16px; font-size: 14px; }
+    .top-bar .close-btn { padding: 8px 14px; font-size: 13px; }
     .top-bar .close-btn .close-text { display: inline; }
-    body { padding: 12px; padding-top: 60px; }
-    
-    /* Header responsive */
-    .rpt-header { flex-direction: column; gap: 12px; text-align: center; }
-    .rpt-header-left { flex-direction: column; gap: 8px; }
-    .rpt-header-left img { width: 50px; height: 50px; }
-    .rpt-header-left h1 { font-size: 20px; }
-    .rpt-header-right { text-align: center; font-size: 11px; }
-    
-    /* Executive Summary responsive */
-    .exec-box { flex-direction: column; gap: 16px; padding: 16px; }
-    .latency-gauge { width: 100%; }
-    .latency-gauge svg { width: 140px; height: 94px; }
-    .gauge-num { font-size: 28px; }
-    .exec-text h3 { font-size: 16px; text-align: center; }
-    .exec-text p { font-size: 13px; text-align: center; }
-    .latency-range { justify-content: center; flex-wrap: wrap; gap: 16px; }
-    .range-item { align-items: center; text-align: center; }
-    
-    /* Grids responsive */
-    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr 1fr; gap: 8px; }
-    .card { padding: 10px; }
-    .card-value { font-size: 16px; }
+    body { padding: 10px; padding-top: 52px; }
+    /* Scale down content to fit mobile screen while preserving print layout */
+    .rpt-header { flex-wrap: wrap; gap: 8px; padding: 8px 0; }
+    .rpt-header-left { gap: 8px; }
+    .rpt-header-left img { height: 32px; }
+    .rpt-header-left h1 { font-size: 16px; }
+    .rpt-header-left p { font-size: 9px; }
+    .rpt-header-right { font-size: 9px; }
+    .exec-box { flex-wrap: wrap; gap: 12px; padding: 12px; }
+    .latency-gauge { width: 120px; }
+    .latency-gauge svg { width: 120px; height: 80px; }
+    .gauge-num { font-size: 24px; }
+    .gauge-unit { font-size: 11px; }
+    .gauge-status { font-size: 8px; }
+    .exec-text h3 { font-size: 14px; }
+    .exec-text p { font-size: 11px; }
+    .latency-range { gap: 16px; flex-wrap: wrap; }
+    .range-label { font-size: 9px; }
+    .range-value { font-size: 14px; }
+    .section-title { font-size: 11px; }
+    .card { padding: 8px; }
+    .card-value { font-size: 12px; }
+    .card-c .card-value { font-size: 16px; }
     .card-label { font-size: 9px; }
-    
-    /* Section titles */
-    .section-title { font-size: 12px; }
-    
-    /* Tables responsive */
-    .chk-tbl { font-size: 11px; }
-    .chk-tbl th, .chk-tbl td { padding: 6px 8px; }
-    
-    /* Thresholds */
-    .threshold-item p { font-size: 12px; }
-    
-    /* Info box */
-    .info-box { padding: 12px; }
-    .info-box h4 { font-size: 12px; }
-    .info-box p { font-size: 12px; }
-    
-    /* Footer */
-    .rpt-footer { flex-direction: column; gap: 4px; text-align: center; font-size: 9px; }
+    .grid-4 { grid-template-columns: repeat(4, 1fr); gap: 4px; }
+    .grid-3 { gap: 4px; }
+    .threshold-item p { font-size: 10px; }
+    .info-box { padding: 10px; }
+    .info-box h4, .info-box p { font-size: 10px; }
+    .rpt-footer { font-size: 9px; flex-wrap: wrap; gap: 4px; }
   }
 
   /* Header */
   .rpt-header {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 18px 0; border-bottom: 3px solid #0f172a; margin-bottom: 22px;
+    padding: 8px 0; border-bottom: 2px solid #0f172a; margin-bottom: 12px;
   }
-  .rpt-header-left { display: flex; align-items: center; gap: 14px; }
-  .rpt-header-left img { height: 44px; width: auto; }
-  .rpt-header-left h1 { font-size: 22px; font-weight: 700; color: #0f172a; }
-  .rpt-header-left p { font-size: 11px; color: #64748b; }
-  .rpt-header-right { text-align: right; font-size: 11px; color: #64748b; line-height: 1.6; }
-  .rpt-header-right .rid { font-family: monospace; font-size: 10px; color: #94a3b8; }
+  .rpt-header-left { display: flex; align-items: center; gap: 10px; }
+  .rpt-header-left img { height: 36px; width: auto; }
+  .rpt-header-left h1 { font-size: 18px; font-weight: 700; color: #0f172a; margin: 0; }
+  .rpt-header-left p { font-size: 9px; color: #64748b; margin: 0; }
+  .rpt-header-right { text-align: right; font-size: 9px; color: #64748b; line-height: 1.4; }
+  .rpt-header-right .rid { font-family: monospace; font-size: 8px; color: #94a3b8; }
 
   /* Sections */
-  .section { margin-bottom: 22px; }
+  .section { margin-bottom: 16px; }
   .section-title {
-    font-size: 14px; font-weight: 700; color: #0f172a; text-transform: uppercase;
-    letter-spacing: 0.05em; padding-bottom: 5px; border-bottom: 2px solid #e2e8f0; margin-bottom: 12px;
+    font-size: 12px; font-weight: 700; color: #0f172a; text-transform: uppercase;
+    letter-spacing: 0.05em; padding-bottom: 4px; border-bottom: 2px solid #e2e8f0; margin-bottom: 10px;
   }
 
   /* Executive summary */
   .exec-box {
-    display: flex; align-items: center; gap: 24px; padding: 20px;
-    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 16px;
+    display: flex; align-items: center; gap: 20px; padding: 16px;
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 12px;
   }
   .score-ring {
     width: 96px; height: 96px; border-radius: 50%; display: flex; flex-direction: column;
@@ -878,58 +866,57 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
             Network Latency
           </DialogTitle>
         </DialogHeader>
-        <div className="flex flex-wrap items-center gap-2 mt-1">
-            <Select value={target} onValueChange={setTarget}>
-              <SelectTrigger className="w-[180px] h-8 text-xs">
+        <div className="flex items-center gap-1.5 sm:gap-2 mt-1 flex-nowrap">
+          <Select value={target} onValueChange={setTarget}>
+            <SelectTrigger className="w-auto min-w-[100px] max-w-[140px] sm:max-w-[180px] h-8 text-xs shrink-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TARGET_OPTIONS.map(opt => (
+                <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {!isRealtime && (
+            <Select value={timeframe} onValueChange={setTimeframe}>
+              <SelectTrigger className="w-auto min-w-[70px] h-8 text-xs shrink-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {TARGET_OPTIONS.map(opt => (
+                {TIMEFRAME_OPTIONS.map(opt => (
                   <SelectItem key={opt.value} value={opt.value} className="text-xs">
                     {opt.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {!isRealtime && (
-              <Select value={timeframe} onValueChange={setTimeframe}>
-                <SelectTrigger className="w-[100px] h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TIMEFRAME_OPTIONS.map(opt => (
-                    <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            {isRealtime && (
-              <>
-                {realtimeTesting ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={stopRealtimeTest}
-                    className="gap-2 text-red-500 border-red-500/30 hover:bg-red-500/10"
-                  >
-                    <Square className="h-3 w-3 fill-current" />
-                    Stop
-                  </Button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={restartRealtimeTest}
-                      className="gap-2"
-                    >
-                      <RefreshCw className="h-4 w-4" />
-                      Test Again
-                    </Button>
-                  )}
-                </>
-              )}
+          )}
+          {isRealtime && (
+            realtimeTesting ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={stopRealtimeTest}
+                className="gap-1 text-red-500 border-red-500/30 hover:bg-red-500/10 shrink-0 h-8 px-2"
+              >
+                <Square className="h-3 w-3 fill-current" />
+                <span className="hidden xs:inline">Stop</span>
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={restartRealtimeTest}
+                className="gap-1 shrink-0 h-8 px-2"
+              >
+                <RefreshCw className="h-3 w-3" />
+                <span className="hidden sm:inline">Test Again</span>
+                <span className="sm:hidden hidden xs:inline">Test</span>
+              </Button>
+            )
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -944,10 +931,10 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
               testDuration: isRealtime ? testDuration : undefined,
             })}
             disabled={isRealtime ? realtimeResults.length === 0 : data.length === 0}
-            className="gap-2"
+            className="gap-1 shrink-0 h-8 px-2 ml-auto"
           >
-            <FileText className="h-4 w-4" />
-            Report
+            <FileText className="h-3 w-3" />
+            <span className="hidden sm:inline">Report</span>
           </Button>
         </div>
 
@@ -967,43 +954,32 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
           </div>
         )}
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <div className="bg-muted/30 rounded-lg p-3">
-            <div className="text-xs text-muted-foreground mb-1">Current</div>
-            <div className="flex items-baseline gap-1">
-              <span className="text-xl font-bold" style={{ color: getStatusColor(displayStats.current || 0) }}>
-                {displayStats.current || '-'}
-              </span>
-              <span className="text-xs text-muted-foreground">ms</span>
-            </div>
+        {/* Stats Cards - Compact single row */}
+        <div className="flex items-center justify-between gap-1 mb-2 py-2 px-1 bg-muted/20 rounded-lg">
+          <div className="flex items-center gap-1 min-w-0">
+            <span className="text-[10px] text-muted-foreground">Current</span>
+            <span className="text-base font-bold" style={{ color: getStatusColor(displayStats.current || 0) }}>
+              {displayStats.current || '-'}
+            </span>
+            <span className="text-[10px] text-muted-foreground">ms</span>
           </div>
-          <div className="bg-muted/30 rounded-lg p-3">
-            <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-              <TrendingDown className="h-3 w-3 text-green-500" /> Min
-            </div>
-            <div className="flex items-baseline gap-1">
-              <span className="text-xl font-bold text-green-500">{displayStats.min || '-'}</span>
-              <span className="text-xs text-muted-foreground">ms</span>
-            </div>
+          <div className="flex items-center gap-1 min-w-0">
+            <TrendingDown className="h-3 w-3 text-green-500 shrink-0" />
+            <span className="text-[10px] text-muted-foreground">Min</span>
+            <span className="text-base font-bold text-green-500">{displayStats.min || '-'}</span>
+            <span className="text-[10px] text-muted-foreground">ms</span>
           </div>
-          <div className="bg-muted/30 rounded-lg p-3">
-            <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-              <Minus className="h-3 w-3" /> Avg
-            </div>
-            <div className="flex items-baseline gap-1">
-              <span className="text-xl font-bold">{displayStats.avg || '-'}</span>
-              <span className="text-xs text-muted-foreground">ms</span>
-            </div>
+          <div className="flex items-center gap-1 min-w-0">
+            <Minus className="h-3 w-3 shrink-0" />
+            <span className="text-[10px] text-muted-foreground">Avg</span>
+            <span className="text-base font-bold">{displayStats.avg || '-'}</span>
+            <span className="text-[10px] text-muted-foreground">ms</span>
           </div>
-          <div className="bg-muted/30 rounded-lg p-3">
-            <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-              <TrendingUp className="h-3 w-3 text-red-500" /> Max
-            </div>
-            <div className="flex items-baseline gap-1">
-              <span className="text-xl font-bold text-red-500">{displayStats.max || '-'}</span>
-              <span className="text-xs text-muted-foreground">ms</span>
-            </div>
+          <div className="flex items-center gap-1 min-w-0">
+            <TrendingUp className="h-3 w-3 text-red-500 shrink-0" />
+            <span className="text-[10px] text-muted-foreground">Max</span>
+            <span className="text-base font-bold text-red-500">{displayStats.max || '-'}</span>
+            <span className="text-[10px] text-muted-foreground">ms</span>
           </div>
         </div>
 
