@@ -749,6 +749,7 @@ class JournalWatcher:
         """Extract device info from a smartd system-mail and record as disk observation."""
         try:
             import re as _re
+            import subprocess
             from health_persistence import health_persistence
             
             # Extract device path: "Device: /dev/sdh [SAT]" or "Device: /dev/sda"
@@ -768,6 +769,21 @@ class JournalWatcher:
             model_match = _re.search(r'Device info:\s*\n?\s*(.+?)(?:,\s*S/N:)', message)
             if model_match:
                 model = model_match.group(1).strip()
+            
+            # If no serial from message, try to get it from smartctl (important for USB disks)
+            if not serial or len(serial) < 3:
+                try:
+                    result = subprocess.run(
+                        ['smartctl', '-i', '-j', f'/dev/{base_dev}'],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    import json as _json
+                    data = _json.loads(result.stdout)
+                    serial = data.get('serial_number', '') or serial
+                    if not model:
+                        model = data.get('model_name', '') or data.get('model_family', '')
+                except Exception:
+                    pass
             
             # Extract error signature from title: "SMART error (FailedReadSmartSelfTestLog)"
             sig_match = _re.search(r'SMART error\s*\((\w+)\)', title)

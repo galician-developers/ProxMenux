@@ -1231,11 +1231,26 @@ class HealthPersistence:
             # a different device_name (e.g. 'ata8' instead of 'sdh'),
             # update that entry's device_name so observations carry over.
             if serial:
+                # Try exact match first
                 cursor.execute('''
                     SELECT id, device_name FROM disk_registry
                     WHERE serial = ? AND serial != '' AND device_name != ?
                 ''', (serial, device_name))
                 old_rows = cursor.fetchall()
+                
+                # If no exact match, try normalized match (for USB disks with special chars)
+                if not old_rows:
+                    normalized = self._normalize_serial(serial)
+                    if normalized and normalized != serial:
+                        cursor.execute(
+                            'SELECT id, device_name, serial FROM disk_registry '
+                            'WHERE serial != "" AND device_name != ?', (device_name,))
+                        for row in cursor.fetchall():
+                            db_normalized = self._normalize_serial(row[2])
+                            if db_normalized == normalized or normalized in db_normalized or db_normalized in normalized:
+                                old_rows.append((row[0], row[1]))
+                                break
+                
                 for old_id, old_dev in old_rows:
                     # Only consolidate ATA names -> block device names
                     if old_dev.startswith('ata') and not device_name.startswith('ata'):
@@ -1273,6 +1288,23 @@ class HealthPersistence:
         except Exception as e:
             print(f"[HealthPersistence] Error registering disk {device_name}: {e}")
 
+    def _normalize_serial(self, serial: str) -> str:
+        """Normalize serial number for comparison.
+        
+        USB disks can have serials with escape sequences like \\x06\\x18
+        or non-printable characters. This normalizes them for matching.
+        """
+        if not serial:
+            return ''
+        import re
+        # Remove escape sequences like \x06, \x18
+        normalized = re.sub(r'\\x[0-9a-fA-F]{2}', '', serial)
+        # Remove non-printable characters
+        normalized = ''.join(c for c in normalized if c.isprintable())
+        # Remove common prefixes that vary
+        normalized = normalized.strip()
+        return normalized
+
     def _get_disk_registry_id(self, cursor, device_name: str,
                                serial: Optional[str] = None) -> Optional[int]:
         """Find disk_registry.id, matching by serial first, then device_name.
@@ -1281,12 +1313,25 @@ class HealthPersistence:
         checks entries with ATA names that share the same serial.
         """
         if serial:
+            # Try exact match first
             cursor.execute(
                 'SELECT id FROM disk_registry WHERE serial = ? AND serial != "" ORDER BY last_seen DESC LIMIT 1',
                 (serial,))
             row = cursor.fetchone()
             if row:
                 return row[0]
+            
+            # Try normalized serial match (for USB disks with special chars)
+            normalized = self._normalize_serial(serial)
+            if normalized and normalized != serial:
+                # Search for serials that start with or contain the normalized version
+                cursor.execute(
+                    'SELECT id, serial FROM disk_registry WHERE serial != "" ORDER BY last_seen DESC')
+                for row in cursor.fetchall():
+                    db_normalized = self._normalize_serial(row[1])
+                    if db_normalized == normalized or normalized in db_normalized or db_normalized in normalized:
+                        return row[0]
+        
         # Fallback: match by device_name (strip /dev/ prefix)
         clean_dev = device_name.replace('/dev/', '')
         cursor.execute(
@@ -1295,6 +1340,7 @@ class HealthPersistence:
         row = cursor.fetchone()
         if row:
             return row[0]
+        
         # Last resort: search for ATA-named entries that might refer to this device
         # This handles cases where observations were recorded under 'ata8'
         # but we're querying for 'sdh'

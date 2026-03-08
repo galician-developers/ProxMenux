@@ -1108,6 +1108,52 @@ class HealthMonitor:
         # Get physical disks list for UI display
         physical_disks = self._get_physical_disks_list()
         
+        # Collect disk error entries (SMART, I/O, etc.) from checks that should be merged with disk entries
+        # These have keys like '/Dev/Sda', '/dev/sda', 'sda', etc.
+        disk_errors_by_device = {}
+        keys_to_remove = []
+        for key, val in checks.items():
+            # Skip non-disk error entries (like lvm_check, root_fs, etc.)
+            key_lower = key.lower()
+            
+            # Check if this looks like a disk error entry
+            is_disk_error = False
+            device_name = None
+            
+            if key_lower.startswith('/dev/') or key_lower.startswith('dev/'):
+                # Keys like '/Dev/Sda', '/dev/sda'
+                device_name = key_lower.replace('/dev/', '').replace('dev/', '').strip('/')
+                is_disk_error = True
+            elif key_lower.startswith('sd') or key_lower.startswith('nvme') or key_lower.startswith('hd'):
+                # Keys like 'sda', 'nvme0n1'
+                device_name = key_lower
+                is_disk_error = True
+            
+            if is_disk_error and device_name and len(device_name) <= 15:
+                # Store the error info, merging if we already have an error for this device
+                if device_name not in disk_errors_by_device:
+                    disk_errors_by_device[device_name] = {
+                        'status': val.get('status', 'WARNING'),
+                        'detail': val.get('detail', val.get('reason', '')),
+                        'error_key': val.get('error_key'),
+                        'dismissable': val.get('dismissable', True),
+                        'dismissed': val.get('dismissed', False),
+                    }
+                else:
+                    # Merge: keep the worst status
+                    existing = disk_errors_by_device[device_name]
+                    if val.get('status') == 'CRITICAL':
+                        existing['status'] = 'CRITICAL'
+                    # Append details
+                    new_detail = val.get('detail', val.get('reason', ''))
+                    if new_detail and new_detail not in existing.get('detail', ''):
+                        existing['detail'] = f"{existing.get('detail', '')}; {new_detail}".strip('; ')
+                keys_to_remove.append(key)
+        
+        # Remove the old disk error entries - they'll be merged into disk entries
+        for key in keys_to_remove:
+            del checks[key]
+        
         # Add individual disk checks for UI display (like Network interfaces)
         for disk in physical_disks:
             device = disk.get('device', '')
@@ -1120,21 +1166,32 @@ class HealthMonitor:
             # Format check key - use device path for uniqueness
             check_key = device.lower().replace('/', '_')  # e.g., _dev_sda
             
-            # Determine status
-            if final_health == 'critical':
+            # Check if there's a disk error (SMART, I/O, etc.) for this disk
+            disk_error = disk_errors_by_device.get(name.lower())
+            
+            # Determine status - use disk error status if present, otherwise use final_health
+            if disk_error and disk_error.get('status') in ('WARNING', 'CRITICAL'):
+                status = disk_error['status']
+                error_detail = disk_error.get('detail', '')
+            elif final_health == 'critical':
                 status = 'CRITICAL'
+                error_detail = ''
             elif final_health == 'warning':
                 status = 'WARNING'
+                error_detail = ''
             else:
                 status = 'OK'
+                error_detail = ''
             
             # Build detail string
             disk_type = 'USB' if is_usb else ('NVMe' if disk.get('is_nvme') else 'SATA')
             detail = f'{serial}' if serial else 'Unknown serial'
             if final_reason:
                 detail += f' - {final_reason}'
+            elif error_detail:
+                detail += f' - {error_detail}'
             
-            # Only add to checks if not already present (avoid duplicating error entries)
+            # Only add to checks if not already present
             if check_key not in checks:
                 checks[check_key] = {
                     'status': status,
@@ -1150,7 +1207,15 @@ class HealthMonitor:
                 
                 # If disk has issues, it needs an error_key for dismiss functionality
                 if status != 'OK':
-                    checks[check_key]['error_key'] = f'disk_{name}_{serial}' if serial else f'disk_{name}'
+                    # Use disk error_key if available, otherwise generate one
+                    if disk_error and disk_error.get('error_key'):
+                        checks[check_key]['error_key'] = disk_error['error_key']
+                    else:
+                        checks[check_key]['error_key'] = f'disk_{name}_{serial}' if serial else f'disk_{name}'
+                    checks[check_key]['dismissable'] = True
+                    # Preserve dismissed state from disk error
+                    if disk_error and disk_error.get('dismissed'):
+                        checks[check_key]['dismissed'] = True
         
         if not issues:
             return {'status': 'OK', 'checks': checks, 'physical_disks': physical_disks}
