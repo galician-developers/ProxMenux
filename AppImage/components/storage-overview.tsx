@@ -1016,59 +1016,34 @@ export function StorageOverview() {
                     className="sm:hidden border border-white/10 rounded-lg p-4 cursor-pointer bg-white/5 transition-colors"
                     onClick={() => handleDiskClick(disk)}
                   >
-                    <div className="space-y-3">
-                      {/* Header row */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Usb className="h-5 w-5 text-orange-400 flex-shrink-0" />
-                          <h3 className="font-semibold">/dev/{disk.name}</h3>
-                          <Badge className="bg-orange-500/10 text-orange-400 border-orange-500/20 text-[10px] px-1.5">USB</Badge>
-                        </div>
-                        <div className="flex items-center gap-2">
+                    <div className="space-y-2 mb-3">
+                      <div className="flex items-center gap-2">
+                        <Usb className="h-5 w-5 text-orange-400 flex-shrink-0" />
+                        <h3 className="font-semibold">/dev/{disk.name}</h3>
+                        <Badge className="bg-orange-500/10 text-orange-400 border-orange-500/20 text-[10px] px-1.5">USB</Badge>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 pl-7">
+                        {disk.model && disk.model !== "Unknown" && (
+                          <p className="text-sm text-muted-foreground truncate flex-1 min-w-0">{disk.model}</p>
+                        )}
+                        <div className="flex items-center gap-3 flex-shrink-0">
                           {disk.temperature > 0 && (
                             <div className="flex items-center gap-1">
-                              <Thermometer className={`h-3.5 w-3.5 ${getTempColor(disk.temperature, disk.name, disk.rotation_rate)}`} />
-                              <span className={`text-xs font-medium ${getTempColor(disk.temperature, disk.name, disk.rotation_rate)}`}>
+                              <Thermometer className={`h-4 w-4 ${getTempColor(disk.temperature, disk.name, disk.rotation_rate)}`} />
+                              <span className={`text-sm font-medium ${getTempColor(disk.temperature, disk.name, disk.rotation_rate)}`}>
                                 {disk.temperature}°C
                               </span>
                             </div>
                           )}
                           {getHealthBadge(disk.health)}
+                          {(disk.observations_count ?? 0) > 0 && (
+                            <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 gap-1 text-[10px] px-1.5 py-0">
+                              <Info className="h-3 w-3" />
+                              {disk.observations_count}
+                            </Badge>
+                          )}
                         </div>
                       </div>
-                      
-                      {/* Model if available */}
-                      {disk.model && disk.model !== "Unknown" && (
-                        <p className="text-sm text-muted-foreground truncate pl-7">{disk.model}</p>
-                      )}
-                      
-                      {/* Info grid - 2 columns */}
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-2 pl-7 text-sm">
-                        <div>
-                          <span className="text-muted-foreground">Size</span>
-                          <p className="font-medium">{disk.size_formatted || disk.size || "N/A"}</p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">SMART Status</span>
-                          <p className="font-medium capitalize">{disk.smart_status || "N/A"}</p>
-                        </div>
-                        {disk.serial && disk.serial !== "Unknown" && (
-                          <div className="col-span-2">
-                            <span className="text-muted-foreground">Serial</span>
-                            <p className="font-medium text-xs truncate">{disk.serial}</p>
-                          </div>
-                        )}
-                      </div>
-                      
-                      {/* Observations badge if any */}
-                      {(disk.observations_count ?? 0) > 0 && (
-                        <div className="pl-7">
-                          <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 gap-1 text-[10px] px-1.5 py-0">
-                            <Info className="h-3 w-3" />
-                            {disk.observations_count} observation{disk.observations_count > 1 ? 's' : ''}
-                          </Badge>
-                        </div>
-                      )}
                     </div>
                   </div>
 
@@ -1314,7 +1289,7 @@ export function StorageOverview() {
               </div>
 
               {/* Observations Section */}
-              {(diskObservations.length > 0 || loadingObservations || (selectedDisk.observations_count ?? 0) > 0) && (
+              {(diskObservations.length > 0 || loadingObservations) && (
                 <div className="border-t pt-4">
                   <h4 className="font-semibold mb-2 flex items-center gap-2">
                     <Info className="h-4 w-4 text-blue-400" />

@@ -2554,55 +2554,6 @@ def get_smart_data(disk_name):
         import traceback
         traceback.print_exc()
     
-    # ── Integrate persistent worst_health ──
-    # The health should never improve from a previous worst state without admin intervention.
-    # This prevents disks from showing "healthy" after they had issues that may have auto-resolved.
-    try:
-        current_health = smart_data['health']
-        serial = smart_data.get('serial', '')
-        
-        # Get persistent worst_health
-        worst_info = health_persistence.get_disk_worst_health(disk_name, serial if serial != 'Unknown' else None)
-        
-        if worst_info:
-            worst_health = worst_info.get('worst_health', 'healthy')
-            admin_cleared = worst_info.get('admin_cleared', False)
-            
-            # Only apply worst_health if not cleared by admin
-            if not admin_cleared:
-                severity_order = {'unknown': -1, 'healthy': 0, 'warning': 1, 'critical': 2}
-                current_severity = severity_order.get(current_health, 0)
-                worst_severity = severity_order.get(worst_health, 0)
-                
-                # If worst_health is worse than current, use worst_health
-                if worst_severity > current_severity:
-                    smart_data['health'] = worst_health
-                    smart_data['health_source'] = 'persistent'
-                    smart_data['worst_health_date'] = worst_info.get('worst_health_date')
-                    smart_data['worst_health_reason'] = worst_info.get('worst_health_reason', '')
-        
-        # Update worst_health if current is worse (and not already stored)
-        if current_health in ('warning', 'critical'):
-            health_reason = ''
-            if smart_data.get('pending_sectors', 0) > 0:
-                health_reason = f"{smart_data['pending_sectors']} pending sector(s)"
-            if smart_data.get('reallocated_sectors', 0) > 0:
-                if health_reason:
-                    health_reason += f", {smart_data['reallocated_sectors']} reallocated"
-                else:
-                    health_reason = f"{smart_data['reallocated_sectors']} reallocated sector(s)"
-            if smart_data.get('smart_status') == 'failed':
-                health_reason = 'SMART test FAILED' + (f' ({health_reason})' if health_reason else '')
-            
-            health_persistence.update_disk_worst_health(
-                disk_name, 
-                serial if serial != 'Unknown' else None,
-                current_health,
-                health_reason
-            )
-    except Exception as e:
-        # print(f"[v0] Error integrating worst_health: {e}")
-        pass
 
     return smart_data
 

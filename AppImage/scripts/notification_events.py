@@ -402,16 +402,47 @@ class JournalWatcher:
                     entity = 'disk'
                     entity_id = f'fs_{device}'
                     
-                    # ── 24h dedup for filesystem errors per device ──
+                    # ── Get disk serial for USB-aware cooldown ──
+                    # USB disks can change device names (sda->sdb) on reconnect.
+                    # Using serial as cooldown key ensures same physical disk
+                    # shares one 24h cooldown regardless of device letter.
+                    import os as _os
+                    base_dev = re.sub(r'\d+$', '', device) if device != 'unknown' else ''
+                    disk_serial = ''
+                    is_usb_disk = False
+                    if base_dev:
+                        try:
+                            # Check if USB via sysfs
+                            sysfs_link = subprocess.run(
+                                ['readlink', '-f', f'/sys/block/{base_dev}'],
+                                capture_output=True, text=True, timeout=2
+                            )
+                            is_usb_disk = 'usb' in sysfs_link.stdout.lower()
+                            
+                            # Get serial from smartctl
+                            smart_result = subprocess.run(
+                                ['smartctl', '-i', '-j', f'/dev/{base_dev}'],
+                                capture_output=True, text=True, timeout=5
+                            )
+                            if smart_result.returncode in (0, 4):
+                                import json
+                                smart_data = json.loads(smart_result.stdout)
+                                disk_serial = smart_data.get('serial_number', '')
+                        except Exception:
+                            pass
+                    
+                    # ── 24h dedup for filesystem errors ──
+                    # Use serial for USB disks, device name for others
                     now_fs = time.time()
-                    fs_dedup_key = f'fs_{device}'
+                    if is_usb_disk and disk_serial:
+                        fs_dedup_key = f'fs_serial_{disk_serial}'
+                    else:
+                        fs_dedup_key = f'fs_{device}'
                     last_fs_notified = self._disk_io_notified.get(fs_dedup_key, 0)
                     if now_fs - last_fs_notified < self._DISK_IO_COOLDOWN:
                         return  # Already notified for this device recently
                     
-                    # ── SMART + device existence gating ──
-                    import os as _os
-                    base_dev = re.sub(r'\d+$', '', device) if device != 'unknown' else ''
+                    # ── Device existence gating ──
                     device_exists = base_dev and _os.path.exists(f'/dev/{base_dev}')
                     
                     if not device_exists and device != 'unknown':
@@ -749,7 +780,6 @@ class JournalWatcher:
         """Extract device info from a smartd system-mail and record as disk observation."""
         try:
             import re as _re
-            import subprocess
             from health_persistence import health_persistence
             
             # Extract device path: "Device: /dev/sdh [SAT]" or "Device: /dev/sda"
@@ -769,21 +799,6 @@ class JournalWatcher:
             model_match = _re.search(r'Device info:\s*\n?\s*(.+?)(?:,\s*S/N:)', message)
             if model_match:
                 model = model_match.group(1).strip()
-            
-            # If no serial from message, try to get it from smartctl (important for USB disks)
-            if not serial or len(serial) < 3:
-                try:
-                    result = subprocess.run(
-                        ['smartctl', '-i', '-j', f'/dev/{base_dev}'],
-                        capture_output=True, text=True, timeout=5
-                    )
-                    import json as _json
-                    data = _json.loads(result.stdout)
-                    serial = data.get('serial_number', '') or serial
-                    if not model:
-                        model = data.get('model_name', '') or data.get('model_family', '')
-                except Exception:
-                    pass
             
             # Extract error signature from title: "SMART error (FailedReadSmartSelfTestLog)"
             sig_match = _re.search(r'SMART error\s*\((\w+)\)', title)
@@ -821,12 +836,10 @@ class JournalWatcher:
                 severity='warning',
             )
             
-            # Also update worst_health so the disk stays marked as warning
-            # even if current SMART readings show 0 pending sectors
-            warn_line_text = warn_line_m.group(1).strip() if warn_line_m else error_signature
-            health_persistence.update_disk_worst_health(
-                base_dev, serial, 'warning', warn_line_text
-            )
+            # Update worst_health for permanent tracking (record_disk_observation 
+            # already does this, but we ensure it here for safety)
+            health_persistence.update_disk_worst_health(base_dev, serial, 'warning')
+            
         except Exception as e:
             print(f"[DiskIOEventProcessor] Error recording smartd observation: {e}")
 
@@ -1751,8 +1764,26 @@ class PollingCollector:
                 if isinstance(details_raw, dict):
                     # Extract device name for a stable entity_id (24h cooldown key)
                     dev = details_raw.get('device', details_raw.get('disk', ''))
-                    if dev:
-                        eid = f'disk_{dev}'  # Stable per-device fingerprint
+                    serial = details_raw.get('serial', '')
+                    
+                    # For USB disks, use serial as entity_id for stable cooldown
+                    # USB disks can change device names (sda->sdb) on reconnect
+                    # Using serial ensures same physical disk shares cooldown
+                    if serial and dev:
+                        # Check if this is a USB disk
+                        try:
+                            sysfs_result = subprocess.run(
+                                ['readlink', '-f', f'/sys/block/{dev.replace("/dev/", "")}'],
+                                capture_output=True, text=True, timeout=2
+                            )
+                            if 'usb' in sysfs_result.stdout.lower():
+                                eid = f'disk_serial_{serial}'  # USB: use serial
+                            else:
+                                eid = f'disk_{dev}'  # Non-USB: use device name
+                        except Exception:
+                            eid = f'disk_{dev}'  # Fallback to device name
+                    elif dev:
+                        eid = f'disk_{dev}'  # No serial: use device name
             
             # Updates are always informational notifications except
             # system_age which can be WARNING (365+ days) or CRITICAL (548+ days).
@@ -1818,15 +1849,26 @@ class PollingCollector:
             except Exception:
                 pass
             
-            # Skip recovery notifications for SMART disk errors (pending/reallocated sectors).
-            # These indicate physical disk degradation that doesn't truly "recover" --
-            # the disk may show 0 pending sectors later but the damage history persists.
-            # The worst_health in disk_registry tracks this, so we don't send false "resolved".
+            # Skip recovery notifications for PERMANENT disk events.
+            # These indicate physical disk degradation that doesn't truly "recover":
+            # - SMART pending/reallocated sectors indicate physical damage
+            # - Disk may show 0 pending sectors later but damage history persists
+            # - Sending "Resolved" gives false sense of security
+            # The worst_health in disk_registry tracks this permanently.
             if category == 'disks':
-                reason_lower = reason.lower() if reason else ''
-                if any(indicator in reason_lower for indicator in [
-                    'pending', 'reallocated', 'sector', 'smart', 'unreadable'
-                ]):
+                reason_lower = (reason or '').lower()
+                permanent_indicators = [
+                    'pending',           # pending sectors
+                    'reallocated',       # reallocated sectors  
+                    'unreadable',        # unreadable sectors
+                    'smart',             # SMART errors
+                    'surface error',     # disk surface errors
+                    'bad sector',        # bad sectors
+                    'i/o error',         # I/O errors (repeated)
+                    'medium error',      # SCSI medium errors
+                ]
+                if any(indicator in reason_lower for indicator in permanent_indicators):
+                    # Don't send recovery - just clean up tracking
                     self._last_notified.pop(key, None)
                     continue
             

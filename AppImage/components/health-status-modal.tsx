@@ -30,7 +30,6 @@ import {
   ChevronRight,
   Settings2,
   HelpCircle,
-  Usb,
 } from "lucide-react"
 
 interface CategoryCheck {
@@ -415,44 +414,13 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
   ) => {
     if (!checks || Object.keys(checks).length === 0) return null
 
-    // Sort checks: non-disk entries first, then disk entries sorted by device name
-    const sortedEntries = Object.entries(checks)
-      .filter(([, checkData]) => checkData.installed !== false)
-      .sort(([keyA, dataA], [keyB, dataB]) => {
-        const isDiskA = dataA.is_disk_entry === true
-        const isDiskB = dataB.is_disk_entry === true
-        if (isDiskA && !isDiskB) return 1
-        if (!isDiskA && isDiskB) return -1
-        if (isDiskA && isDiskB) {
-          // Sort disks by device name
-          const deviceA = dataA.device || keyA
-          const deviceB = dataB.device || keyB
-          return deviceA.localeCompare(deviceB)
-        }
-        return 0
-      })
-
     return (
       <div className="mt-2 space-y-0.5">
-        {sortedEntries.map(([checkKey, checkData]) => {
+        {Object.entries(checks)
+          .filter(([, checkData]) => checkData.installed !== false)
+          .map(([checkKey, checkData]) => {
           const isDismissable = checkData.dismissable === true
           const checkStatus = checkData.status?.toUpperCase() || "OK"
-          const isDiskEntry = checkData.is_disk_entry === true
-
-          // For disk entries, format label specially
-          let displayLabel = formatCheckLabel(checkKey)
-          let diskIcon = null
-          if (isDiskEntry) {
-            displayLabel = checkData.device || checkKey.replace(/_/g, '/')
-            const diskType = checkData.disk_type || ''
-            if (diskType === 'USB') {
-              diskIcon = <Usb className="h-3 w-3 text-orange-400 mr-1" />
-            } else if (diskType === 'NVMe') {
-              diskIcon = <HardDrive className="h-3 w-3 text-blue-400 mr-1" />
-            } else {
-              diskIcon = <HardDrive className="h-3 w-3 text-muted-foreground mr-1" />
-            }
-          }
 
           return (
             <div
@@ -461,15 +429,7 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
             >
               <div className="flex items-start gap-1.5 sm:gap-2 min-w-0 flex-1">
                 <span className="mt-0.5 shrink-0">{getStatusIcon(checkData.dismissed ? "INFO" : checkData.status, "sm")}</span>
-                <span className="font-medium shrink-0 flex items-center">
-                  {diskIcon}
-                  {displayLabel}
-                  {isDiskEntry && checkData.disk_type && (
-                    <Badge variant="outline" className="ml-1.5 text-[8px] px-1 py-0 h-3.5 shrink-0">
-                      {checkData.disk_type}
-                    </Badge>
-                  )}
-                </span>
+                <span className="font-medium shrink-0">{formatCheckLabel(checkKey)}</span>
                 <span className="text-muted-foreground break-words whitespace-pre-wrap min-w-0">{checkData.detail}</span>
                 {checkData.dismissed && (
                   <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 shrink-0 text-blue-400 border-blue-400/30">
@@ -499,7 +459,6 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
                     )}
                   </Button>
                 )}
-
               </div>
             </div>
           )
