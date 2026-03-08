@@ -1961,20 +1961,20 @@ class HealthMonitor:
                     if interface.startswith('vmbr') or interface.startswith(('eth', 'ens', 'enp', 'eno')):
                         health_persistence.resolve_error(interface, 'Interface recovered')
             
-            # Check connectivity (latency)
+            # Check connectivity (latency) - reads from gateway monitor database
             latency_status = self._check_network_latency()
+            connectivity_check = {'status': 'OK', 'detail': 'Not tested'}
             if latency_status:
                 latency_ms = latency_status.get('latency_ms', 'N/A')
                 latency_sev = latency_status.get('status', 'OK')
                 interface_details['connectivity'] = latency_status
+                detail_text = f'Latency {latency_ms}ms to gateway' if isinstance(latency_ms, (int, float)) else latency_status.get('reason', 'Unknown')
                 connectivity_check = {
                     'status': latency_sev if latency_sev not in ['UNKNOWN'] else 'OK',
-                    'detail': f'Latency {latency_ms}ms to gateway' if isinstance(latency_ms, (int, float)) else latency_status.get('reason', 'Unknown'),
+                    'detail': detail_text,
                 }
                 if latency_sev not in ['OK', 'INFO', 'UNKNOWN']:
                     issues.append(latency_status.get('reason', 'Network latency issue'))
-            else:
-                connectivity_check = {'status': 'OK', 'detail': 'Not tested'}
             
             # Build checks dict
             checks = {}

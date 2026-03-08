@@ -124,12 +124,13 @@ const generateLatencyReport = (report: ReportData) => {
   const now = new Date().toLocaleString()
   const logoUrl = `${window.location.origin}/images/proxmenux-logo.png`
   
-  // Calculate stats for realtime results
-  const realtimeStats = report.realtimeResults.length > 0 ? {
-    min: Math.min(...report.realtimeResults.filter(r => r.latency_min !== null).map(r => r.latency_min!)),
-    max: Math.max(...report.realtimeResults.filter(r => r.latency_max !== null).map(r => r.latency_max!)),
-    avg: report.realtimeResults.reduce((acc, r) => acc + (r.latency_avg || 0), 0) / report.realtimeResults.length,
-    current: report.realtimeResults[report.realtimeResults.length - 1]?.latency_avg ?? null,
+  // Calculate stats for realtime results - all values are individual ping measurements in latency_avg
+  const validRealtimeValues = report.realtimeResults.filter(r => r.latency_avg !== null).map(r => r.latency_avg!)
+  const realtimeStats = validRealtimeValues.length > 0 ? {
+    min: Math.min(...validRealtimeValues),
+    max: Math.max(...validRealtimeValues),
+    avg: validRealtimeValues.reduce((acc, v) => acc + v, 0) / validRealtimeValues.length,
+    current: validRealtimeValues[validRealtimeValues.length - 1] ?? null,
     avgPacketLoss: report.realtimeResults.reduce((acc, r) => acc + (r.packet_loss || 0), 0) / report.realtimeResults.length,
   } : null
 
@@ -149,14 +150,12 @@ const generateLatencyReport = (report: ReportData) => {
 
   const timeframeLabel = TIMEFRAME_OPTIONS.find(t => t.value === report.timeframe)?.label || report.timeframe
 
-  // Build test results table for realtime mode
+  // Build test results table for realtime mode - each row is now an individual ping measurement
   const realtimeTableRows = report.realtimeResults.map((r, i) => `
     <tr${r.packet_loss > 0 ? ' class="warn"' : ''}>
       <td>${i + 1}</td>
-      <td>${new Date(r.timestamp || Date.now()).toLocaleTimeString()}</td>
-      <td style="font-weight:600;color:${statusColorMap[getStatusText(r.latency_avg)] || '#64748b'}">${r.latency_avg !== null ? r.latency_avg + ' ms' : 'Failed'}</td>
-      <td>${r.latency_min !== null ? r.latency_min + ' ms' : '-'}</td>
-      <td>${r.latency_max !== null ? r.latency_max + ' ms' : '-'}</td>
+      <td>${new Date(r.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</td>
+      <td style="font-weight:600;color:${statusColorMap[getStatusText(r.latency_avg)] || '#64748b'}">${r.latency_avg !== null ? r.latency_avg.toFixed(1) + ' ms' : 'Failed'}</td>
       <td${r.packet_loss > 0 ? ' style="color:#dc2626;font-weight:600;"' : ''}>${r.packet_loss}%</td>
       <td><span class="f-tag" style="background:${statusColorMap[getStatusText(r.latency_avg)] || '#64748b'}15;color:${statusColorMap[getStatusText(r.latency_avg)] || '#64748b'}">${getStatusText(r.latency_avg)}</span></td>
     </tr>
@@ -170,17 +169,20 @@ const generateLatencyReport = (report: ReportData) => {
     endTime: new Date(report.data[report.data.length - 1].timestamp * 1000).toLocaleString(),
   } : null
 
-  // Generate chart SVG - expand realtime to all 3 values (min, avg, max) per sample
+  // Build history table rows for gateway mode (last 24 records)
+  const historyTableRows = report.data.slice(-24).map((d, i) => `
+    <tr${d.packet_loss && d.packet_loss > 0 ? ' class="warn"' : ''}>
+      <td>${i + 1}</td>
+      <td>${new Date(d.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+      <td style="font-weight:600;color:${statusColorMap[getStatusText(d.value)] || '#64748b'}">${d.value !== null ? d.value.toFixed(1) + ' ms' : 'Failed'}</td>
+      <td${d.packet_loss && d.packet_loss > 0 ? ' style="color:#dc2626;font-weight:600;"' : ''}>${d.packet_loss?.toFixed(1) ?? 0}%</td>
+      <td><span class="f-tag" style="background:${statusColorMap[getStatusText(d.value)] || '#64748b'}15;color:${statusColorMap[getStatusText(d.value)] || '#64748b'}">${getStatusText(d.value)}</span></td>
+    </tr>
+  `).join('')
+
+  // Generate chart SVG - data already expanded for realtime
   const chartData = report.isRealtime
-    ? report.realtimeResults.flatMap(r => {
-        const points: number[] = []
-        if (r.latency_min !== null) points.push(r.latency_min)
-        if (r.latency_avg !== null && r.latency_avg !== r.latency_min && r.latency_avg !== r.latency_max) {
-          points.push(r.latency_avg)
-        }
-        if (r.latency_max !== null) points.push(r.latency_max)
-        return points.length > 0 ? points : [r.latency_avg ?? 0]
-      })
+    ? report.realtimeResults.filter(r => r.latency_avg !== null).map(r => r.latency_avg!)
     : report.data.map(d => d.value || 0)
   
   let chartSvg = '<p style="text-align:center;color:#64748b;padding:20px;">Not enough data points for chart</p>'
@@ -588,32 +590,51 @@ const generateLatencyReport = (report: ReportData) => {
   </div>
 </div>
 
-${report.isRealtime && report.realtimeResults.length > 0 ? `
-<!-- 5. Detailed Test Results (only for Cloudflare / Google DNS) -->
-<div class="section">
+  ${report.isRealtime && report.realtimeResults.length > 0 ? `
+  <!-- 5. Detailed Test Results (for Cloudflare / Google DNS) -->
+  <div class="section">
   <div class="section-title">5. Detailed Test Results</div>
   <table class="chk-tbl">
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>Time</th>
-        <th>Latency (Avg)</th>
-        <th>Min</th>
-        <th>Max</th>
-        <th>Packet Loss</th>
-        <th>Status</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${realtimeTableRows}
-    </tbody>
+  <thead>
+  <tr>
+  <th>#</th>
+  <th>Time</th>
+  <th>Latency</th>
+  <th>Packet Loss</th>
+  <th>Status</th>
+  </tr>
+  </thead>
+  <tbody>
+  ${realtimeTableRows}
+  </tbody>
   </table>
 </div>
 ` : ''}
 
-<!-- Methodology (5 for Gateway, 6 for Cloudflare/Google DNS) -->
+${!report.isRealtime && report.data.length > 0 ? `
+<!-- 5. Detailed History (for Gateway) -->
 <div class="section">
-  <div class="section-title">${report.isRealtime ? '6' : '5'}. Methodology</div>
+  <div class="section-title">5. Latency History (Last ${Math.min(24, report.data.length)} Records)</div>
+  <table class="chk-tbl">
+  <thead>
+  <tr>
+  <th>#</th>
+  <th>Time</th>
+  <th>Latency</th>
+  <th>Packet Loss</th>
+  <th>Status</th>
+  </tr>
+  </thead>
+  <tbody>
+  ${historyTableRows}
+  </tbody>
+  </table>
+</div>
+` : ''}
+
+<!-- Methodology -->
+<div class="section">
+  <div class="section-title">${(report.isRealtime && report.realtimeResults.length > 0) || (!report.isRealtime && report.data.length > 0) ? '6' : '5'}. Methodology</div>
   <div class="grid-2">
     <div class="card">
       <div class="card-label">Test Method</div>
@@ -723,8 +744,39 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
     try {
       const result = await fetchApi<RealtimeResult>(`/api/network/latency/current?target=${target}`)
       if (result) {
-        const resultWithTimestamp = { ...result, timestamp: Date.now() }
-        setRealtimeResults(prev => [...prev, resultWithTimestamp])
+        const baseTime = Date.now()
+        // Expand each ping result into 3 individual samples (min, avg, max) with slightly different timestamps
+        // This ensures the graph shows all actual measured values, not just averages
+        const samples: RealtimeResult[] = []
+        
+        if (result.latency_min !== null) {
+          samples.push({
+            ...result,
+            latency_avg: result.latency_min,
+            timestamp: baseTime - 200,  // Slightly earlier
+          })
+        }
+        if (result.latency_avg !== null && result.latency_avg !== result.latency_min && result.latency_avg !== result.latency_max) {
+          samples.push({
+            ...result,
+            latency_avg: result.latency_avg,
+            timestamp: baseTime,
+          })
+        }
+        if (result.latency_max !== null) {
+          samples.push({
+            ...result,
+            latency_avg: result.latency_max,
+            timestamp: baseTime + 200,  // Slightly later
+          })
+        }
+        
+        // Fallback if no valid samples
+        if (samples.length === 0 && result.latency_avg !== null) {
+          samples.push({ ...result, timestamp: baseTime })
+        }
+        
+        setRealtimeResults(prev => [...prev, ...samples])
       }
     } catch (err) {
       // Silently fail
@@ -779,28 +831,22 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
     time: new Date(point.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   }))
 
-  // Expand each sample to 3 data points (min, avg, max) for accurate representation
-  const realtimeChartData = realtimeResults.flatMap((r, i) => {
-    const time = new Date(r.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    const points = []
-    if (r.latency_min !== null) points.push({ time, value: r.latency_min, packet_loss: r.packet_loss })
-    if (r.latency_avg !== null && r.latency_avg !== r.latency_min && r.latency_avg !== r.latency_max) {
-      points.push({ time, value: r.latency_avg, packet_loss: r.packet_loss })
-    }
-    if (r.latency_max !== null) points.push({ time, value: r.latency_max, packet_loss: r.packet_loss })
-    // If no valid points, add avg as fallback
-    if (points.length === 0 && r.latency_avg !== null) {
-      points.push({ time, value: r.latency_avg, packet_loss: r.packet_loss })
-    }
-    return points
-  })
+  // Data already expanded to individual ping values - just format for chart
+  const realtimeChartData = realtimeResults
+    .filter(r => r.latency_avg !== null)
+    .map(r => ({
+      time: new Date(r.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      value: r.latency_avg,
+      packet_loss: r.packet_loss
+    }))
 
-  // Calculate realtime stats
-  const realtimeStats = realtimeResults.length > 0 ? {
-    current: realtimeResults[realtimeResults.length - 1]?.latency_avg ?? 0,
-    min: Math.min(...realtimeResults.filter(r => r.latency_min !== null).map(r => r.latency_min!)) || 0,
-    max: Math.max(...realtimeResults.filter(r => r.latency_max !== null).map(r => r.latency_max!)) || 0,
-    avg: realtimeResults.reduce((acc, r) => acc + (r.latency_avg || 0), 0) / realtimeResults.length,
+  // Calculate realtime stats - all values are now individual ping measurements stored in latency_avg
+  const validValues = realtimeResults.filter(r => r.latency_avg !== null).map(r => r.latency_avg!)
+  const realtimeStats = validValues.length > 0 ? {
+    current: validValues[validValues.length - 1],
+    min: Math.min(...validValues),
+    max: Math.max(...validValues),
+    avg: validValues.reduce((acc, v) => acc + v, 0) / validValues.length,
     packetLoss: realtimeResults[realtimeResults.length - 1]?.packet_loss ?? 0,
   } : null
 
