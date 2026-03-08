@@ -804,6 +804,13 @@ class JournalWatcher:
                 raw_message=raw_msg,
                 severity='warning',
             )
+            
+            # Also update worst_health so the disk stays marked as warning
+            # even if current SMART readings show 0 pending sectors
+            warn_line_text = warn_line_m.group(1).strip() if warn_line_m else error_signature
+            health_persistence.update_disk_worst_health(
+                base_dev, serial, 'warning', warn_line_text
+            )
         except Exception as e:
             print(f"[DiskIOEventProcessor] Error recording smartd observation: {e}")
 
@@ -1794,6 +1801,18 @@ class PollingCollector:
                     continue
             except Exception:
                 pass
+            
+            # Skip recovery notifications for SMART disk errors (pending/reallocated sectors).
+            # These indicate physical disk degradation that doesn't truly "recover" --
+            # the disk may show 0 pending sectors later but the damage history persists.
+            # The worst_health in disk_registry tracks this, so we don't send false "resolved".
+            if category == 'disks':
+                reason_lower = reason.lower() if reason else ''
+                if any(indicator in reason_lower for indicator in [
+                    'pending', 'reallocated', 'sector', 'smart', 'unreadable'
+                ]):
+                    self._last_notified.pop(key, None)
+                    continue
             
             # Calculate duration
             duration = ''

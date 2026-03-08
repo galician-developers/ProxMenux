@@ -1046,11 +1046,11 @@ export function StorageOverview() {
                       <div className="grid grid-cols-2 gap-x-4 gap-y-2 pl-7 text-sm">
                         <div>
                           <span className="text-muted-foreground">Size</span>
-                          <p className="font-medium">{disk.size || "N/A"}</p>
+                          <p className="font-medium">{disk.size_formatted || disk.size || "N/A"}</p>
                         </div>
                         <div>
                           <span className="text-muted-foreground">SMART Status</span>
-                          <p className="font-medium">{disk.smart_status || "N/A"}</p>
+                          <p className="font-medium capitalize">{disk.smart_status || "N/A"}</p>
                         </div>
                         {disk.serial && disk.serial !== "Unknown" && (
                           <div className="col-span-2">
@@ -1314,7 +1314,7 @@ export function StorageOverview() {
               </div>
 
               {/* Observations Section */}
-              {(diskObservations.length > 0 || loadingObservations) && (
+              {(diskObservations.length > 0 || loadingObservations || (selectedDisk.observations_count ?? 0) > 0) && (
                 <div className="border-t pt-4">
                   <h4 className="font-semibold mb-2 flex items-center gap-2">
                     <Info className="h-4 w-4 text-blue-400" />
