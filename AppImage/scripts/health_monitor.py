@@ -1284,10 +1284,10 @@ class HealthMonitor:
                 else:
                     return {'status': 'OK'} # No VGs found, LVM not in use
             
-        return {'status': 'OK', 'volumes': len(volumes)}
+            return {'status': 'OK', 'volumes': len(volumes)}
     
-    except Exception:
-        return {'status': 'OK'}
+        except Exception:
+            return {'status': 'OK'}
 
     def _get_physical_disks_list(self) -> List[Dict[str, Any]]:
         """Get list of all physical disks with their health status.
