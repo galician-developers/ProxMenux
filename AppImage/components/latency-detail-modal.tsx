@@ -169,8 +169,8 @@ const generateLatencyReport = (report: ReportData) => {
     endTime: new Date(report.data[report.data.length - 1].timestamp * 1000).toLocaleString(),
   } : null
 
-  // Build history table rows for gateway mode (last 24 records)
-  const historyTableRows = report.data.slice(-24).map((d, i) => `
+  // Build history table rows for gateway mode (last 20 records)
+  const historyTableRows = report.data.slice(-20).map((d, i) => `
     <tr${d.packet_loss && d.packet_loss > 0 ? ' class="warn"' : ''}>
       <td>${i + 1}</td>
       <td>${new Date(d.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
@@ -614,7 +614,7 @@ const generateLatencyReport = (report: ReportData) => {
 ${!report.isRealtime && report.data.length > 0 ? `
 <!-- 5. Detailed History (for Gateway) -->
 <div class="section">
-  <div class="section-title">5. Latency History (Last ${Math.min(24, report.data.length)} Records)</div>
+  <div class="section-title">5. Latency History (Last ${Math.min(20, report.data.length)} Records)</div>
   <table class="chk-tbl">
   <thead>
   <tr>

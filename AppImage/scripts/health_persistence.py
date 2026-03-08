@@ -162,6 +162,12 @@ class HealthPersistence:
                 first_seen TEXT NOT NULL,
                 last_seen TEXT NOT NULL,
                 removed INTEGER DEFAULT 0,
+                worst_health TEXT DEFAULT 'healthy',
+                worst_health_date TEXT,
+                worst_health_reason TEXT,
+                admin_cleared INTEGER DEFAULT 0,
+                admin_cleared_date TEXT,
+                admin_cleared_note TEXT,
                 UNIQUE(device_name, serial)
             )
         ''')
@@ -188,6 +194,17 @@ class HealthPersistence:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_disk_device ON disk_registry(device_name)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_obs_disk ON disk_observations(disk_registry_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_obs_dismissed ON disk_observations(dismissed)')
+        
+        # Migration: add worst_health columns to disk_registry if not present
+        cursor.execute("PRAGMA table_info(disk_registry)")
+        disk_columns = [col[1] for col in cursor.fetchall()]
+        if 'worst_health' not in disk_columns:
+            cursor.execute("ALTER TABLE disk_registry ADD COLUMN worst_health TEXT DEFAULT 'healthy'")
+            cursor.execute("ALTER TABLE disk_registry ADD COLUMN worst_health_date TEXT")
+            cursor.execute("ALTER TABLE disk_registry ADD COLUMN worst_health_reason TEXT")
+            cursor.execute("ALTER TABLE disk_registry ADD COLUMN admin_cleared INTEGER DEFAULT 0")
+            cursor.execute("ALTER TABLE disk_registry ADD COLUMN admin_cleared_date TEXT")
+            cursor.execute("ALTER TABLE disk_registry ADD COLUMN admin_cleared_note TEXT")
         
         conn.commit()
         conn.close()
@@ -1475,6 +1492,186 @@ class HealthPersistence:
             conn.close()
         except Exception as e:
             print(f"[HealthPersistence] Error marking removed disks: {e}")
+
+    # ────────────────────────────────────────────────────────────────
+    #  Disk Worst Health State Tracking
+    # ────────────────────────────────────────────────────────────────
+    
+    HEALTH_SEVERITY_ORDER = {'healthy': 0, 'warning': 1, 'critical': 2}
+    
+    def update_disk_worst_health(self, device_name: str, serial: Optional[str],
+                                  health: str, reason: str = '') -> bool:
+        """Update worst_health if the new health is worse than current.
+        
+        Health progression is one-way: healthy -> warning -> critical
+        Only admin_clear_disk_health() can reset to healthy.
+        
+        Returns True if worst_health was updated.
+        """
+        health_lower = health.lower()
+        if health_lower not in self.HEALTH_SEVERITY_ORDER:
+            return False
+        
+        try:
+            conn = self._get_conn()
+            cursor = conn.cursor()
+            
+            disk_id = self._get_disk_registry_id(cursor, device_name.replace('/dev/', ''), serial)
+            if not disk_id:
+                # Auto-register disk if not present
+                self.register_disk(device_name.replace('/dev/', ''), serial)
+                disk_id = self._get_disk_registry_id(cursor, device_name.replace('/dev/', ''), serial)
+            
+            if not disk_id:
+                conn.close()
+                return False
+            
+            # Get current worst_health
+            cursor.execute('SELECT worst_health, admin_cleared FROM disk_registry WHERE id = ?', (disk_id,))
+            row = cursor.fetchone()
+            if not row:
+                conn.close()
+                return False
+            
+            current_worst = row[0] or 'healthy'
+            admin_cleared = row[1] or 0
+            
+            # If admin cleared and new issue is the same or less severe, don't update
+            # But if admin cleared and issue escalates, update anyway
+            current_severity = self.HEALTH_SEVERITY_ORDER.get(current_worst, 0)
+            new_severity = self.HEALTH_SEVERITY_ORDER.get(health_lower, 0)
+            
+            # Only update if new health is worse
+            if new_severity > current_severity:
+                now = datetime.now().isoformat()
+                cursor.execute('''
+                    UPDATE disk_registry 
+                    SET worst_health = ?, worst_health_date = ?, worst_health_reason = ?,
+                        admin_cleared = 0
+                    WHERE id = ?
+                ''', (health_lower, now, reason, disk_id))
+                conn.commit()
+                conn.close()
+                return True
+            
+            conn.close()
+            return False
+        except Exception as e:
+            print(f"[HealthPersistence] Error updating disk worst_health: {e}")
+            return False
+    
+    def get_disk_worst_health(self, device_name: str, serial: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Get the worst health state for a specific disk."""
+        try:
+            conn = self._get_conn()
+            cursor = conn.cursor()
+            
+            disk_id = self._get_disk_registry_id(cursor, device_name.replace('/dev/', ''), serial)
+            if not disk_id:
+                conn.close()
+                return None
+            
+            cursor.execute('''
+                SELECT worst_health, worst_health_date, worst_health_reason, 
+                       admin_cleared, admin_cleared_date, admin_cleared_note
+                FROM disk_registry WHERE id = ?
+            ''', (disk_id,))
+            row = cursor.fetchone()
+            conn.close()
+            
+            if row:
+                return {
+                    'worst_health': row[0] or 'healthy',
+                    'worst_health_date': row[1],
+                    'worst_health_reason': row[2],
+                    'admin_cleared': bool(row[3]),
+                    'admin_cleared_date': row[4],
+                    'admin_cleared_note': row[5],
+                }
+            return None
+        except Exception as e:
+            print(f"[HealthPersistence] Error getting disk worst_health: {e}")
+            return None
+    
+    def admin_clear_disk_health(self, device_name: str, serial: Optional[str], note: str) -> bool:
+        """Admin manually clears disk health history (e.g., after disk replacement).
+        
+        Requires a note explaining why (for audit trail).
+        """
+        if not note or len(note.strip()) < 5:
+            return False  # Require meaningful note
+        
+        try:
+            conn = self._get_conn()
+            cursor = conn.cursor()
+            
+            disk_id = self._get_disk_registry_id(cursor, device_name.replace('/dev/', ''), serial)
+            if not disk_id:
+                conn.close()
+                return False
+            
+            now = datetime.now().isoformat()
+            cursor.execute('''
+                UPDATE disk_registry 
+                SET worst_health = 'healthy', admin_cleared = 1, 
+                    admin_cleared_date = ?, admin_cleared_note = ?
+                WHERE id = ?
+            ''', (now, note.strip(), disk_id))
+            
+            # Also dismiss all active observations for this disk
+            cursor.execute('''
+                UPDATE disk_observations SET dismissed = 1 WHERE disk_registry_id = ?
+            ''', (disk_id,))
+            
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"[HealthPersistence] Error clearing disk health: {e}")
+            return False
+    
+    def get_all_disks_health_summary(self) -> List[Dict[str, Any]]:
+        """Get health summary for all registered disks (for Health Monitor listing).
+        
+        Returns list of disks with their current and worst health states.
+        """
+        try:
+            conn = self._get_conn()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT d.id, d.device_name, d.serial, d.model, d.size_bytes,
+                       d.first_seen, d.last_seen, d.removed,
+                       d.worst_health, d.worst_health_date, d.worst_health_reason,
+                       d.admin_cleared, d.admin_cleared_date,
+                       (SELECT COUNT(*) FROM disk_observations o 
+                        WHERE o.disk_registry_id = d.id AND o.dismissed = 0) as active_observations
+                FROM disk_registry d
+                WHERE d.removed = 0
+                ORDER BY d.device_name
+            ''')
+            rows = cursor.fetchall()
+            conn.close()
+            
+            return [{
+                'id': r[0],
+                'device_name': r[1],
+                'serial': r[2] or '',
+                'model': r[3] or 'Unknown',
+                'size_bytes': r[4],
+                'first_seen': r[5],
+                'last_seen': r[6],
+                'removed': bool(r[7]),
+                'worst_health': r[8] or 'healthy',
+                'worst_health_date': r[9],
+                'worst_health_reason': r[10] or '',
+                'admin_cleared': bool(r[11]),
+                'admin_cleared_date': r[12],
+                'active_observations': r[13],
+            } for r in rows]
+        except Exception as e:
+            print(f"[HealthPersistence] Error getting disks health summary: {e}")
+            return []
 
 
 # Global instance

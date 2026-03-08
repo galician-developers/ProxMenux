@@ -559,6 +559,13 @@ TEMPLATES = {
         'group': 'storage',
         'default_enabled': True,
     },
+    'smart_warning': {
+        'title': '{hostname}: SMART warning on {device}',
+        'body': '{device}: {reason}',
+        'label': 'SMART warning (sectors)',
+        'group': 'storage',
+        'default_enabled': True,
+    },
     'storage_unavailable': {
         'title': '{hostname}: Storage unavailable - {storage_name}',
         'body': 'PVE storage "{storage_name}" ({storage_type}) is not available.\n{reason}',

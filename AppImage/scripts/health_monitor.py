@@ -1105,8 +1105,55 @@ class HealthMonitor:
         if self.capabilities.get('has_lvm') and 'lvm_volumes' not in checks and 'lvm_check' not in checks:
             checks['lvm_volumes'] = {'status': 'OK', 'detail': 'LVM volumes OK'}
         
+        # Get physical disks list for UI display
+        physical_disks = self._get_physical_disks_list()
+        
+        # Add individual disk checks for UI display (like Network interfaces)
+        for disk in physical_disks:
+            device = disk.get('device', '')
+            name = disk.get('name', '')
+            serial = disk.get('serial', '')
+            final_health = disk.get('final_health', 'healthy')
+            final_reason = disk.get('final_reason', '')
+            is_usb = disk.get('is_usb', False)
+            
+            # Format check key - use device path for uniqueness
+            check_key = device.lower().replace('/', '_')  # e.g., _dev_sda
+            
+            # Determine status
+            if final_health == 'critical':
+                status = 'CRITICAL'
+            elif final_health == 'warning':
+                status = 'WARNING'
+            else:
+                status = 'OK'
+            
+            # Build detail string
+            disk_type = 'USB' if is_usb else ('NVMe' if disk.get('is_nvme') else 'SATA')
+            detail = f'{serial}' if serial else 'Unknown serial'
+            if final_reason:
+                detail += f' - {final_reason}'
+            
+            # Only add to checks if not already present (avoid duplicating error entries)
+            if check_key not in checks:
+                checks[check_key] = {
+                    'status': status,
+                    'detail': detail,
+                    'device': device,
+                    'serial': serial,
+                    'disk_type': disk_type,
+                    'is_disk_entry': True,  # Flag to identify disk entries in frontend
+                    'worst_health': disk.get('worst_health', 'healthy'),
+                    'worst_health_date': disk.get('worst_health_date'),
+                    'admin_cleared': disk.get('admin_cleared', False),
+                }
+                
+                # If disk has issues, it needs an error_key for dismiss functionality
+                if status != 'OK':
+                    checks[check_key]['error_key'] = f'disk_{name}_{serial}' if serial else f'disk_{name}'
+        
         if not issues:
-            return {'status': 'OK', 'checks': checks}
+            return {'status': 'OK', 'checks': checks, 'physical_disks': physical_disks}
         
         # ── Mark dismissed checks ──
         # If an error_key in a check has been acknowledged (dismissed) in the
@@ -1138,6 +1185,7 @@ class HealthMonitor:
                     'reason': '; '.join(issues[:3]),
                     'details': storage_details,
                     'checks': checks,
+                    'physical_disks': physical_disks,
                     'all_dismissed': True,
                 }
         except Exception:
@@ -1152,7 +1200,8 @@ class HealthMonitor:
             'status': 'CRITICAL' if has_critical else 'WARNING',
             'reason': '; '.join(issues[:3]),
             'details': storage_details,
-            'checks': checks
+            'checks': checks,
+            'physical_disks': physical_disks
         }
     
     def _check_filesystem(self, mount_point: str) -> Dict[str, Any]:
@@ -1235,10 +1284,222 @@ class HealthMonitor:
                 else:
                     return {'status': 'OK'} # No VGs found, LVM not in use
             
-            return {'status': 'OK', 'volumes': len(volumes)}
+        return {'status': 'OK', 'volumes': len(volumes)}
+    
+    except Exception:
+        return {'status': 'OK'}
+
+    def _get_physical_disks_list(self) -> List[Dict[str, Any]]:
+        """Get list of all physical disks with their health status.
+        
+        Combines real-time SMART data with persistent worst_health state.
+        Returns list suitable for display in Health Monitor UI.
+        """
+        disks = []
+        
+        try:
+            # Get all block devices
+            result = subprocess.run(
+                ['lsblk', '-d', '-n', '-o', 'NAME,SIZE,TYPE,TRAN,MODEL,SERIAL'],
+                capture_output=True, text=True, timeout=5
+            )
             
-        except Exception:
-            return {'status': 'OK'}
+            if result.returncode != 0:
+                return []
+            
+            for line in result.stdout.strip().split('\n'):
+                if not line.strip():
+                    continue
+                
+                parts = line.split(None, 5)
+                if len(parts) < 3:
+                    continue
+                
+                name = parts[0]
+                size = parts[1] if len(parts) > 1 else ''
+                dtype = parts[2] if len(parts) > 2 else ''
+                transport = parts[3] if len(parts) > 3 else ''
+                model = parts[4] if len(parts) > 4 else ''
+                serial = parts[5] if len(parts) > 5 else ''
+                
+                # Only include disk type devices
+                if dtype != 'disk':
+                    continue
+                
+                # Skip loop devices, ram disks, etc.
+                if name.startswith(('loop', 'ram', 'zram')):
+                    continue
+                
+                is_usb = transport.lower() == 'usb'
+                is_nvme = name.startswith('nvme')
+                
+                # Get current SMART status
+                current_health = 'healthy'
+                smart_status = 'UNKNOWN'
+                pending_sectors = 0
+                reallocated_sectors = 0
+                
+                try:
+                    dev_path = f'/dev/{name}'
+                    smart_result = subprocess.run(
+                        ['smartctl', '-H', '-A', dev_path],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    
+                    output = smart_result.stdout
+                    
+                    # Check SMART overall status
+                    if 'PASSED' in output:
+                        smart_status = 'PASSED'
+                    elif 'FAILED' in output:
+                        smart_status = 'FAILED'
+                        current_health = 'critical'
+                    
+                    # Parse SMART attributes for pending/reallocated sectors
+                    for attr_line in output.split('\n'):
+                        if 'Current_Pending_Sector' in attr_line or 'Pending_Sector' in attr_line:
+                            parts_attr = attr_line.split()
+                            if parts_attr:
+                                try:
+                                    pending_sectors = int(parts_attr[-1])
+                                except ValueError:
+                                    pass
+                        elif 'Reallocated_Sector' in attr_line:
+                            parts_attr = attr_line.split()
+                            if parts_attr:
+                                try:
+                                    reallocated_sectors = int(parts_attr[-1])
+                                except ValueError:
+                                    pass
+                    
+                    # Determine current health based on sectors
+                    if current_health != 'critical':
+                        if pending_sectors > 10 or reallocated_sectors > 10:
+                            current_health = 'critical'
+                        elif pending_sectors > 0 or reallocated_sectors > 0:
+                            current_health = 'warning'
+                
+                except Exception:
+                    pass
+                
+                # Build health reason
+                health_reason = ''
+                if pending_sectors > 0:
+                    health_reason = f'{pending_sectors} pending sector(s)'
+                if reallocated_sectors > 0:
+                    if health_reason:
+                        health_reason += f', {reallocated_sectors} reallocated'
+                    else:
+                        health_reason = f'{reallocated_sectors} reallocated sector(s)'
+                if smart_status == 'FAILED':
+                    health_reason = 'SMART test FAILED' + (f' ({health_reason})' if health_reason else '')
+                
+                # Get persistent worst_health from database
+                worst_info = health_persistence.get_disk_worst_health(name, serial)
+                worst_health = worst_info.get('worst_health', 'healthy') if worst_info else 'healthy'
+                worst_health_date = worst_info.get('worst_health_date') if worst_info else None
+                worst_health_reason = worst_info.get('worst_health_reason', '') if worst_info else ''
+                admin_cleared = worst_info.get('admin_cleared', False) if worst_info else False
+                
+                # Update worst_health if current is worse
+                if current_health != 'healthy':
+                    updated = health_persistence.update_disk_worst_health(
+                        name, serial, current_health, health_reason
+                    )
+                    if updated:
+                        worst_health = current_health
+                        worst_health_reason = health_reason
+                    
+                    # Record as disk observation (for both internal and USB disks)
+                    # This ensures SMART issues are tracked in observations
+                    try:
+                        obs_type = 'smart_error'
+                        if pending_sectors and pending_sectors > 0:
+                            obs_type = 'pending_sectors'
+                        elif reallocated_sectors and reallocated_sectors > 0:
+                            obs_type = 'reallocated_sectors'
+                        elif smart_status == 'FAILED':
+                            obs_type = 'smart_failed'
+                        
+                        obs_sig = f'smart_{name}_{obs_type}_{pending_sectors}_{reallocated_sectors}'
+                        health_persistence.record_disk_observation(
+                            device_name=name,
+                            serial=serial,
+                            error_type=obs_type,
+                            error_signature=obs_sig,
+                            raw_message=f'/dev/{name}: {health_reason}',
+                            severity=current_health,
+                        )
+                        
+                        # Send smart_warning notification if this is a NEW issue
+                        # (only when updated=True means this is first time seeing this state)
+                        if updated:
+                            try:
+                                from notification_manager import notification_manager
+                                notification_manager.send_notification(
+                                    event_type='smart_warning',
+                                    data={
+                                        'device': f'/dev/{name}',
+                                        'reason': health_reason,
+                                        'serial': serial or 'Unknown',
+                                        'model': model or 'Unknown',
+                                        'pending_sectors': pending_sectors,
+                                        'reallocated_sectors': reallocated_sectors,
+                                        'smart_status': smart_status,
+                                        'hostname': self._hostname,
+                                    }
+                                )
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                
+                # Final health is the worse of current and persistent
+                severity_order = {'healthy': 0, 'warning': 1, 'critical': 2}
+                if severity_order.get(worst_health, 0) > severity_order.get(current_health, 0):
+                    final_health = worst_health
+                    final_reason = worst_health_reason
+                else:
+                    final_health = current_health
+                    final_reason = health_reason
+                
+                # Get active observations count
+                obs = health_persistence.get_disk_observations(device_name=name, serial=serial)
+                active_observations = len(obs) if obs else 0
+                
+                # Register disk in persistence (for tracking)
+                try:
+                    health_persistence.register_disk(name, serial, model)
+                except Exception:
+                    pass
+                
+                disks.append({
+                    'device': f'/dev/{name}',
+                    'name': name,
+                    'serial': serial or '',
+                    'model': model or 'Unknown',
+                    'size': size,
+                    'transport': transport,
+                    'is_usb': is_usb,
+                    'is_nvme': is_nvme,
+                    'smart_status': smart_status,
+                    'current_health': current_health,
+                    'current_health_reason': health_reason,
+                    'worst_health': worst_health,
+                    'worst_health_date': worst_health_date,
+                    'worst_health_reason': worst_health_reason,
+                    'final_health': final_health,
+                    'final_reason': final_reason,
+                    'pending_sectors': pending_sectors,
+                    'reallocated_sectors': reallocated_sectors,
+                    'active_observations': active_observations,
+                    'admin_cleared': admin_cleared,
+                })
+        
+        except Exception as e:
+            print(f"[HealthMonitor] Error getting physical disks list: {e}")
+        
+        return disks
     
     # This function is no longer used in get_detailed_status, but kept for reference if needed.
     # The new _check_proxmox_storage function handles this logic better.
