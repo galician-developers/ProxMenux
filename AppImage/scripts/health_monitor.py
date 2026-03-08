@@ -1966,12 +1966,11 @@ class HealthMonitor:
             if latency_status:
                 latency_ms = latency_status.get('latency_ms', 'N/A')
                 latency_sev = latency_status.get('status', 'OK')
-                interface_details['connectivity'] = latency_status
-                target_display = latency_status.get('target', 'gateway')
-                connectivity_check = {
-                    'status': latency_sev if latency_sev not in ['UNKNOWN'] else 'OK',
-                    'detail': f'Latency {latency_ms}ms to {target_display}' if isinstance(latency_ms, (int, float)) else latency_status.get('reason', 'Unknown'),
-                }
+            interface_details['connectivity'] = latency_status
+            connectivity_check = {
+                'status': latency_sev if latency_sev not in ['UNKNOWN'] else 'OK',
+                'detail': f'Latency {latency_ms}ms to gateway' if isinstance(latency_ms, (int, float)) else latency_status.get('reason', 'Unknown'),
+            }
                 if latency_sev not in ['OK', 'INFO', 'UNKNOWN']:
                     issues.append(latency_status.get('reason', 'Network latency issue'))
             else:
@@ -2007,48 +2006,74 @@ class HealthMonitor:
             return {'status': 'UNKNOWN', 'reason': f'Network check unavailable: {str(e)}', 'checks': {}}
     
     def _check_network_latency(self) -> Optional[Dict[str, Any]]:
-        """Check network latency using the gateway latency already monitored.
+        """Check network latency by reading from the gateway latency monitor database.
         
-        Uses the latency data from flask_server's continuous monitoring (every 60s)
-        instead of doing a separate ping to avoid duplicate network checks.
-        The gateway latency is based on the average of 3 pings to avoid false positives.
+        Reads the most recent gateway latency measurement from the SQLite database
+        that is updated every 60 seconds by the latency monitor thread.
+        This avoids redundant ping operations and uses the existing monitoring data.
         """
         cache_key = 'network_latency'
         current_time = time.time()
         
-        # Use shorter cache since we're reading from DB (no network overhead)
         if cache_key in self.last_check_times:
-            if current_time - self.last_check_times[cache_key] < 30:
+            if current_time - self.last_check_times[cache_key] < 60:
                 return self.cached_results.get(cache_key)
         
         try:
-            # Import and use the stored gateway latency from flask_server
-            import sys
-            import os
-            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-            from flask_server import get_latest_gateway_latency, _get_default_gateway
+            import sqlite3
+            db_path = "/usr/local/share/proxmenux/monitor.db"
             
-            stored = get_latest_gateway_latency()
-            gateway_ip = _get_default_gateway() or 'gateway'
+            # Check if database exists
+            if not os.path.exists(db_path):
+                return {'status': 'UNKNOWN', 'reason': 'Latency monitor database not available'}
             
-            if stored.get('fresh') and stored.get('latency_avg') is not None:
-                avg_latency = stored['latency_avg']
-                packet_loss = stored.get('packet_loss', 0)
+            conn = sqlite3.connect(db_path, timeout=5)
+            cursor = conn.execute(
+                """SELECT latency_avg, latency_min, latency_max, packet_loss, timestamp
+                   FROM latency_history 
+                   WHERE target = 'gateway' 
+                   ORDER BY timestamp DESC 
+                   LIMIT 1"""
+            )
+            row = cursor.fetchone()
+            conn.close()
+            
+            if row and row[0] is not None:
+                avg_latency = row[0]
+                min_latency = row[1]
+                max_latency = row[2]
+                packet_loss = row[3] or 0
+                data_age = current_time - row[4]
+                
+                # If data is older than 2 minutes, consider it stale
+                if data_age > 120:
+                    stale_result = {
+                        'status': 'UNKNOWN',
+                        'reason': 'Latency data is stale (>2 min old)'
+                    }
+                    self.cached_results[cache_key] = stale_result
+                    self.last_check_times[cache_key] = current_time
+                    return stale_result
                 
                 # Check for packet loss first
-                if packet_loss is not None and packet_loss >= 50:
+                if packet_loss >= 100:
+                    loss_result = {
+                        'status': 'CRITICAL',
+                        'reason': 'Packet loss to gateway (100% loss)',
+                        'latency_ms': None,
+                        'packet_loss': packet_loss
+                    }
+                    self.cached_results[cache_key] = loss_result
+                    self.last_check_times[cache_key] = current_time
+                    return loss_result
+                
+                # Evaluate latency thresholds
+                if avg_latency > self.NETWORK_LATENCY_CRITICAL:
                     status = 'CRITICAL'
-                    reason = f'High packet loss ({packet_loss:.0f}%) to gateway'
-                elif packet_loss is not None and packet_loss > 0:
-                    status = 'WARNING'
-                    reason = f'Packet loss ({packet_loss:.0f}%) to gateway'
-                # Check latency thresholds
-                elif avg_latency > self.NETWORK_LATENCY_CRITICAL:
-                    status = 'CRITICAL'
-                    reason = f'Latency {avg_latency:.1f}ms >{self.NETWORK_LATENCY_CRITICAL}ms to gateway'
+                    reason = f'Latency {avg_latency:.1f}ms to gateway >{self.NETWORK_LATENCY_CRITICAL}ms'
                 elif avg_latency > self.NETWORK_LATENCY_WARNING:
                     status = 'WARNING'
-                    reason = f'Latency {avg_latency:.1f}ms >{self.NETWORK_LATENCY_WARNING}ms to gateway'
+                    reason = f'Latency {avg_latency:.1f}ms to gateway >{self.NETWORK_LATENCY_WARNING}ms'
                 else:
                     status = 'OK'
                     reason = None
@@ -2056,7 +2081,9 @@ class HealthMonitor:
                 latency_result = {
                     'status': status,
                     'latency_ms': round(avg_latency, 1),
-                    'target': gateway_ip,
+                    'latency_min': round(min_latency, 1) if min_latency else None,
+                    'latency_max': round(max_latency, 1) if max_latency else None,
+                    'packet_loss': packet_loss,
                 }
                 if reason:
                     latency_result['reason'] = reason
@@ -2065,11 +2092,17 @@ class HealthMonitor:
                 self.last_check_times[cache_key] = current_time
                 return latency_result
             
-            # No fresh data available - return unknown (monitoring may not be running)
-            return {'status': 'UNKNOWN', 'reason': 'No recent latency data available'}
+            # No data in database yet
+            no_data_result = {
+                'status': 'UNKNOWN',
+                'reason': 'No gateway latency data available yet'
+            }
+            self.cached_results[cache_key] = no_data_result
+            self.last_check_times[cache_key] = current_time
+            return no_data_result
             
         except Exception as e:
-            return {'status': 'UNKNOWN', 'reason': f'Latency check unavailable: {str(e)}'}
+            return {'status': 'UNKNOWN', 'reason': f'Latency check failed: {str(e)}'}
     
     def _is_vzdump_active(self) -> bool:
         """Check if a vzdump (backup) job is currently running."""

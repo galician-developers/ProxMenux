@@ -631,39 +631,39 @@ def init_latency_db():
         return False
 
 def _measure_latency(target_ip: str) -> dict:
-  """Ping a target and return latency stats. Uses 3 pings and returns avg, min, max for full visibility."""
-  try:
-    result = subprocess.run(
-      ['ping', '-c', '3', '-W', '2', target_ip],
-      capture_output=True, text=True, timeout=10
-    )
-    
-    if result.returncode == 0:
-      latencies = []
-      for line in result.stdout.split('\n'):
-        if 'time=' in line:
-          try:
-            latency_str = line.split('time=')[1].split()[0]
-            latencies.append(float(latency_str))
-          except:
-            pass
-      
-      if latencies:
-        return {
-          'success': True,
-          'avg': round(sum(latencies) / len(latencies), 1),
-          'min': round(min(latencies), 1),
-          'max': round(max(latencies), 1),
-          'packet_loss': round((3 - len(latencies)) / 3 * 100, 1)
-        }
-    
-    # Ping failed - 100% packet loss
-    return {'success': False, 'avg': None, 'min': None, 'max': None, 'packet_loss': 100.0}
-  except Exception:
-    return {'success': False, 'avg': None, 'min': None, 'max': None, 'packet_loss': 100.0}
+    """Ping a target and return latency stats."""
+    try:
+        result = subprocess.run(
+            ['ping', '-c', '3', '-W', '2', target_ip],
+            capture_output=True, text=True, timeout=10
+        )
+        
+        if result.returncode == 0:
+            latencies = []
+            for line in result.stdout.split('\n'):
+                if 'time=' in line:
+                    try:
+                        latency_str = line.split('time=')[1].split()[0]
+                        latencies.append(float(latency_str))
+                    except:
+                        pass
+            
+            if latencies:
+                return {
+                    'success': True,
+                    'avg': round(sum(latencies) / len(latencies), 1),
+                    'min': round(min(latencies), 1),
+                    'max': round(max(latencies), 1),
+                    'packet_loss': round((3 - len(latencies)) / 3 * 100, 1)
+                }
+        
+        # Ping failed - 100% packet loss
+        return {'success': False, 'avg': None, 'min': None, 'max': None, 'packet_loss': 100.0}
+    except Exception:
+        return {'success': False, 'avg': None, 'min': None, 'max': None, 'packet_loss': 100.0}
 
 def _record_latency():
-    """Record latency to the default gateway. Only stores the average of 3 pings."""
+    """Record latency to the default gateway."""
     try:
         gateway = _get_default_gateway()
         stats = _measure_latency(gateway)
@@ -671,9 +671,9 @@ def _record_latency():
         conn = _get_temp_db()
         conn.execute(
             """INSERT INTO latency_history 
-               (timestamp, target, latency_avg, packet_loss) 
-               VALUES (?, ?, ?, ?)""",
-            (int(time.time()), 'gateway', stats['avg'], stats['packet_loss'])
+               (timestamp, target, latency_avg, latency_min, latency_max, packet_loss) 
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (int(time.time()), 'gateway', stats['avg'], stats['min'], stats['max'], stats['packet_loss'])
         )
         conn.commit()
         conn.close()
@@ -718,18 +718,20 @@ def get_latency_history(target='gateway', timeframe='hour'):
         
         if interval is None:
             cursor = conn.execute(
-                """SELECT timestamp, latency_avg, packet_loss 
+                """SELECT timestamp, latency_avg, latency_min, latency_max, packet_loss 
                    FROM latency_history 
                    WHERE timestamp >= ? AND target = ? 
                    ORDER BY timestamp ASC""",
                 (since, target)
             )
             rows = cursor.fetchall()
-            data = [{"timestamp": r[0], "value": r[1], "packet_loss": r[2]} for r in rows if r[1] is not None]
+            data = [{"timestamp": r[0], "value": r[1], "min": r[2], "max": r[3], "packet_loss": r[4]} for r in rows if r[1] is not None]
         else:
             cursor = conn.execute(
                 """SELECT (timestamp / ?) * ? as bucket, 
                           ROUND(AVG(latency_avg), 1) as avg_val,
+                          ROUND(MIN(latency_min), 1) as min_val,
+                          ROUND(MAX(latency_max), 1) as max_val,
                           ROUND(AVG(packet_loss), 1) as avg_loss
                    FROM latency_history 
                    WHERE timestamp >= ? AND target = ?
@@ -738,20 +740,32 @@ def get_latency_history(target='gateway', timeframe='hour'):
                 (interval, interval, since, target)
             )
             rows = cursor.fetchall()
-            data = [{"timestamp": r[0], "value": r[1], "packet_loss": r[2]} for r in rows if r[1] is not None]
+            data = [{"timestamp": r[0], "value": r[1], "min": r[2], "max": r[3], "packet_loss": r[4]} for r in rows if r[1] is not None]
         
         conn.close()
         
-        # Compute stats using the averaged values shown in the graph
+        # Compute stats
         if data:
             values = [d["value"] for d in data if d["value"] is not None]
             if values:
-                stats = {
-                    "min": round(min(values), 1),
-                    "max": round(max(values), 1),
-                    "avg": round(sum(values) / len(values), 1),
-                    "current": values[-1] if values else 0
-                }
+                # For gateway, use min/max of the averages (values) so stats match the graph
+                # For other targets (realtime), use actual min/max from individual pings
+                if target == 'gateway':
+                    stats = {
+                        "min": round(min(values), 1),
+                        "max": round(max(values), 1),
+                        "avg": round(sum(values) / len(values), 1),
+                        "current": values[-1] if values else 0
+                    }
+                else:
+                    mins = [d["min"] for d in data if d.get("min") is not None]
+                    maxs = [d["max"] for d in data if d.get("max") is not None]
+                    stats = {
+                        "min": round(min(mins) if mins else min(values), 1),
+                        "max": round(max(maxs) if maxs else max(values), 1),
+                        "avg": round(sum(values) / len(values), 1),
+                        "current": values[-1] if values else 0
+                    }
             else:
                 stats = {"min": 0, "max": 0, "avg": 0, "current": 0}
         else:
@@ -761,69 +775,27 @@ def get_latency_history(target='gateway', timeframe='hour'):
     except Exception as e:
         return {"data": [], "stats": {"min": 0, "max": 0, "avg": 0, "current": 0}, "target": target}
 
-def get_latest_gateway_latency():
-    """Get the most recent gateway latency from the database (no new ping).
-    Used by health monitor to avoid duplicate pings."""
-    try:
-        conn = _get_temp_db()
-        cursor = conn.execute(
-            """SELECT timestamp, latency_avg, packet_loss FROM latency_history
-               WHERE target = 'gateway' ORDER BY timestamp DESC LIMIT 1"""
-        )
-        row = cursor.fetchone()
-        conn.close()
-        
-        if row:
-            timestamp, latency_avg, packet_loss = row
-            age = int(time.time()) - timestamp
-            # Only return if data is fresh (less than 2 minutes old)
-            if age <= 120:
-                return {
-                    'latency_avg': latency_avg,
-                    'packet_loss': packet_loss,
-                    'timestamp': timestamp,
-                    'age_seconds': age,
-                    'fresh': True
-                }
-        return {'fresh': False, 'latency_avg': None}
-    except Exception:
-        return {'fresh': False, 'latency_avg': None}
-
 def get_current_latency(target='gateway'):
-    """Get the most recent latency measurement for a target.
-    For gateway: reads from database (already monitored every 60s).
-    For cloudflare/google: does a fresh ping (on-demand only)."""
+    """Get the most recent latency measurement for a target."""
     try:
-        # Gateway uses stored data to avoid duplicate pings
+        # If gateway, resolve to actual IP
         if target == 'gateway':
             target_ip = _get_default_gateway()
-            stored = get_latest_gateway_latency()
-            if stored.get('fresh'):
-                return {
-                    'target': target,
-                    'target_ip': target_ip,
-                    'latency_avg': stored['latency_avg'],
-                    'packet_loss': stored['packet_loss'],
-                    'status': 'ok' if stored['latency_avg'] and stored['latency_avg'] < 100 else 'warning'
-                }
-            # Fallback: do fresh measurement if no stored data
-            stats = _measure_latency(target_ip)
         else:
-    # Cloudflare/Google: fresh ping (not continuously monitored)
-      target_ip = LATENCY_TARGETS.get(target, target)
-      stats = _measure_latency(target_ip)
-    
-    return {
-      'target': target,
-      'target_ip': target_ip,
-      'latency_avg': stats['avg'],
-      'latency_min': stats.get('min'),
-      'latency_max': stats.get('max'),
-      'packet_loss': stats['packet_loss'],
-      'status': 'ok' if stats['success'] and stats['avg'] and stats['avg'] < 100 else 'warning' if stats['success'] else 'error'
-    }
-  except Exception:
-    return {'target': target, 'latency_avg': None, 'latency_min': None, 'latency_max': None, 'status': 'error'}
+            target_ip = LATENCY_TARGETS.get(target, target)
+        
+        stats = _measure_latency(target_ip)
+        return {
+            'target': target,
+            'target_ip': target_ip,
+            'latency_avg': stats['avg'],
+            'latency_min': stats['min'],
+            'latency_max': stats['max'],
+            'packet_loss': stats['packet_loss'],
+            'status': 'ok' if stats['success'] and stats['avg'] and stats['avg'] < 100 else 'warning' if stats['success'] else 'error'
+        }
+    except Exception:
+        return {'target': target, 'latency_avg': None, 'status': 'error'}
 
 
 def _health_collector_loop():

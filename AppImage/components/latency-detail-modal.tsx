@@ -125,20 +125,13 @@ const generateLatencyReport = (report: ReportData) => {
   const logoUrl = `${window.location.origin}/images/proxmenux-logo.png`
   
   // Calculate stats for realtime results
-  const realtimeStats = report.realtimeResults.length > 0 ? (() => {
-    const validResults = report.realtimeResults.filter(r => r.latency_avg !== null)
-    const minValues = report.realtimeResults.filter(r => r.latency_min !== null).map(r => r.latency_min!)
-    const maxValues = report.realtimeResults.filter(r => r.latency_max !== null).map(r => r.latency_max!)
-    const avgValues = validResults.map(r => r.latency_avg!)
-    
-    return {
-      min: minValues.length > 0 ? Math.min(...minValues) : (avgValues.length > 0 ? Math.min(...avgValues) : 0),
-      max: maxValues.length > 0 ? Math.max(...maxValues) : (avgValues.length > 0 ? Math.max(...avgValues) : 0),
-      avg: validResults.length > 0 ? validResults.reduce((acc, r) => acc + (r.latency_avg || 0), 0) / validResults.length : 0,
-      current: report.realtimeResults[report.realtimeResults.length - 1]?.latency_avg ?? null,
-      avgPacketLoss: report.realtimeResults.reduce((acc, r) => acc + (r.packet_loss || 0), 0) / report.realtimeResults.length,
-    }
-  })() : null
+  const realtimeStats = report.realtimeResults.length > 0 ? {
+    min: Math.min(...report.realtimeResults.filter(r => r.latency_min !== null).map(r => r.latency_min!)),
+    max: Math.max(...report.realtimeResults.filter(r => r.latency_max !== null).map(r => r.latency_max!)),
+    avg: report.realtimeResults.reduce((acc, r) => acc + (r.latency_avg || 0), 0) / report.realtimeResults.length,
+    current: report.realtimeResults[report.realtimeResults.length - 1]?.latency_avg ?? null,
+    avgPacketLoss: report.realtimeResults.reduce((acc, r) => acc + (r.packet_loss || 0), 0) / report.realtimeResults.length,
+  } : null
 
   const statusText = report.isRealtime 
     ? getStatusText(realtimeStats?.current ?? null)
@@ -177,11 +170,17 @@ const generateLatencyReport = (report: ReportData) => {
     endTime: new Date(report.data[report.data.length - 1].timestamp * 1000).toLocaleString(),
   } : null
 
-  // Generate chart SVG - use average values for the line chart
+  // Generate chart SVG - expand realtime to all 3 values (min, avg, max) per sample
   const chartData = report.isRealtime
-    ? report.realtimeResults
-        .filter(r => r.latency_avg !== null)
-        .map(r => r.latency_avg!)
+    ? report.realtimeResults.flatMap(r => {
+        const points: number[] = []
+        if (r.latency_min !== null) points.push(r.latency_min)
+        if (r.latency_avg !== null && r.latency_avg !== r.latency_min && r.latency_avg !== r.latency_max) {
+          points.push(r.latency_avg)
+        }
+        if (r.latency_max !== null) points.push(r.latency_max)
+        return points.length > 0 ? points : [r.latency_avg ?? 0]
+      })
     : report.data.map(d => d.value || 0)
   
   let chartSvg = '<p style="text-align:center;color:#64748b;padding:20px;">Not enough data points for chart</p>'
@@ -780,32 +779,30 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
     time: new Date(point.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   }))
 
-  // Use average value for the chart line (min/max are shown in stats)
-  const realtimeChartData = realtimeResults
-    .filter(r => r.latency_avg !== null)
-    .map(r => ({
-      time: new Date(r.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      value: r.latency_avg,
-      min: r.latency_min,
-      max: r.latency_max,
-      packet_loss: r.packet_loss
-    }))
+  // Expand each sample to 3 data points (min, avg, max) for accurate representation
+  const realtimeChartData = realtimeResults.flatMap((r, i) => {
+    const time = new Date(r.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    const points = []
+    if (r.latency_min !== null) points.push({ time, value: r.latency_min, packet_loss: r.packet_loss })
+    if (r.latency_avg !== null && r.latency_avg !== r.latency_min && r.latency_avg !== r.latency_max) {
+      points.push({ time, value: r.latency_avg, packet_loss: r.packet_loss })
+    }
+    if (r.latency_max !== null) points.push({ time, value: r.latency_max, packet_loss: r.packet_loss })
+    // If no valid points, add avg as fallback
+    if (points.length === 0 && r.latency_avg !== null) {
+      points.push({ time, value: r.latency_avg, packet_loss: r.packet_loss })
+    }
+    return points
+  })
 
   // Calculate realtime stats
-  const realtimeStats = realtimeResults.length > 0 ? (() => {
-    const validResults = realtimeResults.filter(r => r.latency_avg !== null)
-    const minValues = realtimeResults.filter(r => r.latency_min !== null).map(r => r.latency_min!)
-    const maxValues = realtimeResults.filter(r => r.latency_max !== null).map(r => r.latency_max!)
-    const avgValues = validResults.map(r => r.latency_avg!)
-    
-    return {
-      current: realtimeResults[realtimeResults.length - 1]?.latency_avg ?? 0,
-      min: minValues.length > 0 ? Math.min(...minValues) : (avgValues.length > 0 ? Math.min(...avgValues) : 0),
-      max: maxValues.length > 0 ? Math.max(...maxValues) : (avgValues.length > 0 ? Math.max(...avgValues) : 0),
-      avg: validResults.length > 0 ? validResults.reduce((acc, r) => acc + (r.latency_avg || 0), 0) / validResults.length : 0,
-      packetLoss: realtimeResults[realtimeResults.length - 1]?.packet_loss ?? 0,
-    }
-  })() : null
+  const realtimeStats = realtimeResults.length > 0 ? {
+    current: realtimeResults[realtimeResults.length - 1]?.latency_avg ?? 0,
+    min: Math.min(...realtimeResults.filter(r => r.latency_min !== null).map(r => r.latency_min!)) || 0,
+    max: Math.max(...realtimeResults.filter(r => r.latency_max !== null).map(r => r.latency_max!)) || 0,
+    avg: realtimeResults.reduce((acc, r) => acc + (r.latency_avg || 0), 0) / realtimeResults.length,
+    packetLoss: realtimeResults[realtimeResults.length - 1]?.packet_loss ?? 0,
+  } : null
 
   const displayStats = isRealtime ? {
     current: realtimeStats?.current ?? 0,
