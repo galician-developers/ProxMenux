@@ -987,7 +987,7 @@ export function StorageOverview() {
                     {disk.serial && disk.serial !== "Unknown" && (
                       <div>
                         <p className="text-sm text-muted-foreground">Serial</p>
-                        <p className="font-medium text-xs">{disk.serial}</p>
+                        <p className="font-medium text-xs">{disk.serial.replace(/\\x[0-9a-fA-F]{2}/g, '')}</p>
                       </div>
                     )}
                   </div>
@@ -1035,22 +1035,44 @@ export function StorageOverview() {
                               </span>
                             </div>
                           )}
-                          {getHealthBadge(disk.health)}
                           {(disk.observations_count ?? 0) > 0 && (
                             <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 gap-1 text-[10px] px-1.5 py-0">
                               <Info className="h-3 w-3" />
                               {disk.observations_count}
                             </Badge>
                           )}
+                          {getHealthBadge(disk.health)}
                         </div>
                       </div>
                     </div>
-                  </div>
+                    
+                    {/* USB Mobile: Size, SMART, Serial grid */}
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      {disk.size_formatted && (
+                        <div>
+                          <p className="text-sm text-muted-foreground">Size</p>
+                          <p className="font-medium">{disk.size_formatted}</p>
+                        </div>
+                      )}
+                      {disk.smart_status && disk.smart_status !== "unknown" && (
+                        <div>
+                          <p className="text-sm text-muted-foreground">SMART Status</p>
+                          <p className="font-medium capitalize">{disk.smart_status}</p>
+                        </div>
+                      )}
+{disk.serial && disk.serial !== "Unknown" && (
+                      <div>
+                        <p className="text-sm text-muted-foreground">Serial</p>
+                        <p className="font-medium text-xs">{disk.serial.replace(/\\x[0-9a-fA-F]{2}/g, '')}</p>
+                      </div>
+                    )}
+                    </div>
+                </div>
 
-                  {/* Desktop card */}
-                  <div
-                    className="hidden sm:block border border-white/10 rounded-lg p-4 cursor-pointer hover:bg-white/5 transition-colors"
-                    onClick={() => handleDiskClick(disk)}
+                {/* Desktop */}
+                <div
+                  className="hidden sm:block border border-white/10 rounded-lg p-4 cursor-pointer hover:bg-white/5 transition-colors"
+                  onClick={() => handleDiskClick(disk)}
                   >
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
@@ -1129,7 +1151,7 @@ export function StorageOverview() {
                       {disk.serial && disk.serial !== "Unknown" && (
                         <div>
                           <p className="text-sm text-muted-foreground">Serial</p>
-                          <p className="font-medium text-xs">{disk.serial}</p>
+                          <p className="font-medium text-xs">{disk.serial.replace(/\\x[0-9a-fA-F]{2}/g, '')}</p>
                         </div>
                       )}
                     </div>
@@ -1167,7 +1189,7 @@ export function StorageOverview() {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Serial Number</p>
-                  <p className="font-medium">{selectedDisk.serial}</p>
+                  <p className="font-medium">{selectedDisk.serial?.replace(/\\x[0-9a-fA-F]{2}/g, '') || 'Unknown'}</p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Capacity</p>
