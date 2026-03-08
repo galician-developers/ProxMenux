@@ -1828,6 +1828,24 @@
     "type": "ct"
   },
   {
+    "name": "PVE LXC Execute Command",
+    "slug": "execute",
+    "desc": "This script allows administrators to execute a custom command inside one or multiple LXC containers on a Proxmox VE node. Containers can be selectively excluded via an interactive checklist. If a container is stopped, the script will automatically start it, run the command, and then shut it down again. Only Debian and Ubuntu based containers are supported.",
+    "script": "tools/pve/execute.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/pve/execute.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/tools/pve/execute.sh",
+    "os": "proxmox",
+    "categories": [
+      1
+    ],
+    "notes": [
+      "Execute within the Proxmox shell.",
+      "Non-Debian/Ubuntu containers will be skipped automatically.",
+      "Stopped containers will be started temporarily to run the command, then shut down again."
+    ],
+    "type": "pve"
+  },
+  {
     "name": "FHEM",
     "slug": "fhem",
     "desc": "FHEM stands for \"Freundliche Hausautomation und Energie-Messung,\" which translates to \"Friendly Home Automation and Energy Measurement\" in English. The software can interface with a wide range of devices, including lighting systems, thermostats, weather stations, and media devices, among others.",
@@ -3648,24 +3666,6 @@
     ],
     "notes": [
       "Execute within the Proxmox shell"
-    ],
-    "type": "pve"
-  },
-  {
-    "name": "PVE LXC Execute Command",
-    "slug": "lxc-execute",
-    "desc": "This script allows administrators to execute a custom command inside one or multiple LXC containers on a Proxmox VE node. Containers can be selectively excluded via an interactive checklist. If a container is stopped, the script will automatically start it, run the command, and then shut it down again. Only Debian and Ubuntu based containers are supported.",
-    "script": "tools/pve/execute.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/pve/execute.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/tools/pve/execute.sh",
-    "os": "proxmox",
-    "categories": [
-      1
-    ],
-    "notes": [
-      "Execute within the Proxmox shell.",
-      "Non-Debian/Ubuntu containers will be skipped automatically.",
-      "Stopped containers will be started temporarily to run the command, then shut down again."
     ],
     "type": "pve"
   },
