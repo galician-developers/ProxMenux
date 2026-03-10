@@ -415,12 +415,12 @@ export function ProxmoxDashboard() {
                   refreshData()
                 }}
                 disabled={isRefreshing}
-                className="h-8 w-8 p-0 mt-0"
+                className="h-8 w-8 p-0 -mt-1"
               >
                 <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
               </Button>
 
-              <div onClick={(e) => e.stopPropagation()} className="mt-0">
+              <div onClick={(e) => e.stopPropagation()} className="-mt-1">
                 <ThemeToggle />
               </div>
             </div>
