@@ -131,7 +131,6 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
 
       const response = await fetch(getApiUrl("/api/health/full"), { headers: authHeaders })
       let infoCount = 0
-      let dismissedCount = 0
       
       if (!response.ok) {
         // Fallback to legacy endpoint
@@ -158,21 +157,34 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
         setDismissedItems(fullData.dismissed || [])
         setCustomSuppressions(fullData.custom_suppressions || [])
         newOverallStatus = fullData.health?.overall || "OK"
-        dismissedCount = (fullData.dismissed || []).length
         
-        // Count INFO categories
+        // Get categories that have dismissed items (these become INFO)
+        const customCats = new Set((fullData.custom_suppressions || []).map((cs: { category: string }) => cs.category))
+        const filteredDismissed = (fullData.dismissed || []).filter((item: { category: string }) => !customCats.has(item.category))
+        const categoriesWithDismissed = new Set<string>()
+        filteredDismissed.forEach((item: { category: string }) => {
+          const catMeta = CATEGORIES.find(c => c.category === item.category || c.key === item.category)
+          if (catMeta) {
+            categoriesWithDismissed.add(catMeta.key)
+          }
+        })
+        
+        // Count effective INFO categories (original INFO + OK categories with dismissed)
         if (fullData.health?.details) {
           CATEGORIES.forEach(({ key }) => {
             const cat = fullData.health.details[key as keyof typeof fullData.health.details]
-            if (cat && cat.status?.toUpperCase() === "INFO") {
-              infoCount++
+            if (cat) {
+              const originalStatus = cat.status?.toUpperCase()
+              // Count as INFO if: originally INFO OR (originally OK and has dismissed items)
+              if (originalStatus === "INFO" || (originalStatus === "OK" && categoriesWithDismissed.has(key))) {
+                infoCount++
+              }
             }
           })
         }
       }
       
-      // Total info = INFO categories + dismissed items
-      const totalInfoCount = infoCount + dismissedCount
+      const totalInfoCount = infoCount
       
       // Emit event with the FRESH data from the response, not the stale state
       const event = new CustomEvent("healthStatusUpdated", {
@@ -271,10 +283,55 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
     }
   }
 
-  const getHealthStats = () => {
-    if (!healthData?.details) {
-      return { total: 0, healthy: 0, info: 0, warnings: 0, critical: 0, unknown: 0 }
+  // Get categories that have dismissed items (to show as INFO)
+  const getCategoriesWithDismissed = () => {
+    const customCats = new Set(customSuppressions.map(cs => cs.category))
+    const filteredDismissed = dismissedItems.filter(item => !customCats.has(item.category))
+    const categoriesWithDismissed = new Set<string>()
+    filteredDismissed.forEach(item => {
+      // Map dismissed category to our CATEGORIES keys
+      const catMeta = CATEGORIES.find(c => c.category === item.category || c.key === item.category)
+      if (catMeta) {
+        categoriesWithDismissed.add(catMeta.key)
+      }
+    })
+    return categoriesWithDismissed
+  }
+
+  const categoriesWithDismissed = getCategoriesWithDismissed()
+
+  // Get effective status for a category (considers dismissed items)
+  const getEffectiveStatus = (key: string, originalStatus: string) => {
+    // If category has dismissed items and original status is OK, show as INFO
+    if (categoriesWithDismissed.has(key) && originalStatus?.toUpperCase() === "OK") {
+      return "INFO"
     }
+    return originalStatus?.toUpperCase() || "UNKNOWN"
+  }
+
+  const getHealthStats = () => {
+    if (!healthData?.details) return { total: 0, healthy: 0, info: 0, warnings: 0, critical: 0, unknown: 0 }
+
+    let healthy = 0
+    let info = 0
+    let warnings = 0
+    let critical = 0
+    let unknown = 0
+
+    CATEGORIES.forEach(({ key }) => {
+      const categoryData = healthData.details[key as keyof typeof healthData.details]
+      if (categoryData) {
+        const effectiveStatus = getEffectiveStatus(key, categoryData.status)
+        if (effectiveStatus === "OK") healthy++
+        else if (effectiveStatus === "INFO") info++
+        else if (effectiveStatus === "WARNING") warnings++
+        else if (effectiveStatus === "CRITICAL") critical++
+        else if (effectiveStatus === "UNKNOWN") unknown++
+      }
+    })
+
+    return { total: CATEGORIES.length, healthy, info, warnings, critical, unknown }
+  }
 
     let healthy = 0
     let info = 0
@@ -575,7 +632,8 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
             <div className="space-y-2">
               {CATEGORIES.map(({ key, label, Icon }) => {
                 const categoryData = healthData.details[key as keyof typeof healthData.details]
-                const status = categoryData?.status || "UNKNOWN"
+                const originalStatus = categoryData?.status || "UNKNOWN"
+                const status = getEffectiveStatus(key, originalStatus)
                 const reason = categoryData?.reason
                 const checks = categoryData?.checks
                 const isExpanded = expandedCategories.has(key)

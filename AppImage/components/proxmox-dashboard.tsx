@@ -357,17 +357,18 @@ export function ProxmoxDashboard() {
                 </div>
               </div>
 
-              {systemStatus.status === "healthy" && infoCount > 0 ? (
-                <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
-                  <Info className="h-4 w-4" />
-                  <span className="ml-1">{infoCount} info</span>
-                </Badge>
-              ) : (
+              <div className="flex flex-col items-end gap-1">
                 <Badge variant="outline" className={statusColor}>
                   {statusIcon}
                   <span className="ml-1 capitalize">{systemStatus.status}</span>
                 </Badge>
-              )}
+                {systemStatus.status === "healthy" && infoCount > 0 && (
+                  <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
+                    <Info className="h-4 w-4" />
+                    <span className="ml-1">{infoCount} info</span>
+                  </Badge>
+                )}
+              </div>
 
               <div className="text-sm text-muted-foreground whitespace-nowrap">
                 Uptime: {systemStatus.uptime || "N/A"}
@@ -394,17 +395,17 @@ export function ProxmoxDashboard() {
 
             {/* Mobile Actions */}
             <div className="flex lg:hidden items-center gap-2">
-              {systemStatus.status === "healthy" && infoCount > 0 ? (
-                <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20 text-xs px-2">
-                  <Info className="h-4 w-4" />
-                  <span className="ml-1">{infoCount}</span>
-                </Badge>
-              ) : (
+              <div className="flex flex-col items-center gap-1">
                 <Badge variant="outline" className={`${statusColor} text-xs px-2`}>
                   {statusIcon}
-                  <span className="ml-1 capitalize hidden sm:inline">{systemStatus.status}</span>
                 </Badge>
-              )}
+                {systemStatus.status === "healthy" && infoCount > 0 && (
+                  <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20 text-xs px-2">
+                    <Info className="h-4 w-4" />
+                    <span className="ml-1">{infoCount}</span>
+                  </Badge>
+                )}
+              </div>
 
               <Button
                 variant="ghost"
