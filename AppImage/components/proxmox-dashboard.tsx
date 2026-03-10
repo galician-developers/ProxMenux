@@ -394,7 +394,7 @@ export function ProxmoxDashboard() {
             </div>
 
             {/* Mobile Actions */}
-            <div className="flex lg:hidden items-start gap-2">
+            <div className="flex lg:hidden items-center gap-2">
               <div className="flex flex-col items-end gap-1">
                 <Badge variant="outline" className={`${statusColor} text-xs px-2`}>
                   {statusIcon}
