@@ -394,7 +394,7 @@ export function ProxmoxDashboard() {
             </div>
 
             {/* Mobile Actions */}
-            <div className="flex lg:hidden items-start gap-2 pt-4">
+            <div className="flex lg:hidden items-start gap-2 pt-2">
               <div className="flex flex-col items-end gap-1">
                 <Badge variant="outline" className={`${statusColor} text-xs px-2`}>
                   {statusIcon}
@@ -415,12 +415,12 @@ export function ProxmoxDashboard() {
                   refreshData()
                 }}
                 disabled={isRefreshing}
-                className="h-8 w-8 p-0"
+                className="h-8 w-8 p-0 mt-0"
               >
                 <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
               </Button>
 
-              <div onClick={(e) => e.stopPropagation()}>
+              <div onClick={(e) => e.stopPropagation()} className="mt-0">
                 <ThemeToggle />
               </div>
             </div>
