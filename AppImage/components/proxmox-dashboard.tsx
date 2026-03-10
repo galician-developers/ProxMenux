@@ -33,6 +33,7 @@ import {
   SettingsIcon,
   Terminal,
   ShieldCheck,
+  Info,
 } from "lucide-react"
 import Image from "next/image"
 import { ThemeToggle } from "./theme-toggle"
@@ -78,6 +79,7 @@ export function ProxmoxDashboard() {
   const [componentKey, setComponentKey] = useState(0)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("overview")
+  const [infoCount, setInfoCount] = useState(0)
   const [showNavigation, setShowNavigation] = useState(true)
   const [lastScrollY, setLastScrollY] = useState(0)
   const [showHealthModal, setShowHealthModal] = useState(false)
@@ -158,7 +160,7 @@ export function ProxmoxDashboard() {
 
   useEffect(() => {
     const handleHealthStatusUpdate = (event: CustomEvent) => {
-      const { status } = event.detail
+      const { status, infoCount: newInfoCount } = event.detail
       let healthStatus: "healthy" | "warning" | "critical"
 
       if (status === "CRITICAL") {
@@ -173,6 +175,11 @@ export function ProxmoxDashboard() {
         ...prev,
         status: healthStatus,
       }))
+      
+      // Update info count (INFO categories + dismissed items)
+      if (typeof newInfoCount === "number") {
+        setInfoCount(newInfoCount)
+      }
     }
 
     window.addEventListener("healthStatusUpdated", handleHealthStatusUpdate as EventListener)
@@ -350,10 +357,17 @@ export function ProxmoxDashboard() {
                 </div>
               </div>
 
-              <Badge variant="outline" className={statusColor}>
-                {statusIcon}
-                <span className="ml-1 capitalize">{systemStatus.status}</span>
-              </Badge>
+              {systemStatus.status === "healthy" && infoCount > 0 ? (
+                <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
+                  <Info className="h-4 w-4" />
+                  <span className="ml-1">{infoCount} info</span>
+                </Badge>
+              ) : (
+                <Badge variant="outline" className={statusColor}>
+                  {statusIcon}
+                  <span className="ml-1 capitalize">{systemStatus.status}</span>
+                </Badge>
+              )}
 
               <div className="text-sm text-muted-foreground whitespace-nowrap">
                 Uptime: {systemStatus.uptime || "N/A"}
@@ -380,10 +394,17 @@ export function ProxmoxDashboard() {
 
             {/* Mobile Actions */}
             <div className="flex lg:hidden items-center gap-2">
-              <Badge variant="outline" className={`${statusColor} text-xs px-2`}>
-                {statusIcon}
-                <span className="ml-1 capitalize hidden sm:inline">{systemStatus.status}</span>
-              </Badge>
+              {systemStatus.status === "healthy" && infoCount > 0 ? (
+                <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20 text-xs px-2">
+                  <Info className="h-4 w-4" />
+                  <span className="ml-1">{infoCount}</span>
+                </Badge>
+              ) : (
+                <Badge variant="outline" className={`${statusColor} text-xs px-2`}>
+                  {statusIcon}
+                  <span className="ml-1 capitalize hidden sm:inline">{systemStatus.status}</span>
+                </Badge>
+              )}
 
               <Button
                 variant="ghost"

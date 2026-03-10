@@ -1165,7 +1165,7 @@ export function StorageOverview() {
 
       {/* Disk Details Dialog */}
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[80vh] sm:max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {selectedDisk?.connection_type === 'usb' ? (

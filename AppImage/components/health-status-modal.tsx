@@ -147,9 +147,26 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
         newOverallStatus = fullData.health?.overall || "OK"
       }
 
+      // Calculate infoCount: categories with INFO status + dismissed items
+      let infoCount = 0
+      if (response.ok) {
+        const fullData: FullHealthData = await response.clone().json()
+        // Count INFO categories
+        if (fullData.health?.details) {
+          CATEGORIES.forEach(({ key }) => {
+            const cat = fullData.health.details[key as keyof typeof fullData.health.details]
+            if (cat && cat.status?.toUpperCase() === "INFO") {
+              infoCount++
+            }
+          })
+        }
+        // Add dismissed items count
+        infoCount += (fullData.dismissed || []).length
+      }
+      
       // Emit event with the FRESH data from the response, not the stale state
       const event = new CustomEvent("healthStatusUpdated", {
-        detail: { status: newOverallStatus },
+        detail: { status: newOverallStatus, infoCount },
       })
       window.dispatchEvent(event)
     } catch (err) {
