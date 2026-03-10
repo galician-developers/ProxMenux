@@ -333,27 +333,6 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
     return { total: CATEGORIES.length, healthy, info, warnings, critical, unknown }
   }
 
-    let healthy = 0
-    let info = 0
-    let warnings = 0
-    let critical = 0
-    let unknown = 0
-
-    CATEGORIES.forEach(({ key }) => {
-      const categoryData = healthData.details[key as keyof typeof healthData.details]
-      if (categoryData) {
-        const status = categoryData.status?.toUpperCase()
-        if (status === "OK") healthy++
-        else if (status === "INFO") info++
-        else if (status === "WARNING") warnings++
-        else if (status === "CRITICAL") critical++
-        else if (status === "UNKNOWN") unknown++
-      }
-    })
-
-    return { total: CATEGORIES.length, healthy, info, warnings, critical, unknown }
-  }
-
   const stats = getHealthStats()
 
   const handleCategoryClick = (categoryKey: string, status: string) => {
