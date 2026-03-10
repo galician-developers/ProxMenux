@@ -130,6 +130,9 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
       }
 
       const response = await fetch(getApiUrl("/api/health/full"), { headers: authHeaders })
+      let infoCount = 0
+      let dismissedCount = 0
+      
       if (!response.ok) {
         // Fallback to legacy endpoint
         const legacyResponse = await fetch(getApiUrl("/api/health/details"), { headers: authHeaders })
@@ -139,18 +142,24 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
         setDismissedItems([])
         setCustomSuppressions([])
         newOverallStatus = data?.overall || "OK"
+        
+        // Count INFO categories from legacy data
+        if (data?.details) {
+          CATEGORIES.forEach(({ key }) => {
+            const cat = data.details[key as keyof typeof data.details]
+            if (cat && cat.status?.toUpperCase() === "INFO") {
+              infoCount++
+            }
+          })
+        }
       } else {
         const fullData: FullHealthData = await response.json()
         setHealthData(fullData.health)
         setDismissedItems(fullData.dismissed || [])
         setCustomSuppressions(fullData.custom_suppressions || [])
         newOverallStatus = fullData.health?.overall || "OK"
-      }
-
-      // Calculate infoCount: categories with INFO status + dismissed items
-      let infoCount = 0
-      if (response.ok) {
-        const fullData: FullHealthData = await response.clone().json()
+        dismissedCount = (fullData.dismissed || []).length
+        
         // Count INFO categories
         if (fullData.health?.details) {
           CATEGORIES.forEach(({ key }) => {
@@ -160,13 +169,14 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
             }
           })
         }
-        // Add dismissed items count
-        infoCount += (fullData.dismissed || []).length
       }
+      
+      // Total info = INFO categories + dismissed items
+      const totalInfoCount = infoCount + dismissedCount
       
       // Emit event with the FRESH data from the response, not the stale state
       const event = new CustomEvent("healthStatusUpdated", {
-        detail: { status: newOverallStatus, infoCount },
+        detail: { status: newOverallStatus, infoCount: totalInfoCount },
       })
       window.dispatchEvent(event)
     } catch (err) {
