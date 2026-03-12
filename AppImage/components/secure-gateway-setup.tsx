@@ -99,11 +99,14 @@ export function SecureGatewaySetup() {
   const loadInitialData = async () => {
     setLoading(true)
     try {
-      // Load runtime info (just for display, deploy will auto-install if needed)
+      // Load runtime info (checks for Proxmox 9.1+ OCI support)
       const runtimeRes = await fetchApi("/api/oci/runtime")
       if (runtimeRes.success && runtimeRes.available) {
         setRuntimeAvailable(true)
         setRuntimeInfo({ runtime: runtimeRes.runtime, version: runtimeRes.version })
+      } else {
+        // Show version requirement message
+        setRuntimeInfo({ runtime: "proxmox-lxc", version: runtimeRes.version || "unknown" })
       }
 
       // Load app definition
@@ -180,8 +183,8 @@ export function SecureGatewaySetup() {
       if (!result.success) {
         // Make runtime errors more user-friendly
         let errorMsg = result.message || "Deployment failed"
-        if (errorMsg.includes("runtime not available") || errorMsg.includes("Container runtime")) {
-          errorMsg = "Container runtime (Podman) is required but could not be installed automatically. Please run 'apt install podman' on your Proxmox host first, then try again."
+        if (errorMsg.includes("9.1") || errorMsg.includes("OCI") || errorMsg.includes("not supported")) {
+          errorMsg = "OCI containers require Proxmox VE 9.1 or later. Please upgrade your Proxmox installation to use this feature."
         }
         setDeployError(errorMsg)
         setDeploying(false)
@@ -805,18 +808,19 @@ export function SecureGatewaySetup() {
           {runtimeAvailable ? (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <CheckCircle className="h-3.5 w-3.5 text-green-500" />
-              <span>{runtimeInfo?.runtime} {runtimeInfo?.version} available</span>
+              <span>Proxmox VE {runtimeInfo?.version} - OCI support available</span>
             </div>
           ) : (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Info className="h-3.5 w-3.5 text-cyan-500" />
-              <span>Podman will be installed automatically during deployment</span>
+            <div className="flex items-center gap-2 text-xs text-yellow-500">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              <span>Requires Proxmox VE 9.1+ (current: {runtimeInfo?.version || "unknown"})</span>
             </div>
           )}
 
           <Button
             onClick={() => setShowWizard(true)}
             className="w-full bg-cyan-600 hover:bg-cyan-700"
+            disabled={!runtimeAvailable}
           >
             <ShieldCheck className="h-4 w-4 mr-2" />
             Deploy Secure Gateway

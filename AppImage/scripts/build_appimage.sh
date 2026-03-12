@@ -310,7 +310,8 @@ pip3 install --target "$APP_DIR/usr/lib/python3/dist-packages" --upgrade --no-de
     PyJWT \
     pyotp \
     segno \
-    beautifulsoup4
+    beautifulsoup4 \
+    cryptography
 
 # Phase 3: Install WebSocket with newer h11
 pip3 install --target "$APP_DIR/usr/lib/python3/dist-packages" --upgrade \
