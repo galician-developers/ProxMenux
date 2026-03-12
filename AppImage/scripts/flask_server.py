@@ -48,6 +48,7 @@ from flask_auth_routes import auth_bp  # noqa: E402
 from flask_proxmenux_routes import proxmenux_bp  # noqa: E402
 from flask_security_routes import security_bp  # noqa: E402
 from flask_notification_routes import notification_bp  # noqa: E402
+from flask_oci_routes import oci_bp  # noqa: E402
 from notification_manager import notification_manager  # noqa: E402
 from jwt_middleware import require_auth  # noqa: E402
 import auth_manager  # noqa: E402
@@ -124,6 +125,7 @@ app.register_blueprint(health_bp)
 app.register_blueprint(proxmenux_bp)
 app.register_blueprint(security_bp)
 app.register_blueprint(notification_bp)
+app.register_blueprint(oci_bp)
 
 # Initialize terminal / WebSocket routes
 init_terminal_routes(app)

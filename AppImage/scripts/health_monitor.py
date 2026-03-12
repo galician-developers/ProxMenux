@@ -1125,6 +1125,40 @@ class HealthMonitor:
                 except Exception:
                     pass
         
+        # Check disk_observations for active (non-dismissed) warnings
+        # This ensures disks with persistent observations appear in Health Monitor
+        # even if the error is not currently in the logs
+        try:
+            all_observations = health_persistence.get_disk_observations()
+            for obs in all_observations:
+                device_name = obs.get('device_name', '').replace('/dev/', '')
+                if not device_name:
+                    continue
+                severity = (obs.get('severity') or 'warning').upper()
+                if severity in ('WARNING', 'CRITICAL') and not obs.get('dismissed'):
+                    # Add to issues if not already present
+                    obs_reason = obs.get('raw_message', f'{device_name}: Disk observation recorded')
+                    obs_key = f'/dev/{device_name}'
+                    if obs_key not in storage_details:
+                        issues.append(obs_reason)
+                        storage_details[obs_key] = {
+                            'status': severity,
+                            'reason': obs_reason,
+                            'dismissable': True,
+                        }
+                    # Ensure disk is in disk_errors_by_device for consolidation
+                    if device_name not in disk_errors_by_device:
+                        disk_errors_by_device[device_name] = {
+                            'status': severity,
+                            'reason': obs_reason,
+                            'error_type': obs.get('error_type', 'disk_observation'),
+                            'serial': obs.get('serial', ''),
+                            'model': obs.get('model', ''),
+                            'dismissable': True,
+                        }
+        except Exception:
+            pass
+        
         # Build checks dict from storage_details
         # We consolidate disk error entries (like /Dev/Sda) into physical disk entries
         # and only show disks with problems (not healthy ones).
