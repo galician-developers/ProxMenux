@@ -274,7 +274,7 @@ def _get_vmid_for_app(app_id: str) -> Optional[int]:
 def pull_oci_image(image: str, tag: str = "latest", storage: str = DEFAULT_STORAGE) -> Dict[str, Any]:
     """
     Pull an OCI image from a registry and store as LXC template.
-    Uses skopeo to download OCI images (the same method Proxmox GUI uses).
+    Uses Proxmox's pvesh API to download OCI images (same as GUI).
     
     Args:
         image: Image name (e.g., "docker.io/tailscale/tailscale")
@@ -296,66 +296,81 @@ def pull_oci_image(image: str, tag: str = "latest", storage: str = DEFAULT_STORA
         result["message"] = pve_info.get("error", "OCI not supported")
         return result
     
-    # Check skopeo is available
-    if not shutil.which("skopeo"):
-        result["message"] = "skopeo not found. Please install: apt install skopeo"
-        return result
-    
-    # Normalize image name
+    # Normalize image name - ensure full registry path
     if not image.startswith(("docker.io/", "ghcr.io/", "quay.io/", "registry.")):
         image = f"docker.io/{image}"
+    
+    # For docker.io, library images need explicit library/ prefix
+    parts = image.split("/")
+    if parts[0] == "docker.io" and len(parts) == 2:
+        image = f"docker.io/library/{parts[1]}"
     
     full_ref = f"{image}:{tag}"
     
     logger.info(f"Pulling OCI image: {full_ref}")
     print(f"[*] Pulling OCI image: {full_ref}")
     
-    # Get the template cache directory for the storage
-    # Default is /var/lib/vz/template/cache
-    template_dir = "/var/lib/vz/template/cache"
+    # Create a safe filename from the image reference
+    # e.g., docker.io/tailscale/tailscale:stable -> tailscale-tailscale-stable.tar.zst
+    filename = image.replace("docker.io/", "").replace("ghcr.io/", "").replace("/", "-")
+    filename = f"{filename}-{tag}.tar.zst"
     
-    # Try to get correct path from storage config
-    rc, out, _ = _run_pve_cmd(["pvesm", "path", f"{storage}:vztmpl/test"])
-    if rc == 0 and out.strip():
-        # Extract directory from path
-        template_dir = os.path.dirname(out.strip())
+    # Get hostname for API
+    hostname = os.uname().nodename
     
-    # Create filename from image reference
-    # Format: registry-name-tag.tar (similar to what Proxmox does)
-    filename = full_ref.replace("docker.io/", "").replace("/", "-").replace(":", "-") + ".tar"
-    template_path = os.path.join(template_dir, filename)
+    # Use Proxmox's pvesh API to download the OCI image
+    # This is exactly what the GUI does
+    rc, out, err = _run_pve_cmd([
+        "pvesh", "create", 
+        f"/nodes/{hostname}/storage/{storage}/download-url",
+        "--content", "vztmpl",
+        "--filename", filename,
+        "--url", f"docker://{full_ref}"
+    ], timeout=600)
     
-    # Use skopeo to download the image
-    # This is exactly what Proxmox does internally
-    try:
-        proc = subprocess.run(
-            ["skopeo", "copy", f"docker://{full_ref}", f"oci-archive:{template_path}"],
-            capture_output=True,
-            text=True,
-            timeout=600  # 10 minutes timeout for large images
-        )
+    if rc != 0:
+        # Fallback: try direct skopeo if pvesh API fails
+        logger.warning(f"pvesh download failed: {err}, trying skopeo fallback")
         
-        if proc.returncode != 0:
-            result["message"] = f"Failed to pull image: {proc.stderr}"
-            logger.error(f"skopeo copy failed: {proc.stderr}")
+        if not shutil.which("skopeo"):
+            result["message"] = f"Failed to pull image via API: {err}"
             return result
+        
+        # Get template directory
+        template_dir = "/var/lib/vz/template/cache"
+        rc2, out2, _ = _run_pve_cmd(["pvesm", "path", f"{storage}:vztmpl/test"])
+        if rc2 == 0 and out2.strip():
+            template_dir = os.path.dirname(out2.strip())
+        
+        template_path = os.path.join(template_dir, filename.replace(".zst", ""))
+        
+        # Use skopeo with docker-archive format
+        try:
+            proc = subprocess.run(
+                ["skopeo", "copy", "--override-os", "linux", 
+                 f"docker://{full_ref}", f"docker-archive:{template_path}"],
+                capture_output=True,
+                text=True,
+                timeout=600
+            )
             
-    except subprocess.TimeoutExpired:
-        result["message"] = "Image pull timed out after 10 minutes"
-        return result
-    except Exception as e:
-        result["message"] = f"Failed to pull image: {e}"
-        logger.error(f"Pull failed: {e}")
-        return result
+            if proc.returncode != 0:
+                result["message"] = f"Failed to pull image: {proc.stderr}"
+                logger.error(f"skopeo copy failed: {proc.stderr}")
+                return result
+                
+            filename = filename.replace(".zst", "")
+        except subprocess.TimeoutExpired:
+            result["message"] = "Image pull timed out after 10 minutes"
+            return result
+        except Exception as e:
+            result["message"] = f"Failed to pull image: {e}"
+            logger.error(f"Pull failed: {e}")
+            return result
     
-    # Verify the template was created
-    if not os.path.exists(template_path):
-        result["message"] = "Image downloaded but template file not found"
-        return result
-    
+    # Template was created via API or skopeo
     result["success"] = True
     result["template"] = f"{storage}:vztmpl/{filename}"
-    result["template_path"] = template_path
     result["message"] = "Image pulled successfully"
     print(f"[OK] Image pulled: {result['template']}")
     
@@ -589,28 +604,22 @@ def deploy_app(app_id: str, config: Dict[str, Any], installed_by: str = "web") -
     # Step 2: Create LXC container
     print(f"[*] Creating LXC container...")
     
-    # Build pct create command
+    # Build pct create command for OCI container
+    # Note: OCI containers in Proxmox 9.1 have specific requirements
+    # - ostype must be "unmanaged" for OCI images
+    # - features like nesting may not be compatible with all OCI images
     pct_cmd = [
         "pct", "create", str(vmid), template,
         "--hostname", hostname,
         "--memory", str(container_def.get("memory", 512)),
         "--cores", str(container_def.get("cores", 1)),
         "--rootfs", f"local-lvm:{container_def.get('disk_size', 4)}",
-        "--ostype", "unmanaged",
         "--unprivileged", "0" if container_def.get("privileged") else "1",
-        "--features", "nesting=1",
         "--onboot", "1"
     ]
     
-    # Network configuration
-    net_config = "name=eth0"
-    if container_def.get("network_mode") == "host":
-        # For host network, use bridge with DHCP
-        net_config += ",bridge=vmbr0,ip=dhcp"
-    else:
-        net_config += ",bridge=vmbr0,ip=dhcp"
-    
-    pct_cmd.extend(["--net0", net_config])
+    # Network configuration - use simple bridge with DHCP
+    pct_cmd.extend(["--net0", "name=eth0,bridge=vmbr0,ip=dhcp"])
     
     # Run pct create
     rc, out, err = _run_pve_cmd(pct_cmd, timeout=120)
@@ -620,7 +629,20 @@ def deploy_app(app_id: str, config: Dict[str, Any], installed_by: str = "web") -
         logger.error(f"pct create failed: {err}")
         return result
     
-    # Step 3: Configure environment variables
+    # Step 3: Apply extra LXC configuration (for unprivileged containers)
+    lxc_config = container_def.get("lxc_config", [])
+    if lxc_config:
+        conf_file = f"/etc/pve/lxc/{vmid}.conf"
+        try:
+            with open(conf_file, 'a') as f:
+                f.write("\n# ProxMenux OCI extra config\n")
+                for config_line in lxc_config:
+                    f.write(f"{config_line}\n")
+            logger.info(f"Applied extra LXC config to {conf_file}")
+        except Exception as e:
+            logger.warning(f"Could not apply extra LXC config: {e}")
+    
+    # Step 4: Configure environment variables
     env_vars = []
     
     # Add static env vars from container definition
@@ -642,11 +664,11 @@ def deploy_app(app_id: str, config: Dict[str, Any], installed_by: str = "web") -
         for i, env in enumerate(env_vars):
             _run_pve_cmd(["pct", "set", str(vmid), f"--lxc.environment", env])
     
-    # Step 4: Enable IP forwarding if needed (for VPN containers)
+    # Step 5: Enable IP forwarding if needed (for VPN containers)
     if "tailscale" in image.lower() or container_def.get("requires_ip_forward"):
         _enable_host_ip_forwarding()
     
-    # Step 5: Start the container
+    # Step 6: Start the container
     print(f"[*] Starting container...")
     rc, _, err = _run_pve_cmd(["pct", "start", str(vmid)])
     
@@ -881,6 +903,64 @@ def detect_host_networks() -> List[Dict[str, Any]]:
                         "recommended": True
                     })
         
+    except Exception as e:
+        logger.error(f"Failed to detect networks: {e}")
+    
+    return networks
+
+
+# =================================================================
+# Network Detection
+# =================================================================
+def detect_networks() -> List[Dict[str, str]]:
+    """
+    Detect available network interfaces and their subnets.
+    Used for suggesting routes to advertise via Tailscale.
+    
+    Returns:
+        List of dicts with interface name and subnet.
+    """
+    networks = []
+    
+    try:
+        # Use ip command to get interfaces and their addresses
+        proc = subprocess.run(
+            ["ip", "-j", "addr", "show"],
+            capture_output=True,
+            text=True
+        )
+        
+        if proc.returncode == 0:
+            interfaces = json.loads(proc.stdout)
+            
+            for iface in interfaces:
+                name = iface.get("ifname", "")
+                
+                # Skip loopback and virtual interfaces
+                if name in ("lo", "docker0") or name.startswith(("veth", "br-", "tap", "fwbr", "fwpr")):
+                    continue
+                
+                # Get IPv4 addresses
+                for addr_info in iface.get("addr_info", []):
+                    if addr_info.get("family") == "inet":
+                        ip = addr_info.get("local", "")
+                        prefix = addr_info.get("prefixlen", 24)
+                        if ip and not ip.startswith("127."):
+                            # Calculate network address
+                            ip_parts = ip.split(".")
+                            if len(ip_parts) == 4:
+                                # Simple network calculation
+                                if prefix >= 24:
+                                    network = f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.0/{prefix}"
+                                elif prefix >= 16:
+                                    network = f"{ip_parts[0]}.{ip_parts[1]}.0.0/{prefix}"
+                                else:
+                                    network = f"{ip_parts[0]}.0.0.0/{prefix}"
+                                networks.append({
+                                    "interface": name,
+                                    "subnet": network,
+                                    "ip": ip
+                                })
     except Exception as e:
         logger.error(f"Failed to detect networks: {e}")
     
