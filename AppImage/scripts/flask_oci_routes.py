@@ -247,8 +247,11 @@ def deploy_app():
                 "message": "app_id is required"
             }), 400
         
+        logger.info(f"Deploy request: app_id={app_id}, config_keys={list(config.keys())}")
+        
         result = oci_manager.deploy_app(app_id, config, installed_by="web")
         
+        logger.info(f"Deploy result: {result}")
         status_code = 200 if result.get("success") else 400
         return jsonify(result), status_code
         

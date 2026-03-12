@@ -313,15 +313,41 @@ def load_catalog() -> Dict[str, Any]:
     # Ensure directories and files exist on first call
     ensure_oci_directories()
     
-    if not os.path.exists(CATALOG_FILE):
-        return {"version": "1.0.0", "apps": {}}
+    # Try to load from standard location
+    if os.path.exists(CATALOG_FILE):
+        try:
+            with open(CATALOG_FILE, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to load catalog from {CATALOG_FILE}: {e}")
     
-    try:
-        with open(CATALOG_FILE, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        logger.error(f"Failed to load catalog: {e}")
-        return {"version": "1.0.0", "apps": {}, "error": str(e)}
+    # Try alternative locations
+    alternative_paths = [
+        SCRIPTS_CATALOG,
+        DEV_SCRIPTS_CATALOG,
+        "/usr/local/share/proxmenux/scripts/oci/catalog.json",
+        os.path.join(os.path.dirname(__file__), "oci", "catalog.json"),
+    ]
+    
+    for alt_path in alternative_paths:
+        if os.path.exists(alt_path):
+            try:
+                with open(alt_path, 'r') as f:
+                    catalog = json.load(f)
+                    logger.info(f"Loaded catalog from alternative path: {alt_path}")
+                    # Copy to standard location for next time
+                    try:
+                        os.makedirs(os.path.dirname(CATALOG_FILE), exist_ok=True)
+                        with open(CATALOG_FILE, 'w') as out:
+                            json.dump(catalog, out, indent=2)
+                    except Exception:
+                        pass
+                    return catalog
+            except Exception as e:
+                logger.error(f"Failed to load catalog from {alt_path}: {e}")
+    
+    logger.error(f"No catalog found. Checked: {CATALOG_FILE}, {alternative_paths}")
+    return {"version": "1.0.0", "apps": {}}
 
 
 def get_app_definition(app_id: str) -> Optional[Dict[str, Any]]:
@@ -567,15 +593,21 @@ def deploy_app(app_id: str, config: Dict[str, Any], installed_by: str = "web") -
     # Ensure runtime is available (install if necessary)
     runtime_info = ensure_runtime()
     if not runtime_info["available"]:
-        result["message"] = runtime_info.get("error", "Failed to setup container runtime")
+        error_msg = runtime_info.get("error", "Unknown error")
+        result["message"] = f"Container runtime not available. {error_msg}. Please install Podman or Docker manually: apt install podman"
         return result
     
     runtime = runtime_info["runtime"]
+    logger.info(f"Using runtime: {runtime}")
     
     # Get app definition
     app_def = get_app_definition(app_id)
     if not app_def:
-        result["message"] = f"App '{app_id}' not found in catalog"
+        # Log detailed info for debugging
+        logger.error(f"App '{app_id}' not found. Catalog file: {CATALOG_FILE}, exists: {os.path.exists(CATALOG_FILE)}")
+        catalog = load_catalog()
+        logger.error(f"Available apps: {list(catalog.get('apps', {}).keys())}")
+        result["message"] = f"App '{app_id}' not found in catalog. Make sure the catalog file exists at {CATALOG_FILE}"
         return result
     
     # Check if already installed
@@ -693,14 +725,18 @@ def deploy_app(app_id: str, config: Dict[str, Any], installed_by: str = "web") -
     pull_policy = container_def.get("pull_policy", "if_not_present")
     if pull_policy != "never":
         logger.info(f"Pulling image: {image}")
-        pull_rc, _, pull_err = _run_container_cmd(["pull", image], timeout=300)
+        print(f"[*] Pulling image: {image}")
+        pull_rc, pull_out, pull_err = _run_container_cmd(["pull", image], timeout=300)
+        logger.info(f"Pull result: rc={pull_rc}, out={pull_out[:100] if pull_out else ''}, err={pull_err[:200] if pull_err else ''}")
         if pull_rc != 0 and pull_policy == "always":
             result["message"] = f"Failed to pull image: {pull_err}"
             return result
     
     # Run container
-    logger.info(f"Starting container: {container_name}")
+    logger.info(f"Starting container with cmd: {cmd}")
+    print(f"[*] Starting container: {container_name}")
     rc, out, err = _run_container_cmd(cmd, timeout=60)
+    logger.info(f"Run result: rc={rc}, out={out[:100] if out else ''}, err={err[:200] if err else ''}")
     
     if rc != 0:
         result["message"] = f"Failed to start container: {err}"

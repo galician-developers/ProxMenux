@@ -178,7 +178,12 @@ export function SecureGatewaySetup() {
       })
 
       if (!result.success) {
-        setDeployError(result.message || "Deployment failed")
+        // Make runtime errors more user-friendly
+        let errorMsg = result.message || "Deployment failed"
+        if (errorMsg.includes("runtime not available") || errorMsg.includes("Container runtime")) {
+          errorMsg = "Container runtime (Podman) is required but could not be installed automatically. Please run 'apt install podman' on your Proxmox host first, then try again."
+        }
+        setDeployError(errorMsg)
         setDeploying(false)
         return
       }
