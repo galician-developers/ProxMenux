@@ -420,6 +420,36 @@ def get_runtime():
         }), 500
 
 
+@oci_bp.route("/runtime/install-script", methods=["GET"])
+@require_auth
+def get_runtime_install_script():
+    """
+    Get the path to the runtime installation script.
+    
+    Returns:
+        Script path for installing Podman.
+    """
+    import os
+    
+    # Check possible paths for the install script
+    possible_paths = [
+        "/usr/local/share/proxmenux/scripts/oci/install_runtime.sh",
+        os.path.join(os.path.dirname(__file__), "..", "..", "Scripts", "oci", "install_runtime.sh"),
+    ]
+    
+    for script_path in possible_paths:
+        if os.path.exists(script_path):
+            return jsonify({
+                "success": True,
+                "script_path": os.path.abspath(script_path)
+            })
+    
+    return jsonify({
+        "success": False,
+        "message": "Runtime installation script not found"
+    }), 404
+
+
 @oci_bp.route("/status/<app_id>", methods=["GET"])
 @require_auth
 def get_app_status(app_id: str):

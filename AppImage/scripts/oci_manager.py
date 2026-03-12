@@ -71,6 +71,154 @@ CONTAINER_PREFIX = "proxmenux"
 
 
 # =================================================================
+# Runtime Installation
+# =================================================================
+def install_runtime(runtime: str = "podman") -> Dict[str, Any]:
+    """
+    Install container runtime (podman or docker).
+    
+    Args:
+        runtime: Runtime to install ('podman' or 'docker')
+    
+    Returns:
+        Dict with success status and message
+    """
+    result = {
+        "success": False,
+        "message": "",
+        "runtime": runtime
+    }
+    
+    logger.info(f"Installing container runtime: {runtime}")
+    print(f"\n{'='*60}")
+    print(f"  Installing {runtime.capitalize()}")
+    print(f"{'='*60}\n")
+    
+    try:
+        # Detect distribution
+        distro = "debian"  # Default
+        if os.path.exists("/etc/os-release"):
+            with open("/etc/os-release") as f:
+                content = f.read().lower()
+                if "alpine" in content:
+                    distro = "alpine"
+                elif "arch" in content:
+                    distro = "arch"
+                elif "fedora" in content or "rhel" in content or "centos" in content:
+                    distro = "rhel"
+        
+        # Install commands by distro
+        install_commands = {
+            "debian": {
+                "podman": ["apt-get", "update", "&&", "apt-get", "install", "-y", "podman"],
+                "docker": ["apt-get", "update", "&&", "apt-get", "install", "-y", "docker.io"]
+            },
+            "alpine": {
+                "podman": ["apk", "add", "--no-cache", "podman"],
+                "docker": ["apk", "add", "--no-cache", "docker"]
+            },
+            "arch": {
+                "podman": ["pacman", "-Sy", "--noconfirm", "podman"],
+                "docker": ["pacman", "-Sy", "--noconfirm", "docker"]
+            },
+            "rhel": {
+                "podman": ["dnf", "install", "-y", "podman"],
+                "docker": ["dnf", "install", "-y", "docker-ce"]
+            }
+        }
+        
+        # Get install command
+        if distro == "debian":
+            # Use shell for && syntax
+            if runtime == "podman":
+                cmd = "apt-get update && apt-get install -y podman"
+            else:
+                cmd = "apt-get update && apt-get install -y docker.io"
+            
+            print(f"[*] Running: {cmd}")
+            proc = subprocess.run(
+                cmd,
+                shell=True,
+                capture_output=False,
+                timeout=300
+            )
+        else:
+            cmd = install_commands.get(distro, {}).get(runtime, [])
+            if not cmd:
+                result["message"] = f"Unsupported distro: {distro}"
+                return result
+            
+            print(f"[*] Running: {' '.join(cmd)}")
+            proc = subprocess.run(
+                cmd,
+                capture_output=False,
+                timeout=300
+            )
+        
+        if proc.returncode != 0:
+            result["message"] = f"Failed to install {runtime}"
+            return result
+        
+        # Configure podman registries if needed
+        if runtime == "podman":
+            registries_conf = "/etc/containers/registries.conf"
+            if os.path.exists("/etc/containers") and not os.path.exists(registries_conf):
+                try:
+                    with open(registries_conf, 'w') as f:
+                        f.write('unqualified-search-registries = ["docker.io", "quay.io", "ghcr.io"]\n')
+                    print("[*] Configured container registries")
+                except Exception as e:
+                    logger.warning(f"Could not configure registries: {e}")
+        
+        # Verify installation
+        verify_cmd = shutil.which(runtime)
+        if verify_cmd:
+            print(f"\n[OK] {runtime.capitalize()} installed successfully!")
+            result["success"] = True
+            result["message"] = f"{runtime.capitalize()} installed successfully"
+            result["path"] = verify_cmd
+        else:
+            result["message"] = f"{runtime.capitalize()} installed but not found in PATH"
+        
+    except subprocess.TimeoutExpired:
+        result["message"] = "Installation timed out"
+    except Exception as e:
+        logger.error(f"Failed to install runtime: {e}")
+        result["message"] = str(e)
+    
+    return result
+
+
+def ensure_runtime() -> Dict[str, Any]:
+    """
+    Ensure a container runtime is available, installing if necessary.
+    
+    Returns:
+        Dict with runtime info (same as detect_runtime)
+    """
+    runtime_info = detect_runtime()
+    
+    if runtime_info["available"]:
+        return runtime_info
+    
+    # No runtime available, install podman
+    print("\n[!] No container runtime found. Installing Podman...")
+    install_result = install_runtime("podman")
+    
+    if not install_result["success"]:
+        return {
+            "available": False,
+            "runtime": None,
+            "version": None,
+            "path": None,
+            "error": install_result["message"]
+        }
+    
+    # Re-detect after installation
+    return detect_runtime()
+
+
+# =================================================================
 # Runtime Detection
 # =================================================================
 def detect_runtime() -> Dict[str, Any]:
@@ -416,10 +564,10 @@ def deploy_app(app_id: str, config: Dict[str, Any], installed_by: str = "web") -
         "app_id": app_id
     }
     
-    # Check runtime
-    runtime_info = detect_runtime()
+    # Ensure runtime is available (install if necessary)
+    runtime_info = ensure_runtime()
     if not runtime_info["available"]:
-        result["message"] = runtime_info.get("error", "No container runtime available")
+        result["message"] = runtime_info.get("error", "Failed to setup container runtime")
         return result
     
     runtime = runtime_info["runtime"]

@@ -99,7 +99,7 @@ export function SecureGatewaySetup() {
   const loadInitialData = async () => {
     setLoading(true)
     try {
-      // Load runtime info
+      // Load runtime info (just for display, deploy will auto-install if needed)
       const runtimeRes = await fetchApi("/api/oci/runtime")
       if (runtimeRes.success && runtimeRes.available) {
         setRuntimeAvailable(true)
@@ -602,37 +602,6 @@ export function SecureGatewaySetup() {
     )
   }
 
-  // Runtime not available
-  if (!runtimeAvailable) {
-    return (
-      <Card className="border-border bg-card">
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-cyan-500" />
-            <CardTitle className="text-base">Secure Gateway</CardTitle>
-          </div>
-          <CardDescription>VPN access without opening ports</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-yellow-500">Container Runtime Required</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Install Podman or Docker to use OCI applications.
-                </p>
-                <code className="text-xs mt-2 block bg-muted/50 p-2 rounded">
-                  apt install podman
-                </code>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
-
   // Installed state
   if (appStatus.state !== "not_installed") {
     const isRunning = appStatus.state === "running"
@@ -828,10 +797,17 @@ export function SecureGatewaySetup() {
             Deploy a Tailscale VPN gateway for secure remote access to your Proxmox infrastructure. No port forwarding required.
           </p>
           
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <CheckCircle className="h-3.5 w-3.5 text-green-500" />
-            <span>{runtimeInfo?.runtime} {runtimeInfo?.version} available</span>
-          </div>
+          {runtimeAvailable ? (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <CheckCircle className="h-3.5 w-3.5 text-green-500" />
+              <span>{runtimeInfo?.runtime} {runtimeInfo?.version} available</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Info className="h-3.5 w-3.5 text-cyan-500" />
+              <span>Podman will be installed automatically during deployment</span>
+            </div>
+          )}
 
           <Button
             onClick={() => setShowWizard(true)}
