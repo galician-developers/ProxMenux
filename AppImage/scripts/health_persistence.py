@@ -141,6 +141,10 @@ class HealthPersistence:
         if 'suppression_hours' not in columns:
             cursor.execute('ALTER TABLE errors ADD COLUMN suppression_hours INTEGER DEFAULT 24')
         
+        # Migration: add acknowledged_at column to errors if not present
+        if 'acknowledged_at' not in columns:
+            cursor.execute('ALTER TABLE errors ADD COLUMN acknowledged_at TEXT')
+        
         # Indexes for performance
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_error_key ON errors(error_key)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_category ON errors(category)')
@@ -346,9 +350,10 @@ class HealthPersistence:
                     configured_hours = int(stored)
                     if configured_hours != self.DEFAULT_SUPPRESSION_HOURS:
                         # Non-default setting found: auto-acknowledge
+                        # Mark as acknowledged but DO NOT set resolved_at - error remains active
                         cursor.execute('''
                             UPDATE errors 
-                            SET acknowledged = 1, resolved_at = ?, suppression_hours = ?
+                            SET acknowledged = 1, acknowledged_at = ?, suppression_hours = ?
                             WHERE error_key = ? AND acknowledged = 0
                         ''', (now, configured_hours, error_key))
                         
@@ -514,9 +519,10 @@ class HealthPersistence:
                     except (ValueError, TypeError):
                         pass
             
+            # Insert as acknowledged but NOT resolved - error remains active
             cursor.execute('''
                 INSERT INTO errors (error_key, category, severity, reason, first_seen, last_seen,
-                                    occurrence_count, acknowledged, resolved_at, suppression_hours)
+                                    occurrence_count, acknowledged, acknowledged_at, suppression_hours)
                 VALUES (?, ?, 'WARNING', 'Dismissed by user', ?, ?, 1, 1, ?, ?)
             ''', (error_key, category, now, now, now, sup_hours))
             
@@ -554,9 +560,12 @@ class HealthPersistence:
                     except (ValueError, TypeError):
                         pass
             
+            # Mark as acknowledged but DO NOT set resolved_at
+            # The error remains active until it actually disappears from the system
+            # resolved_at should only be set when the error is truly resolved
             cursor.execute('''
                 UPDATE errors 
-                SET acknowledged = 1, resolved_at = ?, suppression_hours = ?
+                SET acknowledged = 1, acknowledged_at = ?, suppression_hours = ?
                 WHERE error_key = ?
             ''', (now, sup_hours, error_key))
             
@@ -578,9 +587,10 @@ class HealthPersistence:
             if child_prefix:
                 # Only cascade to active (unresolved) child errors.
                 # Already-resolved/expired entries must NOT be re-surfaced.
+                # Mark as acknowledged but DO NOT set resolved_at
                 cursor.execute('''
                     UPDATE errors 
-                    SET acknowledged = 1, resolved_at = ?, suppression_hours = ?
+                    SET acknowledged = 1, acknowledged_at = ?, suppression_hours = ?
                     WHERE error_key LIKE ? AND acknowledged = 0 AND resolved_at IS NULL
                 ''', (now, sup_hours, child_prefix + '%'))
             

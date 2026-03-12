@@ -85,6 +85,57 @@ export function ProxmoxDashboard() {
   const [showHealthModal, setShowHealthModal] = useState(false)
   const { showReleaseNotes, setShowReleaseNotes } = useVersionCheck()
 
+  // Category keys for health info count calculation
+  const HEALTH_CATEGORY_KEYS = [
+    { key: "cpu", category: "temperature" },
+    { key: "memory", category: "memory" },
+    { key: "storage", category: "storage" },
+    { key: "disks", category: "disks" },
+    { key: "network", category: "network" },
+    { key: "vms", category: "vms" },
+    { key: "services", category: "pve_services" },
+    { key: "logs", category: "logs" },
+    { key: "updates", category: "updates" },
+    { key: "security", category: "security" },
+  ]
+
+  // Fetch health info count independently (for initial load and refresh)
+  const fetchHealthInfoCount = useCallback(async () => {
+    try {
+      const response = await fetchApi("/api/health/full")
+      let calculatedInfoCount = 0
+      
+      if (response && response.health?.details) {
+        // Get categories that have dismissed items (these become INFO)
+        const customCats = new Set((response.custom_suppressions || []).map((cs: { category: string }) => cs.category))
+        const filteredDismissed = (response.dismissed || []).filter((item: { category: string }) => !customCats.has(item.category))
+        const categoriesWithDismissed = new Set<string>()
+        filteredDismissed.forEach((item: { category: string }) => {
+          const catMeta = HEALTH_CATEGORY_KEYS.find(c => c.category === item.category || c.key === item.category)
+          if (catMeta) {
+            categoriesWithDismissed.add(catMeta.key)
+          }
+        })
+        
+        // Count effective INFO categories (original INFO + OK categories with dismissed)
+        HEALTH_CATEGORY_KEYS.forEach(({ key }) => {
+          const cat = response.health.details[key as keyof typeof response.health.details]
+          if (cat) {
+            const originalStatus = cat.status?.toUpperCase()
+            // Count as INFO if: originally INFO OR (originally OK and has dismissed items)
+            if (originalStatus === "INFO" || (originalStatus === "OK" && categoriesWithDismissed.has(key))) {
+              calculatedInfoCount++
+            }
+          }
+        })
+      }
+      
+      setInfoCount(calculatedInfoCount)
+    } catch (error) {
+      // Silently fail - infoCount will remain at 0
+    }
+  }, [])
+
   const fetchSystemData = useCallback(async () => {
     try {
       const data: FlaskSystemInfo = await fetchApi("/api/system-info")
@@ -129,20 +180,25 @@ export function ProxmoxDashboard() {
   useEffect(() => {
     // Siempre fetch inicial
     fetchSystemData()
+    fetchHealthInfoCount() // Fetch info count on initial load
 
     // En overview: cada 30 segundos para actualización frecuente del estado de salud
     // En otras tabs: cada 60 segundos para reducir carga
     let interval: ReturnType<typeof setInterval> | null = null
+    let healthInterval: ReturnType<typeof setInterval> | null = null
     if (activeTab === "overview") {
       interval = setInterval(fetchSystemData, 30000) // 30 segundos
+      healthInterval = setInterval(fetchHealthInfoCount, 30000) // Also refresh info count
     } else {
       interval = setInterval(fetchSystemData, 60000) // 60 segundos
+      healthInterval = setInterval(fetchHealthInfoCount, 60000) // Also refresh info count
     }
 
     return () => {
       if (interval) clearInterval(interval)
+      if (healthInterval) clearInterval(healthInterval)
     }
-  }, [fetchSystemData, activeTab])
+  }, [fetchSystemData, fetchHealthInfoCount, activeTab])
 
   useEffect(() => {
     const handleChangeTab = (event: CustomEvent) => {
