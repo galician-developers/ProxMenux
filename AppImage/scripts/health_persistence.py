@@ -1284,11 +1284,16 @@ class HealthPersistence:
             print(f"[HealthPersistence] Error registering disk {device_name}: {e}")
 
     def _get_disk_registry_id(self, cursor, device_name: str,
-                               serial: Optional[str] = None) -> Optional[int]:
+                               serial: Optional[str] = None,
+                               prefer_with_observations: bool = True) -> Optional[int]:
         """Find disk_registry.id, matching by serial first, then device_name.
         
         Also handles ATA-to-block cross-references: if looking for 'sdh' also
         checks entries with ATA names that share the same serial.
+        
+        When prefer_with_observations=True, prioritizes records that have
+        linked observations, which helps with USB disks that may have
+        multiple registry entries (one with serial, one without).
         """
         if serial:
             cursor.execute(
@@ -1297,14 +1302,33 @@ class HealthPersistence:
             row = cursor.fetchone()
             if row:
                 return row[0]
+        
         # Fallback: match by device_name (strip /dev/ prefix)
         clean_dev = device_name.replace('/dev/', '')
-        cursor.execute(
-            'SELECT id FROM disk_registry WHERE device_name = ? ORDER BY last_seen DESC LIMIT 1',
-            (clean_dev,))
-        row = cursor.fetchone()
-        if row:
-            return row[0]
+        
+        if prefer_with_observations:
+            # First try to find a registry entry that has observations linked
+            # This handles USB disks where errors may be recorded under a different
+            # registry entry (e.g., one without serial)
+            cursor.execute('''
+                SELECT dr.id FROM disk_registry dr
+                LEFT JOIN disk_observations do ON dr.id = do.disk_registry_id
+                WHERE dr.device_name = ?
+                GROUP BY dr.id
+                ORDER BY COUNT(do.id) DESC, dr.last_seen DESC
+                LIMIT 1
+            ''', (clean_dev,))
+            row = cursor.fetchone()
+            if row:
+                return row[0]
+        else:
+            cursor.execute(
+                'SELECT id FROM disk_registry WHERE device_name = ? ORDER BY last_seen DESC LIMIT 1',
+                (clean_dev,))
+            row = cursor.fetchone()
+            if row:
+                return row[0]
+        
         # Last resort: search for ATA-named entries that might refer to this device
         # This handles cases where observations were recorded under 'ata8'
         # but we're querying for 'sdh'
