@@ -1513,27 +1513,50 @@ class HealthPersistence:
 
     def get_disk_observations(self, device_name: Optional[str] = None,
                                serial: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Get active (non-dismissed) observations for one disk or all disks."""
+        """Get active (non-dismissed) observations for one disk or all disks.
+        
+        For USB disks that may have multiple registry entries (one with serial,
+        one without), this searches ALL registry entries matching the device_name
+        to ensure observations are found regardless of which entry recorded them.
+        """
         try:
             conn = self._get_conn()
             cursor = conn.cursor()
             
             if device_name or serial:
-                disk_id = self._get_disk_registry_id(cursor,
-                                                      device_name or '', serial)
-                if not disk_id:
+                clean_dev = (device_name or '').replace('/dev/', '')
+                
+                # Get ALL disk_registry IDs that match this device_name
+                # This handles USB disks with multiple registry entries
+                cursor.execute(
+                    'SELECT id FROM disk_registry WHERE device_name = ?',
+                    (clean_dev,))
+                all_ids = [row[0] for row in cursor.fetchall()]
+                
+                # Also try to find by serial if provided
+                if serial:
+                    cursor.execute(
+                        'SELECT id FROM disk_registry WHERE serial = ? AND serial != ""',
+                        (serial,))
+                    serial_ids = [row[0] for row in cursor.fetchall()]
+                    all_ids = list(set(all_ids + serial_ids))
+                
+                if not all_ids:
                     conn.close()
                     return []
-                cursor.execute('''
+                
+                # Query observations for ALL matching registry entries
+                placeholders = ','.join('?' * len(all_ids))
+                cursor.execute(f'''
                     SELECT o.id, o.error_type, o.error_signature,
                            o.first_occurrence, o.last_occurrence,
                            o.occurrence_count, o.raw_message, o.severity, o.dismissed,
                            d.device_name, d.serial, d.model
                     FROM disk_observations o
                     JOIN disk_registry d ON o.disk_registry_id = d.id
-                    WHERE o.disk_registry_id = ? AND o.dismissed = 0
+                    WHERE o.disk_registry_id IN ({placeholders}) AND o.dismissed = 0
                     ORDER BY o.last_occurrence DESC
-                ''', (disk_id,))
+                ''', all_ids)
             else:
                 cursor.execute('''
                     SELECT o.id, o.error_type, o.error_signature,
