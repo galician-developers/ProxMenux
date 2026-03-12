@@ -198,7 +198,12 @@ def check_proxmox_version() -> Dict[str, Any]:
             # OCI support requires Proxmox VE 9.1+
             result["oci_support"] = (major > 9) or (major == 9 and minor >= 1)
         
-        if not result["oci_support"]:
+        # Also check if skopeo is available (required for OCI)
+        if result["oci_support"] and not shutil.which("skopeo"):
+            result["oci_support"] = False
+            result["error"] = "skopeo not found. Install with: apt install skopeo"
+        
+        if not result["oci_support"] and not result.get("error"):
             result["error"] = f"OCI support requires Proxmox VE 9.1+, found {result['version']}"
             
     except Exception as e:
@@ -269,6 +274,7 @@ def _get_vmid_for_app(app_id: str) -> Optional[int]:
 def pull_oci_image(image: str, tag: str = "latest", storage: str = DEFAULT_STORAGE) -> Dict[str, Any]:
     """
     Pull an OCI image from a registry and store as LXC template.
+    Uses skopeo to download OCI images (the same method Proxmox GUI uses).
     
     Args:
         image: Image name (e.g., "docker.io/tailscale/tailscale")
@@ -290,50 +296,66 @@ def pull_oci_image(image: str, tag: str = "latest", storage: str = DEFAULT_STORA
         result["message"] = pve_info.get("error", "OCI not supported")
         return result
     
-    # Normalize image name
-    if not image.startswith(("docker.io/", "ghcr.io/", "quay.io/")):
-        image = f"docker.io/{image}"
-    
-    full_image = f"{image}:{tag}"
-    
-    logger.info(f"Pulling OCI image: {full_image}")
-    print(f"[*] Pulling OCI image: {full_image}")
-    
-    # Use pveam to download OCI image
-    # pveam download <storage> <image> --url <registry_url>
-    rc, out, err = _run_pve_cmd([
-        "pveam", "download", storage, full_image
-    ], timeout=300)
-    
-    if rc != 0:
-        # Try alternative syntax
-        rc, out, err = _run_pve_cmd([
-            "pvesh", "create", f"/nodes/localhost/storage/{storage}/download-url",
-            "--content", "vztmpl",
-            "--url", f"oci://{full_image}"
-        ], timeout=300)
-    
-    if rc != 0:
-        result["message"] = f"Failed to pull image: {err}"
-        logger.error(f"Pull failed: {err}")
+    # Check skopeo is available
+    if not shutil.which("skopeo"):
+        result["message"] = "skopeo not found. Please install: apt install skopeo"
         return result
     
-    # Find the downloaded template
-    rc, out, _ = _run_pve_cmd(["pveam", "list", storage])
-    if rc == 0:
-        for line in out.splitlines():
-            # Look for matching template (may have been renamed)
-            image_name = image.split("/")[-1]
-            if image_name in line and tag in line:
-                result["template"] = line.split()[0]
-                break
+    # Normalize image name
+    if not image.startswith(("docker.io/", "ghcr.io/", "quay.io/", "registry.")):
+        image = f"docker.io/{image}"
     
-    if not result["template"]:
-        # Construct expected template name
-        image_name = image.replace("/", "-").replace(".", "-")
-        result["template"] = f"{storage}:vztmpl/{image_name}-{tag}.tar.zst"
+    full_ref = f"{image}:{tag}"
+    
+    logger.info(f"Pulling OCI image: {full_ref}")
+    print(f"[*] Pulling OCI image: {full_ref}")
+    
+    # Get the template cache directory for the storage
+    # Default is /var/lib/vz/template/cache
+    template_dir = "/var/lib/vz/template/cache"
+    
+    # Try to get correct path from storage config
+    rc, out, _ = _run_pve_cmd(["pvesm", "path", f"{storage}:vztmpl/test"])
+    if rc == 0 and out.strip():
+        # Extract directory from path
+        template_dir = os.path.dirname(out.strip())
+    
+    # Create filename from image reference
+    # Format: registry-name-tag.tar (similar to what Proxmox does)
+    filename = full_ref.replace("docker.io/", "").replace("/", "-").replace(":", "-") + ".tar"
+    template_path = os.path.join(template_dir, filename)
+    
+    # Use skopeo to download the image
+    # This is exactly what Proxmox does internally
+    try:
+        proc = subprocess.run(
+            ["skopeo", "copy", f"docker://{full_ref}", f"oci-archive:{template_path}"],
+            capture_output=True,
+            text=True,
+            timeout=600  # 10 minutes timeout for large images
+        )
+        
+        if proc.returncode != 0:
+            result["message"] = f"Failed to pull image: {proc.stderr}"
+            logger.error(f"skopeo copy failed: {proc.stderr}")
+            return result
+            
+    except subprocess.TimeoutExpired:
+        result["message"] = "Image pull timed out after 10 minutes"
+        return result
+    except Exception as e:
+        result["message"] = f"Failed to pull image: {e}"
+        logger.error(f"Pull failed: {e}")
+        return result
+    
+    # Verify the template was created
+    if not os.path.exists(template_path):
+        result["message"] = "Image downloaded but template file not found"
+        return result
     
     result["success"] = True
+    result["template"] = f"{storage}:vztmpl/{filename}"
+    result["template_path"] = template_path
     result["message"] = "Image pulled successfully"
     print(f"[OK] Image pulled: {result['template']}")
     
