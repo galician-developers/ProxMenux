@@ -7,7 +7,8 @@ from pathlib import Path
 import requests
 
 # ---------- Config ----------
-API_URL = "https://api.github.com/repos/community-scripts/ProxmoxVE/contents/frontend/public/json"
+# API_URL = "https://api.github.com/repos/community-scripts/ProxmoxVE/contents/frontend/public/json"
+API_URL = "https://api.github.com/repos/community-scripts/ProxmoxVE-Frontend-Archive/contents/frontend/public/json"
 SCRIPT_BASE = "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main"
 
 # Escribimos siempre en <raiz_repo>/json/helpers_cache.json, independientemente del cwd
