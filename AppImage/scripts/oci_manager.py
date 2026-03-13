@@ -311,9 +311,10 @@ def pull_oci_image(image: str, tag: str = "latest", storage: str = DEFAULT_STORA
     print(f"[*] Pulling OCI image: {full_ref}")
     
     # Create a safe filename from the image reference
-    # e.g., docker.io/tailscale/tailscale:stable -> tailscale-tailscale-stable.tar.zst
-    filename = image.replace("docker.io/", "").replace("ghcr.io/", "").replace("/", "-")
-    filename = f"{filename}-{tag}.tar.zst"
+    # e.g., docker.io/tailscale/tailscale:stable -> tailscale-tailscale-stable.tar
+    # Note: Use .tar extension (not .tar.zst) - skopeo creates uncompressed tar
+    filename = image.replace("docker.io/", "").replace("ghcr.io/", "").replace("library/", "").replace("/", "-")
+    filename = f"{filename}-{tag}.tar"
     
     # Get hostname for API
     hostname = os.uname().nodename
@@ -342,13 +343,13 @@ def pull_oci_image(image: str, tag: str = "latest", storage: str = DEFAULT_STORA
         if rc2 == 0 and out2.strip():
             template_dir = os.path.dirname(out2.strip())
         
-        template_path = os.path.join(template_dir, filename.replace(".zst", ""))
+        template_path = os.path.join(template_dir, filename)
         
-        # Use skopeo with docker-archive format
+        # Use skopeo with oci-archive format (this is what works with Proxmox 9.1)
         try:
             proc = subprocess.run(
                 ["skopeo", "copy", "--override-os", "linux", 
-                 f"docker://{full_ref}", f"docker-archive:{template_path}"],
+                 f"docker://{full_ref}", f"oci-archive:{template_path}"],
                 capture_output=True,
                 text=True,
                 timeout=600
@@ -358,8 +359,6 @@ def pull_oci_image(image: str, tag: str = "latest", storage: str = DEFAULT_STORA
                 result["message"] = f"Failed to pull image: {proc.stderr}"
                 logger.error(f"skopeo copy failed: {proc.stderr}")
                 return result
-                
-            filename = filename.replace(".zst", "")
         except subprocess.TimeoutExpired:
             result["message"] = "Image pull timed out after 10 minutes"
             return result
@@ -605,15 +604,16 @@ def deploy_app(app_id: str, config: Dict[str, Any], installed_by: str = "web") -
     print(f"[*] Creating LXC container...")
     
     # Build pct create command for OCI container
-    # Note: OCI containers in Proxmox 9.1 have specific requirements
-    # - ostype must be "unmanaged" for OCI images
-    # - features like nesting may not be compatible with all OCI images
+    # IMPORTANT: OCI containers in Proxmox 9.1 require:
+    # - ostype MUST be "unmanaged" for OCI images (critical!)
+    # - unprivileged is recommended for security
     pct_cmd = [
         "pct", "create", str(vmid), template,
         "--hostname", hostname,
         "--memory", str(container_def.get("memory", 512)),
         "--cores", str(container_def.get("cores", 1)),
         "--rootfs", f"local-lvm:{container_def.get('disk_size', 4)}",
+        "--ostype", "unmanaged",
         "--unprivileged", "0" if container_def.get("privileged") else "1",
         "--onboot", "1"
     ]
