@@ -268,6 +268,119 @@ def _get_vmid_for_app(app_id: str) -> Optional[int]:
     return instance.get("vmid") if instance else None
 
 
+def _find_alpine_template(storage: str = DEFAULT_STORAGE) -> Optional[str]:
+    """Find an available Alpine LXC template."""
+    template_dir = "/var/lib/vz/template/cache"
+    
+    # Try to get correct path from storage config
+    rc, out, _ = _run_pve_cmd(["pvesm", "path", f"{storage}:vztmpl/test"])
+    if rc == 0 and out.strip():
+        template_dir = os.path.dirname(out.strip())
+    
+    # Look for Alpine templates
+    try:
+        templates = os.listdir(template_dir)
+        alpine_templates = [t for t in templates if t.startswith("alpine-") and t.endswith((".tar.xz", ".tar.gz", ".tar"))]
+        
+        if alpine_templates:
+            # Sort to get latest version
+            alpine_templates.sort(reverse=True)
+            return f"{storage}:vztmpl/{alpine_templates[0]}"
+    except Exception as e:
+        logger.error(f"Failed to find Alpine template: {e}")
+    
+    return None
+
+
+def _install_packages_in_lxc(vmid: int, packages: List[str], install_method: str = "apk") -> bool:
+    """Install packages inside an LXC container."""
+    if not packages:
+        return True
+    
+    print(f"[*] Installing packages: {', '.join(packages)}")
+    
+    if install_method == "apk":
+        # Alpine Linux
+        cmd = ["pct", "exec", str(vmid), "--", "apk", "add"] + packages
+    elif install_method == "apt":
+        # Debian/Ubuntu
+        _run_pve_cmd(["pct", "exec", str(vmid), "--", "apt-get", "update"], timeout=120)
+        cmd = ["pct", "exec", str(vmid), "--", "apt-get", "install", "-y"] + packages
+    else:
+        logger.error(f"Unknown install method: {install_method}")
+        return False
+    
+    rc, out, err = _run_pve_cmd(cmd, timeout=300)
+    
+    if rc != 0:
+        logger.error(f"Failed to install packages: {err}")
+        return False
+    
+    print(f"[OK] Packages installed")
+    return True
+
+
+def _enable_services_in_lxc(vmid: int, services: List[str], install_method: str = "apk") -> bool:
+    """Enable and start services inside an LXC container."""
+    if not services:
+        return True
+    
+    print(f"[*] Enabling services: {', '.join(services)}")
+    
+    for service in services:
+        if install_method == "apk":
+            # Alpine uses OpenRC
+            _run_pve_cmd(["pct", "exec", str(vmid), "--", "rc-update", "add", service], timeout=30)
+            _run_pve_cmd(["pct", "exec", str(vmid), "--", "service", service, "start"], timeout=30)
+        else:
+            # Debian/Ubuntu uses systemd
+            _run_pve_cmd(["pct", "exec", str(vmid), "--", "systemctl", "enable", service], timeout=30)
+            _run_pve_cmd(["pct", "exec", str(vmid), "--", "systemctl", "start", service], timeout=30)
+    
+    print(f"[OK] Services enabled")
+    return True
+
+
+def _configure_tailscale(vmid: int, config: Dict[str, Any]) -> bool:
+    """Configure Tailscale inside the container."""
+    auth_key = config.get("auth_key", "")
+    if not auth_key:
+        logger.warning("No auth_key provided for Tailscale")
+        return False
+    
+    print(f"[*] Configuring Tailscale...")
+    
+    # Build tailscale up command
+    ts_cmd = ["tailscale", "up", f"--authkey={auth_key}"]
+    
+    hostname = config.get("hostname")
+    if hostname:
+        ts_cmd.append(f"--hostname={hostname}")
+    
+    advertise_routes = config.get("advertise_routes")
+    if advertise_routes:
+        if isinstance(advertise_routes, list):
+            advertise_routes = ",".join(advertise_routes)
+        ts_cmd.append(f"--advertise-routes={advertise_routes}")
+    
+    if config.get("exit_node"):
+        ts_cmd.append("--advertise-exit-node")
+    
+    if config.get("accept_routes"):
+        ts_cmd.append("--accept-routes")
+    
+    # Run tailscale up
+    rc, out, err = _run_pve_cmd(["pct", "exec", str(vmid), "--"] + ts_cmd, timeout=60)
+    
+    if rc != 0:
+        logger.error(f"Tailscale configuration failed: {err}")
+        print(f"[!] Tailscale error: {err}")
+        return False
+    
+    print(f"[OK] Tailscale configured")
+    return True
+
+
 # =================================================================
 # OCI Image Management
 # =================================================================
@@ -345,11 +458,12 @@ def pull_oci_image(image: str, tag: str = "latest", storage: str = DEFAULT_STORA
         
         template_path = os.path.join(template_dir, filename)
         
-        # Use skopeo with oci-archive format (this is what works with Proxmox 9.1)
+        # Use skopeo with docker-archive format (works with multi-layer images in Proxmox 9.1)
+        # Note: oci-archive fails with multi-layer images, docker-archive works
         try:
             proc = subprocess.run(
-                ["skopeo", "copy", "--override-os", "linux", 
-                 f"docker://{full_ref}", f"oci-archive:{template_path}"],
+                ["skopeo", "copy", "--override-os", "linux", "--override-arch", "amd64",
+                 f"docker://{full_ref}", f"docker-archive:{template_path}"],
                 capture_output=True,
                 text=True,
                 timeout=600
@@ -569,17 +683,7 @@ def deploy_app(app_id: str, config: Dict[str, Any], installed_by: str = "web") -
         return result
     
     container_def = app_def.get("container", {})
-    image = container_def.get("image", "")
-    
-    if not image:
-        result["message"] = "No container image specified in app definition"
-        return result
-    
-    # Parse image and tag
-    if ":" in image:
-        image_name, tag = image.rsplit(":", 1)
-    else:
-        image_name, tag = image, "latest"
+    container_type = container_def.get("type", "oci")
     
     # Get next available VMID
     vmid = _get_next_vmid()
@@ -590,33 +694,60 @@ def deploy_app(app_id: str, config: Dict[str, Any], installed_by: str = "web") -
     logger.info(f"Deploying {app_id} as LXC {vmid}")
     print(f"[*] Deploying {app_id} as LXC container (VMID: {vmid})")
     
-    # Step 1: Pull OCI image
-    print(f"[*] Pulling OCI image: {image}")
-    pull_result = pull_oci_image(image_name, tag)
-    
-    if not pull_result["success"]:
-        result["message"] = pull_result["message"]
-        return result
-    
-    template = pull_result["template"]
+    # Determine deployment method: LXC traditional or OCI image
+    if container_type == "lxc":
+        # Use traditional LXC with Alpine template + package installation
+        # This is more reliable than OCI images which have bugs in Proxmox 9.1
+        template = _find_alpine_template()
+        if not template:
+            result["message"] = "Alpine template not found. Please download it from CT Templates."
+            return result
+        
+        print(f"[*] Using LXC template: {template}")
+        use_oci = False
+    else:
+        # OCI image deployment (may have issues with multi-layer images)
+        image = container_def.get("image", "")
+        if not image:
+            result["message"] = "No container image specified in app definition"
+            return result
+        
+        if ":" in image:
+            image_name, tag = image.rsplit(":", 1)
+        else:
+            image_name, tag = image, "latest"
+        
+        print(f"[*] Pulling OCI image: {image}")
+        pull_result = pull_oci_image(image_name, tag)
+        
+        if not pull_result["success"]:
+            result["message"] = pull_result["message"]
+            return result
+        
+        template = pull_result["template"]
+        use_oci = True
     
     # Step 2: Create LXC container
     print(f"[*] Creating LXC container...")
     
-    # Build pct create command for OCI container
-    # IMPORTANT: OCI containers in Proxmox 9.1 require:
-    # - ostype MUST be "unmanaged" for OCI images (critical!)
-    # - unprivileged is recommended for security
     pct_cmd = [
         "pct", "create", str(vmid), template,
         "--hostname", hostname,
         "--memory", str(container_def.get("memory", 512)),
         "--cores", str(container_def.get("cores", 1)),
         "--rootfs", f"local-lvm:{container_def.get('disk_size', 4)}",
-        "--ostype", "unmanaged",
         "--unprivileged", "0" if container_def.get("privileged") else "1",
         "--onboot", "1"
     ]
+    
+    # Add ostype for OCI containers
+    if use_oci:
+        pct_cmd.extend(["--ostype", "unmanaged"])
+    
+    # Add features (nesting, etc.)
+    features = container_def.get("features", [])
+    if features:
+        pct_cmd.extend(["--features", ",".join(features)])
     
     # Network configuration - use simple bridge with DHCP
     pct_cmd.extend(["--net0", "name=eth0,bridge=vmbr0,ip=dhcp"])
@@ -642,30 +773,26 @@ def deploy_app(app_id: str, config: Dict[str, Any], installed_by: str = "web") -
         except Exception as e:
             logger.warning(f"Could not apply extra LXC config: {e}")
     
-    # Step 4: Configure environment variables
-    env_vars = []
-    
-    # Add static env vars from container definition
-    for env in container_def.get("environment", []):
-        env_name = env.get("name", "")
-        env_value = env.get("value", "")
+    # Step 4: Configure environment variables (only for OCI containers)
+    if use_oci:
+        env_vars = []
+        for env in container_def.get("environment", []):
+            env_name = env.get("name", "")
+            env_value = env.get("value", "")
+            
+            if env_value.startswith("$"):
+                config_key = env_value[1:]
+                env_value = config.get(config_key, env.get("default", ""))
+            
+            if env_name and env_value:
+                env_vars.append(f"{env_name}={env_value}")
         
-        # Substitute config values
-        if env_value.startswith("$"):
-            config_key = env_value[1:]
-            env_value = config.get(config_key, env.get("default", ""))
-        
-        if env_name and env_value:
-            env_vars.append(f"{env_name}={env_value}")
-    
-    # Set environment via pct set
-    if env_vars:
-        # Proxmox 9.1 supports environment variables for OCI containers
-        for i, env in enumerate(env_vars):
-            _run_pve_cmd(["pct", "set", str(vmid), f"--lxc.environment", env])
+        if env_vars:
+            for env in env_vars:
+                _run_pve_cmd(["pct", "set", str(vmid), f"--lxc.environment", env])
     
     # Step 5: Enable IP forwarding if needed (for VPN containers)
-    if "tailscale" in image.lower() or container_def.get("requires_ip_forward"):
+    if container_def.get("requires_ip_forward"):
         _enable_host_ip_forwarding()
     
     # Step 6: Start the container
@@ -675,13 +802,30 @@ def deploy_app(app_id: str, config: Dict[str, Any], installed_by: str = "web") -
     if rc != 0:
         result["message"] = f"Container created but failed to start: {err}"
         logger.error(f"pct start failed: {err}")
-        # Don't return - container exists, just not started
+        return result
     
-    # Step 6: Save instance data
+    # Step 7: For LXC containers, install packages and configure
+    if not use_oci:
+        packages = container_def.get("packages", [])
+        install_method = container_def.get("install_method", "apk")
+        
+        if packages:
+            if not _install_packages_in_lxc(vmid, packages, install_method):
+                result["message"] = "Container created but package installation failed"
+                return result
+        
+        services = container_def.get("services", [])
+        if services:
+            _enable_services_in_lxc(vmid, services, install_method)
+        
+        # Special handling for Tailscale
+        if "tailscale" in packages:
+            _configure_tailscale(vmid, config)
+    
+    # Step 8: Save instance data
     instance_dir = os.path.join(INSTANCES_DIR, app_id)
     os.makedirs(instance_dir, exist_ok=True)
     
-    # Save config (encrypted)
     config_file = os.path.join(instance_dir, "config.json")
     config_schema = app_def.get("config_schema", {})
     encrypted_config = encrypt_config_sensitive_fields(config, config_schema)
@@ -703,8 +847,8 @@ def deploy_app(app_id: str, config: Dict[str, Any], installed_by: str = "web") -
         "instance_name": hostname,
         "installed_at": datetime.now().isoformat(),
         "installed_by": installed_by,
-        "image": image,
-        "template": template
+        "template": template,
+        "container_type": container_type
     }
     _save_installed(installed)
     
