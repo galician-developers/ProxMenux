@@ -530,11 +530,11 @@ export function SecureGatewaySetup() {
               </li>
             </ul>
           </div>
-          <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
-            <p className="text-xs text-yellow-500 flex items-start gap-2">
+          <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-3">
+            <p className="text-xs text-cyan-400 flex items-start gap-2">
               <Info className="h-4 w-4 flex-shrink-0 mt-0.5" />
               You{"'"}ll need a free Tailscale account. If you don{"'"}t have one, you can create it at{" "}
-              <a href="https://tailscale.com" target="_blank" rel="noopener noreferrer" className="underline">
+              <a href="https://tailscale.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-cyan-300">
                 tailscale.com
               </a>
             </p>
@@ -589,8 +589,8 @@ export function SecureGatewaySetup() {
 
           {/* Approval notice */}
           {(config.access_mode !== "none" || config.exit_node) && !deploying && (
-            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
-              <p className="text-xs text-yellow-500 flex items-start gap-2">
+            <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-3">
+              <p className="text-xs text-cyan-400 flex items-start gap-2">
                 <Info className="h-4 w-4 flex-shrink-0 mt-0.5" />
                 <span>
                   After deployment, you{"'"}ll need to <strong>approve the subnet routes</strong>
@@ -844,10 +844,10 @@ export function SecureGatewaySetup() {
             </DialogHeader>
             
             <div className="space-y-4">
-              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
-                <p className="text-sm font-medium text-yellow-500 flex items-center gap-2 mb-2">
-                  <AlertTriangle className="h-4 w-4" />
-                  Action Required in Tailscale Admin
+              <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-4">
+                <p className="text-sm font-medium text-cyan-400 flex items-center gap-2 mb-2">
+                  <Info className="h-4 w-4" />
+                  Next Step: Approve in Tailscale Admin
                 </p>
                 <p className="text-sm text-muted-foreground mb-3">
                   You need to approve the following settings in your Tailscale admin console for them to take effect:
