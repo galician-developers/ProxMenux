@@ -304,7 +304,7 @@ export function SecureGatewaySetup() {
   const handleRemove = async () => {
     setActionLoading("remove")
     try {
-      await fetchApi("/api/oci/installed/secure-gateway/remove", { method: "DELETE" })
+      await fetchApi("/api/oci/installed/secure-gateway", { method: "DELETE" })
       setShowRemoveConfirm(false)
       await loadStatus()
     } catch (err) {
