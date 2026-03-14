@@ -1512,7 +1512,7 @@ ${(report.sections && report.sections.length > 0) ? `
                   Enable authentication to protect your dashboard when accessing from non-private networks.
                 </p>
               </div>
-              <Button onClick={() => setShowSetupForm(true)} className="w-full bg-blue-500 hover:bg-blue-600">
+              <Button onClick={() => setShowSetupForm(true)} className="bg-blue-500 hover:bg-blue-600">
                 <Shield className="h-4 w-4 mr-2" />
                 Enable Authentication
               </Button>
@@ -1584,13 +1584,13 @@ ${(report.sections && report.sections.length > 0) ? `
 
           {authEnabled && (
             <div className="space-y-3">
-              <Button onClick={handleLogout} variant="outline" className="w-full bg-transparent">
+              <Button onClick={handleLogout} variant="outline" className="bg-transparent">
                 <LogOut className="h-4 w-4 mr-2" />
                 Logout
               </Button>
 
               {!showChangePassword && (
-                <Button onClick={() => setShowChangePassword(true)} variant="outline" className="w-full">
+                <Button onClick={() => setShowChangePassword(true)} variant="outline">
                   <Lock className="h-4 w-4 mr-2" />
                   Change Password
                 </Button>
@@ -1681,7 +1681,7 @@ ${(report.sections && report.sections.length > 0) ? `
                     </div>
                   </div>
 
-                  <Button onClick={() => setShow2FASetup(true)} variant="outline" className="w-full">
+                  <Button onClick={() => setShow2FASetup(true)} variant="outline">
                     <Shield className="h-4 w-4 mr-2" />
                     Enable Two-Factor Authentication
                   </Button>
@@ -1696,7 +1696,7 @@ ${(report.sections && report.sections.length > 0) ? `
                   </div>
 
                   {!show2FADisable && (
-                    <Button onClick={() => setShow2FADisable(true)} variant="outline" className="w-full">
+                    <Button onClick={() => setShow2FADisable(true)} variant="outline">
                       <Shield className="h-4 w-4 mr-2" />
                       Disable 2FA
                     </Button>
@@ -1745,7 +1745,7 @@ ${(report.sections && report.sections.length > 0) ? `
                 </div>
               )}
 
-              <Button onClick={handleDisableAuth} variant="destructive" className="w-full" disabled={loading}>
+              <Button onClick={handleDisableAuth} variant="destructive" disabled={loading}>
                 Disable Authentication
               </Button>
             </div>
@@ -2011,7 +2011,7 @@ ${(report.sections && report.sections.length > 0) ? `
             </div>
 
             {!showApiTokenSection && !apiToken && (
-              <Button onClick={() => setShowApiTokenSection(true)} className="w-full bg-purple-500 hover:bg-purple-600">
+              <Button onClick={() => setShowApiTokenSection(true)} className="bg-purple-500 hover:bg-purple-600">
                 <Key className="h-4 w-4 mr-2" />
                 Generate New API Token
               </Button>

@@ -1124,7 +1124,7 @@ export function SecureGatewaySetup() {
 
           <Button
             onClick={() => setShowWizard(true)}
-            className="w-full bg-cyan-600 hover:bg-cyan-700"
+            className="bg-cyan-600 hover:bg-cyan-700"
             disabled={!runtimeAvailable}
           >
             <ShieldCheck className="h-4 w-4 mr-2" />
