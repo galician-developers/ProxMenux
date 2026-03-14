@@ -1,3 +1,38 @@
+## 2026-03-14
+
+### New version v1.1.9 — *Helper Scripts Catalog Rebuilt*
+
+### Changed
+
+- **Helper Scripts Menu — Full Catalog Rebuild**
+  The Helper Scripts catalog has been completely rebuilt to adapt to the new data architecture of the [Community Scripts](https://community-scripts.github.io/ProxmoxVE/) project.
+
+  The previous implementation relied on a `metadata.json` file that no longer exists in the upstream repository. The catalog now connects directly to the **PocketBase API** (`db.community-scripts.org`), which is the new official data source for the project.
+
+  A new GitHub Actions workflow generates a local `helpers_cache.json` index that replaces the old metadata dependency. This new cache is richer, more structured, and includes:
+  - Script type, slug, description, notes, and default credentials
+  - OS variants per script (e.g. Debian, Alpine) — each shown as a separate selectable option in the menu
+  - Direct GitHub URL and **Mirror URL** (`git.community-scripts.org`) for every script
+  - Category names embedded directly in the cache — no external requests needed to build the menu
+  - Additional metadata: default port, website, logo, update support, ARM availability
+
+  Scripts that support multiple OS variants (e.g. Docker with Alpine and Debian) now correctly show **one entry per OS**, each with its own GitHub and Mirror download option — restoring the behavior that existed before the upstream migration.
+
+---
+
+### 🎖 Special Acknowledgment
+
+This update would not have been possible without the openness and collaboration of the **Community Scripts** maintainers.
+
+When the upstream metadata structure changed and broke the ProxMenux catalog, the maintainers responded quickly, explained the new architecture in detail, and provided all the information needed to rebuild the integration cleanly.
+
+Special thanks to:
+
+- **MickLeskCanbiZ ([@MickLesk](https://github.com/MickLesk))** — for documenting the new script path structure by type and slug, and for the clear and direct technical guidance.
+- **Michel Roegl-Brunner ([@michelroegl-brunner](https://github.com/michelroegl-brunner))** — for explaining the new PocketBase collections structure (`script_scripts`, `script_categories`).
+
+The Helper Scripts project is an extraordinary resource for the Proxmox community. The scripts belong entirely to their authors and maintainers — ProxMenux simply offers a guided way to discover and launch them. All credit goes to the community behind [community-scripts/ProxmoxVE](https://github.com/community-scripts/ProxmoxVE).
+
 ## 2025-09-18
 
 ### New version v1.1.8 — *ProxMenux Offline Mode*
