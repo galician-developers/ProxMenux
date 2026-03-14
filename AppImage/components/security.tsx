@@ -1846,7 +1846,7 @@ ${(report.sections && report.sections.length > 0) ? `
 
                   <Button
                     onClick={() => handleEnableSsl("proxmox")}
-                    className="w-full bg-green-600 hover:bg-green-700 text-white"
+                    className="bg-green-600 hover:bg-green-700 text-white"
                     disabled={configuringSsl || sslRestarting}
                   >
                     {configuringSsl ? (
@@ -1880,7 +1880,6 @@ ${(report.sections && report.sections.length > 0) ? `
                     <Button
                       onClick={() => setShowCustomCertForm(true)}
                       variant="outline"
-                      className="w-full"
                     >
                       <FileKey className="h-4 w-4 mr-2" />
                       Use Custom Certificate
@@ -2165,11 +2164,10 @@ ${(report.sections && report.sections.length > 0) ? `
                 <Button
                   onClick={() => {
                     setApiToken("")
-                    setShowApiTokenSection(false)
-                  }}
-                  variant="outline"
-                  className="w-full"
-                >
+                  setShowApiTokenSection(false)
+                }}
+                variant="outline"
+              >
                   Done
                 </Button>
               </div>
@@ -3015,7 +3013,7 @@ ${(report.sections && report.sections.length > 0) ? `
 
               <Button
                 onClick={() => setShowFail2banInstaller(true)}
-                className="w-full bg-red-600 hover:bg-red-700 text-white"
+                className="bg-red-600 hover:bg-red-700 text-white"
               >
                 <Download className="h-4 w-4 mr-2" />
                 Install and Configure Fail2Ban
@@ -3466,7 +3464,7 @@ ${(report.sections && report.sections.length > 0) ? `
 
               <Button
                 onClick={() => setShowLynisInstaller(true)}
-                className="w-full bg-cyan-600 hover:bg-cyan-700 text-white"
+                className="bg-cyan-600 hover:bg-cyan-700 text-white"
               >
                 <Download className="h-4 w-4 mr-2" />
                 Install Lynis
@@ -3976,7 +3974,7 @@ ${(report.sections && report.sections.length > 0) ? `
               <Button
                 onClick={handleRunLynisAudit}
                 disabled={lynisAuditRunning}
-                className="w-full bg-cyan-600 hover:bg-cyan-700 text-white"
+                className="bg-cyan-600 hover:bg-cyan-700 text-white"
               >
                 {lynisAuditRunning ? (
                   <>
