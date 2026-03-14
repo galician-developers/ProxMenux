@@ -248,9 +248,6 @@ def deploy_app():
             }), 400
         
         logger.info(f"Deploy request: app_id={app_id}, config_keys={list(config.keys())}")
-        logger.info(f"Deploy config advertise_routes: {config.get('advertise_routes')}")
-        logger.info(f"Deploy config access_mode: {config.get('access_mode')}")
-        logger.info(f"Full config: {config}")
         
         result = oci_manager.deploy_app(app_id, config, installed_by="web")
         

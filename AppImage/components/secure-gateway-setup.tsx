@@ -154,7 +154,6 @@ export function SecureGatewaySetup() {
           // Remove CIDR notation if present (e.g., "192.168.0.55/24" -> "192.168.0.55")
           const ip = hostIpValue.split("/")[0]
           setHostIp(ip)
-          console.log("[v0] Host IP for Host Only mode:", ip)
         }
       }
     } catch (err) {
@@ -194,15 +193,22 @@ export function SecureGatewaySetup() {
         }
       }
 
-      // Prepare config - for "host_only" mode, set routes to just the host IP
+      // Prepare config based on access_mode
       const deployConfig = { ...config }
-      console.log("[v0] access_mode:", config.access_mode, "hostIp:", hostIp)
-      if (config.access_mode === "host_only" && hostIp) {
-        deployConfig.advertise_routes = [`${hostIp}/32`]
-        console.log("[v0] Set advertise_routes for host_only:", deployConfig.advertise_routes)
-      }
       
-      console.log("[v0] Final deploy config:", JSON.stringify(deployConfig, null, 2))
+      if (config.access_mode === "host_only" && hostIp) {
+        // Host only: just the host IP
+        deployConfig.advertise_routes = [`${hostIp}/32`]
+      } else if (config.access_mode === "proxmox_network") {
+        // Proxmox network: use the recommended network (should already be set)
+        if (!deployConfig.advertise_routes?.length) {
+          const recommendedNetwork = networks.find((n) => n.recommended) || networks[0]
+          if (recommendedNetwork) {
+            deployConfig.advertise_routes = [recommendedNetwork.subnet]
+          }
+        }
+      }
+      // For "custom", the user has already selected networks manually
 
       setDeployProgress("Creating LXC container...")
       
@@ -419,6 +425,29 @@ export function SecureGatewaySetup() {
         )
 
       case "select":
+        // Special handling for access_mode to auto-select networks
+        const handleSelectChange = (value: string) => {
+          const newConfig = { ...config, [fieldName]: value }
+          
+          // When access_mode changes to proxmox_network, auto-select the recommended network
+          if (fieldName === "access_mode" && value === "proxmox_network") {
+            const recommendedNetwork = networks.find((n) => n.recommended) || networks[0]
+            if (recommendedNetwork) {
+              newConfig.advertise_routes = [recommendedNetwork.subnet]
+            }
+          }
+          // Clear routes when switching to host_only
+          if (fieldName === "access_mode" && value === "host_only") {
+            newConfig.advertise_routes = []
+          }
+          // Clear routes when switching to custom (user will select manually)
+          if (fieldName === "access_mode" && value === "custom") {
+            newConfig.advertise_routes = []
+          }
+          
+          setConfig(newConfig)
+        }
+        
         return (
           <div key={fieldName} className="space-y-3">
             <Label className="text-sm font-medium">
@@ -429,7 +458,7 @@ export function SecureGatewaySetup() {
               {field.options?.map((opt) => (
                 <div
                   key={opt.value}
-                  onClick={() => setConfig({ ...config, [fieldName]: opt.value })}
+                  onClick={() => handleSelectChange(opt.value)}
                   className={`p-3 rounded-lg border cursor-pointer transition-colors ${
                     config[fieldName] === opt.value
                       ? "border-cyan-500 bg-cyan-500/10"
@@ -444,10 +473,17 @@ export function SecureGatewaySetup() {
                         <div className="w-2 h-2 rounded-full bg-cyan-500" />
                       )}
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <p className="font-medium text-sm">{opt.label}</p>
                       {opt.description && (
                         <p className="text-xs text-muted-foreground">{opt.description}</p>
+                      )}
+                      {/* Show selected network for proxmox_network */}
+                      {fieldName === "access_mode" && opt.value === "proxmox_network" && config[fieldName] === "proxmox_network" && (
+                        <p className="text-xs text-cyan-400 mt-1 flex items-center gap-1">
+                          <Network className="h-3 w-3" />
+                          {networks.find((n) => n.recommended)?.subnet || networks[0]?.subnet || "No network detected"}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -527,8 +563,8 @@ export function SecureGatewaySetup() {
                 <p className="font-medium text-sm">{field.label}</p>
                 <p className="text-xs text-muted-foreground">{field.description}</p>
                 {field.warning && config[fieldName] && (
-                  <p className="text-xs text-yellow-500 mt-1 flex items-center gap-1">
-                    <AlertTriangle className="h-3 w-3" />
+                  <p className="text-xs text-cyan-400 mt-2 flex items-start gap-1.5 bg-cyan-500/10 p-2 rounded">
+                    <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
                     {field.warning}
                   </p>
                 )}
@@ -1115,18 +1151,27 @@ export function SecureGatewaySetup() {
             </DialogTitle>
           </DialogHeader>
 
-          {/* Progress indicator */}
+          {/* Progress indicator - filter out "advanced" step if using Proxmox Only */}
           <div className="flex items-center gap-1 mb-4">
-            {wizardSteps.map((step, idx) => (
-              <div
-                key={step.id}
-                className={`flex-1 h-1 rounded-full transition-colors ${
-                  idx < currentStep ? "bg-cyan-500" :
-                  idx === currentStep ? "bg-cyan-500" :
-                  "bg-muted"
-                }`}
-              />
-            ))}
+            {wizardSteps
+              .filter((step) => !(config.access_mode === "host_only" && step.id === "advanced"))
+              .map((step, idx) => {
+                // Recalculate the actual step index accounting for skipped steps
+                const actualIdx = wizardSteps.findIndex((s) => s.id === step.id)
+                const adjustedCurrentStep = config.access_mode === "host_only" 
+                  ? (currentStep > wizardSteps.findIndex((s) => s.id === "advanced") ? currentStep - 1 : currentStep)
+                  : currentStep
+                return (
+                  <div
+                    key={step.id}
+                    className={`flex-1 h-1 rounded-full transition-colors ${
+                      idx < adjustedCurrentStep ? "bg-cyan-500" :
+                      idx === adjustedCurrentStep ? "bg-cyan-500" :
+                      "bg-muted"
+                    }`}
+                  />
+                )
+              })}
           </div>
 
           {renderWizardContent()}
@@ -1135,7 +1180,14 @@ export function SecureGatewaySetup() {
           <div className="flex justify-between pt-4 border-t border-border">
             <Button
               variant="outline"
-              onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
+              onClick={() => {
+                // Skip "advanced" step when going back if using "Proxmox Only"
+                let prevStep = currentStep - 1
+                if (config.access_mode === "host_only" && wizardSteps[prevStep]?.id === "advanced") {
+                  prevStep = prevStep - 1
+                }
+                setCurrentStep(Math.max(0, prevStep))
+              }}
               disabled={currentStep === 0 || deploying}
             >
               Back
@@ -1143,7 +1195,14 @@ export function SecureGatewaySetup() {
             
             {currentStep < wizardSteps.length - 1 ? (
               <Button
-                onClick={() => setCurrentStep(currentStep + 1)}
+                onClick={() => {
+                  // Skip "advanced" step when using "Proxmox Only"
+                  let nextStep = currentStep + 1
+                  if (config.access_mode === "host_only" && wizardSteps[nextStep]?.id === "advanced") {
+                    nextStep = nextStep + 1
+                  }
+                  setCurrentStep(nextStep)
+                }}
                 className="bg-cyan-600 hover:bg-cyan-700"
               >
                 Continue
