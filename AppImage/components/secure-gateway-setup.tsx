@@ -22,11 +22,12 @@ import { fetchApi } from "../lib/api-config"
 
 interface NetworkInfo {
   interface: string
-  type: string
-  address: string
+  type?: string
+  address?: string
+  ip?: string
   subnet: string
-  prefixlen: number
-  recommended: boolean
+  prefixlen?: number
+  recommended?: boolean
 }
 
 interface AppStatus {
@@ -145,11 +146,13 @@ export function SecureGatewaySetup() {
       const networksRes = await fetchApi("/api/oci/networks")
       if (networksRes.success) {
         setNetworks(networksRes.networks || [])
-        // Get host IP for "Host Only" mode - extract just the IP without CIDR
+        // Get host IP for "Host Only" mode
         const primaryNetwork = networksRes.networks?.find((n: NetworkInfo) => n.recommended) || networksRes.networks?.[0]
-        if (primaryNetwork?.address) {
+        // Backend returns "ip" field with the host IP address
+        const hostIpValue = primaryNetwork?.ip || primaryNetwork?.address
+        if (hostIpValue) {
           // Remove CIDR notation if present (e.g., "192.168.0.55/24" -> "192.168.0.55")
-          const ip = primaryNetwork.address.split("/")[0]
+          const ip = hostIpValue.split("/")[0]
           setHostIp(ip)
           console.log("[v0] Host IP for Host Only mode:", ip)
         }
