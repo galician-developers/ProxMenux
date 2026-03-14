@@ -89,6 +89,13 @@ export function SecureGatewaySetup() {
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
   const [showAuthKey, setShowAuthKey] = useState(false)
   
+  // Post-deploy confirmation
+  const [showPostDeployInfo, setShowPostDeployInfo] = useState(false)
+  const [deployedConfig, setDeployedConfig] = useState<Record<string, any>>({})
+  
+  // Host IP for "Host Only" mode
+  const [hostIp, setHostIp] = useState("")
+  
   // Password visibility
   const [visiblePasswords, setVisiblePasswords] = useState<Set<string>>(new Set())
 
@@ -132,6 +139,11 @@ export function SecureGatewaySetup() {
       const networksRes = await fetchApi("/api/oci/networks")
       if (networksRes.success) {
         setNetworks(networksRes.networks || [])
+        // Get host IP for "Host Only" mode
+        const primaryNetwork = networksRes.networks?.find((n: NetworkInfo) => n.recommended) || networksRes.networks?.[0]
+        if (primaryNetwork?.address) {
+          setHostIp(primaryNetwork.address)
+        }
       }
     } catch (err) {
       console.error("Failed to load data:", err)
@@ -170,13 +182,19 @@ export function SecureGatewaySetup() {
         }
       }
 
-      setDeployProgress("Pulling container image...")
+      // Prepare config - for "host_only" mode, set routes to just the host IP
+      const deployConfig = { ...config }
+      if (config.access_mode === "host_only" && hostIp) {
+        deployConfig.advertise_routes = [`${hostIp}/32`]
+      }
+
+      setDeployProgress("Creating LXC container...")
       
       const result = await fetchApi("/api/oci/deploy", {
         method: "POST",
         body: JSON.stringify({
           app_id: "secure-gateway",
-          config: config
+          config: deployConfig
         })
       })
 
@@ -193,12 +211,19 @@ export function SecureGatewaySetup() {
 
       setDeployProgress("Gateway deployed successfully!")
       
-      // Wait and reload status
+      // Wait and reload status, then show post-deploy info
       setTimeout(async () => {
         await loadStatus()
         setShowWizard(false)
         setDeploying(false)
         setCurrentStep(0)
+        
+        // Show post-deploy confirmation if user needs to approve routes
+        const needsApproval = deployConfig.advertise_routes?.length > 0 || deployConfig.exit_node || deployConfig.accept_routes
+        if (needsApproval) {
+          setDeployedConfig(deployConfig)
+          setShowPostDeployInfo(true)
+        }
       }, 2000)
 
     } catch (err: any) {
@@ -539,6 +564,12 @@ export function SecureGatewaySetup() {
                 <span className="text-muted-foreground">Access Mode:</span>
                 <span>{config.access_mode === "host_only" ? "Host Only" : config.access_mode === "proxmox_network" ? "Proxmox Network" : "Custom Networks"}</span>
               </div>
+              {config.access_mode === "host_only" && hostIp && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Host Access:</span>
+                  <span className="text-right font-mono text-xs">{hostIp}/32</span>
+                </div>
+              )}
               {(config.access_mode === "proxmox_network" || config.access_mode === "custom") && config.advertise_routes?.length > 0 && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Networks:</span>
@@ -555,6 +586,19 @@ export function SecureGatewaySetup() {
               </div>
             </div>
           </div>
+
+          {/* Approval notice */}
+          {(config.access_mode !== "none" || config.exit_node) && !deploying && (
+            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
+              <p className="text-xs text-yellow-500 flex items-start gap-2">
+                <Info className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                <span>
+                  After deployment, you{"'"}ll need to <strong>approve the subnet routes</strong>
+                  {config.exit_node && <span> and <strong>exit node</strong></span>} in your Tailscale Admin Console for them to work.
+                </span>
+              </p>
+            </div>
+          )}
 
           {deploying && (
             <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-4">
@@ -717,7 +761,7 @@ export function SecureGatewaySetup() {
             </div>
 
             {/* Tailscale admin link */}
-            <div className="pt-2 border-t border-border">
+            <div className="pt-2 border-t border-border flex items-center justify-between">
               <a
                 href="https://login.tailscale.com/admin/machines"
                 target="_blank"
@@ -781,6 +825,82 @@ export function SecureGatewaySetup() {
                   <Trash2 className="h-4 w-4 mr-1" />
                 )}
                 Remove
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Post-Deploy Info Dialog */}
+        <Dialog open={showPostDeployInfo} onOpenChange={setShowPostDeployInfo}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-green-500" />
+                Gateway Deployed Successfully
+              </DialogTitle>
+              <DialogDescription>
+                One more step to complete the setup
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
+                <p className="text-sm font-medium text-yellow-500 flex items-center gap-2 mb-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  Action Required in Tailscale Admin
+                </p>
+                <p className="text-sm text-muted-foreground mb-3">
+                  You need to approve the following settings in your Tailscale admin console for them to take effect:
+                </p>
+                <ul className="space-y-2 text-sm">
+                  {deployedConfig.advertise_routes?.length > 0 && (
+                    <li className="flex items-start gap-2">
+                      <Network className="h-4 w-4 text-cyan-500 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <span className="font-medium">Subnet Routes:</span>
+                        <span className="text-muted-foreground ml-1">
+                          {deployedConfig.advertise_routes.join(", ")}
+                        </span>
+                      </div>
+                    </li>
+                  )}
+                  {deployedConfig.exit_node && (
+                    <li className="flex items-start gap-2">
+                      <Globe className="h-4 w-4 text-cyan-500 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <span className="font-medium">Exit Node:</span>
+                        <span className="text-muted-foreground ml-1">
+                          Route all internet traffic
+                        </span>
+                      </div>
+                    </li>
+                  )}
+                </ul>
+              </div>
+              
+              <div className="bg-muted/30 rounded-lg p-4 space-y-2">
+                <p className="text-sm font-medium">How to approve:</p>
+                <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
+                  <li>Go to Tailscale Admin Console</li>
+                  <li>Find the machine "{deployedConfig.hostname || "proxmox-gateway"}"</li>
+                  <li>Click on it and approve the pending routes/exit node</li>
+                </ol>
+              </div>
+            </div>
+            
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setShowPostDeployInfo(false)}>
+                I{"'"}ll do it later
+              </Button>
+              <Button
+                onClick={() => {
+                  window.open("https://login.tailscale.com/admin/machines", "_blank")
+                  setShowPostDeployInfo(false)
+                }}
+                className="bg-cyan-600 hover:bg-cyan-700"
+              >
+                Open Tailscale Admin
+                <ExternalLink className="h-4 w-4 ml-2" />
               </Button>
             </div>
           </DialogContent>
