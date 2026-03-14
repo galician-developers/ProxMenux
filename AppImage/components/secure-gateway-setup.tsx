@@ -16,7 +16,7 @@ import {
 import {
   ShieldCheck, Globe, ExternalLink, Loader2, CheckCircle, XCircle,
   Play, Square, RotateCw, Trash2, FileText, ChevronRight, ChevronDown,
-  AlertTriangle, Info, Network, Eye, EyeOff, Settings, Wifi,
+  AlertTriangle, Info, Network, Eye, EyeOff, Settings, Wifi, Key,
 } from "lucide-react"
 import { fetchApi } from "../lib/api-config"
 
@@ -96,6 +96,12 @@ export function SecureGatewaySetup() {
   // Host IP for "Host Only" mode
   const [hostIp, setHostIp] = useState("")
   
+  // Update Auth Key
+  const [showUpdateAuthKey, setShowUpdateAuthKey] = useState(false)
+  const [newAuthKey, setNewAuthKey] = useState("")
+  const [updateAuthKeyLoading, setUpdateAuthKeyLoading] = useState(false)
+  const [updateAuthKeyError, setUpdateAuthKeyError] = useState("")
+  
   // Password visibility
   const [visiblePasswords, setVisiblePasswords] = useState<Set<string>>(new Set())
 
@@ -139,10 +145,13 @@ export function SecureGatewaySetup() {
       const networksRes = await fetchApi("/api/oci/networks")
       if (networksRes.success) {
         setNetworks(networksRes.networks || [])
-        // Get host IP for "Host Only" mode
+        // Get host IP for "Host Only" mode - extract just the IP without CIDR
         const primaryNetwork = networksRes.networks?.find((n: NetworkInfo) => n.recommended) || networksRes.networks?.[0]
         if (primaryNetwork?.address) {
-          setHostIp(primaryNetwork.address)
+          // Remove CIDR notation if present (e.g., "192.168.0.55/24" -> "192.168.0.55")
+          const ip = primaryNetwork.address.split("/")[0]
+          setHostIp(ip)
+          console.log("[v0] Host IP for Host Only mode:", ip)
         }
       }
     } catch (err) {
@@ -187,6 +196,8 @@ export function SecureGatewaySetup() {
       if (config.access_mode === "host_only" && hostIp) {
         deployConfig.advertise_routes = [`${hostIp}/32`]
       }
+      
+      console.log("[v0] Deploy config:", JSON.stringify(deployConfig, null, 2))
 
       setDeployProgress("Creating LXC container...")
       
@@ -218,10 +229,15 @@ export function SecureGatewaySetup() {
         setDeploying(false)
         setCurrentStep(0)
         
-        // Show post-deploy confirmation if user needs to approve routes
-        const needsApproval = deployConfig.advertise_routes?.length > 0 || deployConfig.exit_node || deployConfig.accept_routes
+        // Show post-deploy confirmation - always show when access mode is set (routes need approval)
+        const needsApproval = deployConfig.access_mode && deployConfig.access_mode !== "none"
         if (needsApproval) {
-          setDeployedConfig(deployConfig)
+          // Ensure advertise_routes is set for the dialog
+          const finalConfig = { ...deployConfig }
+          if (deployConfig.access_mode === "host_only" && hostIp) {
+            finalConfig.advertise_routes = [`${hostIp}/32`]
+          }
+          setDeployedConfig(finalConfig)
           setShowPostDeployInfo(true)
         }
       }, 2000)
@@ -245,6 +261,40 @@ export function SecureGatewaySetup() {
       console.error(`Failed to ${action}:`, err)
     } finally {
       setActionLoading(null)
+    }
+  }
+
+  const handleUpdateAuthKey = async () => {
+    if (!newAuthKey.trim()) {
+      setUpdateAuthKeyError("Auth Key is required")
+      return
+    }
+    
+    setUpdateAuthKeyLoading(true)
+    setUpdateAuthKeyError("")
+    
+    try {
+      const result = await fetchApi("/api/oci/installed/secure-gateway/update-auth-key", {
+        method: "POST",
+        body: JSON.stringify({
+          auth_key: newAuthKey.trim()
+        })
+      })
+      
+      if (!result.success) {
+        setUpdateAuthKeyError(result.message || "Failed to update auth key")
+        setUpdateAuthKeyLoading(false)
+        return
+      }
+      
+      // Success - close dialog and reload status
+      setShowUpdateAuthKey(false)
+      setNewAuthKey("")
+      await loadStatus()
+    } catch (err: any) {
+      setUpdateAuthKeyError(err.message || "Failed to update auth key")
+    } finally {
+      setUpdateAuthKeyLoading(false)
     }
   }
 
@@ -588,14 +638,17 @@ export function SecureGatewaySetup() {
           </div>
 
           {/* Approval notice */}
-          {(config.access_mode !== "none" || config.exit_node) && !deploying && (
-            <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-3">
+          {(config.access_mode && config.access_mode !== "none") && !deploying && (
+            <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-3 space-y-2">
               <p className="text-xs text-cyan-400 flex items-start gap-2">
                 <Info className="h-4 w-4 flex-shrink-0 mt-0.5" />
                 <span>
-                  After deployment, you{"'"}ll need to <strong>approve the subnet routes</strong>
-                  {config.exit_node && <span> and <strong>exit node</strong></span>} in your Tailscale Admin Console for them to work.
+                  <strong>Important:</strong> After deployment, you must approve the subnet route in Tailscale Admin for remote access to work.
+                  {config.exit_node && <span> You{"'"}ll also need to approve the exit node.</span>}
                 </span>
+              </p>
+              <p className="text-xs text-muted-foreground ml-6">
+                We{"'"}ll show you exactly what to do after the gateway is deployed.
               </p>
             </div>
           )}
@@ -760,8 +813,18 @@ export function SecureGatewaySetup() {
               </Button>
             </div>
 
-            {/* Tailscale admin link */}
+            {/* Update Auth Key button */}
             <div className="pt-2 border-t border-border flex items-center justify-between">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowUpdateAuthKey(true)}
+                disabled={actionLoading !== null}
+                className="text-xs h-7 px-2"
+              >
+                <Key className="h-3 w-3 mr-1" />
+                Update Auth Key
+              </Button>
               <a
                 href="https://login.tailscale.com/admin/machines"
                 target="_blank"
@@ -830,6 +893,75 @@ export function SecureGatewaySetup() {
           </DialogContent>
         </Dialog>
 
+        {/* Update Auth Key Dialog */}
+        <Dialog open={showUpdateAuthKey} onOpenChange={(open) => {
+          setShowUpdateAuthKey(open)
+          if (!open) {
+            setNewAuthKey("")
+            setUpdateAuthKeyError("")
+          }
+        }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Key className="h-5 w-5 text-cyan-500" />
+                Update Auth Key
+              </DialogTitle>
+              <DialogDescription>
+                Enter a new Tailscale auth key to re-authenticate the gateway. This is useful if your previous key has expired.
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">New Auth Key</label>
+                <Input
+                  type="password"
+                  value={newAuthKey}
+                  onChange={(e) => setNewAuthKey(e.target.value)}
+                  placeholder="tskey-auth-..."
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Generate a new key at{" "}
+                  <a
+                    href="https://login.tailscale.com/admin/settings/keys"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-cyan-500 hover:text-cyan-400 underline"
+                  >
+                    Tailscale Admin &gt; Settings &gt; Keys
+                  </a>
+                </p>
+              </div>
+              
+              {updateAuthKeyError && (
+                <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+                  <p className="text-xs text-red-500">{updateAuthKeyError}</p>
+                </div>
+              )}
+            </div>
+            
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setShowUpdateAuthKey(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleUpdateAuthKey}
+                disabled={updateAuthKeyLoading || !newAuthKey.trim()}
+                className="bg-cyan-600 hover:bg-cyan-700"
+              >
+                {updateAuthKeyLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Key className="h-4 w-4 mr-2" />
+                )}
+                Update Key
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* Post-Deploy Info Dialog */}
         <Dialog open={showPostDeployInfo} onOpenChange={setShowPostDeployInfo}>
           <DialogContent className="max-w-md">
@@ -880,11 +1012,23 @@ export function SecureGatewaySetup() {
               
               <div className="bg-muted/30 rounded-lg p-4 space-y-2">
                 <p className="text-sm font-medium">How to approve:</p>
-                <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
-                  <li>Go to Tailscale Admin Console</li>
-                  <li>Find the machine "{deployedConfig.hostname || "proxmox-gateway"}"</li>
-                  <li>Click on it and approve the pending routes/exit node</li>
+                <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
+                  <li>Click the button below to open Tailscale Admin</li>
+                  <li>Find <span className="font-mono text-cyan-400">{deployedConfig.hostname || "proxmox-gateway"}</span> in the machines list</li>
+                  <li>Click on it to open machine details</li>
+                  <li>In the <strong>Subnets</strong> section, click <strong>Edit</strong> and enable the route</li>
+                  {deployedConfig.exit_node && (
+                    <li>In <strong>Routing Settings</strong>, enable <strong>Exit Node</strong></li>
+                  )}
                 </ol>
+              </div>
+              
+              <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3">
+                <p className="text-xs text-green-400">
+                  Once approved, you can access your Proxmox host at{" "}
+                  <span className="font-mono">{deployedConfig.advertise_routes?.[0]?.replace("/32", "") || hostIp}:8006</span> (Proxmox UI) or{" "}
+                  <span className="font-mono">{deployedConfig.advertise_routes?.[0]?.replace("/32", "") || hostIp}:8008</span> (ProxMenux Monitor) from any device with Tailscale.
+                </p>
               </div>
             </div>
             

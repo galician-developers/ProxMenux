@@ -1112,6 +1112,82 @@ def detect_networks() -> List[Dict[str, str]]:
 
 
 # =================================================================
+# Update Auth Key (for Tailscale re-authentication)
+# =================================================================
+def update_auth_key(app_id: str, auth_key: str) -> Dict[str, Any]:
+    """Update the Tailscale auth key for a running gateway."""
+    result = {"success": False, "message": "", "app_id": app_id}
+    
+    # Get VMID for the app
+    vmid = _get_vmid_for_app(app_id)
+    if not vmid:
+        result["message"] = f"App {app_id} not found or not installed"
+        return result
+    
+    # Check if container is running
+    status = get_app_status(app_id)
+    if status.get("state") != "running":
+        result["message"] = "Container must be running to update auth key"
+        return result
+    
+    logger.info(f"Updating auth key for {app_id} (VMID: {vmid})")
+    print(f"[*] Updating auth key for {app_id}...")
+    
+    # Run tailscale logout first to clear existing state
+    print(f"[*] Logging out of Tailscale...")
+    _run_pve_cmd(["pct", "exec", str(vmid), "--", "tailscale", "logout"], timeout=30)
+    
+    # Wait a moment for logout to complete
+    import time
+    time.sleep(2)
+    
+    # Run tailscale up with new auth key
+    print(f"[*] Authenticating with new key...")
+    
+    # Load saved config to get original settings
+    config_file = os.path.join(INSTANCES_DIR, app_id, "config.json")
+    config = {}
+    if os.path.exists(config_file):
+        try:
+            with open(config_file) as f:
+                saved_config = json.load(f)
+                config = saved_config.get("values", {})
+        except:
+            pass
+    
+    # Build tailscale up command
+    ts_cmd = ["tailscale", "up", f"--authkey={auth_key}"]
+    
+    hostname = config.get("hostname")
+    if hostname:
+        ts_cmd.append(f"--hostname={hostname}")
+    
+    advertise_routes = config.get("advertise_routes")
+    if advertise_routes:
+        if isinstance(advertise_routes, list):
+            advertise_routes = ",".join(advertise_routes)
+        ts_cmd.append(f"--advertise-routes={advertise_routes}")
+    
+    if config.get("exit_node"):
+        ts_cmd.append("--advertise-exit-node")
+    
+    if config.get("accept_routes"):
+        ts_cmd.append("--accept-routes")
+    
+    rc, out, err = _run_pve_cmd(["pct", "exec", str(vmid), "--"] + ts_cmd, timeout=60)
+    
+    if rc != 0:
+        logger.error(f"Failed to update auth key: {err}")
+        result["message"] = f"Failed to authenticate: {err}"
+        return result
+    
+    print(f"[OK] Auth key updated successfully")
+    result["success"] = True
+    result["message"] = "Auth key updated successfully"
+    return result
+
+
+# =================================================================
 # Runtime Detection (for backward compatibility)
 # =================================================================
 def detect_runtime() -> Dict[str, Any]:

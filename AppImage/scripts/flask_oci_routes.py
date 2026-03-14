@@ -475,3 +475,48 @@ def get_app_status(app_id: str):
             "success": False,
             "message": str(e)
         }), 500
+
+
+@oci_bp.route("/installed/<app_id>/update-auth-key", methods=["POST"])
+@require_auth
+def update_auth_key(app_id: str):
+    """
+    Update the Tailscale auth key for an installed gateway.
+    
+    This is useful when the auth key expires and the gateway needs to re-authenticate.
+    
+    Body:
+        {
+            "auth_key": "tskey-auth-xxx"
+        }
+    
+    Returns:
+        Success status and message.
+    """
+    try:
+        data = request.get_json()
+        
+        if not data or "auth_key" not in data:
+            return jsonify({
+                "success": False,
+                "message": "auth_key is required in request body"
+            }), 400
+        
+        auth_key = data["auth_key"]
+        
+        if not auth_key.startswith("tskey-"):
+            return jsonify({
+                "success": False,
+                "message": "Invalid auth key format. Should start with 'tskey-'"
+            }), 400
+        
+        result = oci_manager.update_auth_key(app_id, auth_key)
+        status_code = 200 if result.get("success") else 400
+        return jsonify(result), status_code
+        
+    except Exception as e:
+        logger.error(f"Failed to update auth key: {e}")
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
