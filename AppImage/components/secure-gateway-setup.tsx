@@ -714,19 +714,30 @@ export function SecureGatewaySetup() {
             {/* Action buttons */}
             <div className="flex flex-wrap gap-2">
               {isRunning ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleAction("stop")}
-                  disabled={actionLoading !== null}
-                >
-                  {actionLoading === "stop" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4 mr-1" />}
-                  Stop
-                </Button>
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleAction("stop")}
+                    disabled={actionLoading !== null}
+                  >
+                    {actionLoading === "stop" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4 mr-1" />}
+                    Stop
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleAction("restart")}
+                    disabled={actionLoading !== null}
+                  >
+                    {actionLoading === "restart" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4 mr-1" />}
+                    Restart
+                  </Button>
+                </>
               ) : (
                 <Button
                   size="sm"
-                  variant="outline"
+                  className="bg-green-600 hover:bg-green-700 text-white"
                   onClick={() => handleAction("start")}
                   disabled={actionLoading !== null}
                 >
@@ -734,15 +745,6 @@ export function SecureGatewaySetup() {
                   Start
                 </Button>
               )}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => handleAction("restart")}
-                disabled={actionLoading !== null}
-              >
-                {actionLoading === "restart" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4 mr-1" />}
-                Restart
-              </Button>
               <Button
                 size="sm"
                 variant="outline"
