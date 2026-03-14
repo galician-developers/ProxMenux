@@ -17944,7 +17944,7 @@
     ],
     "port": 8080,
     "website": "https://zitadel.com",
-    "documentation": "https://zitadel.com/docs/guides/overview",
+    "documentation": "https://zitadel.com/docs",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/zitadel.webp",
     "updateable": true,
     "privileged": false,
