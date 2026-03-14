@@ -349,6 +349,9 @@ def _configure_tailscale(vmid: int, config: Dict[str, Any]) -> bool:
         return False
     
     print(f"[*] Configuring Tailscale...")
+    print(f"[DEBUG] Config received: {list(config.keys())}")
+    print(f"[DEBUG] advertise_routes: {config.get('advertise_routes')}")
+    print(f"[DEBUG] exit_node: {config.get('exit_node')}")
     
     # Build tailscale up command
     ts_cmd = ["tailscale", "up", f"--authkey={auth_key}"]
@@ -362,6 +365,7 @@ def _configure_tailscale(vmid: int, config: Dict[str, Any]) -> bool:
         if isinstance(advertise_routes, list):
             advertise_routes = ",".join(advertise_routes)
         ts_cmd.append(f"--advertise-routes={advertise_routes}")
+        print(f"[DEBUG] Adding routes: {advertise_routes}")
     
     if config.get("exit_node"):
         ts_cmd.append("--advertise-exit-node")
@@ -820,6 +824,8 @@ def deploy_app(app_id: str, config: Dict[str, Any], installed_by: str = "web") -
         
         # Special handling for Tailscale
         if "tailscale" in packages:
+            logger.info(f"Configuring Tailscale with config keys: {list(config.keys())}")
+            logger.info(f"advertise_routes value: {config.get('advertise_routes')}")
             _configure_tailscale(vmid, config)
     
     # Step 8: Save instance data

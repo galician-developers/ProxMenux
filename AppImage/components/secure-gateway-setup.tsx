@@ -193,11 +193,13 @@ export function SecureGatewaySetup() {
 
       // Prepare config - for "host_only" mode, set routes to just the host IP
       const deployConfig = { ...config }
+      console.log("[v0] access_mode:", config.access_mode, "hostIp:", hostIp)
       if (config.access_mode === "host_only" && hostIp) {
         deployConfig.advertise_routes = [`${hostIp}/32`]
+        console.log("[v0] Set advertise_routes for host_only:", deployConfig.advertise_routes)
       }
       
-      console.log("[v0] Deploy config:", JSON.stringify(deployConfig, null, 2))
+      console.log("[v0] Final deploy config:", JSON.stringify(deployConfig, null, 2))
 
       setDeployProgress("Creating LXC container...")
       
