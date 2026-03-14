@@ -1151,15 +1151,15 @@ export function SecureGatewaySetup() {
             </DialogTitle>
           </DialogHeader>
 
-          {/* Progress indicator - filter out "advanced" step if using Proxmox Only */}
+          {/* Progress indicator - filter out "options" step if using Proxmox Only */}
           <div className="flex items-center gap-1 mb-4">
             {wizardSteps
-              .filter((step) => !(config.access_mode === "host_only" && step.id === "advanced"))
+              .filter((step) => !(config.access_mode === "host_only" && step.id === "options"))
               .map((step, idx) => {
                 // Recalculate the actual step index accounting for skipped steps
                 const actualIdx = wizardSteps.findIndex((s) => s.id === step.id)
                 const adjustedCurrentStep = config.access_mode === "host_only" 
-                  ? (currentStep > wizardSteps.findIndex((s) => s.id === "advanced") ? currentStep - 1 : currentStep)
+                  ? (currentStep > wizardSteps.findIndex((s) => s.id === "options") ? currentStep - 1 : currentStep)
                   : currentStep
                 return (
                   <div
@@ -1181,9 +1181,9 @@ export function SecureGatewaySetup() {
             <Button
               variant="outline"
               onClick={() => {
-                // Skip "advanced" step when going back if using "Proxmox Only"
+                // Skip "options" step when going back if using "Proxmox Only"
                 let prevStep = currentStep - 1
-                if (config.access_mode === "host_only" && wizardSteps[prevStep]?.id === "advanced") {
+                if (config.access_mode === "host_only" && wizardSteps[prevStep]?.id === "options") {
                   prevStep = prevStep - 1
                 }
                 setCurrentStep(Math.max(0, prevStep))
@@ -1196,9 +1196,9 @@ export function SecureGatewaySetup() {
             {currentStep < wizardSteps.length - 1 ? (
               <Button
                 onClick={() => {
-                  // Skip "advanced" step when using "Proxmox Only"
+                  // Skip "options" step when using "Proxmox Only"
                   let nextStep = currentStep + 1
-                  if (config.access_mode === "host_only" && wizardSteps[nextStep]?.id === "advanced") {
+                  if (config.access_mode === "host_only" && wizardSteps[nextStep]?.id === "options") {
                     nextStep = nextStep + 1
                   }
                   setCurrentStep(nextStep)
