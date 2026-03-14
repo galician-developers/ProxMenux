@@ -192,17 +192,27 @@ export function SecureGatewaySetup() {
         }
       }
 
-      setDeployProgress("Creating LXC container...")
-      setDeployPercent(20)
-
-      // Small delay to show progress
-      await new Promise(resolve => setTimeout(resolve, 500))
-      setDeployProgress("Downloading Tailscale image...")
-      setDeployPercent(35)
-
-      await new Promise(resolve => setTimeout(resolve, 300))
-      setDeployProgress("Configuring container...")
-      setDeployPercent(50)
+      // Simulate progress while API call runs
+      const progressInterval = setInterval(() => {
+        setDeployPercent(prev => {
+          if (prev < 85) {
+            // Update messages based on progress
+            if (prev < 20) {
+              setDeployProgress("Creating LXC container...")
+            } else if (prev < 40) {
+              setDeployProgress("Downloading Alpine Linux template...")
+            } else if (prev < 55) {
+              setDeployProgress("Configuring container...")
+            } else if (prev < 70) {
+              setDeployProgress("Installing Tailscale...")
+            } else {
+              setDeployProgress("Connecting to Tailscale network...")
+            }
+            return prev + 3
+          }
+          return prev
+        })
+      }, 400)
 
       const result = await fetchApi("/api/oci/deploy", {
         method: "POST",
@@ -212,12 +222,7 @@ export function SecureGatewaySetup() {
         })
       })
 
-      setDeployProgress("Installing Tailscale...")
-      setDeployPercent(70)
-
-      await new Promise(resolve => setTimeout(resolve, 300))
-      setDeployProgress("Connecting to Tailscale network...")
-      setDeployPercent(85)
+      clearInterval(progressInterval)
 
       if (!result.success) {
         setDeployError(result.message || "Failed to deploy gateway")
