@@ -80,7 +80,6 @@ export function SecureGatewaySetup() {
   const [config, setConfig] = useState<Record<string, any>>({})
   const [deploying, setDeploying] = useState(false)
   const [deployProgress, setDeployProgress] = useState("")
-  const [deployPercent, setDeployPercent] = useState(0)
   const [deployError, setDeployError] = useState("")
   
   // Installed state
@@ -174,8 +173,7 @@ export function SecureGatewaySetup() {
   const handleDeploy = async () => {
     setDeploying(true)
     setDeployError("")
-    setDeployProgress("Preparing deployment...")
-    setDeployPercent(5)
+    setDeployProgress("Creating LXC container...")
 
     try {
       // Prepare config based on access_mode
@@ -192,27 +190,21 @@ export function SecureGatewaySetup() {
         }
       }
 
-      // Simulate progress while API call runs
+      // Show progress messages while deploying
+      const messages = [
+        "Creating LXC container...",
+        "Downloading Alpine Linux template...",
+        "Configuring container...",
+        "Installing Tailscale...",
+        "Connecting to Tailscale network..."
+      ]
+      let msgIndex = 0
       const progressInterval = setInterval(() => {
-        setDeployPercent(prev => {
-          if (prev < 85) {
-            // Update messages based on progress
-            if (prev < 20) {
-              setDeployProgress("Creating LXC container...")
-            } else if (prev < 40) {
-              setDeployProgress("Downloading Alpine Linux template...")
-            } else if (prev < 55) {
-              setDeployProgress("Configuring container...")
-            } else if (prev < 70) {
-              setDeployProgress("Installing Tailscale...")
-            } else {
-              setDeployProgress("Connecting to Tailscale network...")
-            }
-            return prev + 3
-          }
-          return prev
-        })
-      }, 400)
+        msgIndex = (msgIndex + 1) % messages.length
+        if (msgIndex < messages.length - 1) {
+          setDeployProgress(messages[msgIndex])
+        }
+      }, 2000)
 
       const result = await fetchApi("/api/oci/deploy", {
         method: "POST",
@@ -227,12 +219,10 @@ export function SecureGatewaySetup() {
       if (!result.success) {
         setDeployError(result.message || "Failed to deploy gateway")
         setDeploying(false)
-        setDeployPercent(0)
         return
       }
 
       setDeployProgress("Gateway deployed successfully!")
-      setDeployPercent(100)
 
       // Show post-deploy confirmation
       const needsApproval = deployConfig.access_mode && deployConfig.access_mode !== "none"
@@ -630,16 +620,11 @@ export function SecureGatewaySetup() {
             <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-4 space-y-3">
               <div className="flex items-center gap-3">
                 <Loader2 className="h-5 w-5 text-cyan-500 animate-spin" />
-                <span className="text-sm">{deployProgress}</span>
+                <div className="flex-1">
+                  <span className="text-sm font-medium">{deployProgress}</span>
+                  <p className="text-xs text-muted-foreground mt-1">This may take a minute...</p>
+                </div>
               </div>
-              {/* Progress bar */}
-              <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                <div 
-                  className="h-full bg-cyan-500 transition-all duration-300 ease-out"
-                  style={{ width: `${deployPercent}%` }}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground text-center">{deployPercent}% complete</p>
             </div>
           )}
 
