@@ -404,12 +404,17 @@ class HealthPersistence:
     
     def is_error_active(self, error_key: str, category: Optional[str] = None) -> bool:
         """
-        Check if an error is currently active (unresolved and not acknowledged).
-        Used by checks to avoid re-recording errors that are already tracked.
+        Check if an error is currently active OR suppressed (dismissed but within suppression period).
+        Used by checks to avoid re-recording errors that are already tracked or dismissed.
+        
+        Returns True if:
+        - Error is active (unresolved and not acknowledged), OR
+        - Error is dismissed but still within its suppression period
         """
         conn = self._get_conn()
         cursor = conn.cursor()
         
+        # First check: is the error active (unresolved and not acknowledged)?
         if category:
             cursor.execute('''
                 SELECT COUNT(*) FROM errors 
@@ -423,9 +428,44 @@ class HealthPersistence:
                   AND resolved_at IS NULL AND acknowledged = 0
             ''', (error_key,))
         
-        count = cursor.fetchone()[0]
+        active_count = cursor.fetchone()[0]
+        if active_count > 0:
+            conn.close()
+            return True
+        
+        # Second check: is the error dismissed but still within suppression period?
+        # This prevents re-recording dismissed errors before their suppression expires
+        if category:
+            cursor.execute('''
+                SELECT resolved_at, suppression_hours FROM errors 
+                WHERE error_key = ? AND category = ?
+                  AND acknowledged = 1 AND resolved_at IS NOT NULL
+                ORDER BY resolved_at DESC LIMIT 1
+            ''', (error_key, category))
+        else:
+            cursor.execute('''
+                SELECT resolved_at, suppression_hours FROM errors 
+                WHERE error_key = ?
+                  AND acknowledged = 1 AND resolved_at IS NOT NULL
+                ORDER BY resolved_at DESC LIMIT 1
+            ''', (error_key,))
+        
+        row = cursor.fetchone()
         conn.close()
-        return count > 0
+        
+        if row:
+            resolved_at_str, suppression_hours = row
+            if resolved_at_str and suppression_hours:
+                try:
+                    resolved_at = datetime.fromisoformat(resolved_at_str)
+                    suppression_end = resolved_at + timedelta(hours=suppression_hours)
+                    if datetime.now() < suppression_end:
+                        # Still within suppression period - treat as "active" to prevent re-recording
+                        return True
+                except (ValueError, TypeError):
+                    pass
+        
+        return False
     
     def clear_error(self, error_key: str):
         """
