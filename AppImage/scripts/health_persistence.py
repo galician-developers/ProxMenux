@@ -895,11 +895,11 @@ class HealthPersistence:
     
     rows = cursor.fetchall()
     conn.close()
-        
-        dismissed = []
-        now = datetime.now()
-        
-        for row in rows:
+    
+    dismissed = []
+    now = datetime.now()
+    
+    for row in rows:
             error_dict = dict(row)
             if error_dict.get('details'):
                 try:
