@@ -32,7 +32,7 @@ import { DialogHeader, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Dialog as SearchDialog, DialogContent as SearchDialogContent, DialogTitle as SearchDialogTitle } from "@/components/ui/dialog"
 import "@xterm/xterm/css/xterm.css"
-import { fetchApi, getWebSocketUrl } from "@/lib/api-config"
+import { API_PORT, fetchApi } from "@/lib/api-config"
 
 interface LxcTerminalModalProps {
   open: boolean
@@ -75,7 +75,21 @@ const proxmoxCommands = [
   { cmd: "clear", desc: "Clear terminal screen" },
 ]
 
-// Use centralized getWebSocketUrl from api-config
+function getWebSocketUrl(): string {
+  if (typeof window === "undefined") {
+    return "ws://localhost:8008/ws/terminal"
+  }
+
+  const { protocol, hostname, port } = window.location
+  const isStandardPort = port === "" || port === "80" || port === "443"
+  const wsProtocol = protocol === "https:" ? "wss:" : "ws:"
+
+  if (isStandardPort) {
+    return `${wsProtocol}//${hostname}/ws/terminal`
+  } else {
+    return `${wsProtocol}//${hostname}:${API_PORT}/ws/terminal`
+  }
+}
 
 export function LxcTerminalModal({
   open: isOpen,
@@ -208,7 +222,7 @@ export function LxcTerminalModal({
       fitAddonRef.current = fitAddon
 
       // Connect WebSocket to host terminal
-      const wsUrl = getWebSocketUrl("/ws/terminal")
+      const wsUrl = getWebSocketUrl()
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
       
