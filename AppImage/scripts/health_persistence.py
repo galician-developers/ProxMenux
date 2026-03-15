@@ -892,9 +892,9 @@ class HealthPersistence:
         WHERE acknowledged = 1
         ORDER BY acknowledged_at DESC
     ''')
-        
-        rows = cursor.fetchall()
-        conn.close()
+    
+    rows = cursor.fetchall()
+    conn.close()
         
         dismissed = []
         now = datetime.now()
