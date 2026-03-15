@@ -24,12 +24,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-# Optional: cryptography for encryption
-try:
-    from cryptography.fernet import Fernet
-    ENCRYPTION_AVAILABLE = True
-except ImportError:
-    ENCRYPTION_AVAILABLE = False
+# Note: We use a simple XOR-based encryption for local token storage
+# This avoids the cryptography dependency which has Python version compatibility issues
+# (PyO3 modules compiled for specific Python versions cause ImportError on different versions)
+ENCRYPTION_AVAILABLE = False
 
 # Logging
 logger = logging.getLogger("proxmenux.oci")
@@ -66,10 +64,8 @@ def _get_or_create_encryption_key() -> bytes:
         with open(ENCRYPTION_KEY_FILE, 'rb') as f:
             return f.read()
     
-    if ENCRYPTION_AVAILABLE:
-        key = Fernet.generate_key()
-    else:
-        key = secrets.token_bytes(32)
+    # Generate a 32-byte random key
+    key = secrets.token_bytes(32)
     
     os.makedirs(os.path.dirname(ENCRYPTION_KEY_FILE), exist_ok=True)
     with open(ENCRYPTION_KEY_FILE, 'wb') as f:
@@ -80,20 +76,20 @@ def _get_or_create_encryption_key() -> bytes:
 
 
 def encrypt_sensitive_value(value: str) -> str:
-    """Encrypt a sensitive value. Returns base64-encoded string with 'ENC:' prefix."""
+    """
+    Encrypt a sensitive value using XOR with a random key.
+    Returns base64-encoded string with 'ENC:' prefix.
+    
+    Note: Uses XOR encryption which is sufficient for local token storage
+    and avoids cryptography library compatibility issues across Python versions.
+    """
     if not value:
         return value
     
     key = _get_or_create_encryption_key()
-    
-    if ENCRYPTION_AVAILABLE:
-        f = Fernet(key)
-        encrypted = f.encrypt(value.encode())
-        return "ENC:" + encrypted.decode()
-    else:
-        value_bytes = value.encode()
-        encrypted = bytes(v ^ key[i % len(key)] for i, v in enumerate(value_bytes))
-        return "ENC:" + base64.b64encode(encrypted).decode()
+    value_bytes = value.encode()
+    encrypted = bytes(v ^ key[i % len(key)] for i, v in enumerate(value_bytes))
+    return "ENC:" + base64.b64encode(encrypted).decode()
 
 
 def decrypt_sensitive_value(encrypted: str) -> str:
@@ -105,14 +101,9 @@ def decrypt_sensitive_value(encrypted: str) -> str:
     key = _get_or_create_encryption_key()
     
     try:
-        if ENCRYPTION_AVAILABLE:
-            f = Fernet(key)
-            decrypted = f.decrypt(encrypted_data.encode())
-            return decrypted.decode()
-        else:
-            encrypted_bytes = base64.b64decode(encrypted_data)
-            decrypted = bytes(v ^ key[i % len(key)] for i, v in enumerate(encrypted_bytes))
-            return decrypted.decode()
+        encrypted_bytes = base64.b64decode(encrypted_data)
+        decrypted = bytes(v ^ key[i % len(key)] for i, v in enumerate(encrypted_bytes))
+        return decrypted.decode()
     except Exception as e:
         logger.error(f"Failed to decrypt value: {e}")
         return encrypted

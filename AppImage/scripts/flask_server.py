@@ -29,12 +29,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
 
-# Try PyJWT first, fall back to our simple implementation (no cryptography dependency)
-try:
-    import jwt
-except ImportError:
-    import simple_jwt as jwt
-
+import jwt
 import psutil
 from flask import Flask, jsonify, request, send_file, send_from_directory, Response
 from flask_cors import CORS

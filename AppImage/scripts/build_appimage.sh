@@ -81,7 +81,6 @@ cp "$SCRIPT_DIR/flask_server.py" "$APP_DIR/usr/bin/"
 cp "$SCRIPT_DIR/flask_auth_routes.py" "$APP_DIR/usr/bin/" 2>/dev/null || echo "⚠️  flask_auth_routes.py not found"
 cp "$SCRIPT_DIR/auth_manager.py" "$APP_DIR/usr/bin/" 2>/dev/null || echo "⚠️  auth_manager.py not found"
 cp "$SCRIPT_DIR/jwt_middleware.py" "$APP_DIR/usr/bin/" 2>/dev/null || echo "⚠️  jwt_middleware.py not found"
-cp "$SCRIPT_DIR/simple_jwt.py" "$APP_DIR/usr/bin/" 2>/dev/null || echo "⚠️  simple_jwt.py not found"
 cp "$SCRIPT_DIR/health_monitor.py" "$APP_DIR/usr/bin/" 2>/dev/null || echo "⚠️  health_monitor.py not found"
 cp "$SCRIPT_DIR/health_persistence.py" "$APP_DIR/usr/bin/" 2>/dev/null || echo "⚠️  health_persistence.py not found"
 cp "$SCRIPT_DIR/flask_health_routes.py" "$APP_DIR/usr/bin/" 2>/dev/null || echo "⚠️  flask_health_routes.py not found"
@@ -304,6 +303,7 @@ pip3 install --target "$APP_DIR/usr/lib/python3/dist-packages" \
     h11==0.9.0 || true
 
 # Phase 2: Install modern Flask/WebSocket dependencies (will upgrade h11 and related packages)
+# Note: cryptography removed due to Python version compatibility issues (PyO3 modules)
 pip3 install --target "$APP_DIR/usr/lib/python3/dist-packages" --upgrade --no-deps \
     flask \
     flask-cors \
@@ -312,8 +312,7 @@ pip3 install --target "$APP_DIR/usr/lib/python3/dist-packages" --upgrade --no-de
     PyJWT \
     pyotp \
     segno \
-    beautifulsoup4 \
-    cryptography
+    beautifulsoup4
 
 # Phase 3: Install WebSocket with newer h11
 pip3 install --target "$APP_DIR/usr/lib/python3/dist-packages" --upgrade \
