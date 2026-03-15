@@ -13183,7 +13183,9 @@
     "category_names": [
       "Documents & Notes"
     ],
-    "notes": [],
+    "notes": [
+      "Currently the Service create an 500 HTTP issue, you should check this Solution until its fixed in Upstream. https://github.com/community-scripts/ProxmoxVE/pull/12705#issuecomment-4022106365."
+    ],
     "port": 3000,
     "website": "https://rxresume.org",
     "documentation": "https://docs.rxresume.org/",
@@ -14405,10 +14407,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00009"
+      "scriptcat00024"
     ],
     "category_names": [
-      "Monitoring & Analytics"
+      "Gaming & Leisure"
     ],
     "notes": [],
     "port": 80,
