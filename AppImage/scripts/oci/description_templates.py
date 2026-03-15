@@ -104,7 +104,7 @@ def generate_description(
 </td>
 <td style='vertical-align: middle;'>
 <h1 style='margin: 0;'>{app_name}</h1>
-<p style='margin: 0;'>Created with ProxMenuX</p>
+<p style='margin: 0;'>Created with ProxMenux</p>
 </td>
 </tr>
 </table>

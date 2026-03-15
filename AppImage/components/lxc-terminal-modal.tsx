@@ -285,6 +285,11 @@ export function LxcTerminalModal({
           return
         }
         
+        // DEBUG: Log all incoming data
+        console.log("[v0] LXC Terminal received:", JSON.stringify(event.data))
+        console.log("[v0] isInsideLxc:", isInsideLxcRef.current)
+        console.log("[v0] buffer length:", outputBufferRef.current.length)
+        
         // Buffer output until we detect we're inside the LXC
         // pct enter always enters directly without login prompt when run as root
         if (!isInsideLxcRef.current) {
@@ -295,21 +300,28 @@ export function LxcTerminalModal({
           // It will be something like "root@plex:/#" or "user@containername:~$"
           const buffer = outputBufferRef.current
           
+          console.log("[v0] Current buffer:", JSON.stringify(buffer.slice(-200)))
+          
           // Look for a prompt that:
           // 1. Comes after pct enter command
           // 2. Has @ followed by container name (not host name)
           // 3. Ends with # or $
           const pctEnterMatch = buffer.match(/pct enter \d+\r?\n/)
+          console.log("[v0] pctEnterMatch:", pctEnterMatch)
+          
           if (pctEnterMatch) {
             const afterPctEnter = buffer.substring(buffer.indexOf(pctEnterMatch[0]) + pctEnterMatch[0].length)
+            console.log("[v0] afterPctEnter:", JSON.stringify(afterPctEnter))
             
             // Find the LXC prompt - it should be a line ending with :~# :~$ :/# or similar
             // and NOT containing the host name "constructor"
             const lxcPromptMatch = afterPctEnter.match(/\r?\n?([^\r\n]*@(?!constructor)[^\r\n]*[#$]\s*)$/)
+            console.log("[v0] lxcPromptMatch:", lxcPromptMatch)
             
             if (lxcPromptMatch) {
               // Successfully inside LXC - only show from the LXC prompt onwards
               isInsideLxcRef.current = true
+              console.log("[v0] Detected inside LXC! Prompt:", lxcPromptMatch[1])
               
               // Find where the LXC prompt line starts
               const promptStart = afterPctEnter.lastIndexOf(lxcPromptMatch[1])
