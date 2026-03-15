@@ -189,6 +189,20 @@ class HealthMonitor:
     # PVE Critical Services
     PVE_SERVICES = ['pveproxy', 'pvedaemon', 'pvestatd', 'pve-cluster']
     
+    # P2 fix: Pre-compiled regex patterns for performance (avoid re-compiling on every line)
+    _BENIGN_RE = None
+    _CRITICAL_RE = None
+    _WARNING_RE = None
+    
+    @classmethod
+    def _get_compiled_patterns(cls):
+        """Lazily compile regex patterns once"""
+        if cls._BENIGN_RE is None:
+            cls._BENIGN_RE = re.compile("|".join(cls.BENIGN_ERROR_PATTERNS), re.IGNORECASE)
+            cls._CRITICAL_RE = re.compile("|".join(cls.CRITICAL_LOG_KEYWORDS), re.IGNORECASE)
+            cls._WARNING_RE = re.compile("|".join(cls.WARNING_LOG_KEYWORDS), re.IGNORECASE)
+        return cls._BENIGN_RE, cls._CRITICAL_RE, cls._WARNING_RE
+    
     def __init__(self):
         """Initialize health monitor with state tracking"""
         self.state_history = defaultdict(list)
@@ -199,6 +213,7 @@ class HealthMonitor:
         self.failed_vm_history = set()  # Track VMs that failed to start
         self.persistent_log_patterns = defaultdict(lambda: {'count': 0, 'first_seen': 0, 'last_seen': 0})
         self._unknown_counts = {}  # Track consecutive UNKNOWN cycles per category
+        self._last_cleanup_time = 0  # Throttle cleanup_old_errors calls
         
         # System capabilities - derived from Proxmox storage types at runtime (Priority 1.5)
         # SMART detection still uses filesystem check on init (lightweight)
@@ -380,12 +395,15 @@ class HealthMonitor:
         Returns JSON structure with ALL 10 categories always present.
         Now includes persistent error tracking.
         """
-        # Run cleanup on every status check so stale errors are auto-resolved
+        # Run cleanup with throttle (every 5 min) so stale errors are auto-resolved
         # using the user-configured Suppression Duration (single source of truth).
-        try:
-            health_persistence.cleanup_old_errors()
-        except Exception:
-            pass
+        current_time = time.time()
+        if current_time - self._last_cleanup_time > 300:  # 5 minutes
+            try:
+                health_persistence.cleanup_old_errors()
+                self._last_cleanup_time = current_time
+            except Exception:
+                pass
         
         active_errors = health_persistence.get_active_errors()
         # No need to create persistent_issues dict here, it's implicitly handled by the checks
@@ -1319,7 +1337,7 @@ class HealthMonitor:
                 'device': f'/dev/{device_name}',
                 'serial': serial,
                 'model': model,
-                'error_key': error_info.get('error_key') or f'disk_{device_name}',
+                'error_key': error_info.get('error_key') or f'disk_smart_{device_name}',
                 'dismissable': error_info.get('dismissable', True),
                 'is_disk_entry': True,
             }
@@ -2843,12 +2861,9 @@ class HealthMonitor:
             }
     
     def _is_benign_error(self, line: str) -> bool:
-        """Check if log line matches benign error patterns"""
-        line_lower = line.lower()
-        for pattern in self.BENIGN_ERROR_PATTERNS:
-            if re.search(pattern, line_lower):
-                return True
-        return False
+        """Check if log line matches benign error patterns (uses pre-compiled regex)"""
+        benign_re, _, _ = self._get_compiled_patterns()
+        return bool(benign_re.search(line.lower()))
     
     def _enrich_critical_log_reason(self, line: str) -> str:
         """
@@ -2969,7 +2984,7 @@ class HealthMonitor:
         # Generic classification -- very conservative to avoid false positives.
         # Only escalate if the line explicitly uses severity-level keywords
         # from the kernel or systemd (not just any line containing "error").
-        if 'kernel panic' in line_lower or 'fatal' in line_lower and 'non-fatal' not in line_lower:
+        if 'kernel panic' in line_lower or ('fatal' in line_lower and 'non-fatal' not in line_lower):
             return 'CRITICAL'
         
         # Lines from priority "err" that don't match any keyword above are
@@ -3164,7 +3179,7 @@ class HealthMonitor:
                                         device_name=base_device,
                                         serial=obs_serial,
                                         error_type='filesystem_error',
-                                        error_signature=f'fs_error_{fs_device}_{pattern_key}',
+                                        error_signature=f'fs_error_{fs_device}_{pattern_hash}',
                                         raw_message=enriched_reason[:500],
                                         severity=fs_severity.lower(),
                                     )
@@ -3253,12 +3268,25 @@ class HealthMonitor:
                                          'dismissable': True, 'occurrences': data['count']}
                             )
                 
-                patterns_to_remove = [
-                    p for p, data in self.persistent_log_patterns.items()
-                    if current_time - data['last_seen'] > 1800
-                ]
-                for pattern in patterns_to_remove:
-                    del self.persistent_log_patterns[pattern]
+        patterns_to_remove = [
+            p for p, data in self.persistent_log_patterns.items()
+            if current_time - data['last_seen'] > 1800
+        ]
+        for pattern in patterns_to_remove:
+            del self.persistent_log_patterns[pattern]
+        
+        # B5 fix: Cap size to prevent unbounded memory growth under high error load
+        MAX_LOG_PATTERNS = 500
+        if len(self.persistent_log_patterns) > MAX_LOG_PATTERNS:
+            sorted_patterns = sorted(
+                self.persistent_log_patterns.items(),
+                key=lambda x: x[1]['last_seen'],
+                reverse=True
+            )
+            self.persistent_log_patterns = defaultdict(
+                lambda: {'count': 0, 'first_seen': 0, 'last_seen': 0},
+                dict(sorted_patterns[:MAX_LOG_PATTERNS])
+            )
                 
                 unique_critical_count = len(critical_errors_found)
                 cascade_count = len(cascading_errors)
@@ -3870,12 +3898,14 @@ class HealthMonitor:
             
             # Sub-check 3: Failed login attempts (brute force detection)
             try:
-                result = subprocess.run(
-                    ['journalctl', '--since', '24 hours ago', '--no-pager'],
-                    capture_output=True,
-                    text=True,
-                    timeout=3
-                )
+            result = subprocess.run(
+                ['journalctl', '--since', '24 hours ago', '--no-pager',
+                 '-g', 'authentication failure|failed password|invalid user',
+                 '--output=cat', '-n', '5000'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
                 
                 failed_logins = 0
                 if result.returncode == 0:

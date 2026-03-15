@@ -18,6 +18,7 @@ import sqlite3
 import json
 import os
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from pathlib import Path
@@ -58,6 +59,24 @@ class HealthPersistence:
         conn.execute('PRAGMA journal_mode=WAL')
         conn.execute('PRAGMA busy_timeout=5000')
         return conn
+    
+    @contextmanager
+    def _db_connection(self, row_factory: bool = False):
+        """Context manager for safe database connections (B4 fix).
+        
+        Ensures connections are always closed, even if exceptions occur.
+        Usage:
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                ...
+        """
+        conn = self._get_conn()
+        if row_factory:
+            conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+        finally:
+            conn.close()
     
     def _init_database(self):
         """Initialize SQLite database with required tables"""
@@ -345,7 +364,8 @@ class HealthPersistence:
         if not (error_key == 'cpu_temperature' and severity == 'CRITICAL'):
             setting_key = self.CATEGORY_SETTING_MAP.get(category, '')
             if setting_key:
-                stored = self.get_setting(setting_key)
+                # P4 fix: use _get_setting_impl with existing connection to avoid deadlock
+                stored = self._get_setting_impl(conn, setting_key)
                 if stored is not None:
                     configured_hours = int(stored)
                     if configured_hours != self.DEFAULT_SUPPRESSION_HOURS:
@@ -411,54 +431,54 @@ class HealthPersistence:
         - Error is active (unresolved and not acknowledged), OR
         - Error is dismissed but still within its suppression period
         """
-        conn = self._get_conn()
-        cursor = conn.cursor()
-        
-        # First check: is the error active (unresolved and not acknowledged)?
-        if category:
-            cursor.execute('''
-                SELECT COUNT(*) FROM errors 
-                WHERE error_key = ? AND category = ?
-                  AND resolved_at IS NULL AND acknowledged = 0
-            ''', (error_key, category))
-        else:
-            cursor.execute('''
-                SELECT COUNT(*) FROM errors 
-                WHERE error_key = ? 
-                  AND resolved_at IS NULL AND acknowledged = 0
-            ''', (error_key,))
-        
-        active_count = cursor.fetchone()[0]
-        if active_count > 0:
-            conn.close()
-            return True
-        
-        # Second check: is the error dismissed but still within suppression period?
-        # This prevents re-recording dismissed errors before their suppression expires
-        if category:
-            cursor.execute('''
-                SELECT resolved_at, suppression_hours FROM errors 
-                WHERE error_key = ? AND category = ?
-                  AND acknowledged = 1 AND resolved_at IS NOT NULL
-                ORDER BY resolved_at DESC LIMIT 1
-            ''', (error_key, category))
-        else:
-            cursor.execute('''
-                SELECT resolved_at, suppression_hours FROM errors 
-                WHERE error_key = ?
-                  AND acknowledged = 1 AND resolved_at IS NOT NULL
-                ORDER BY resolved_at DESC LIMIT 1
-            ''', (error_key,))
-        
-        row = cursor.fetchone()
-        conn.close()
+        with self._db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # First check: is the error active (unresolved and not acknowledged)?
+            if category:
+                cursor.execute('''
+                    SELECT COUNT(*) FROM errors 
+                    WHERE error_key = ? AND category = ?
+                      AND resolved_at IS NULL AND acknowledged = 0
+                ''', (error_key, category))
+            else:
+                cursor.execute('''
+                    SELECT COUNT(*) FROM errors 
+                    WHERE error_key = ? 
+                      AND resolved_at IS NULL AND acknowledged = 0
+                ''', (error_key,))
+            
+            active_count = cursor.fetchone()[0]
+            if active_count > 0:
+                return True
+            
+            # Second check: is the error dismissed but still within suppression period?
+            # This prevents re-recording dismissed errors before their suppression expires
+            # Note: acknowledged errors may have resolved_at NULL (dismissed but error still exists)
+            # or resolved_at set (error was dismissed AND condition resolved)
+            if category:
+                cursor.execute('''
+                    SELECT acknowledged_at, suppression_hours FROM errors 
+                    WHERE error_key = ? AND category = ?
+                      AND acknowledged = 1
+                    ORDER BY acknowledged_at DESC LIMIT 1
+                ''', (error_key, category))
+            else:
+                cursor.execute('''
+                    SELECT acknowledged_at, suppression_hours FROM errors 
+                    WHERE error_key = ?
+                      AND acknowledged = 1
+                    ORDER BY acknowledged_at DESC LIMIT 1
+                ''', (error_key,))
+            
+            row = cursor.fetchone()
         
         if row:
-            resolved_at_str, suppression_hours = row
-            if resolved_at_str and suppression_hours:
+            acknowledged_at_str, suppression_hours = row
+            if acknowledged_at_str and suppression_hours:
                 try:
-                    resolved_at = datetime.fromisoformat(resolved_at_str)
-                    suppression_end = resolved_at + timedelta(hours=suppression_hours)
+                    acknowledged_at = datetime.fromisoformat(acknowledged_at_str)
+                    suppression_end = acknowledged_at + timedelta(hours=suppression_hours)
                     if datetime.now() < suppression_end:
                         # Still within suppression period - treat as "active" to prevent re-recording
                         return True
@@ -542,17 +562,25 @@ class HealthPersistence:
                                 ('updates', 'pending_updates'), ('updates', 'kernel_pve'),
                                 ('security', 'security_'), 
                                 ('pve_services', 'pve_service_'), ('vms', 'vmct_'), ('vms', 'vm_'), ('vms', 'ct_'),
-                                ('disks', 'disk_'), ('disks', 'smart_'), ('disks', 'zfs_pool_'),
+                                ('disks', 'disk_smart_'), ('disks', 'disk_'), ('disks', 'smart_'), ('disks', 'zfs_pool_'),
                                 ('logs', 'log_'), ('network', 'net_'),
                                 ('temperature', 'temp_')]:
                 if error_key == prefix or error_key.startswith(prefix):
                     category = cat
                     break
             
+            # Fallback: if no category matched, try to infer from common patterns
+            if not category:
+                if 'disk' in error_key or 'smart' in error_key or 'sda' in error_key or 'sdb' in error_key or 'nvme' in error_key:
+                    category = 'disks'
+                else:
+                    category = 'general'  # Use 'general' as ultimate fallback instead of empty string
+            
             setting_key = self.CATEGORY_SETTING_MAP.get(category, '')
             sup_hours = self.DEFAULT_SUPPRESSION_HOURS
             if setting_key:
-                stored = self.get_setting(setting_key)
+                # P4 fix: use _get_setting_impl with existing connection
+                stored = self._get_setting_impl(conn, setting_key)
                 if stored is not None:
                     try:
                         sup_hours = int(stored)
@@ -593,7 +621,8 @@ class HealthPersistence:
             setting_key = self.CATEGORY_SETTING_MAP.get(category, '')
             sup_hours = self.DEFAULT_SUPPRESSION_HOURS
             if setting_key:
-                stored = self.get_setting(setting_key)
+                # P4 fix: use _get_setting_impl with existing connection
+                stored = self._get_setting_impl(conn, setting_key)
                 if stored is not None:
                     try:
                         sup_hours = int(stored)
@@ -648,55 +677,63 @@ class HealthPersistence:
         return result
     
     def is_error_acknowledged(self, error_key: str) -> bool:
-        """Check if an error_key has been acknowledged and is still within suppression window."""
+        """Check if an error_key has been acknowledged and is still within suppression window.
+        
+        Uses acknowledged_at (not resolved_at) to calculate suppression expiration,
+        since dismissed errors may have resolved_at = NULL.
+        """
         try:
-            conn = self._get_conn()
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute(
-                'SELECT acknowledged, resolved_at, suppression_hours FROM errors WHERE error_key = ?',
-                (error_key,))
-            row = cursor.fetchone()
-            conn.close()
-            if not row:
-                return False
-            if not row['acknowledged']:
-                return False
-            # Check if still within suppression window
-            resolved_at = row['resolved_at']
-            sup_hours = row['suppression_hours'] or self.DEFAULT_SUPPRESSION_HOURS
-            if resolved_at:
-                try:
-                    resolved_dt = datetime.fromisoformat(resolved_at)
-                    if datetime.now() > resolved_dt + timedelta(hours=sup_hours):
-                        return False  # Suppression expired
-                except Exception:
-                    pass
-            return True
+            with self._db_connection(row_factory=True) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    'SELECT acknowledged, acknowledged_at, suppression_hours FROM errors WHERE error_key = ?',
+                    (error_key,))
+                row = cursor.fetchone()
+                if not row:
+                    return False
+                if not row['acknowledged']:
+                    return False
+                # Check if still within suppression window using acknowledged_at
+                acknowledged_at = row['acknowledged_at']
+                sup_hours = row['suppression_hours'] or self.DEFAULT_SUPPRESSION_HOURS
+                
+                # -1 means permanently suppressed
+                if sup_hours < 0:
+                    return True
+                
+                if acknowledged_at:
+                    try:
+                        acknowledged_dt = datetime.fromisoformat(acknowledged_at)
+                        if datetime.now() > acknowledged_dt + timedelta(hours=sup_hours):
+                            return False  # Suppression expired
+                    except Exception:
+                        pass
+                return True
         except Exception:
             return False
     
     def get_active_errors(self, category: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Get all active (unresolved) errors, optionally filtered by category"""
-        conn = self._get_conn()
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        """Get all active (unresolved AND not acknowledged) errors, optionally filtered by category.
         
-        if category:
-            cursor.execute('''
-                SELECT * FROM errors 
-                WHERE resolved_at IS NULL AND category = ?
-                ORDER BY severity DESC, last_seen DESC
-            ''', (category,))
-        else:
-            cursor.execute('''
-                SELECT * FROM errors 
-                WHERE resolved_at IS NULL
-                ORDER BY severity DESC, last_seen DESC
-            ''')
-        
-        rows = cursor.fetchall()
-        conn.close()
+        Acknowledged errors are excluded since they have been dismissed by the user.
+        """
+        with self._db_connection(row_factory=True) as conn:
+            cursor = conn.cursor()
+            
+            if category:
+                cursor.execute('''
+                    SELECT * FROM errors 
+                    WHERE resolved_at IS NULL AND acknowledged = 0 AND category = ?
+                    ORDER BY severity DESC, last_seen DESC
+                ''', (category,))
+            else:
+                cursor.execute('''
+                    SELECT * FROM errors 
+                    WHERE resolved_at IS NULL AND acknowledged = 0
+                    ORDER BY severity DESC, last_seen DESC
+                ''')
+            
+            rows = cursor.fetchall()
         
         errors = []
         for row in rows:
@@ -850,11 +887,11 @@ class HealthPersistence:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        cursor.execute('''
-            SELECT * FROM errors 
-            WHERE acknowledged = 1 AND resolved_at IS NOT NULL
-            ORDER BY resolved_at DESC
-        ''')
+    cursor.execute('''
+        SELECT * FROM errors
+        WHERE acknowledged = 1
+        ORDER BY acknowledged_at DESC
+    ''')
         
         rows = cursor.fetchall()
         conn.close()
@@ -871,8 +908,12 @@ class HealthPersistence:
                     pass
             
             # Check if still within suppression period using per-record hours
+            # Use acknowledged_at as reference (resolved_at may be NULL for dismissed but active errors)
             try:
-                resolved_dt = datetime.fromisoformat(error_dict['resolved_at'])
+                ref_time_str = error_dict.get('acknowledged_at') or error_dict.get('resolved_at')
+                if not ref_time_str:
+                    continue
+                ref_dt = datetime.fromisoformat(ref_time_str)
                 sup_hours = error_dict.get('suppression_hours')
                 if sup_hours is None:
                     sup_hours = self.DEFAULT_SUPPRESSION_HOURS
@@ -885,7 +926,7 @@ class HealthPersistence:
                     error_dict['permanent'] = True
                     dismissed.append(error_dict)
                 else:
-                    elapsed_seconds = (now - resolved_dt).total_seconds()
+                    elapsed_seconds = (now - ref_dt).total_seconds()
                     suppression_seconds = sup_hours * 3600
                     
                     if elapsed_seconds < suppression_seconds:
@@ -971,12 +1012,14 @@ class HealthPersistence:
         conn = self._get_conn()
         cursor = conn.cursor()
         
-        for event_id in event_ids:
-            cursor.execute('''
-                UPDATE events 
-                SET data = json_set(COALESCE(data, '{}'), '$.needs_notification', 0, '$.notified_at', ?)
-                WHERE id = ?
-            ''', (datetime.now().isoformat(), event_id))
+        # Use single UPDATE with IN clause instead of N individual updates
+        now = datetime.now().isoformat()
+        placeholders = ','.join('?' * len(event_ids))
+        cursor.execute(f'''
+            UPDATE events
+            SET data = json_set(COALESCE(data, '{{}}'), '$.needs_notification', 0, '$.notified_at', ?)
+            WHERE id IN ({placeholders})
+        ''', [now] + event_ids)
         
         conn.commit()
         conn.close()
@@ -1074,13 +1117,16 @@ class HealthPersistence:
     
     def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
         """Get a user setting value by key."""
-        conn = self._get_conn()
+        with self._db_connection() as conn:
+            return self._get_setting_impl(conn, key, default)
+    
+    def _get_setting_impl(self, conn, key: str, default: Optional[str] = None) -> Optional[str]:
+        """Internal: get setting using existing connection (P4 fix - avoids nested connections)."""
         cursor = conn.cursor()
         cursor.execute(
             'SELECT setting_value FROM user_settings WHERE setting_key = ?', (key,)
         )
         row = cursor.fetchone()
-        conn.close()
         return row[0] if row else default
     
     def set_setting(self, key: str, value: str):

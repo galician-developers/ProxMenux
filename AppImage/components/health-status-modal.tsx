@@ -214,7 +214,7 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
       const refreshInterval = setInterval(fetchHealthDetails, 300000)
       return () => clearInterval(refreshInterval)
     }
-  }, [open])
+  }, [open, fetchHealthDetails])
 
   // Auto-expand non-OK categories when data loads
   useEffect(() => {
@@ -506,13 +506,13 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
                     size="sm"
                     variant="outline"
                     className="h-5 px-1 sm:px-1.5 shrink-0 hover:bg-red-500/10 hover:border-red-500/50 bg-transparent text-[10px]"
-                    disabled={dismissingKey === checkKey}
+                    disabled={dismissingKey === (checkData.error_key || checkKey)}
                     onClick={(e) => {
                       e.stopPropagation()
                       handleAcknowledge(checkData.error_key || checkKey, e)
                     }}
                   >
-                    {dismissingKey === checkKey ? (
+                    {dismissingKey === (checkData.error_key || checkKey) ? (
                       <Loader2 className="h-3 w-3 animate-spin" />
                     ) : (
                       <>
