@@ -285,51 +285,49 @@ export function LxcTerminalModal({
           return
         }
         
-        // DEBUG: Log all incoming data
-        console.log("[v0] LXC Terminal received:", JSON.stringify(event.data))
-        console.log("[v0] isInsideLxc:", isInsideLxcRef.current)
-        console.log("[v0] buffer length:", outputBufferRef.current.length)
+        // Helper to strip ANSI escape codes for pattern matching
+        const stripAnsi = (str: string) => str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
         
         // Buffer output until we detect we're inside the LXC
         // pct enter always enters directly without login prompt when run as root
         if (!isInsideLxcRef.current) {
           outputBufferRef.current += event.data
           
-          // Detect when we're inside the LXC container
-          // The LXC prompt will NOT contain "constructor" (the host name)
-          // It will be something like "root@plex:/#" or "user@containername:~$"
           const buffer = outputBufferRef.current
+          const cleanBuffer = stripAnsi(buffer)
           
-          console.log("[v0] Current buffer:", JSON.stringify(buffer.slice(-200)))
-          
-          // Look for a prompt that:
-          // 1. Comes after pct enter command
-          // 2. Has @ followed by container name (not host name)
-          // 3. Ends with # or $
-          const pctEnterMatch = buffer.match(/pct enter \d+\r?\n/)
-          console.log("[v0] pctEnterMatch:", pctEnterMatch)
+          // Look for pct enter command followed by a new prompt
+          const pctEnterMatch = cleanBuffer.match(/pct enter (\d+)\r?\n/)
           
           if (pctEnterMatch) {
-            const afterPctEnter = buffer.substring(buffer.indexOf(pctEnterMatch[0]) + pctEnterMatch[0].length)
-            console.log("[v0] afterPctEnter:", JSON.stringify(afterPctEnter))
+            const afterPctEnter = cleanBuffer.substring(cleanBuffer.indexOf(pctEnterMatch[0]) + pctEnterMatch[0].length)
             
-            // Find the LXC prompt - it should be a line ending with :~# :~$ :/# or similar
-            // and NOT containing the host name "constructor"
-            const lxcPromptMatch = afterPctEnter.match(/\r?\n?([^\r\n]*@(?!constructor)[^\r\n]*[#$]\s*)$/)
-            console.log("[v0] lxcPromptMatch:", lxcPromptMatch)
+            // Extract the host name from the prompt BEFORE pct enter (e.g., "root@amd")
+            const hostPromptMatch = cleanBuffer.match(/@([a-zA-Z0-9_-]+).*pct enter/)
+            const hostName = hostPromptMatch ? hostPromptMatch[1] : null
             
-            if (lxcPromptMatch) {
-              // Successfully inside LXC - only show from the LXC prompt onwards
-              isInsideLxcRef.current = true
-              console.log("[v0] Detected inside LXC! Prompt:", lxcPromptMatch[1])
+            // Look for a new prompt after pct enter that ends with # or $
+            // This works for both bash (user@host:~#) and ash/Alpine ([user@host /]#)
+            const promptMatch = afterPctEnter.match(/[@\[]([a-zA-Z0-9_-]+)[^\r\n]*[#$]\s*$/)
+            
+            if (promptMatch) {
+              const lxcHostname = promptMatch[1]
               
-              // Find where the LXC prompt line starts
-              const promptStart = afterPctEnter.lastIndexOf(lxcPromptMatch[1])
-              if (promptStart !== -1) {
-                // Only show the LXC prompt itself
-                term.write(lxcPromptMatch[1])
+              // If we found a prompt with a DIFFERENT hostname than the Proxmox host,
+              // we're inside the LXC container
+              if (!hostName || lxcHostname !== hostName) {
+                isInsideLxcRef.current = true
+                
+                // Find the original prompt with ANSI codes to display it properly
+                const afterPctEnterWithAnsi = buffer.substring(buffer.indexOf('pct enter') + pctEnterMatch[0].length)
+                
+                // Write the LXC prompt (last line with # or $)
+                const lastPromptMatch = afterPctEnterWithAnsi.match(/[^\r\n]*[#$]\s*$/)
+                if (lastPromptMatch) {
+                  term.write(lastPromptMatch[0])
+                }
+                return
               }
-              return
             }
           }
         } else {
