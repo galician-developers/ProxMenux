@@ -18,10 +18,10 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v5
       with:
         node-version: '22'
         
@@ -52,7 +52,7 @@ jobs:
       run: echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
       
     - name: Upload AppImage artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: ProxMenux-${{ steps.version.outputs.VERSION }}-AppImage
         path: AppImage/dist/*.AppImage
