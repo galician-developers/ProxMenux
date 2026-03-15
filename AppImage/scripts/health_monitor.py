@@ -3898,14 +3898,14 @@ class HealthMonitor:
             
             # Sub-check 3: Failed login attempts (brute force detection)
             try:
-            result = subprocess.run(
-                ['journalctl', '--since', '24 hours ago', '--no-pager',
-                 '-g', 'authentication failure|failed password|invalid user',
-                 '--output=cat', '-n', '5000'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
+                result = subprocess.run(
+                    ['journalctl', '--since', '24 hours ago', '--no-pager',
+                     '-g', 'authentication failure|failed password|invalid user',
+                     '--output=cat', '-n', '5000'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
                 
                 failed_logins = 0
                 if result.returncode == 0:
