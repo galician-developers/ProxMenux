@@ -472,9 +472,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ websocketUrl, onCl
 
   const initializeTerminal = async (terminal: TerminalInstance, container: HTMLDivElement) => {
     const [TerminalClass, FitAddonClass] = await Promise.all([
-      import("@xterm/xterm").then((mod) => mod.Terminal),
-      import("@xterm/addon-fit").then((mod) => mod.FitAddon),
-      import("@xterm/xterm/css/xterm.css"),
+      import("xterm").then((mod) => mod.Terminal),
+      import("xterm-addon-fit").then((mod) => mod.FitAddon),
+      import("xterm/css/xterm.css"),
     ]).then(([Terminal, FitAddon]) => [Terminal, FitAddon])
 
     const fontSize = window.innerWidth < 768 ? 12 : 16

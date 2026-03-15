@@ -31,7 +31,7 @@ import {
 import { DialogHeader, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Dialog as SearchDialog, DialogContent as SearchDialogContent, DialogTitle as SearchDialogTitle } from "@/components/ui/dialog"
-import "@xterm/xterm/css/xterm.css"
+import "xterm/css/xterm.css"
 import { API_PORT, fetchApi } from "@/lib/api-config"
 
 interface LxcTerminalModalProps {
@@ -169,8 +169,8 @@ export function LxcTerminalModal({
 
     const initTerminal = async () => {
       const [TerminalClass, FitAddonClass] = await Promise.all([
-        import("@xterm/xterm").then((mod) => mod.Terminal),
-        import("@xterm/addon-fit").then((mod) => mod.FitAddon),
+        import("xterm").then((mod) => mod.Terminal),
+        import("xterm-addon-fit").then((mod) => mod.FitAddon),
       ])
 
       const fontSize = window.innerWidth < 768 ? 12 : 16

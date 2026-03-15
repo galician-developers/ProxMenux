@@ -25,7 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
-import "@xterm/xterm/css/xterm.css"
+import "xterm/css/xterm.css"
 import { API_PORT } from "@/lib/api-config"
 
 interface WebInteraction {
@@ -202,9 +202,9 @@ export function ScriptTerminalModal({
 
   const initializeTerminal = async () => {
     const [TerminalClass, FitAddonClass] = await Promise.all([
-      import("@xterm/xterm").then((mod) => mod.Terminal),
-      import("@xterm/addon-fit").then((mod) => mod.FitAddon),
-      import("@xterm/xterm/css/xterm.css"),
+      import("xterm").then((mod) => mod.Terminal),
+      import("xterm-addon-fit").then((mod) => mod.FitAddon),
+      import("xterm/css/xterm.css"),
     ])
 
     const fontSize = window.innerWidth < 768 ? 12 : 16
