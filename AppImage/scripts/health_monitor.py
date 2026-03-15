@@ -2546,13 +2546,16 @@ class HealthMonitor:
             issues = []
             vm_details = {}
             
-            # Get persistent errors first
+            # Get active (non-dismissed) errors
             persistent_errors = health_persistence.get_active_errors('vms')
             
-            # Check if any persistent VMs/CTs have started or were dismissed
+            # Also get dismissed errors to show them as INFO
+            dismissed_errors = health_persistence.get_dismissed_errors()
+            dismissed_vm_errors = [e for e in dismissed_errors if e.get('category') == 'vms']
+            
+            # Process active errors
             for error in persistent_errors:
                 error_key = error['error_key']
-                is_acknowledged = error.get('acknowledged') == 1
                 
                 if error_key.startswith(('vm_', 'ct_', 'vmct_')):
                     vm_id = error_key.split('_', 1)[1]
@@ -2567,11 +2570,22 @@ class HealthMonitor:
                     'id': error.get('details', {}).get('id', 'unknown'),
                     'type': error.get('details', {}).get('type', 'VM/CT'),
                     'first_seen': error['first_seen'],
-                    'dismissed': is_acknowledged,
+                    'dismissed': False,
                 }
-                # Only add to issues if not dismissed
-                if not is_acknowledged:
-                    issues.append(f"{error.get('details', {}).get('type', 'VM')} {error.get('details', {}).get('id', '')}: {error['reason']}")
+                issues.append(f"{error.get('details', {}).get('type', 'VM')} {error.get('details', {}).get('id', '')}: {error['reason']}")
+            
+            # Process dismissed errors (show as INFO)
+            for error in dismissed_vm_errors:
+                error_key = error['error_key']
+                if error_key not in vm_details:  # Don't overwrite active errors
+                    vm_details[error_key] = {
+                        'status': 'INFO',
+                        'reason': error['reason'],
+                        'id': error.get('details', {}).get('id', 'unknown'),
+                        'type': error.get('details', {}).get('type', 'VM/CT'),
+                        'first_seen': error['first_seen'],
+                        'dismissed': True,
+                    }
             
             # Check for new errors in logs
             # Using 'warning' priority to catch potential startup issues
