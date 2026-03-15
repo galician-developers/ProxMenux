@@ -1177,8 +1177,9 @@ class HealthMonitor:
                             existing['status'] = 'CRITICAL'
                         # Append detail if different
                         new_detail = val.get('reason', '')
-                        if new_detail and new_detail not in existing.get('detail', ''):
-                            existing['detail'] = f"{existing['detail']}; {new_detail}".strip('; ')
+                        existing_detail = existing.get('detail', '')
+                        if new_detail and new_detail not in existing_detail:
+                            existing['detail'] = f"{existing_detail}; {new_detail}".strip('; ')
                     continue  # Don't add raw disk error entry, we'll add consolidated later
             
             # Non-disk entries go directly to checks
@@ -1306,25 +1307,26 @@ class HealthMonitor:
             model = disk_info.get('model', '')
             
             # Get worst_health from persistence
+            current_status = error_info.get('status', 'WARNING')
             try:
                 health_status = health_persistence.get_disk_health_status(device_name, serial if serial else None)
                 worst_health = health_status.get('worst_health', 'healthy')
                 
                 # Final health = max(current, worst)
                 health_order = {'healthy': 0, 'ok': 0, 'warning': 1, 'critical': 2}
-                current_level = health_order.get(error_info['status'].lower(), 1)
+                current_level = health_order.get(current_status.lower(), 1)
                 worst_level = health_order.get(worst_health.lower(), 0)
                 
                 if worst_level > current_level:
                     # worst_health is worse, use it
                     final_status = worst_health.upper()
                 else:
-                    final_status = error_info['status']
+                    final_status = current_status
             except Exception:
-                final_status = error_info['status']
+                final_status = current_status
             
             # Build detail string with serial/model if available
-            detail = error_info['detail']
+            detail = error_info.get('detail', error_info.get('reason', 'Unknown error'))
             if serial and serial not in detail:
                 detail = f"{serial} - {detail}"
             

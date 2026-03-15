@@ -190,7 +190,7 @@ def generate_vm_description(
 </td>
 <td style='vertical-align: middle;'>
 <h1 style='margin: 0;'>{vm_name}</h1>
-<p style='margin: 0;'>Created with ProxMenuX</p>
+<p style='margin: 0;'>Created with ProxMenux</p>
 {version_html}
 </td>
 </tr>
