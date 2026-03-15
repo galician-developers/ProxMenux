@@ -7712,19 +7712,55 @@ if __name__ == '__main__':
 
     # Check for SSL configuration
     ssl_ctx = None
+    ssl_cert = None
+    ssl_key = None
     try:
         ssl_ctx = auth_manager.get_ssl_context()
         if ssl_ctx:
-            print(f"[ProxMenux] Starting with HTTPS (cert: {ssl_ctx[0]})")
+            ssl_cert, ssl_key = ssl_ctx
+            print(f"[ProxMenux] Starting with HTTPS (cert: {ssl_cert})")
         else:
             print("[ProxMenux] Starting with HTTP (no SSL configured)")
     except Exception as e:
         print(f"[ProxMenux] SSL config error, falling back to HTTP: {e}")
         ssl_ctx = None
     
+    # Use gevent for SSL+WebSocket support, or fallback to Flask dev server
+    gevent_available = False
     try:
-        app.run(host='0.0.0.0', port=8008, debug=False, ssl_context=ssl_ctx)
-    except Exception as e:
         if ssl_ctx:
+            # Try gevent with SSL for proper WebSocket (WSS) support
+            try:
+                from gevent import pywsgi
+                from geventwebsocket.handler import WebSocketHandler
+                import ssl
+                
+                ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                ssl_context.load_cert_chain(ssl_cert, ssl_key)
+                
+                print("[ProxMenux] Starting gevent server with SSL/WSS support...")
+                server = pywsgi.WSGIServer(
+                    ('0.0.0.0', 8008), 
+                    app, 
+                    handler_class=WebSocketHandler,
+                    ssl_context=ssl_context
+                )
+                gevent_available = True
+                server.serve_forever()
+            except ImportError as e:
+                print(f"[ProxMenux] gevent not available ({e})")
+                # Fallback: Flask dev server with SSL - flask-sock handles WebSockets
+                import ssl
+                ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                ssl_context.load_cert_chain(ssl_cert, ssl_key)
+                print("[ProxMenux] Starting Flask server with SSL (using flask-sock for WebSockets)...")
+                app.run(host='0.0.0.0', port=8008, debug=False, ssl_context=ssl_context)
+        else:
+            # HTTP mode - use Flask dev server (simpler, works fine without SSL)
+            app.run(host='0.0.0.0', port=8008, debug=False)
+    except Exception as e:
+        if ssl_ctx and not gevent_available:
             print(f"[ProxMenux] SSL startup failed ({e}), falling back to HTTP")
             app.run(host='0.0.0.0', port=8008, debug=False)
+        else:
+            raise e

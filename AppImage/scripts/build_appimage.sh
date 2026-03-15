@@ -321,6 +321,12 @@ pip3 install --target "$APP_DIR/usr/lib/python3/dist-packages" --upgrade \
     simple-websocket>=0.10.0 \
     flask-sock>=0.6.0
 
+# Phase 3b: Install gevent for SSL+WebSocket support (WSS)
+pip3 install --target "$APP_DIR/usr/lib/python3/dist-packages" --upgrade \
+    gevent>=24.2.1 \
+    gevent-websocket>=0.10.1 \
+    greenlet>=3.0.0
+
 cat > "$APP_DIR/usr/lib/python3/dist-packages/cgi.py" << 'PYEOF'
 from typing import Tuple, Dict
 try:
