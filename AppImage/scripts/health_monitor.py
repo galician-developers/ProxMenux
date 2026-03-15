@@ -3268,25 +3268,25 @@ class HealthMonitor:
                                          'dismissable': True, 'occurrences': data['count']}
                             )
                 
-        patterns_to_remove = [
-            p for p, data in self.persistent_log_patterns.items()
-            if current_time - data['last_seen'] > 1800
-        ]
-        for pattern in patterns_to_remove:
-            del self.persistent_log_patterns[pattern]
-        
-        # B5 fix: Cap size to prevent unbounded memory growth under high error load
-        MAX_LOG_PATTERNS = 500
-        if len(self.persistent_log_patterns) > MAX_LOG_PATTERNS:
-            sorted_patterns = sorted(
-                self.persistent_log_patterns.items(),
-                key=lambda x: x[1]['last_seen'],
-                reverse=True
-            )
-            self.persistent_log_patterns = defaultdict(
-                lambda: {'count': 0, 'first_seen': 0, 'last_seen': 0},
-                dict(sorted_patterns[:MAX_LOG_PATTERNS])
-            )
+                patterns_to_remove = [
+                    p for p, data in self.persistent_log_patterns.items()
+                    if current_time - data['last_seen'] > 1800
+                ]
+                for pattern in patterns_to_remove:
+                    del self.persistent_log_patterns[pattern]
+                
+                # B5 fix: Cap size to prevent unbounded memory growth under high error load
+                MAX_LOG_PATTERNS = 500
+                if len(self.persistent_log_patterns) > MAX_LOG_PATTERNS:
+                    sorted_patterns = sorted(
+                        self.persistent_log_patterns.items(),
+                        key=lambda x: x[1]['last_seen'],
+                        reverse=True
+                    )
+                    self.persistent_log_patterns = defaultdict(
+                        lambda: {'count': 0, 'first_seen': 0, 'last_seen': 0},
+                        dict(sorted_patterns[:MAX_LOG_PATTERNS])
+                    )
                 
                 unique_critical_count = len(critical_errors_found)
                 cascade_count = len(cascading_errors)
