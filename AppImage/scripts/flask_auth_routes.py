@@ -11,7 +11,13 @@ import threading
 import time
 from flask import Blueprint, jsonify, request
 import auth_manager
-import jwt
+
+# Try PyJWT first, fall back to our simple implementation
+try:
+    import jwt
+except ImportError:
+    import simple_jwt as jwt
+
 import datetime
 
 # Dedicated logger for auth failures (Fail2Ban reads this file)

@@ -15,12 +15,22 @@ import secrets
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# Try PyJWT first, fall back to our simple implementation
 try:
     import jwt
     JWT_AVAILABLE = True
+    JWT_BACKEND = "pyjwt"
 except ImportError:
-    JWT_AVAILABLE = False
-    print("Warning: PyJWT not available. Authentication features will be limited.")
+    try:
+        # Use our simple JWT implementation (no external dependencies)
+        import simple_jwt as jwt
+        JWT_AVAILABLE = True
+        JWT_BACKEND = "simple_jwt"
+        print("Using simple_jwt backend (no cryptography dependency)")
+    except ImportError:
+        JWT_AVAILABLE = False
+        JWT_BACKEND = None
+        print("Warning: No JWT backend available. Authentication features will be limited.")
 
 try:
     import pyotp
