@@ -773,6 +773,15 @@ def deploy_app(app_id: str, config: Dict[str, Any], installed_by: str = "web") -
         except Exception as e:
             logger.warning(f"Could not apply extra LXC config: {e}")
     
+    # Step 3.1: Set HTML description for Proxmox Notes panel
+    html_desc = _generate_html_description(app_def, container_def, hostname)
+    if html_desc:
+        rc, _, err = _run_pve_cmd(["pct", "set", str(vmid), "-description", html_desc])
+        if rc == 0:
+            logger.info(f"Set HTML description for container {vmid}")
+        else:
+            logger.warning(f"Could not set description: {err}")
+    
     # Step 4: Configure environment variables (only for OCI containers)
     if use_oci:
         env_vars = []
@@ -857,6 +866,94 @@ def deploy_app(app_id: str, config: Dict[str, Any], installed_by: str = "web") -
     print(f"[OK] Container {vmid} ({hostname}) deployed successfully!")
     
     return result
+
+
+def _generate_html_description(app_def: Dict, container_def: Dict, hostname: str) -> str:
+    """
+    Generate HTML description for Proxmox Notes panel.
+    
+    Tries to use the shared description_templates module if available,
+    otherwise falls back to inline implementation.
+    """
+    try:
+        # Try to import the shared templates module
+        import sys
+        templates_path = Path("/usr/local/share/proxmenux/scripts/oci")
+        if templates_path.exists():
+            sys.path.insert(0, str(templates_path))
+        
+        from description_templates import generate_description
+        return generate_description(app_def, container_def, hostname)
+    except ImportError:
+        pass
+    
+    # Fallback: inline implementation
+    import urllib.parse
+    
+    app_name = app_def.get("name", "ProxMenux App")
+    app_subtitle = app_def.get("subtitle", app_def.get("short_name", ""))
+    app_color = app_def.get("color", "#0EA5E9")
+    app_icon_type = app_def.get("icon_type", "default")
+    doc_url = app_def.get("documentation_url", "https://macrimi.github.io/ProxMenux/")
+    code_url = app_def.get("code_url", "https://github.com/MacRimi/ProxMenux")
+    installer_url = app_def.get("installer_url", "")
+    
+    # Generate icon based on type
+    if app_icon_type == "shield":
+        icon_svg = f"""<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 24 24' fill='none' stroke='{app_color}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/><path d='M9 12l2 2 4-4'/></svg>"""
+    else:
+        icon_svg = f"""<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 24 24' fill='none' stroke='{app_color}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z'/><polyline points='3.27 6.96 12 12.01 20.73 6.96'/><line x1='12' y1='22.08' x2='12' y2='12'/></svg>"""
+    
+    icon_data = "data:image/svg+xml," + urllib.parse.quote(icon_svg)
+    
+    # Build badges
+    badges = [
+        f"<a href='{doc_url}' target='_blank'><img src='https://img.shields.io/badge/📚_Docs-blue' alt='Docs'></a>",
+        f"<a href='{code_url}' target='_blank'><img src='https://img.shields.io/badge/💻_Code-green' alt='Code'></a>",
+    ]
+    if installer_url:
+        badges.append(f"<a href='{installer_url}' target='_blank'><img src='https://img.shields.io/badge/📦_Installer-orange' alt='Installer'></a>")
+    badges.append("<a href='https://ko-fi.com/macrimi' target='_blank'><img src='https://img.shields.io/badge/☕_Ko--fi-red' alt='Ko-fi'></a>")
+    
+    badges_html = "\n".join(badges)
+    
+    html_desc = f"""<div align='center'>
+<table style='width: 100%; border-collapse: collapse;'>
+<tr>
+<td style='width: 100px; vertical-align: middle;'>
+<img src='https://raw.githubusercontent.com/MacRimi/ProxMenux/main/images/logo_desc.png' alt='ProxMenux Logo' style='height: 100px;'>
+</td>
+<td style='vertical-align: middle;'>
+<h1 style='margin: 0;'>{app_name}</h1>
+<p style='margin: 0;'>Created with ProxMenuX</p>
+</td>
+</tr>
+</table>
+
+<div style='margin: 15px 0; padding: 10px; background: #2d2d2d; border-radius: 8px; display: inline-block;'>
+<table style='border-collapse: collapse;'>
+<tr>
+<td style='vertical-align: middle; padding-right: 10px;'>
+<img src='{icon_data}' alt='Icon' style='height: 48px;'>
+</td>
+<td style='vertical-align: middle; text-align: left;'>
+<span style='font-size: 18px; font-weight: bold; color: {app_color};'>{app_name}</span><br>
+<span style='color: #9ca3af;'>{app_subtitle}</span>
+</td>
+</tr>
+</table>
+</div>
+
+<p>
+{badges_html}
+</p>
+
+<p style='color: #6b7280; font-size: 12px;'>
+Hostname: {hostname}
+</p>
+</div>"""
+    
+    return html_desc
 
 
 def _enable_host_ip_forwarding() -> bool:
