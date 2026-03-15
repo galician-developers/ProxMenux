@@ -25,8 +25,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
-import "xterm/css/xterm.css"
-import { API_PORT } from "@/lib/api-config"
+import "@xterm/xterm/css/xterm.css"
+import { getWebSocketUrl } from "@/lib/api-config"
 
 interface WebInteraction {
   type: "yesno" | "menu" | "msgbox" | "input" | "inputbox"
@@ -96,7 +96,7 @@ export function ScriptTerminalModal({
           wsRef.current.close()
         }
 
-        const wsUrl = getScriptWebSocketUrl(sessionIdRef.current)
+        const wsUrl = getScriptWebSocketUrlLocal(sessionIdRef.current)
         const ws = new WebSocket(wsUrl)
         wsRef.current = ws
 
@@ -202,9 +202,9 @@ export function ScriptTerminalModal({
 
   const initializeTerminal = async () => {
     const [TerminalClass, FitAddonClass] = await Promise.all([
-      import("xterm").then((mod) => mod.Terminal),
-      import("xterm-addon-fit").then((mod) => mod.FitAddon),
-      import("xterm/css/xterm.css"),
+      import("@xterm/xterm").then((mod) => mod.Terminal),
+      import("@xterm/addon-fit").then((mod) => mod.FitAddon),
+      import("@xterm/xterm/css/xterm.css"),
     ])
 
     const fontSize = window.innerWidth < 768 ? 12 : 16
@@ -259,7 +259,7 @@ export function ScriptTerminalModal({
       }
     }, 100)
 
-    const wsUrl = getScriptWebSocketUrl(sessionIdRef.current)
+    const wsUrl = getScriptWebSocketUrlLocal(sessionIdRef.current)
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
@@ -493,20 +493,9 @@ export function ScriptTerminalModal({
     }
   }, [isOpen, isComplete, attemptReconnect])
 
-  const getScriptWebSocketUrl = (sid: string): string => {
-    if (typeof window === "undefined") {
-      return `ws://localhost:${API_PORT}/ws/script/${sid}`
-    }
-
-    const { protocol, hostname, port } = window.location
-    const isStandardPort = port === "" || port === "80" || port === "443"
-    const wsProtocol = protocol === "https:" ? "wss:" : "ws:"
-
-    if (isStandardPort) {
-      return `${wsProtocol}//${hostname}/ws/script/${sid}`
-    } else {
-      return `${wsProtocol}//${hostname}:${API_PORT}/ws/script/${sid}`
-    }
+  // Use centralized getWebSocketUrl from api-config
+  const getScriptWebSocketUrlLocal = (sid: string): string => {
+    return getWebSocketUrl(`/ws/script/${sid}`)
   }
 
   const handleInteractionResponse = (value: string) => {

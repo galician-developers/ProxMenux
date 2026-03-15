@@ -31,8 +31,8 @@ import {
 import { DialogHeader, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Dialog as SearchDialog, DialogContent as SearchDialogContent, DialogTitle as SearchDialogTitle } from "@/components/ui/dialog"
-import "xterm/css/xterm.css"
-import { API_PORT, fetchApi } from "@/lib/api-config"
+import "@xterm/xterm/css/xterm.css"
+import { fetchApi, getWebSocketUrl } from "@/lib/api-config"
 
 interface LxcTerminalModalProps {
   open: boolean
@@ -75,21 +75,7 @@ const proxmoxCommands = [
   { cmd: "clear", desc: "Clear terminal screen" },
 ]
 
-function getWebSocketUrl(): string {
-  if (typeof window === "undefined") {
-    return "ws://localhost:8008/ws/terminal"
-  }
-
-  const { protocol, hostname, port } = window.location
-  const isStandardPort = port === "" || port === "80" || port === "443"
-  const wsProtocol = protocol === "https:" ? "wss:" : "ws:"
-
-  if (isStandardPort) {
-    return `${wsProtocol}//${hostname}/ws/terminal`
-  } else {
-    return `${wsProtocol}//${hostname}:${API_PORT}/ws/terminal`
-  }
-}
+// Use centralized getWebSocketUrl from api-config
 
 export function LxcTerminalModal({
   open: isOpen,
@@ -169,8 +155,8 @@ export function LxcTerminalModal({
 
     const initTerminal = async () => {
       const [TerminalClass, FitAddonClass] = await Promise.all([
-        import("xterm").then((mod) => mod.Terminal),
-        import("xterm-addon-fit").then((mod) => mod.FitAddon),
+        import("@xterm/xterm").then((mod) => mod.Terminal),
+        import("@xterm/addon-fit").then((mod) => mod.FitAddon),
       ])
 
       const fontSize = window.innerWidth < 768 ? 12 : 16
@@ -222,7 +208,7 @@ export function LxcTerminalModal({
       fitAddonRef.current = fitAddon
 
       // Connect WebSocket to host terminal
-      const wsUrl = getWebSocketUrl()
+      const wsUrl = getWebSocketUrl("/ws/terminal")
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
       

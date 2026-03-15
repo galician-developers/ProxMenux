@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useEffect, useRef, useState } from "react"
-import { API_PORT, fetchApi } from "@/lib/api-config" // Unificando importaciones de api-config en una sola línea con alias @/
+import { API_PORT, fetchApi, getWebSocketUrl as getWebSocketUrlFromConfig, getApiUrl as getApiUrlFromConfig } from "@/lib/api-config"
 import {
   Activity,
   Trash2,
@@ -46,31 +46,13 @@ interface TerminalInstance {
   pingInterval?: ReturnType<typeof setInterval> | null // Heartbeat interval to keep connection alive
 }
 
+// Use centralized functions from api-config.ts for SSL/proxy support
 function getWebSocketUrl(): string {
-  if (typeof window === "undefined") {
-    return "ws://localhost:8008/ws/terminal"
-  }
-
-  const { protocol, hostname, port } = window.location
-  const isStandardPort = port === "" || port === "80" || port === "443"
-
-  const wsProtocol = protocol === "https:" ? "wss:" : "ws:"
-
-  if (isStandardPort) {
-    return `${wsProtocol}//${hostname}/ws/terminal`
-  } else {
-    return `${wsProtocol}//${hostname}:${API_PORT}/ws/terminal`
-  }
+  return getWebSocketUrlFromConfig("/ws/terminal")
 }
 
 function getApiUrl(endpoint?: string): string {
-  if (typeof window === "undefined") {
-    return "http://localhost:8008"
-  }
-
-  const { protocol, hostname } = window.location
-  const apiProtocol = protocol === "https:" ? "https:" : "http:"
-  return `${apiProtocol}//${hostname}:${API_PORT}${endpoint || ""}`
+  return getApiUrlFromConfig(endpoint || "")
 }
 
 const proxmoxCommands = [
@@ -472,9 +454,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ websocketUrl, onCl
 
   const initializeTerminal = async (terminal: TerminalInstance, container: HTMLDivElement) => {
     const [TerminalClass, FitAddonClass] = await Promise.all([
-      import("xterm").then((mod) => mod.Terminal),
-      import("xterm-addon-fit").then((mod) => mod.FitAddon),
-      import("xterm/css/xterm.css"),
+      import("@xterm/xterm").then((mod) => mod.Terminal),
+      import("@xterm/addon-fit").then((mod) => mod.FitAddon),
+      import("@xterm/xterm/css/xterm.css"),
     ]).then(([Terminal, FitAddon]) => [Terminal, FitAddon])
 
     const fontSize = window.innerWidth < 768 ? 12 : 16

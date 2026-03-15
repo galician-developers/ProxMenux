@@ -51,6 +51,41 @@ export function getApiUrl(endpoint: string): string {
 }
 
 /**
+ * Gets the base URL for WebSocket connections
+ * Automatically handles ws:// vs wss:// based on page protocol (SSL support)
+ *
+ * @param path - WebSocket endpoint path (e.g., '/ws/terminal')
+ * @returns Full WebSocket URL
+ */
+export function getWebSocketUrl(path: string): string {
+  if (typeof window === "undefined") {
+    return `ws://localhost:${API_PORT}${path}`
+  }
+
+  const { protocol, hostname, port } = window.location
+  const isStandardPort = port === "" || port === "80" || port === "443"
+  
+  // Use wss:// when page is served over https://
+  const wsProtocol = protocol === "https:" ? "wss:" : "ws:"
+
+  // Ensure path starts with /
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`
+
+  let wsUrl: string
+  if (isStandardPort) {
+    // Behind a proxy - WebSocket goes through same host
+    wsUrl = `${wsProtocol}//${hostname}${normalizedPath}`
+  } else {
+    // Direct access - use API port
+    wsUrl = `${wsProtocol}//${hostname}:${API_PORT}${normalizedPath}`
+  }
+  
+  console.log(`[v0] getWebSocketUrl: protocol=${protocol}, hostname=${hostname}, port=${port}, isStandardPort=${isStandardPort}, wsUrl=${wsUrl}`)
+  
+  return wsUrl
+}
+
+/**
  * Gets the JWT token from localStorage
  *
  * @returns JWT token or null if not authenticated
