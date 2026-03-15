@@ -259,8 +259,48 @@ def _get_vmid_for_app(app_id: str) -> Optional[int]:
     return instance.get("vmid") if instance else None
 
 
-def _find_alpine_template(storage: str = DEFAULT_STORAGE) -> Optional[str]:
-    """Find an available Alpine LXC template."""
+def _download_alpine_template(storage: str = DEFAULT_STORAGE) -> bool:
+    """Download the latest Alpine LXC template using pveam."""
+    print("[*] Downloading Alpine Linux template...")
+    logger.info("Downloading Alpine template via pveam")
+    
+    # Update template list first
+    rc, out, err = _run_pve_cmd(["pveam", "update"], timeout=60)
+    if rc != 0:
+        logger.warning(f"Failed to update template list: {err}")
+    
+    # Get available Alpine templates
+    rc, out, err = _run_pve_cmd(["pveam", "available", "--section", "system"], timeout=30)
+    if rc != 0:
+        logger.error(f"Failed to list available templates: {err}")
+        return False
+    
+    # Find latest Alpine template
+    alpine_template = None
+    for line in out.strip().split('\n'):
+        if 'alpine-' in line.lower():
+            parts = line.split()
+            if len(parts) >= 2:
+                alpine_template = parts[1]  # Template name is usually second column
+    
+    if not alpine_template:
+        logger.error("No Alpine template found in available templates")
+        return False
+    
+    # Download the template
+    print(f"[*] Downloading template: {alpine_template}")
+    rc, out, err = _run_pve_cmd(["pveam", "download", storage, alpine_template], timeout=300)
+    if rc != 0:
+        logger.error(f"Failed to download template: {err}")
+        return False
+    
+    print("[+] Alpine template downloaded successfully")
+    logger.info(f"Successfully downloaded Alpine template: {alpine_template}")
+    return True
+
+
+def _find_alpine_template(storage: str = DEFAULT_STORAGE, auto_download: bool = True) -> Optional[str]:
+    """Find an available Alpine LXC template, optionally downloading if not found."""
     template_dir = "/var/lib/vz/template/cache"
     
     # Try to get correct path from storage config
@@ -279,6 +319,13 @@ def _find_alpine_template(storage: str = DEFAULT_STORAGE) -> Optional[str]:
             return f"{storage}:vztmpl/{alpine_templates[0]}"
     except Exception as e:
         logger.error(f"Failed to find Alpine template: {e}")
+    
+    # Template not found - try to download it automatically
+    if auto_download:
+        logger.info("Alpine template not found, attempting to download...")
+        if _download_alpine_template(storage):
+            # Try to find it again after download
+            return _find_alpine_template(storage, auto_download=False)
     
     return None
 
