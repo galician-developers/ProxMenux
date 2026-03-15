@@ -3465,7 +3465,7 @@
     "config_path": "",
     "default_credentials": {
       "username": "root",
-      "password": "docker"
+      "password": "Cloud-Init Password (in Console) or without Cloud-Init: No Password"
     },
     "os": "debian"
   },
