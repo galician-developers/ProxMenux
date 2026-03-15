@@ -96,7 +96,10 @@ class HealthPersistence:
                 last_seen TEXT NOT NULL,
                 resolved_at TEXT,
                 acknowledged INTEGER DEFAULT 0,
-                notification_sent INTEGER DEFAULT 0
+                acknowledged_at TEXT,
+                notification_sent INTEGER DEFAULT 0,
+                occurrence_count INTEGER DEFAULT 1,
+                suppression_hours INTEGER DEFAULT 24
             )
         ''')
         
@@ -154,15 +157,18 @@ class HealthPersistence:
             )
         ''')
         
-        # Migration: add suppression_hours column to errors if not present
+        # Migration: add missing columns to errors table for existing DBs
         cursor.execute("PRAGMA table_info(errors)")
         columns = [col[1] for col in cursor.fetchall()]
+        
         if 'suppression_hours' not in columns:
             cursor.execute('ALTER TABLE errors ADD COLUMN suppression_hours INTEGER DEFAULT 24')
         
-        # Migration: add acknowledged_at column to errors if not present
         if 'acknowledged_at' not in columns:
             cursor.execute('ALTER TABLE errors ADD COLUMN acknowledged_at TEXT')
+        
+        if 'occurrence_count' not in columns:
+            cursor.execute('ALTER TABLE errors ADD COLUMN occurrence_count INTEGER DEFAULT 1')
         
         # Indexes for performance
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_error_key ON errors(error_key)')
