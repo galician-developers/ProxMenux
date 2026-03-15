@@ -887,19 +887,19 @@ class HealthPersistence:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-    cursor.execute('''
-        SELECT * FROM errors
-        WHERE acknowledged = 1
-        ORDER BY acknowledged_at DESC
-    ''')
-    
-    rows = cursor.fetchall()
-    conn.close()
-    
-    dismissed = []
-    now = datetime.now()
-    
-    for row in rows:
+        cursor.execute('''
+            SELECT * FROM errors
+            WHERE acknowledged = 1
+            ORDER BY acknowledged_at DESC
+        ''')
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        dismissed = []
+        now = datetime.now()
+        
+        for row in rows:
             error_dict = dict(row)
             if error_dict.get('details'):
                 try:
