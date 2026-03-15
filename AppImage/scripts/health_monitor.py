@@ -2093,7 +2093,21 @@ class HealthMonitor:
                     # Check if the device still exists.  If not, auto-resolve
                     # the error -- it was likely a disconnected USB/temp device.
                     dev_path = f'/dev/{base_disk}' if base_disk else device
-                    if not os.path.exists(dev_path):
+                    
+                    # Also extract base disk from partition (e.g., sdb1 -> sdb)
+                    if not base_disk and device:
+                        # Remove /dev/ prefix and partition number
+                        dev_name = device.replace('/dev/', '')
+                        base_disk = re.sub(r'\d+$', '', dev_name)  # sdb1 -> sdb
+                        if base_disk:
+                            dev_path = f'/dev/{base_disk}'
+                    
+                    # Check both the specific device and the base disk
+                    device_exists = os.path.exists(dev_path)
+                    if not device_exists and device and device != dev_path:
+                        device_exists = os.path.exists(device)
+                    
+                    if not device_exists:
                         health_persistence.resolve_error(
                             err_key, 'Device no longer present in system')
                         continue

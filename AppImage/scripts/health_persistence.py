@@ -1765,6 +1765,47 @@ class HealthPersistence:
         except Exception as e:
             print(f"[HealthPersistence] Error marking removed disks: {e}")
 
+    def cleanup_orphan_observations(self):
+        """
+        Dismiss observations for devices that no longer exist in /dev/.
+        Useful for cleaning up after USB drives or temporary devices are disconnected.
+        """
+        import os
+        import re
+        try:
+            conn = self._get_conn()
+            cursor = conn.cursor()
+            
+            # Get all active (non-dismissed) observations
+            cursor.execute('''
+                SELECT id, device_name, serial FROM disk_observations 
+                WHERE dismissed = 0
+            ''')
+            observations = cursor.fetchall()
+            
+            dismissed_count = 0
+            for obs_id, device_name, serial in observations:
+                # Check if device exists
+                dev_path = f'/dev/{device_name}'
+                # Also check base device (remove partition number)
+                base_dev = re.sub(r'\d+$', '', device_name)
+                base_path = f'/dev/{base_dev}'
+                
+                if not os.path.exists(dev_path) and not os.path.exists(base_path):
+                    cursor.execute('''
+                        UPDATE disk_observations SET dismissed = 1 
+                        WHERE id = ?
+                    ''', (obs_id,))
+                    dismissed_count += 1
+            
+            conn.commit()
+            conn.close()
+            print(f"[HealthPersistence] Cleaned up {dismissed_count} orphan observations")
+            return dismissed_count
+        except Exception as e:
+            print(f"[HealthPersistence] Error cleaning orphan observations: {e}")
+            return 0
+
 
 # Global instance
 health_persistence = HealthPersistence()

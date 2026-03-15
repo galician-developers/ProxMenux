@@ -179,6 +179,66 @@ def get_full_health():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@health_bp.route('/api/health/cleanup-orphans', methods=['POST'])
+def cleanup_orphan_errors():
+    """
+    Clean up errors for devices that no longer exist in the system.
+    Useful when USB drives or temporary devices are disconnected.
+    """
+    import os
+    import re
+    try:
+        cleaned = []
+        # Get all active disk errors
+        disk_errors = health_persistence.get_active_errors(category='disks')
+        
+        for err in disk_errors:
+            err_key = err.get('error_key', '')
+            details = err.get('details', {})
+            if isinstance(details, str):
+                try:
+                    import json as _json
+                    details = _json.loads(details)
+                except Exception:
+                    details = {}
+            
+            device = details.get('device', '')
+            base_disk = details.get('disk', '')
+            
+            # Try to determine the device path
+            dev_path = None
+            if base_disk:
+                dev_path = f'/dev/{base_disk}'
+            elif device:
+                dev_path = device if device.startswith('/dev/') else f'/dev/{device}'
+            elif err_key.startswith('disk_'):
+                # Extract device from error_key
+                dev_name = err_key.replace('disk_fs_', '').replace('disk_', '')
+                dev_name = re.sub(r'_.*$', '', dev_name)  # Remove suffix
+                if dev_name:
+                    dev_path = f'/dev/{dev_name}'
+            
+            if dev_path:
+                # Also check base disk (remove partition number)
+                base_path = re.sub(r'\d+$', '', dev_path)
+                if not os.path.exists(dev_path) and not os.path.exists(base_path):
+                    health_persistence.resolve_error(err_key, 'Device no longer present (manual cleanup)')
+                    cleaned.append({'error_key': err_key, 'device': dev_path})
+        
+        # Also cleanup disk_observations for non-existent devices
+        try:
+            health_persistence.cleanup_orphan_observations()
+        except Exception:
+            pass
+        
+        return jsonify({
+            'success': True,
+            'cleaned_count': len(cleaned),
+            'cleaned_errors': cleaned
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @health_bp.route('/api/health/pending-notifications', methods=['GET'])
 def get_pending_notifications():
     """
