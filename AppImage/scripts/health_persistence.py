@@ -1701,23 +1701,55 @@ class HealthPersistence:
     def get_disks_observation_counts(self) -> Dict[str, int]:
         """Return {device_name: count} of active observations per disk.
         
-        Also includes serial-keyed entries for cross-device matching.
+        Groups by serial when available to consolidate counts across device name changes
+        (e.g., ata8 -> sdh). Also includes serial-keyed entries for cross-device matching.
         """
         try:
             conn = self._get_conn()
             cursor = conn.cursor()
+            
+            # For disks WITH serial: group by serial to consolidate across device renames
             cursor.execute('''
-                SELECT d.device_name, d.serial, COUNT(o.id) as cnt
+                SELECT d.serial, COUNT(o.id) as cnt
                 FROM disk_observations o
                 JOIN disk_registry d ON o.disk_registry_id = d.id
-                WHERE o.dismissed = 0
-                GROUP BY d.id
+                WHERE o.dismissed = 0 AND d.serial IS NOT NULL AND d.serial != ''
+                GROUP BY d.serial
             ''')
+            serial_counts = {row[0]: row[1] for row in cursor.fetchall()}
+            
+            # Get current device_name for each serial (prefer non-ata names)
+            cursor.execute('''
+                SELECT serial, device_name FROM disk_registry
+                WHERE serial IS NOT NULL AND serial != ''
+                ORDER BY 
+                    CASE WHEN device_name LIKE 'ata%' THEN 1 ELSE 0 END,
+                    last_seen DESC
+            ''')
+            serial_to_device = {}
+            for serial, device_name in cursor.fetchall():
+                if serial not in serial_to_device:
+                    serial_to_device[serial] = device_name
+            
+            # Build result
             result = {}
-            for device_name, serial, cnt in cursor.fetchall():
-                result[device_name] = cnt
-                if serial:
-                    result[f'serial:{serial}'] = cnt
+            for serial, cnt in serial_counts.items():
+                result[f'serial:{serial}'] = cnt
+                device_name = serial_to_device.get(serial)
+                if device_name:
+                    result[device_name] = max(result.get(device_name, 0), cnt)
+            
+            # For disks WITHOUT serial: group by device_name
+            cursor.execute('''
+                SELECT d.device_name, COUNT(o.id) as cnt
+                FROM disk_observations o
+                JOIN disk_registry d ON o.disk_registry_id = d.id
+                WHERE o.dismissed = 0 AND (d.serial IS NULL OR d.serial = '')
+                GROUP BY d.device_name
+            ''')
+            for device_name, cnt in cursor.fetchall():
+                result[device_name] = max(result.get(device_name, 0), cnt)
+            
             conn.close()
             return result
         except Exception as e:
