@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useCallback } from "react"
 import { API_PORT, fetchApi } from "@/lib/api-config" // Unificando importaciones de api-config en una sola línea con alias @/
 import {
   Activity,
