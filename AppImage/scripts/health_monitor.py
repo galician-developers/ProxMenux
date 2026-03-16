@@ -1344,6 +1344,12 @@ class HealthMonitor:
                 'is_disk_entry': True,
             }
             
+            # Add to issues array if WARNING or CRITICAL (ensures category status is correct)
+            if final_status in ('WARNING', 'CRITICAL'):
+                issue_msg = f'{check_key}: {detail}'
+                if issue_msg not in issues:
+                    issues.append(issue_msg)
+            
             # Register disk in persistence if not already (for worst_health tracking)
             try:
                 health_persistence.register_disk(device_name, serial if serial else None, model, 0)
