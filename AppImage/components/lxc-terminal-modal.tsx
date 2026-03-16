@@ -326,6 +326,15 @@ export function LxcTerminalModal({
                 if (lastPromptMatch) {
                   term.write(lastPromptMatch[0])
                 }
+                
+                // Send an extra Enter for Alpine containers (ash shell)
+                // This forces the prompt to refresh properly
+                setTimeout(() => {
+                  if (ws.readyState === WebSocket.OPEN) {
+                    ws.send('\r')
+                  }
+                }, 100)
+                
                 return
               }
             }

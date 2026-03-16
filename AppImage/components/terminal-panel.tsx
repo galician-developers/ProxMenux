@@ -141,10 +141,6 @@ const proxmoxCommands = [
   { cmd: "clear", desc: "Clear terminal screen" },
 ]
 
-function reconnectTerminal(id: string) {
-  // Implementation of reconnectTerminal function
-}
-
 export const TerminalPanel: React.FC<TerminalPanelProps> = ({ websocketUrl, onClose }) => {
   const [terminals, setTerminals] = useState<TerminalInstance[]>([])
   const [activeTerminalId, setActiveTerminalId] = useState<string>("")
@@ -522,7 +518,22 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ websocketUrl, onCl
     fitAddon.fit()
 
     const wsUrl = websocketUrl || getWebSocketUrl()
+    
+    // Connection with timeout for VPN/mobile (15 seconds)
+    const connectionTimeout = 15000
+    let connectionTimedOut = false
+    
     const ws = new WebSocket(wsUrl)
+    
+    // Set connection timeout
+    const timeoutId = setTimeout(() => {
+      if (ws.readyState !== WebSocket.OPEN) {
+        connectionTimedOut = true
+        ws.close()
+        term.writeln('\x1b[31m[ERROR] Connection timeout. Please check your network and try again.\x1b[0m')
+        term.writeln('\x1b[33m[TIP] If using VPN, ensure the connection is stable.\x1b[0m')
+      }
+    }, connectionTimeout)
 
     const syncSizeWithBackend = () => {
       try {
@@ -544,6 +555,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ websocketUrl, onCl
     }
 
     ws.onopen = () => {
+      // Clear connection timeout - we're connected!
+      clearTimeout(timeoutId)
+      
       // Start heartbeat ping every 25 seconds to keep connection alive
       // This prevents disconnection when switching apps on mobile/tablet (iPad)
       const pingInterval = setInterval(() => {
@@ -569,6 +583,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ websocketUrl, onCl
     }
 
     ws.onerror = (error) => {
+      clearTimeout(timeoutId)
       console.error("[v0] TerminalPanel: WebSocket error:", error)
       setTerminals((prev) => prev.map((t) => {
         if (t.id === terminal.id) {
@@ -579,10 +594,14 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ websocketUrl, onCl
         }
         return t
       }))
-      term.writeln("\r\n\x1b[31m[ERROR] WebSocket connection error\x1b[0m")
+      // Only show error if not already shown by timeout
+      if (!connectionTimedOut) {
+        term.writeln("\r\n\x1b[31m[ERROR] WebSocket connection error\x1b[0m")
+      }
     }
 
     ws.onclose = () => {
+      clearTimeout(timeoutId)
       setTerminals((prev) => prev.map((t) => {
         if (t.id === terminal.id) {
           if (t.pingInterval) {
@@ -592,7 +611,10 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ websocketUrl, onCl
         }
         return t
       }))
-      term.writeln("\r\n\x1b[33m[INFO] Connection closed\x1b[0m")
+      // Only show close message if not already shown by timeout
+      if (!connectionTimedOut) {
+        term.writeln("\r\n\x1b[33m[INFO] Connection closed\x1b[0m")
+      }
     }
 
     term.onData((data) => {
