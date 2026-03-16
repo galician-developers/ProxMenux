@@ -835,7 +835,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "pve"
     ],
@@ -5311,7 +5311,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [],
     "config_path": "/opt/gluetun-data/.env",
     "os": ""
