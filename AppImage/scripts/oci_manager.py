@@ -271,64 +271,82 @@ def get_available_storages() -> List[Dict[str, Any]]:
     storages = []
     
     try:
-        # Use pvesm status to get all storages
-        rc, out, err = _run_pve_cmd(["pvesm", "status", "--output-format", "json"])
+        # Use pvesm status to get all storages (parse text output for compatibility)
+        rc, out, err = _run_pve_cmd(["pvesm", "status"])
         if rc != 0:
             logger.error(f"Failed to get storage status: {err}")
             return storages
         
-        storage_list = json.loads(out) if out.strip() else []
-        
-        for storage in storage_list:
-            storage_name = storage.get("storage", "")
-            storage_type = storage.get("type", "")
-            
-            # Skip if storage is not active
-            if storage.get("active", 0) != 1:
+        # Parse text output: Name Type Status Total Used Available %
+        # Example: local-lvm lvmthin active 464031744 15491072 448540672 3.34%
+        lines = out.strip().split('\n')
+        for line in lines[1:]:  # Skip header
+            parts = line.split()
+            if len(parts) < 4:
                 continue
             
-            # Check if storage supports rootdir content (for LXC)
-            rc2, out2, _ = _run_pve_cmd(["pvesm", "show", storage_name, "--output-format", "json"])
-            if rc2 == 0 and out2.strip():
-                try:
-                    config = json.loads(out2)
-                    content = config.get("content", "")
-                    
-                    # Storage must support "images" or "rootdir" for LXC rootfs
-                    # - "rootdir" is for directory-based storage (ZFS, BTRFS, NFS, etc.)
-                    # - "images" is for block storage (LVM, LVM-thin, etc.)
-                    if "images" in content or "rootdir" in content:
-                        total_bytes = storage.get("total", 0)
-                        used_bytes = storage.get("used", 0)
-                        avail_bytes = storage.get("avail", total_bytes - used_bytes)
-                        
-                        # Determine recommendation priority
-                        # Prefer: zfspool > lvmthin > btrfs > lvm > others
-                        priority = 99
-                        if storage_type == "zfspool":
-                            priority = 1
-                        elif storage_type == "lvmthin":
-                            priority = 2
-                        elif storage_type == "btrfs":
-                            priority = 3
-                        elif storage_type == "lvm":
-                            priority = 4
-                        elif storage_type in ("dir", "nfs", "cifs"):
-                            priority = 10
-                        
-                        storages.append({
-                            "name": storage_name,
-                            "type": storage_type,
-                            "total": total_bytes,
-                            "used": used_bytes,
-                            "avail": avail_bytes,
-                            "active": True,
-                            "enabled": storage.get("enabled", 0) == 1,
-                            "priority": priority,
-                            "recommended": False  # Will be set after sorting
-                        })
-                except json.JSONDecodeError:
-                    pass
+            storage_name = parts[0]
+            storage_type = parts[1]
+            status = parts[2]
+            
+            # Skip if storage is not active
+            if status != "active":
+                continue
+            
+            # Get capacity info
+            total_bytes = int(parts[3]) * 1024 if len(parts) > 3 and parts[3].isdigit() else 0
+            used_bytes = int(parts[4]) * 1024 if len(parts) > 4 and parts[4].isdigit() else 0
+            avail_bytes = int(parts[5]) * 1024 if len(parts) > 5 and parts[5].isdigit() else total_bytes - used_bytes
+            
+            # Check if storage supports rootdir/images content (for LXC)
+            # Read from /etc/pve/storage.cfg directly for compatibility
+            content = ""
+            try:
+                with open("/etc/pve/storage.cfg", "r") as f:
+                    cfg_content = f.read()
+                    # Find the storage section
+                    import re
+                    pattern = rf'{storage_type}:\s*{re.escape(storage_name)}\s*\n((?:\s+[^\n]+\n)*)'
+                    match = re.search(pattern, cfg_content)
+                    if match:
+                        section = match.group(1)
+                        content_match = re.search(r'content\s+(\S+)', section)
+                        if content_match:
+                            content = content_match.group(1)
+            except Exception:
+                # Fallback: assume block storages support images
+                if storage_type in ("lvm", "lvmthin", "zfspool", "rbd"):
+                    content = "images,rootdir"
+                elif storage_type in ("dir", "nfs", "cifs", "btrfs"):
+                    content = "rootdir,images"
+            
+            # Storage must support "images" or "rootdir" for LXC rootfs
+            if "images" in content or "rootdir" in content:
+                # Determine recommendation priority
+                # Prefer: zfspool > lvmthin > btrfs > lvm > others
+                priority = 99
+                if storage_type == "zfspool":
+                    priority = 1
+                elif storage_type == "lvmthin":
+                    priority = 2
+                elif storage_type == "btrfs":
+                    priority = 3
+                elif storage_type == "lvm":
+                    priority = 4
+                elif storage_type in ("dir", "nfs", "cifs"):
+                    priority = 10
+                
+                storages.append({
+                    "name": storage_name,
+                    "type": storage_type,
+                    "total": total_bytes,
+                    "used": used_bytes,
+                    "avail": avail_bytes,
+                    "active": True,
+                    "enabled": True,
+                    "priority": priority,
+                    "recommended": False  # Will be set after sorting
+                })
         
         # Sort by priority (lower = better), then by available space
         storages.sort(key=lambda s: (s.get("priority", 99), -s.get("avail", 0)))
