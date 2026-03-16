@@ -80,6 +80,29 @@ def get_app_definition(app_id: str):
         }), 500
 
 
+@oci_bp.route("/storages", methods=["GET"])
+@require_auth
+def get_storages():
+    """
+    Get list of available storages for LXC rootfs.
+    
+    Returns:
+        List of storages with capacity info and recommendations.
+    """
+    try:
+        storages = oci_manager.get_available_storages()
+        return jsonify({
+            "success": True,
+            "storages": storages
+        })
+    except Exception as e:
+        logger.error(f"Failed to get storages: {e}")
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
+
+
 @oci_bp.route("/catalog/<app_id>/schema", methods=["GET"])
 @require_auth
 def get_app_schema(app_id: str):

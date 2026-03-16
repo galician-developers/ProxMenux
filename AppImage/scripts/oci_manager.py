@@ -50,6 +50,9 @@ ENCRYPTION_KEY_FILE = os.path.join(OCI_BASE_DIR, ".encryption_key")
 # Default storage for templates
 DEFAULT_STORAGE = "local"
 
+# Default storage for rootfs (will be auto-detected)
+DEFAULT_ROOTFS_STORAGE = "local-lvm"
+
 # VMID range for OCI containers (9000-9999 to avoid conflicts)
 OCI_VMID_START = 9000
 OCI_VMID_END = 9999
@@ -257,6 +260,87 @@ def _get_vmid_for_app(app_id: str) -> Optional[int]:
     installed = _load_installed()
     instance = installed.get("instances", {}).get(app_id)
     return instance.get("vmid") if instance else None
+
+
+def get_available_storages() -> List[Dict[str, Any]]:
+    """Get list of storages available for LXC rootfs.
+    
+    Returns storages that support 'images' or 'rootdir' content types,
+    which are required for LXC container disks.
+    """
+    storages = []
+    
+    try:
+        # Use pvesm status to get all storages
+        rc, out, err = _run_pve_cmd(["pvesm", "status", "--output-format", "json"])
+        if rc != 0:
+            logger.error(f"Failed to get storage status: {err}")
+            return storages
+        
+        storage_list = json.loads(out) if out.strip() else []
+        
+        for storage in storage_list:
+            storage_name = storage.get("storage", "")
+            storage_type = storage.get("type", "")
+            
+            # Skip if storage is not active
+            if storage.get("active", 0) != 1:
+                continue
+            
+            # Check if storage supports rootdir content (for LXC)
+            rc2, out2, _ = _run_pve_cmd(["pvesm", "show", storage_name, "--output-format", "json"])
+            if rc2 == 0 and out2.strip():
+                try:
+                    config = json.loads(out2)
+                    content = config.get("content", "")
+                    
+                    # Storage must support "images" or "rootdir" for LXC rootfs
+                    # - "rootdir" is for directory-based storage (ZFS, BTRFS, NFS, etc.)
+                    # - "images" is for block storage (LVM, LVM-thin, etc.)
+                    if "images" in content or "rootdir" in content:
+                        total_bytes = storage.get("total", 0)
+                        used_bytes = storage.get("used", 0)
+                        avail_bytes = storage.get("avail", total_bytes - used_bytes)
+                        
+                        # Determine recommendation priority
+                        # Prefer: zfspool > lvmthin > btrfs > lvm > others
+                        priority = 99
+                        if storage_type == "zfspool":
+                            priority = 1
+                        elif storage_type == "lvmthin":
+                            priority = 2
+                        elif storage_type == "btrfs":
+                            priority = 3
+                        elif storage_type == "lvm":
+                            priority = 4
+                        elif storage_type in ("dir", "nfs", "cifs"):
+                            priority = 10
+                        
+                        storages.append({
+                            "name": storage_name,
+                            "type": storage_type,
+                            "total": total_bytes,
+                            "used": used_bytes,
+                            "avail": avail_bytes,
+                            "active": True,
+                            "enabled": storage.get("enabled", 0) == 1,
+                            "priority": priority,
+                            "recommended": False  # Will be set after sorting
+                        })
+                except json.JSONDecodeError:
+                    pass
+        
+        # Sort by priority (lower = better), then by available space
+        storages.sort(key=lambda s: (s.get("priority", 99), -s.get("avail", 0)))
+        
+        # Mark the first one as recommended
+        if storages:
+            storages[0]["recommended"] = True
+            
+    except Exception as e:
+        logger.error(f"Failed to get available storages: {e}")
+    
+    return storages
 
 
 def _download_alpine_template(storage: str = DEFAULT_STORAGE) -> bool:
@@ -690,7 +774,7 @@ def deploy_app(app_id: str, config: Dict[str, Any], installed_by: str = "web") -
     
     Args:
         app_id: ID of the app from the catalog
-        config: User configuration values
+        config: User configuration values (includes 'storage' for rootfs location)
         installed_by: Source of installation ('web' or 'cli')
     
     Returns:
@@ -703,11 +787,8 @@ def deploy_app(app_id: str, config: Dict[str, Any], installed_by: str = "web") -
         "vmid": None
     }
     
-    # Check Proxmox OCI support
-    pve_info = check_proxmox_version()
-    if not pve_info["oci_support"]:
-        result["message"] = pve_info.get("error", "OCI containers require Proxmox VE 9.1+")
-        return result
+    # Note: We don't require PVE 9.1+ here because secure-gateway uses standard LXC,
+    # not OCI containers. OCI support will be checked when deploying actual OCI apps.
     
     # Get app definition
     app_def = get_app_definition(app_id)
@@ -722,6 +803,19 @@ def deploy_app(app_id: str, config: Dict[str, Any], installed_by: str = "web") -
     
     container_def = app_def.get("container", {})
     container_type = container_def.get("type", "oci")
+    
+    # Get storage for rootfs - from config or auto-detect
+    rootfs_storage = config.get("storage")
+    if not rootfs_storage:
+        # Auto-detect available storage
+        available = get_available_storages()
+        if available:
+            # Use the first one (should be recommended)
+            rootfs_storage = available[0]["name"]
+            logger.info(f"Auto-detected rootfs storage: {rootfs_storage}")
+        else:
+            rootfs_storage = DEFAULT_ROOTFS_STORAGE
+            logger.warning(f"No storage detected, using default: {rootfs_storage}")
     
     # Get next available VMID
     vmid = _get_next_vmid()
@@ -773,7 +867,7 @@ def deploy_app(app_id: str, config: Dict[str, Any], installed_by: str = "web") -
         "--hostname", hostname,
         "--memory", str(container_def.get("memory", 512)),
         "--cores", str(container_def.get("cores", 1)),
-        "--rootfs", f"local-lvm:{container_def.get('disk_size', 4)}",
+        "--rootfs", f"{rootfs_storage}:{container_def.get('disk_size', 4)}",
         "--unprivileged", "0" if container_def.get("privileged") else "1",
         "--onboot", "1"
     ]

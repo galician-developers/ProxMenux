@@ -30,6 +30,17 @@ interface NetworkInfo {
   recommended?: boolean
 }
 
+interface StorageInfo {
+  name: string
+  type: string
+  total: number
+  used: number
+  avail: number
+  active: boolean
+  enabled: boolean
+  recommended: boolean
+}
+
 interface AppStatus {
   state: "not_installed" | "running" | "stopped" | "error"
   health: string
@@ -73,6 +84,7 @@ export function SecureGatewaySetup() {
   const [configSchema, setConfigSchema] = useState<ConfigSchema | null>(null)
   const [wizardSteps, setWizardSteps] = useState<WizardStep[]>([])
   const [networks, setNetworks] = useState<NetworkInfo[]>([])
+  const [storages, setStorages] = useState<StorageInfo[]>([])
   
   // Wizard state
   const [showWizard, setShowWizard] = useState(false)
@@ -113,14 +125,14 @@ export function SecureGatewaySetup() {
   const loadInitialData = async () => {
     setLoading(true)
     try {
-      // Load runtime info (checks for Proxmox 9.1+ OCI support)
+      // Secure Gateway uses standard LXC, not OCI containers
+      // So we don't require PVE 9.1+ - it works on any Proxmox version
+      setRuntimeAvailable(true)
+      
+      // Still load runtime info for reference
       const runtimeRes = await fetchApi("/api/oci/runtime")
-      if (runtimeRes.success && runtimeRes.available) {
-        setRuntimeAvailable(true)
-        setRuntimeInfo({ runtime: runtimeRes.runtime, version: runtimeRes.version })
-      } else {
-        // Show version requirement message
-        setRuntimeInfo({ runtime: "proxmox-lxc", version: runtimeRes.version || "unknown" })
+      if (runtimeRes.success) {
+        setRuntimeInfo({ runtime: runtimeRes.runtime || "proxmox-lxc", version: runtimeRes.version || "unknown" })
       }
 
       // Load app definition
@@ -154,6 +166,17 @@ export function SecureGatewaySetup() {
           // Remove CIDR notation if present (e.g., "192.168.0.55/24" -> "192.168.0.55")
           const ip = hostIpValue.split("/")[0]
           setHostIp(ip)
+        }
+      }
+
+      // Load available storages
+      const storagesRes = await fetchApi("/api/oci/storages")
+      if (storagesRes.success && storagesRes.storages?.length > 0) {
+        setStorages(storagesRes.storages)
+        // Set default storage (first recommended one)
+        const recommended = storagesRes.storages.find((s: StorageInfo) => s.recommended) || storagesRes.storages[0]
+        if (recommended) {
+          setConfig(prev => ({ ...prev, storage: recommended.name }))
         }
       }
     } catch (err) {
@@ -644,6 +667,51 @@ export function SecureGatewaySetup() {
             </p>
           </div>
           
+          {/* Storage selector */}
+          {storages.length > 1 && (
+            <div className="space-y-3">
+              <Label className="text-sm font-medium">Storage Location</Label>
+              <p className="text-xs text-muted-foreground">Select where to create the container disk.</p>
+              <div className="space-y-2">
+                {storages.filter(s => s.active && s.enabled).map((storage) => (
+                  <div
+                    key={storage.name}
+                    onClick={() => setConfig({ ...config, storage: storage.name })}
+                    className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                      config.storage === storage.name
+                        ? "border-cyan-500 bg-cyan-500/10"
+                        : "border-border hover:border-muted-foreground/50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                        config.storage === storage.name ? "border-cyan-500" : "border-muted-foreground"
+                      }`}>
+                        {config.storage === storage.name && (
+                          <div className="w-2 h-2 rounded-full bg-cyan-500" />
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm">{storage.name}</span>
+                          <span className="text-xs text-muted-foreground">({storage.type})</span>
+                          {storage.recommended && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-500">
+                              Recommended
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {(storage.avail / 1024 / 1024 / 1024).toFixed(1)} GB available
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="bg-muted/30 rounded-lg p-4 space-y-3">
             <h4 className="text-sm font-medium">Configuration Summary</h4>
             <div className="space-y-2 text-sm">
@@ -651,6 +719,12 @@ export function SecureGatewaySetup() {
                 <span className="text-muted-foreground">Hostname:</span>
                 <span className="font-mono">{config.hostname || "proxmox-gateway"}</span>
               </div>
+              {storages.length > 1 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Storage:</span>
+                  <span className="font-mono">{config.storage || storages[0]?.name}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Access Mode:</span>
                 <span>{config.access_mode === "host_only" ? "Host Only" : config.access_mode === "proxmox_network" ? "Proxmox Network" : "Custom Networks"}</span>
@@ -1109,23 +1183,10 @@ export function SecureGatewaySetup() {
           <p className="text-sm text-muted-foreground">
             Deploy a Tailscale VPN gateway for secure remote access to your Proxmox infrastructure. No port forwarding required.
           </p>
-          
-          {runtimeAvailable ? (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <CheckCircle className="h-3.5 w-3.5 text-green-500" />
-              <span>Proxmox VE {runtimeInfo?.version} - OCI support available</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-xs text-yellow-500">
-              <AlertTriangle className="h-3.5 w-3.5" />
-              <span>Requires Proxmox VE 9.1+ (current: {runtimeInfo?.version || "unknown"})</span>
-            </div>
-          )}
 
           <Button
             onClick={() => setShowWizard(true)}
             className="bg-cyan-600 hover:bg-cyan-700"
-            disabled={!runtimeAvailable}
           >
             <ShieldCheck className="h-4 w-4 mr-2" />
             Deploy Secure Gateway
