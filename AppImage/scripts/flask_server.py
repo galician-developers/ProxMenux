@@ -746,28 +746,21 @@ def get_latency_history(target='gateway', timeframe='hour'):
         
         conn.close()
         
-        # Compute stats
+        # Compute stats - always use actual min/max values to preserve spikes
         if data:
             values = [d["value"] for d in data if d["value"] is not None]
+            mins = [d["min"] for d in data if d.get("min") is not None]
+            maxs = [d["max"] for d in data if d.get("max") is not None]
+            
             if values:
-                # For gateway, use min/max of the averages (values) so stats match the graph
-                # For other targets (realtime), use actual min/max from individual pings
-                if target == 'gateway':
-                    stats = {
-                        "min": round(min(values), 1),
-                        "max": round(max(values), 1),
-                        "avg": round(sum(values) / len(values), 1),
-                        "current": values[-1] if values else 0
-                    }
-                else:
-                    mins = [d["min"] for d in data if d.get("min") is not None]
-                    maxs = [d["max"] for d in data if d.get("max") is not None]
-                    stats = {
-                        "min": round(min(mins) if mins else min(values), 1),
-                        "max": round(max(maxs) if maxs else max(values), 1),
-                        "avg": round(sum(values) / len(values), 1),
-                        "current": values[-1] if values else 0
-                    }
+                stats = {
+                    # Use actual min from all samples (preserves lowest value)
+                    "min": round(min(mins) if mins else min(values), 1),
+                    # Use actual max from all samples (preserves spikes)
+                    "max": round(max(maxs) if maxs else max(values), 1),
+                    "avg": round(sum(values) / len(values), 1),
+                    "current": values[-1] if values else 0
+                }
             else:
                 stats = {"min": 0, "max": 0, "avg": 0, "current": 0}
         else:

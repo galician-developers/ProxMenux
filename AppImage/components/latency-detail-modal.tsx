@@ -63,21 +63,46 @@ interface LatencyDetailModalProps {
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
     const entry = payload[0]
-    const packetLoss = entry?.payload?.packet_loss
+    const data = entry?.payload
+    const packetLoss = data?.packet_loss
+    const hasMinMax = data?.min !== undefined && data?.max !== undefined && data?.min !== data?.max
+    
     return (
       <div className="bg-gray-900/95 backdrop-blur-sm border border-gray-700 rounded-lg p-3 shadow-xl">
         <p className="text-sm font-semibold text-white mb-2">{label}</p>
         <div className="space-y-1.5">
-          <div className="flex items-center gap-2">
-            <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-blue-500" />
-            <span className="text-xs text-gray-300 min-w-[60px]">Latency:</span>
-            <span className="text-sm font-semibold text-white">{entry.value} ms</span>
-          </div>
+          {hasMinMax ? (
+            // Show min/avg/max when downsampled data is available
+            <>
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-green-500" />
+                <span className="text-xs text-gray-300 min-w-[60px]">Min:</span>
+                <span className="text-sm font-semibold text-green-400">{data.min} ms</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-blue-500" />
+                <span className="text-xs text-gray-300 min-w-[60px]">Avg:</span>
+                <span className="text-sm font-semibold text-white">{data.value} ms</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-red-500" />
+                <span className="text-xs text-gray-300 min-w-[60px]">Max:</span>
+                <span className="text-sm font-semibold text-red-400">{data.max} ms</span>
+              </div>
+            </>
+          ) : (
+            // Simple latency display for single data points
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-blue-500" />
+              <span className="text-xs text-gray-300 min-w-[60px]">Latency:</span>
+              <span className="text-sm font-semibold text-white">{entry.value} ms</span>
+            </div>
+          )}
           {packetLoss !== undefined && packetLoss > 0 && (
             <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-red-500" />
+              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-orange-500" />
               <span className="text-xs text-gray-300 min-w-[60px]">Pkt Loss:</span>
-              <span className="text-sm font-semibold text-red-400">{packetLoss}%</span>
+              <span className="text-sm font-semibold text-orange-400">{packetLoss}%</span>
             </div>
           )}
         </div>
@@ -1083,9 +1108,11 @@ export function LatencyDetailModal({ open, onOpenChange, currentLatency }: Laten
                   tickFormatter={(v) => `${Number(v).toFixed(1)}ms`}
                 />
                 <Tooltip content={<CustomTooltip />} />
+                {/* For longer timeframes (6h+), show max values to preserve spikes.
+                    For 1 hour view, show avg values since there's no downsampling */}
                 <Area
                   type="monotone"
-                  dataKey="value"
+                  dataKey={timeframe === "hour" ? "value" : "max"}
                   stroke="#3b82f6"
                   strokeWidth={2}
                   fill="url(#latencyGradient)"
