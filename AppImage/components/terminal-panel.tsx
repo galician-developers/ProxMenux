@@ -431,27 +431,18 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ websocketUrl, onCl
   }
 
   useEffect(() => {
-    // Initialize terminals when container refs are available
-    const initPending = () => {
+    // Small delay to ensure DOM refs are available after state update
+    // This fixes the issue where first terminal doesn't connect on mobile/VPN
+    const timer = setTimeout(() => {
       terminals.forEach((terminal) => {
         const container = containerRefs.current[terminal.id]
         if (!terminal.term && container) {
           initializeTerminal(terminal, container)
         }
       })
-    }
+    }, 50)
     
-    // Run immediately
-    initPending()
-    
-    // Retry after delays to handle slow DOM rendering (mobile/VPN)
-    const timer1 = setTimeout(initPending, 100)
-    const timer2 = setTimeout(initPending, 300)
-    
-    return () => {
-      clearTimeout(timer1)
-      clearTimeout(timer2)
-    }
+    return () => clearTimeout(timer)
   }, [terminals, isMobile])
 
   useEffect(() => {
@@ -656,7 +647,13 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ websocketUrl, onCl
     }
   }
 
-  const handleKeyButton = (key: string) => {
+  const handleKeyButton = (key: string, e?: React.MouseEvent | React.TouchEvent) => {
+    // Prevenir comportamientos por defecto del navegador
+    if (e) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+
     const activeTerminal = terminals.find((t) => t.id === activeTerminalId)
     if (!activeTerminal || !activeTerminal.ws || activeTerminal.ws.readyState !== WebSocket.OPEN) return
 
@@ -924,7 +921,11 @@ const handleClose = () => {
       {(isMobile || isTablet) && (
         <div className="flex gap-1.5 justify-center items-center px-1 bg-zinc-900 text-sm rounded-b-md border-t border-zinc-700 py-1.5">
           <Button
-            onClick={() => sendSequence("\x1b")}
+            onPointerDown={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              sendSequence("\x1b", e)
+            }}
             variant="outline"
             size="sm"
             className="h-8 px-2.5 text-xs"
@@ -932,7 +933,11 @@ const handleClose = () => {
             ESC
           </Button>
           <Button
-            onClick={() => sendSequence("\t")}
+            onPointerDown={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              sendSequence("\t", e)
+            }}
             variant="outline"
             size="sm"
             className="h-8 px-2.5 text-xs"
@@ -940,7 +945,11 @@ const handleClose = () => {
             TAB
           </Button>
           <Button
-            onClick={() => handleKeyButton("UP")}
+            onPointerDown={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              handleKeyButton("UP", e)
+            }}
             variant="outline"
             size="sm"
             className="h-8 px-3 text-xs"
@@ -948,7 +957,11 @@ const handleClose = () => {
             ↑
           </Button>
           <Button
-            onClick={() => handleKeyButton("DOWN")}
+            onPointerDown={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              handleKeyButton("DOWN", e)
+            }}
             variant="outline"
             size="sm"
             className="h-8 px-3 text-xs"
@@ -956,7 +969,11 @@ const handleClose = () => {
             ↓
           </Button>
           <Button
-            onClick={() => handleKeyButton("LEFT")}
+            onPointerDown={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              handleKeyButton("LEFT", e)
+            }}
             variant="outline"
             size="sm"
             className="h-8 px-3 text-xs"
@@ -964,7 +981,11 @@ const handleClose = () => {
             ←
           </Button>
           <Button
-            onClick={() => handleKeyButton("RIGHT")}
+            onPointerDown={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              handleKeyButton("RIGHT", e)
+            }}
             variant="outline"
             size="sm"
             className="h-8 px-3 text-xs"
@@ -972,7 +993,11 @@ const handleClose = () => {
             →
           </Button>
           <Button
-            onClick={() => handleKeyButton("ENTER")}
+            onPointerDown={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              handleKeyButton("ENTER", e)
+            }}
             variant="outline"
             size="sm"
             className="h-8 px-2 text-xs bg-blue-600/20 hover:bg-blue-600/30 border-blue-600/50 text-blue-400"
