@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useEffect, useRef, useState, useCallback } from "react"
+import { useEffect, useRef, useState } from "react"
 import { API_PORT, fetchApi } from "@/lib/api-config" // Unificando importaciones de api-config en una sola línea con alias @/
 import {
   Activity,
@@ -430,34 +430,28 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ websocketUrl, onCl
     delete containerRefs.current[id]
   }
 
-  // Callback ref handler that initializes terminal when container becomes available
-  const setContainerRef = useCallback((terminalId: string, el: HTMLDivElement | null) => {
-    containerRefs.current[terminalId] = el
-    
-    // If element is available and terminal needs initialization, do it now
-    if (el) {
-      const terminal = terminals.find(t => t.id === terminalId)
-      if (terminal && !terminal.term) {
-        // Small delay to ensure React has finished rendering
-        setTimeout(() => {
-          const currentTerminal = terminals.find(t => t.id === terminalId)
-          if (currentTerminal && !currentTerminal.term && el) {
-            initializeTerminal(currentTerminal, el)
-          }
-        }, 50)
-      }
-    }
-  }, [terminals])
-
   useEffect(() => {
-    // Also try to initialize any pending terminals
-    // This handles cases where state updates after ref assignment
-    terminals.forEach((terminal) => {
-      const container = containerRefs.current[terminal.id]
-      if (!terminal.term && container) {
-        initializeTerminal(terminal, container)
-      }
-    })
+    // Initialize terminals when container refs are available
+    const initPending = () => {
+      terminals.forEach((terminal) => {
+        const container = containerRefs.current[terminal.id]
+        if (!terminal.term && container) {
+          initializeTerminal(terminal, container)
+        }
+      })
+    }
+    
+    // Run immediately
+    initPending()
+    
+    // Retry after delays to handle slow DOM rendering (mobile/VPN)
+    const timer1 = setTimeout(initPending, 100)
+    const timer2 = setTimeout(initPending, 300)
+    
+    return () => {
+      clearTimeout(timer1)
+      clearTimeout(timer2)
+    }
   }, [terminals, isMobile])
 
   useEffect(() => {
@@ -880,7 +874,7 @@ const handleClose = () => {
                 className={`flex-1 h-full mt-0 ${activeTerminalId === terminal.id ? "block" : "hidden"}`}
               >
                 <div
-                  ref={(el) => setContainerRef(terminal.id, el)}
+                  ref={(el) => (containerRefs.current[terminal.id] = el)}
                   className="w-full h-full flex-1 bg-black overflow-hidden"
                 />
               </TabsContent>
@@ -911,7 +905,7 @@ const handleClose = () => {
                   )}
                 </div>
                 <div
-                  ref={(el) => setContainerRef(terminal.id, el)}
+                  ref={(el) => (containerRefs.current[terminal.id] = el)}
                   onClick={() => setActiveTerminalId(terminal.id)}
                   className="flex-1 w-full max-w-full bg-black overflow-hidden cursor-pointer"
                   data-terminal-container
