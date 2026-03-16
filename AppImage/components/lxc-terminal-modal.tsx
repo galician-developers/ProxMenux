@@ -327,13 +327,20 @@ export function LxcTerminalModal({
                   term.write(lastPromptMatch[0])
                 }
                 
-                // Send an extra Enter for Alpine containers (ash shell)
-                // This forces the prompt to refresh properly
-                setTimeout(() => {
-                  if (ws.readyState === WebSocket.OPEN) {
-                    ws.send('\r')
-                  }
-                }, 100)
+                // Detect if this is Alpine/ash shell by checking prompt format
+                // Alpine uses: [root@hostname ~]# or [root@hostname /]#
+                // Other distros use: root@hostname:/# or root@hostname:~#
+                const isAlpine = afterPctEnter.match(/\[[^\]]+@[^\]]+\s+[^\]]*\][#$]/)
+                
+                if (isAlpine) {
+                  // Send an extra Enter ONLY for Alpine containers (ash shell)
+                  // This forces the prompt to refresh properly
+                  setTimeout(() => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                      ws.send('\r')
+                    }
+                  }, 100)
+                }
                 
                 return
               }

@@ -430,7 +430,28 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ websocketUrl, onCl
     delete containerRefs.current[id]
   }
 
+  // Callback ref handler that initializes terminal when container becomes available
+  const setContainerRef = useCallback((terminalId: string, el: HTMLDivElement | null) => {
+    containerRefs.current[terminalId] = el
+    
+    // If element is available and terminal needs initialization, do it now
+    if (el) {
+      const terminal = terminals.find(t => t.id === terminalId)
+      if (terminal && !terminal.term) {
+        // Small delay to ensure React has finished rendering
+        setTimeout(() => {
+          const currentTerminal = terminals.find(t => t.id === terminalId)
+          if (currentTerminal && !currentTerminal.term && el) {
+            initializeTerminal(currentTerminal, el)
+          }
+        }, 50)
+      }
+    }
+  }, [terminals])
+
   useEffect(() => {
+    // Also try to initialize any pending terminals
+    // This handles cases where state updates after ref assignment
     terminals.forEach((terminal) => {
       const container = containerRefs.current[terminal.id]
       if (!terminal.term && container) {
@@ -859,7 +880,7 @@ const handleClose = () => {
                 className={`flex-1 h-full mt-0 ${activeTerminalId === terminal.id ? "block" : "hidden"}`}
               >
                 <div
-                  ref={(el) => (containerRefs.current[terminal.id] = el)}
+                  ref={(el) => setContainerRef(terminal.id, el)}
                   className="w-full h-full flex-1 bg-black overflow-hidden"
                 />
               </TabsContent>
@@ -890,7 +911,7 @@ const handleClose = () => {
                   )}
                 </div>
                 <div
-                  ref={(el) => (containerRefs.current[terminal.id] = el)}
+                  ref={(el) => setContainerRef(terminal.id, el)}
                   onClick={() => setActiveTerminalId(terminal.id)}
                   className="flex-1 w-full max-w-full bg-black overflow-hidden cursor-pointer"
                   data-terminal-container
