@@ -1071,7 +1071,7 @@ def _generate_html_description(app_def: Dict, container_def: Dict, hostname: str
 <table style='width: 100%; border-collapse: collapse;'>
 <tr>
 <td style='width: 100px; vertical-align: middle;'>
-<img src='https://raw.githubusercontent.com/MacRimi/ProxMenux/main/images/logo_desc.png' alt='ProxMenux Logo' style='height: 100px;'>
+<img src="/images/design-mode/logo_desc.png" alt='ProxMenux Logo' style='height: 100px;'>
 </td>
 <td style='vertical-align: middle;'>
 <h1 style='margin: 0;'>{app_name}</h1>

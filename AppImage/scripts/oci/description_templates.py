@@ -100,7 +100,7 @@ def generate_description(
 <table style='width: 100%; border-collapse: collapse;'>
 <tr>
 <td style='width: 100px; vertical-align: middle;'>
-<img src='https://raw.githubusercontent.com/MacRimi/ProxMenux/main/images/logo_desc.png' alt='ProxMenux Logo' style='height: 100px;'>
+<img src="/images/design-mode/logo_desc.png" alt='ProxMenux Logo' style='height: 100px;'>
 </td>
 <td style='vertical-align: middle;'>
 <h1 style='margin: 0;'>{app_name}</h1>
@@ -186,7 +186,7 @@ def generate_vm_description(
 <table style='width: 100%; border-collapse: collapse;'>
 <tr>
 <td style='width: 100px; vertical-align: middle;'>
-<img src='https://raw.githubusercontent.com/MacRimi/ProxMenux/main/images/logo_desc.png' alt='ProxMenux Logo' style='height: 100px;'>
+<img src="/images/design-mode/logo_desc.png" alt='ProxMenux Logo' style='height: 100px;'>
 </td>
 <td style='vertical-align: middle;'>
 <h1 style='margin: 0;'>{vm_name}</h1>

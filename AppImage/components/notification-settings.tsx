@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { useTheme } from "next-themes"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs"
 import { Input } from "./ui/input"
@@ -111,42 +112,54 @@ const AI_PROVIDERS = [
     label: "Groq",
     model: "llama-3.3-70b-versatile",
     description: "Very fast, generous free tier (30 req/min). Ideal to start.",
-    keyUrl: "https://console.groq.com/keys"
+    keyUrl: "https://console.groq.com/keys",
+    icon: "/icons/Groq Logo_White 25.svg",
+    iconLight: "/icons/Groq Logo_Black 25.svg"
   },
   { 
     value: "openai", 
     label: "OpenAI",
     model: "gpt-4o-mini",
     description: "Industry standard. Very accurate and widely used.",
-    keyUrl: "https://platform.openai.com/api-keys"
+    keyUrl: "https://platform.openai.com/api-keys",
+    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons/png/openai.png",
+    iconLight: "https://cdn.jsdelivr.net/gh/selfhst/icons/png/openai-light.png"
   },
   { 
     value: "anthropic", 
     label: "Anthropic (Claude)",
     model: "claude-3-haiku-20240307",
     description: "Excellent for writing and translation. Fast and economical.",
-    keyUrl: "https://console.anthropic.com/settings/keys"
+    keyUrl: "https://console.anthropic.com/settings/keys",
+    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons/png/anthropic.png",
+    iconLight: "https://cdn.jsdelivr.net/gh/selfhst/icons/png/anthropic-light.png"
   },
   { 
     value: "gemini", 
     label: "Google Gemini",
     model: "gemini-1.5-flash",
     description: "Free tier available, great quality/price ratio.",
-    keyUrl: "https://aistudio.google.com/app/apikey"
+    keyUrl: "https://aistudio.google.com/app/apikey",
+    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons/png/google-gemini.png",
+    iconLight: "https://cdn.jsdelivr.net/gh/selfhst/icons/png/google-gemini.png"
   },
   { 
     value: "ollama", 
     label: "Ollama (Local)",
     model: "llama3.2",
     description: "100% local execution. No costs, total privacy, no internet required.",
-    keyUrl: ""
+    keyUrl: "",
+    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons/png/ollama.png",
+    iconLight: "https://cdn.jsdelivr.net/gh/selfhst/icons/png/ollama.png"
   },
   { 
     value: "openrouter", 
     label: "OpenRouter",
     model: "meta-llama/llama-3.3-70b-instruct",
     description: "Aggregator with access to 100+ models using a single API key. Maximum flexibility.",
-    keyUrl: "https://openrouter.ai/keys"
+    keyUrl: "https://openrouter.ai/keys",
+    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons/png/openrouter.png",
+    iconLight: "https://cdn.jsdelivr.net/gh/selfhst/icons/png/openrouter.png"
   },
 ]
 
@@ -213,6 +226,7 @@ const DEFAULT_CONFIG: NotificationConfig = {
 }
 
 export function NotificationSettings() {
+  const { resolvedTheme } = useTheme()
   const [config, setConfig] = useState<NotificationConfig>(DEFAULT_CONFIG)
   const [status, setStatus] = useState<ServiceStatus | null>(null)
   const [history, setHistory] = useState<HistoryEntry[]>([])
@@ -1312,11 +1326,11 @@ export function NotificationSettings() {
               </button>
 
               {showAdvanced && (
-                <div className="space-y-3 mt-3 p-3 rounded-lg bg-muted/30 border border-border/50">
+                <div className="space-y-4 mt-3 p-4 rounded-lg bg-muted/30 border border-border/50">
                   <div className="flex items-center justify-between">
                     <div>
-                      <span className="text-xs font-medium">AI-Enhanced Messages</span>
-                      <p className="text-[10px] text-muted-foreground">Use AI to generate contextual notification messages</p>
+                      <span className="text-sm font-medium">AI-Enhanced Messages</span>
+                      <p className="text-xs sm:text-sm text-muted-foreground">Use AI to generate contextual notification messages</p>
                     </div>
                     <button
                       className={`relative w-9 h-[18px] rounded-full transition-colors ${
@@ -1411,28 +1425,26 @@ export function NotificationSettings() {
                         </div>
                       )}
                       
-                      {/* Model (optional) */}
+                      {/* Model (read-only display) */}
                       <div className="space-y-2">
-                        <Label className="text-xs sm:text-sm text-muted-foreground">Model (optional)</Label>
-                        <Input
-                          className="h-9 text-sm font-mono"
-                          placeholder={AI_PROVIDERS.find(p => p.value === config.ai_provider)?.model || ""}
-                          value={config.ai_model}
-                          onChange={e => updateConfig(p => ({ ...p, ai_model: e.target.value }))}
-                          disabled={!editMode}
-                        />
+                        <Label className="text-xs sm:text-sm text-muted-foreground">Model</Label>
+                        <div className="h-9 px-3 flex items-center rounded-md border border-border bg-muted/50 text-sm font-mono text-muted-foreground">
+                          {AI_PROVIDERS.find(p => p.value === config.ai_provider)?.model || "default"}
+                        </div>
                       </div>
                       
                       {/* Language selector */}
                       <div className="space-y-2">
                         <Label className="text-xs sm:text-sm text-muted-foreground">Language</Label>
                         <Select
-                          value={config.ai_language}
+                          value={config.ai_language || "en"}
                           onValueChange={v => updateConfig(p => ({ ...p, ai_language: v }))}
                           disabled={!editMode}
                         >
                           <SelectTrigger className="h-9 text-sm">
-                            <SelectValue />
+                            <SelectValue placeholder="Select language">
+                              {AI_LANGUAGES.find(l => l.value === (config.ai_language || "en"))?.label || "English"}
+                            </SelectValue>
                           </SelectTrigger>
                           <SelectContent>
                             {AI_LANGUAGES.map(l => (
@@ -1536,7 +1548,7 @@ export function NotificationSettings() {
     
       {/* AI Provider Information Modal */}
       <Dialog open={showProviderInfo} onOpenChange={setShowProviderInfo}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md sm:max-w-lg md:max-w-xl">
           <DialogHeader>
             <DialogTitle className="text-base sm:text-lg">AI Providers Information</DialogTitle>
           </DialogHeader>
@@ -1547,15 +1559,29 @@ export function NotificationSettings() {
                 className="p-4 rounded-lg bg-muted/50 border border-border hover:border-muted-foreground/40 transition-colors"
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-medium text-sm sm:text-base">{provider.label}</span>
+                  <div className="flex items-center gap-3">
+                    {/* Provider icon with theme support */}
+                    <div className="w-8 h-8 rounded-md bg-background flex items-center justify-center border border-border shrink-0">
+                      <img 
+                        src={resolvedTheme === 'light' ? provider.iconLight : provider.icon} 
+                        alt={provider.label}
+                        className="w-5 h-5 object-contain"
+                        onError={(e) => {
+                          // Fallback if icon fails to load
+                          (e.target as HTMLImageElement).style.display = 'none'
+                        }}
+                      />
+                    </div>
+                    <span className="font-medium text-sm sm:text-base">{provider.label}</span>
+                  </div>
                   {provider.value === "ollama" && (
                     <Badge variant="outline" className="text-xs px-2 py-0.5">Local</Badge>
                   )}
                 </div>
-                <div className="text-xs sm:text-sm text-muted-foreground mt-1.5">
+                <div className="text-xs sm:text-sm text-muted-foreground mt-2 ml-11">
                   Default model: <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">{provider.model}</code>
                 </div>
-                <p className="text-xs sm:text-sm text-muted-foreground mt-2 leading-relaxed">
+                <p className="text-xs sm:text-sm text-muted-foreground mt-2 ml-11 leading-relaxed">
                   {provider.description}
                 </p>
               </div>
