@@ -131,8 +131,8 @@ const AI_PROVIDERS = [
     model: "claude-3-haiku-20240307",
     description: "Excellent for writing and translation. Fast and economical.",
     keyUrl: "https://console.anthropic.com/settings/keys",
-    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/claude-dark.webp",
-    iconLight: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/claude-light.webp"
+    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/claude-light.webp",
+    iconLight: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/claude-dark.webp"
   },
   { 
     value: "gemini", 
@@ -158,8 +158,8 @@ const AI_PROVIDERS = [
     model: "meta-llama/llama-3.3-70b-instruct",
     description: "Aggregator with access to 100+ models using a single API key. Maximum flexibility.",
     keyUrl: "https://openrouter.ai/keys",
-    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/openrouter-dark.webp",
-    iconLight: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/openrouter-light.webp"
+    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/openrouter-light.webp",
+    iconLight: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/openrouter-dark.webp"
   },
 ]
 
