@@ -1123,14 +1123,6 @@ class NotificationManager:
             else:
                 return {'success': False, 'error': f'Channel {channel_name} not configured'}
         
-        # Base test message (English)
-        base_title = 'ProxMenux Test'
-        base_message = (
-            'Welcome to ProxMenux Monitor notification service!\n\n'
-            'This is a test message to verify your notification channel is working correctly.\n'
-            'You will receive alerts about system events, health status changes, and security incidents.'
-        )
-        
         # AI config for enhancement
         ai_config = {
             'ai_enabled': self._config.get('ai_enabled', 'false'),
@@ -1141,8 +1133,16 @@ class NotificationManager:
             'ai_ollama_url': self._config.get('ai_ollama_url', ''),
         }
         
+        ai_enabled = self._config.get('ai_enabled', 'false')
+        if isinstance(ai_enabled, str):
+            ai_enabled = ai_enabled.lower() == 'true'
+        
+        ai_provider = self._config.get('ai_provider', 'groq')
+        ai_language = self._config.get('ai_language', 'en')
+        
         # ProxMenux logo for welcome message
         logo_url = 'https://proxmenux.com/telegram.png'
+        logo_caption = 'You can use this image as the profile photo for your notification bot.'
         
         for ch_name, channel in targets.items():
             try:
@@ -1152,6 +1152,28 @@ class NotificationManager:
                 
                 rich_key = f'{ch_name}.rich_format'
                 use_rich_format = self._config.get(rich_key, 'false') == 'true'
+                
+                # Build status indicators for icons and AI, adapted to channel format
+                if use_rich_format:
+                    icon_status  = '✅ Icons: enabled'
+                    ai_status    = f'✅ AI: enabled ({ai_provider} / {ai_language})' if ai_enabled else '❌ AI: disabled'
+                    example_line = '  e.g.  💥 pve01: VM web01 (100) FAILED'
+                else:
+                    icon_status  = 'Icons: disabled'
+                    ai_status    = f'AI: enabled ({ai_provider} / {ai_language})' if ai_enabled else 'AI: disabled'
+                    example_line = '  e.g.  pve01: VM web01 (100) FAILED'
+                
+                # Base test message — shows current channel config
+                base_title = 'ProxMenux Test'
+                base_message = (
+                    'Welcome to ProxMenux Monitor!\n'
+                    'This is a test message to verify your notification channel is working correctly.\n\n'
+                    'Channel configuration:\n'
+                    f'{icon_status}\n'
+                    f'{ai_status}\n\n'
+                    'You will receive alerts about system events, health status changes, and security incidents.\n'
+                    f'{example_line}'
+                )
                 
                 # Apply AI enhancement (translates to configured language)
                 ai_result = format_with_ai_full(
@@ -1167,9 +1189,22 @@ class NotificationManager:
                 success = send_result.get('success', False)
                 error = send_result.get('error', '')
                 
-                # For Telegram: also send logo image as welcome
+                # For Telegram: send logo with caption suggesting it as bot profile photo
                 if success and ch_name == 'telegram' and hasattr(channel, 'send_photo'):
-                    channel.send_photo(logo_url)
+                    # Translate caption if AI is active
+                    if ai_enabled:
+                        caption_result = format_with_ai_full(
+                            '', logo_caption, 'INFO', ai_config,
+                            detail_level='brief', use_emojis=use_rich_format
+                        )
+                        caption = caption_result.get('body', logo_caption)
+                    else:
+                        caption = logo_caption
+                    try:
+                        channel.send_photo(logo_url, caption=caption)
+                    except TypeError:
+                        # Fallback if send_photo doesn't support caption parameter
+                        channel.send_photo(logo_url)
                 
                 results[ch_name] = {'success': success, 'error': error}
                 
