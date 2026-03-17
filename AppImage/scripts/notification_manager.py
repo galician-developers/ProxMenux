@@ -1094,7 +1094,7 @@ class NotificationManager:
         )
     
     def test_channel(self, channel_name: str = 'all') -> Dict[str, Any]:
-        """Test one or all configured channels."""
+        """Test one or all configured channels with AI enhancement."""
         if not self._channels:
             self._load_config()
         
@@ -1119,15 +1119,62 @@ class NotificationManager:
             else:
                 return {'success': False, 'error': f'Channel {channel_name} not configured'}
         
+        # Base test message (English)
+        base_title = 'ProxMenux Test'
+        base_message = (
+            'Welcome to ProxMenux Monitor notification service!\n\n'
+            'This is a test message to verify your notification channel is working correctly.\n'
+            'You will receive alerts about system events, health status changes, and security incidents.'
+        )
+        
+        # AI config for enhancement
+        ai_config = {
+            'ai_enabled': self._config.get('ai_enabled', 'false'),
+            'ai_provider': self._config.get('ai_provider', 'groq'),
+            'ai_api_key': self._config.get('ai_api_key', ''),
+            'ai_model': self._config.get('ai_model', ''),
+            'ai_language': self._config.get('ai_language', 'en'),
+            'ai_ollama_url': self._config.get('ai_ollama_url', ''),
+        }
+        
+        # ProxMenux logo for welcome message
+        logo_url = 'https://macrimi.github.io/ProxMenux/logo.png'
+        
         for ch_name, channel in targets.items():
-            success, error = channel.test()
-            results[ch_name] = {'success': success, 'error': error}
-            
-            self._record_history(
-                'test', ch_name, 'ProxMenux Test',
-                'Test notification', 'INFO',
-                success, error, 'api'
-            )
+            try:
+                # Get per-channel settings
+                detail_level_key = f'{ch_name}.ai_detail_level'
+                detail_level = self._config.get(detail_level_key, 'standard')
+                
+                rich_key = f'{ch_name}.rich_format'
+                use_rich_format = self._config.get(rich_key, 'false') == 'true'
+                
+                # Apply AI enhancement (translates to configured language)
+                enhanced_message = format_with_ai(
+                    base_title, base_message, 'INFO', ai_config,
+                    detail_level=detail_level,
+                    use_emojis=use_rich_format
+                )
+                
+                # Send message
+                send_result = channel.send(base_title, enhanced_message, 'INFO')
+                success = send_result.get('success', False)
+                error = send_result.get('error', '')
+                
+                # For Telegram: also send logo image as welcome
+                if success and ch_name == 'telegram' and hasattr(channel, 'send_photo'):
+                    channel.send_photo(logo_url)
+                
+                results[ch_name] = {'success': success, 'error': error}
+                
+                self._record_history(
+                    'test', ch_name, base_title,
+                    enhanced_message[:500], 'INFO',
+                    success, error, 'api'
+                )
+                
+            except Exception as e:
+                results[ch_name] = {'success': False, 'error': str(e)}
         
         overall_success = any(r['success'] for r in results.values())
         return {

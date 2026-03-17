@@ -121,6 +121,7 @@ class TelegramChannel(NotificationChannel):
     """Telegram Bot API channel using HTML parse mode."""
     
     API_BASE = 'https://api.telegram.org/bot{token}/sendMessage'
+    API_PHOTO = 'https://api.telegram.org/bot{token}/sendPhoto'
     MAX_LENGTH = 4096
     
     SEVERITY_ICONS = {
@@ -164,6 +165,26 @@ class TelegramChannel(NotificationChannel):
                 result = {**res, 'channel': 'telegram'}
                 break
         
+        return result
+    
+    def send_photo(self, photo_url: str, caption: str = '') -> Dict[str, Any]:
+        """Send a photo to Telegram chat."""
+        url = self.API_PHOTO.format(token=self.bot_token)
+        payload = {
+            'chat_id': self.chat_id,
+            'photo': photo_url,
+        }
+        if caption:
+            payload['caption'] = caption[:1024]  # Telegram caption limit
+            payload['parse_mode'] = 'HTML'
+        
+        body = json.dumps(payload).encode()
+        headers = {'Content-Type': 'application/json'}
+        
+        result = self._send_with_retry(
+            lambda: self._http_request(url, body, headers)
+        )
+        result['channel'] = 'telegram'
         return result
     
     def test(self) -> Tuple[bool, str]:
