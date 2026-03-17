@@ -14,7 +14,7 @@ import {
   Bell, BellOff, Send, CheckCircle2, XCircle, Loader2,
   AlertTriangle, Info, Settings2, Zap, Eye, EyeOff,
   Trash2, ChevronDown, ChevronUp, ChevronRight, TestTube2, Mail, Webhook,
-  Copy, Server, Shield
+  Copy, Server, Shield, ExternalLink
 } from "lucide-react"
 
 interface ChannelConfig {
@@ -110,37 +110,43 @@ const AI_PROVIDERS = [
     value: "groq", 
     label: "Groq",
     model: "llama-3.3-70b-versatile",
-    description: "Very fast, generous free tier (30 req/min). Ideal to start."
+    description: "Very fast, generous free tier (30 req/min). Ideal to start.",
+    keyUrl: "https://console.groq.com/keys"
   },
   { 
     value: "openai", 
     label: "OpenAI",
     model: "gpt-4o-mini",
-    description: "Industry standard. Very accurate and widely used."
+    description: "Industry standard. Very accurate and widely used.",
+    keyUrl: "https://platform.openai.com/api-keys"
   },
   { 
     value: "anthropic", 
     label: "Anthropic (Claude)",
     model: "claude-3-haiku-20240307",
-    description: "Excellent for writing and translation. Fast and economical."
+    description: "Excellent for writing and translation. Fast and economical.",
+    keyUrl: "https://console.anthropic.com/settings/keys"
   },
   { 
     value: "gemini", 
     label: "Google Gemini",
     model: "gemini-1.5-flash",
-    description: "Free tier available, great quality/price ratio."
+    description: "Free tier available, great quality/price ratio.",
+    keyUrl: "https://aistudio.google.com/app/apikey"
   },
   { 
     value: "ollama", 
     label: "Ollama (Local)",
     model: "llama3.2",
-    description: "100% local execution. No costs, total privacy, no internet required."
+    description: "100% local execution. No costs, total privacy, no internet required.",
+    keyUrl: ""
   },
   { 
     value: "openrouter", 
     label: "OpenRouter",
     model: "meta-llama/llama-3.3-70b-instruct",
-    description: "Aggregator with access to 100+ models using a single API key. Maximum flexibility."
+    description: "Aggregator with access to 100+ models using a single API key. Maximum flexibility.",
+    keyUrl: "https://openrouter.ai/keys"
   },
 ]
 
@@ -1330,12 +1336,12 @@ export function NotificationSettings() {
                   {config.ai_enabled && (
                     <>
                       {/* Provider + Info button */}
-                      <div className="space-y-1.5">
+                      <div className="space-y-2">
                         <div className="flex items-center gap-2">
-                          <Label className="text-[11px] text-muted-foreground">Provider</Label>
+                          <Label className="text-xs sm:text-sm text-muted-foreground">Provider</Label>
                           <button
                             onClick={() => setShowProviderInfo(true)}
-                            className="text-[10px] text-blue-400 hover:text-blue-300 transition-colors"
+                            className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
                           >
                             +info
                           </button>
@@ -1345,7 +1351,7 @@ export function NotificationSettings() {
                           onValueChange={v => updateConfig(p => ({ ...p, ai_provider: v }))}
                           disabled={!editMode}
                         >
-                          <SelectTrigger className="h-7 text-xs">
+                          <SelectTrigger className="h-9 text-sm">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -1358,10 +1364,10 @@ export function NotificationSettings() {
                       
                       {/* Ollama URL (conditional) */}
                       {config.ai_provider === "ollama" && (
-                        <div className="space-y-1.5">
-                          <Label className="text-[11px] text-muted-foreground">Ollama URL</Label>
+                        <div className="space-y-2">
+                          <Label className="text-xs sm:text-sm text-muted-foreground">Ollama URL</Label>
                           <Input
-                            className="h-7 text-xs font-mono"
+                            className="h-9 text-sm font-mono"
                             placeholder="http://localhost:11434"
                             value={config.ai_ollama_url}
                             onChange={e => updateConfig(p => ({ ...p, ai_ollama_url: e.target.value }))}
@@ -1372,32 +1378,44 @@ export function NotificationSettings() {
                       
                       {/* API Key (not shown for Ollama) */}
                       {config.ai_provider !== "ollama" && (
-                        <div className="space-y-1.5">
-                          <Label className="text-[11px] text-muted-foreground">API Key</Label>
-                          <div className="flex items-center gap-1.5">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs sm:text-sm text-muted-foreground">API Key</Label>
+                            {AI_PROVIDERS.find(p => p.value === config.ai_provider)?.keyUrl && (
+                              <a
+                                href={AI_PROVIDERS.find(p => p.value === config.ai_provider)?.keyUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1"
+                              >
+                                Get key <ExternalLink className="h-3 w-3" />
+                              </a>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
                             <Input
                               type={showSecrets["ai_key"] ? "text" : "password"}
-                              className="h-7 text-xs font-mono"
+                              className="h-9 text-sm font-mono"
                               placeholder="sk-..."
                               value={config.ai_api_key}
                               onChange={e => updateConfig(p => ({ ...p, ai_api_key: e.target.value }))}
                               disabled={!editMode}
                             />
                             <button
-                              className="h-7 w-7 flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors shrink-0"
+                              className="h-9 w-9 flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors shrink-0"
                               onClick={() => toggleSecret("ai_key")}
                             >
-                              {showSecrets["ai_key"] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                              {showSecrets["ai_key"] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                             </button>
                           </div>
                         </div>
                       )}
                       
                       {/* Model (optional) */}
-                      <div className="space-y-1.5">
-                        <Label className="text-[11px] text-muted-foreground">Model (optional)</Label>
+                      <div className="space-y-2">
+                        <Label className="text-xs sm:text-sm text-muted-foreground">Model (optional)</Label>
                         <Input
-                          className="h-7 text-xs font-mono"
+                          className="h-9 text-sm font-mono"
                           placeholder={AI_PROVIDERS.find(p => p.value === config.ai_provider)?.model || ""}
                           value={config.ai_model}
                           onChange={e => updateConfig(p => ({ ...p, ai_model: e.target.value }))}
@@ -1406,14 +1424,14 @@ export function NotificationSettings() {
                       </div>
                       
                       {/* Language selector */}
-                      <div className="space-y-1.5">
-                        <Label className="text-[11px] text-muted-foreground">Language</Label>
+                      <div className="space-y-2">
+                        <Label className="text-xs sm:text-sm text-muted-foreground">Language</Label>
                         <Select
                           value={config.ai_language}
                           onValueChange={v => updateConfig(p => ({ ...p, ai_language: v }))}
                           disabled={!editMode}
                         >
-                          <SelectTrigger className="h-7 text-xs">
+                          <SelectTrigger className="h-9 text-sm">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -1428,27 +1446,27 @@ export function NotificationSettings() {
                       <button
                         onClick={handleTestAI}
                         disabled={!editMode || testingAI || (config.ai_provider !== "ollama" && !config.ai_api_key)}
-                        className="w-full h-7 flex items-center justify-center gap-1.5 rounded-md text-xs font-medium bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="w-full h-9 flex items-center justify-center gap-2 rounded-md text-sm font-medium bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       >
                         {testingAI ? (
-                          <><Loader2 className="h-3 w-3 animate-spin" /> Testing...</>
+                          <><Loader2 className="h-4 w-4 animate-spin" /> Testing...</>
                         ) : (
-                          <><Zap className="h-3 w-3" /> Test Connection</>
+                          <><Zap className="h-4 w-4" /> Test Connection</>
                         )}
                       </button>
                       
                       {/* Test result */}
                       {aiTestResult && (
-                        <div className={`flex items-start gap-2 p-2 rounded-md ${
+                        <div className={`flex items-start gap-2 p-3 rounded-md ${
                           aiTestResult.success 
                             ? "bg-green-500/10 border border-green-500/20" 
                             : "bg-red-500/10 border border-red-500/20"
                         }`}>
                           {aiTestResult.success 
-                            ? <CheckCircle2 className="h-3.5 w-3.5 text-green-400 shrink-0 mt-0.5" />
-                            : <XCircle className="h-3.5 w-3.5 text-red-400 shrink-0 mt-0.5" />
+                            ? <CheckCircle2 className="h-4 w-4 text-green-400 shrink-0 mt-0.5" />
+                            : <XCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
                           }
-                          <p className={`text-[10px] leading-relaxed ${
+                          <p className={`text-xs sm:text-sm leading-relaxed ${
                             aiTestResult.success ? "text-green-400/90" : "text-red-400/90"
                           }`}>
                             {aiTestResult.message}
@@ -1458,12 +1476,12 @@ export function NotificationSettings() {
                       )}
                       
                       {/* Per-channel detail level */}
-                      <div className="space-y-2 pt-2 border-t border-border/50">
-                        <Label className="text-[11px] text-muted-foreground">Detail Level per Channel</Label>
-                        <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-3 pt-3 border-t border-border/50">
+                        <Label className="text-xs sm:text-sm text-muted-foreground">Detail Level per Channel</Label>
+                        <div className="grid grid-cols-2 gap-3">
                           {CHANNEL_TYPES.map(ch => (
-                            <div key={ch} className="flex items-center justify-between gap-2 px-2 py-1 rounded bg-muted/30">
-                              <span className="text-[10px] text-muted-foreground capitalize">{ch}</span>
+                            <div key={ch} className="flex items-center justify-between gap-2 px-3 py-2 rounded bg-muted/30">
+                              <span className="text-xs sm:text-sm text-muted-foreground capitalize">{ch}</span>
                               <Select
                                 value={config.channel_ai_detail?.[ch] || "standard"}
                                 onValueChange={v => updateConfig(p => ({
@@ -1472,12 +1490,12 @@ export function NotificationSettings() {
                                 }))}
                                 disabled={!editMode}
                               >
-                                <SelectTrigger className="h-5 w-[80px] text-[10px] px-1.5">
+                                <SelectTrigger className="h-7 w-[90px] text-xs px-2">
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {AI_DETAIL_LEVELS.map(l => (
-                                    <SelectItem key={l.value} value={l.value} className="text-[10px]">
+                                    <SelectItem key={l.value} value={l.value} className="text-xs">
                                       {l.label}
                                     </SelectItem>
                                   ))}
@@ -1488,9 +1506,9 @@ export function NotificationSettings() {
                         </div>
                       </div>
                       
-                      <div className="flex items-start gap-2 p-2 rounded-md bg-purple-500/10 border border-purple-500/20">
-                        <Info className="h-3.5 w-3.5 text-purple-400 shrink-0 mt-0.5" />
-                        <p className="text-[10px] text-purple-400/90 leading-relaxed">
+                      <div className="flex items-start gap-2 p-3 rounded-md bg-purple-500/10 border border-purple-500/20">
+                        <Info className="h-4 w-4 text-purple-400 shrink-0 mt-0.5" />
+                        <p className="text-xs sm:text-sm text-purple-400/90 leading-relaxed">
                           AI enhancement translates and formats notifications to your selected language. Each channel can have different detail levels. If the AI service is unavailable, standard templates are used as fallback.
                         </p>
                       </div>
@@ -1506,8 +1524,8 @@ export function NotificationSettings() {
 
         {/* ── Footer info ── */}
         <div className="flex items-start gap-2 pt-3 border-t border-border">
-          <Info className="h-3.5 w-3.5 text-blue-400 shrink-0 mt-0.5" />
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
+          <Info className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />
+          <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
             {config.enabled
               ? "Notifications are active. Each channel sends events based on its own category and event selection."
               : "Enable notifications to receive alerts about system events, health status changes, and security incidents via Telegram, Gotify, Discord, or Email."}
@@ -1520,24 +1538,24 @@ export function NotificationSettings() {
       <Dialog open={showProviderInfo} onOpenChange={setShowProviderInfo}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-base">AI Providers Information</DialogTitle>
+            <DialogTitle className="text-base sm:text-lg">AI Providers Information</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
             {AI_PROVIDERS.map(provider => (
               <div 
                 key={provider.value} 
-                className="p-3 rounded-lg bg-muted/50 border border-border hover:border-muted-foreground/40 transition-colors"
+                className="p-4 rounded-lg bg-muted/50 border border-border hover:border-muted-foreground/40 transition-colors"
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-medium text-sm">{provider.label}</span>
+                  <span className="font-medium text-sm sm:text-base">{provider.label}</span>
                   {provider.value === "ollama" && (
-                    <Badge variant="outline" className="text-[9px] px-1.5 py-0">Local</Badge>
+                    <Badge variant="outline" className="text-xs px-2 py-0.5">Local</Badge>
                   )}
                 </div>
-                <div className="text-[11px] text-muted-foreground mt-1">
-                  Default model: <code className="text-[10px] bg-muted px-1 py-0.5 rounded font-mono">{provider.model}</code>
+                <div className="text-xs sm:text-sm text-muted-foreground mt-1.5">
+                  Default model: <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">{provider.model}</code>
                 </div>
-                <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
+                <p className="text-xs sm:text-sm text-muted-foreground mt-2 leading-relaxed">
                   {provider.description}
                 </p>
               </div>
