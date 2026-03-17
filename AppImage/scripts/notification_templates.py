@@ -1310,91 +1310,99 @@ CRITICAL OUTPUT RULES:
 
 # Emoji instructions injected into AI_SYSTEM_PROMPT for rich channels (Telegram, Discord, Pushover)
 AI_EMOJI_INSTRUCTIONS = """
-9. EMOJI USAGE — use real Unicode emoji characters as line-start icons:
+9. EMOJI USAGE — place ONE emoji at the START of EVERY non-empty line (title and each body line).
+   Never skip a line. Never put the emoji at the end. Never use two emojis on the same line.
 
-   ONE emoji per line, placed at the very beginning of the line, before all text.
-   Never place an emoji at the end of a line or mid-sentence.
-   Never use more than one emoji per line.
-   Do not add emojis to blank lines.
+   Use these exact emoji for each kind of content:
 
-   ── TITLE ICONS (use the one matching the event type) ──
-   VM started / CT started          ▶️
-   VM stopped / CT stopped          ⏹️
-   VM/CT shutdown                   ⏏️
-   VM/CT failed / crashed           💥
-   VM/CT restarted                  🔄
-   Migration started                🚚
-   Migration complete               ✅
-   Migration failed                 ❌
-   Replication failed               ❌
-   Replication complete             ✅
-   Backup started                   📦
-   Backup complete                  ✅
-   Backup failed                    ❌
-   Snapshot created                 📸
-   Snapshot failed                  ❌
-   High CPU                         🔥
-   High memory                      💧
-   High temperature                 🌡️
-   High load                        ⚠️
-   Low disk space                   📉
-   Disk I/O error                   💥
-   Storage unavailable              🚫
-   Network down                     🔌
-   High latency                     🐢
-   Auth failure                     🚨
-   IP blocked                       🚷
-   Firewall issue                   🔥
-   User permission change           🔑
-   Split-brain                      💢
-   Node disconnected                🔌
-   Node reconnected                 ✅
-   System shutdown                  ⏻
-   System reboot                    🔄
-   System problem                   ⚠️
-   Service failed                   ❌
-   OOM kill                         💣
-   New health error                 🆘
-   Health resolved                  ✅
-   Health escalated                 🔺
-   Health degraded                  ⚠️
-   Health persistent (digest)       📋
-   Updates available                📦
-   PVE update available             🆕
-   Update complete                  ✅
+   TITLE emoji — pick by event type:
+   ✅  success / resolved / complete / reconnected
+   ❌  failed / FAILED / error
+   💥  crash / collision / I/O error
+   🆘  new critical health issue
+   📦  backup started / updates available
+   🆕  new PVE version available
+   🔺  escalated / severity increased
+   📋  health digest / persistent issues
+   🚚  migration started
+   🔌  network down / node disconnected
+   🚨  auth failure / security alert
+   🚷  IP banned / blocked
+   🔑  permission change
+   💢  split-brain
+   💣  OOM kill
+   ▶️  VM or CT started
+   ⏹️  VM or CT stopped
+   ⏏️  VM or CT shutdown
+   🔄  restarted / reboot / proxmox updates
+   🔥  high CPU / firewall issue
+   💧  high memory
+   🌡️  high temperature
+   ⚠️  warning / degraded / high load / system problem
+   📉  low disk space
+   🚫  storage unavailable
+   🐢  high latency
+   📸  snapshot created
+   ⏻  system shutdown
 
-   ── BODY LINE ICONS (prepend to matching lines in the body) ──
-   Lines starting with VM name / CT name / ID    🏷️
-   Lines with Size / Tamaño / Größe              📏
-   Lines with Duration / Duración / Dauer        ⏱️
-   Lines with Storage / Almacenamiento           🗄️
-   Lines with PBS path / archive                 🗃️
-   Lines with Status: ok / éxito / success       ✅
-   Lines with Status: error / failed / fallo     ❌
-   Lines with Total (backup summary)             📊
-   Lines with Total updates / Actualizaciones    📦
-   Lines with Security updates / Seguridad       🔒
-   Lines with Proxmox updates                   🔄
-   Lines with Kernel updates                    ⚙️
-   Lines with Important packages / Paquetes     📋
-   Lines with Source IP / IP origen             🌐
-   Lines with User / Usuario                    👤
-   Lines with Service / Servicio                ⚙️
-   Lines with Jail                              🔒
-   Lines with Failed attempts / Intentos        🔢
-   Lines with Node / Nodo                       🖥️
-   Lines with Reason / Motivo / Razón           📝
-   Lines with Temperature / Temperatura         🌡️
-   Lines with CPU usage / Uso CPU               🔥
-   Lines with Memory / Memoria                  💧
-   Lines with Load / Carga                      📊
-   Lines with Quorum                            👥
-   Lines with Device / Dispositivo              💿
-   Lines with Filesystem / Ruta / Mount         📂
-   Lines with Category / Categoría              📌
-   Lines with Duration (health resolved)        ⏱️
-   Lines with Severity / Severidad              🚦
-   Summary line at end of backup body           📊"""
+   BODY LINE emoji — pick by what the line is about:
+   🏷️  VM name / CT name / ID / guest name
+   ✅  status ok / success / completed
+   ❌  status error / failed
+   📏  size / tamaño / Größe
+   ⏱️  duration / tiempo / Dauer
+   🗄️  storage / almacenamiento / PBS
+   🗃️  archive path / ruta de archivo
+   📦  total updates / total actualizaciones
+   🔒  security updates / actualizaciones de seguridad / jail
+   🔄  proxmox updates / actualizaciones de proxmox
+   ⚙️  kernel updates / actualizaciones del kernel / service
+   📋  important packages / paquetes importantes
+   🌐  source IP / IP origen
+   👤  user / usuario
+   📝  reason / motivo / razón / details
+   🌡️  temperature / temperatura
+   🔥  CPU usage / uso de CPU
+   💧  memory / memoria
+   📊  statistics / load / carga / summary line
+   👥  quorum / cluster
+   💿  disk device / dispositivo
+   📂  filesystem / mount / ruta
+   📌  category / categoría
+   🚦  severity / severidad
+   🖥️  node / nodo
+   🎯  target / destino
+
+   EXAMPLE — updates message (Spanish):
+   [TITLE]
+   📦 amd: Actualizaciones disponibles
+   [BODY]
+   📦 Total de actualizaciones: 55
+   🔒 Actualizaciones de seguridad: 3
+   🔄 Actualizaciones de Proxmox: 2
+   ⚙️ Actualizaciones del kernel: 1
+   📋 Paquetes importantes:
+   📋 pve-manager
+   📋 libssl3
+
+   EXAMPLE — backup complete (Spanish):
+   [TITLE]
+   ✅ pve01: Backup completo — web01 (100)
+   [BODY]
+   🏷️ VM web01 (ID: 100)
+   ✅ Estado: correcto
+   📏 Tamaño: 12.3 GiB
+   ⏱️ Duración: 00:04:21
+   🗄️ Almacenamiento: local-bak
+   📊 Total: 3 backups | 📦 36.9 GiB | ⏱️ 00:12:05
+
+   EXAMPLE — disk I/O health warning (Spanish):
+   [TITLE]
+   💥 amd: Advertencia de salud — Errores de I/O en disco
+   [BODY]
+   💿 Dispositivo: /dev/sda
+   ⚠️ 1 sector actualmente no legible (pendiente)
+   📝 El disco reporta sectores en estado de reubicación pendiente"""
 
 # No emoji instructions for email/plain text channels
 AI_NO_EMOJI_INSTRUCTIONS = """
