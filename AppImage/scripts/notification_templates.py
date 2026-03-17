@@ -1373,36 +1373,62 @@ AI_EMOJI_INSTRUCTIONS = """
    🖥️  node / nodo
    🎯  target / destino
 
-   EXAMPLE — updates message (Spanish):
+   BLANK LINES FOR READABILITY — insert ONE blank line between logical sections within the body.
+   Blank lines go BETWEEN groups, not before the first line or after the last line.
+   A blank line must be completely empty — no emoji, no spaces.
+
+   When to add a blank line:
+   - Updates: after the last count line, before the packages block
+   - Backup multi-VM: one blank line between each VM entry; one blank line before the summary line
+   - Disk/SMART errors: after the device line, before the error description lines
+   - VM events with a reason: after the main status line, before Reason / Node / Target lines
+   - Health events: after the category/status line, before duration or detail lines
+
+   EXAMPLE — updates message:
    [TITLE]
-   📦 amd: Actualizaciones disponibles
+   📦 amd: Updates available
    [BODY]
-   📦 Total de actualizaciones: 55
-   🔒 Actualizaciones de seguridad: 3
-   🔄 Actualizaciones de Proxmox: 2
-   ⚙️ Actualizaciones del kernel: 1
-   📋 Paquetes importantes:
+   📦 Total updates: 55
+   🔒 Security updates: 3
+   🔄 Proxmox updates: 2
+   ⚙️ Kernel updates: 1
+
+   📋 Important packages:
    📋 pve-manager
    📋 libssl3
 
-   EXAMPLE — backup complete (Spanish):
+   EXAMPLE — backup complete with multiple VMs:
    [TITLE]
-   ✅ pve01: Backup completo — web01 (100)
+   ✅ pve01: Backup complete
    [BODY]
    🏷️ VM web01 (ID: 100)
-   ✅ Estado: correcto
-   📏 Tamaño: 12.3 GiB
-   ⏱️ Duración: 00:04:21
-   🗄️ Almacenamiento: local-bak
-   📊 Total: 3 backups | 📦 36.9 GiB | ⏱️ 00:12:05
+   ✅ Status: ok
+   📏 Size: 12.3 GiB
+   ⏱️ Duration: 00:04:21
 
-   EXAMPLE — disk I/O health warning (Spanish):
+   🏷️ CT db (ID: 101)
+   ✅ Status: ok
+   📏 Size: 4.1 GiB
+   ⏱️ Duration: 00:01:10
+
+   📊 Total: 2 backups | 16.4 GiB | ⏱️ 00:05:31
+
+   EXAMPLE — disk I/O health warning:
    [TITLE]
-   💥 amd: Advertencia de salud — Errores de I/O en disco
+   💥 amd: Health warning — Disk I/O errors
    [BODY]
-   💿 Dispositivo: /dev/sda
-   ⚠️ 1 sector actualmente no legible (pendiente)
-   📝 El disco reporta sectores en estado de reubicación pendiente"""
+   💿 Device: /dev/sda
+
+   ⚠️ 1 sector currently unreadable (pending)
+   📝 Disk reports sectors in pending reallocation state
+
+   EXAMPLE — VM failed:
+   [TITLE]
+   💥 pve01: VM web01 (100) FAILED
+   [BODY]
+   🏷️ Virtual machine web01 (ID: 100) failed to start.
+
+   📝 Reason: kernel segfault"""
 
 # No emoji instructions for email/plain text channels
 AI_NO_EMOJI_INSTRUCTIONS = """
