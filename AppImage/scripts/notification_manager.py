@@ -1157,11 +1157,9 @@ class NotificationManager:
                 if use_rich_format:
                     icon_status  = '✅ Icons: enabled'
                     ai_status    = f'✅ AI: enabled ({ai_provider} / {ai_language})' if ai_enabled else '❌ AI: disabled'
-                    example_line = '  e.g.  💥 pve01: VM web01 (100) FAILED'
                 else:
                     icon_status  = 'Icons: disabled'
                     ai_status    = f'AI: enabled ({ai_provider} / {ai_language})' if ai_enabled else 'AI: disabled'
-                    example_line = '  e.g.  pve01: VM web01 (100) FAILED'
                 
                 # Base test message — shows current channel config
                 base_title = 'ProxMenux Test'
@@ -1171,8 +1169,7 @@ class NotificationManager:
                     'Channel configuration:\n'
                     f'{icon_status}\n'
                     f'{ai_status}\n\n'
-                    'You will receive alerts about system events, health status changes, and security incidents.\n'
-                    f'{example_line}'
+                    'You will receive alerts about system events, health status changes, and security incidents.'
                 )
                 
                 # Apply AI enhancement (translates to configured language)
