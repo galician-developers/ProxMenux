@@ -760,6 +760,7 @@ export function NotificationSettings() {
   }
 
   return (
+    <>
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
@@ -1515,34 +1516,35 @@ export function NotificationSettings() {
       </CardContent>
     </Card>
     
-    {/* AI Provider Information Modal */}
-    <Dialog open={showProviderInfo} onOpenChange={setShowProviderInfo}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle className="text-base">AI Providers Information</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-          {AI_PROVIDERS.map(provider => (
-            <div 
-              key={provider.value} 
-              className="p-3 rounded-lg bg-muted/50 border border-border hover:border-muted-foreground/40 transition-colors"
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-sm">{provider.label}</span>
-                {provider.value === "ollama" && (
-                  <Badge variant="outline" className="text-[9px] px-1.5 py-0">Local</Badge>
-                )}
+      {/* AI Provider Information Modal */}
+      <Dialog open={showProviderInfo} onOpenChange={setShowProviderInfo}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base">AI Providers Information</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+            {AI_PROVIDERS.map(provider => (
+              <div 
+                key={provider.value} 
+                className="p-3 rounded-lg bg-muted/50 border border-border hover:border-muted-foreground/40 transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-sm">{provider.label}</span>
+                  {provider.value === "ollama" && (
+                    <Badge variant="outline" className="text-[9px] px-1.5 py-0">Local</Badge>
+                  )}
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-1">
+                  Default model: <code className="text-[10px] bg-muted px-1 py-0.5 rounded font-mono">{provider.model}</code>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
+                  {provider.description}
+                </p>
               </div>
-              <div className="text-[11px] text-muted-foreground mt-1">
-                Default model: <code className="text-[10px] bg-muted px-1 py-0.5 rounded font-mono">{provider.model}</code>
-              </div>
-              <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
-                {provider.description}
-              </p>
-            </div>
-          ))}
-        </div>
-      </DialogContent>
-    </Dialog>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
