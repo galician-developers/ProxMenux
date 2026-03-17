@@ -381,106 +381,106 @@ TEMPLATES = {
     
     # ── VM / CT events ──
     'vm_start': {
-        'title': '{hostname}: VM {vmid} started',
-        'body': '{vmname} ({vmid}) has been started.',
+        'title': '{hostname}: VM {vmname} ({vmid}) started',
+        'body': 'Virtual machine {vmname} (ID: {vmid}) is now running.',
         'label': 'VM started',
         'group': 'vm_ct',
         'default_enabled': True,
     },
     'vm_stop': {
-        'title': '{hostname}: VM {vmid} stopped',
-        'body': '{vmname} ({vmid}) has been stopped.',
+        'title': '{hostname}: VM {vmname} ({vmid}) stopped',
+        'body': 'Virtual machine {vmname} (ID: {vmid}) has been stopped.',
         'label': 'VM stopped',
         'group': 'vm_ct',
         'default_enabled': False,
     },
     'vm_shutdown': {
-        'title': '{hostname}: VM {vmid} shutdown',
-        'body': '{vmname} ({vmid}) has been shut down.',
+        'title': '{hostname}: VM {vmname} ({vmid}) shut down',
+        'body': 'Virtual machine {vmname} (ID: {vmid}) has been cleanly shut down.',
         'label': 'VM shutdown',
         'group': 'vm_ct',
         'default_enabled': False,
     },
     'vm_fail': {
-        'title': '{hostname}: VM {vmid} FAILED',
-        'body': '{vmname} ({vmid}) has failed.\n{reason}',
+        'title': '{hostname}: VM {vmname} ({vmid}) FAILED',
+        'body': 'Virtual machine {vmname} (ID: {vmid}) has crashed or failed to start.\nReason: {reason}',
         'label': 'VM FAILED',
         'group': 'vm_ct',
         'default_enabled': True,
     },
     'vm_restart': {
-        'title': '{hostname}: VM {vmid} restarted',
-        'body': '{vmname} ({vmid}) has been restarted.',
+        'title': '{hostname}: VM {vmname} ({vmid}) restarted',
+        'body': 'Virtual machine {vmname} (ID: {vmid}) has been restarted.',
         'label': 'VM restarted',
         'group': 'vm_ct',
         'default_enabled': False,
     },
     'ct_start': {
-        'title': '{hostname}: CT {vmid} started',
-        'body': '{vmname} ({vmid}) has been started.',
+        'title': '{hostname}: CT {vmname} ({vmid}) started',
+        'body': 'Container {vmname} (ID: {vmid}) is now running.',
         'label': 'CT started',
         'group': 'vm_ct',
         'default_enabled': True,
     },
     'ct_stop': {
-        'title': '{hostname}: CT {vmid} stopped',
-        'body': '{vmname} ({vmid}) has been stopped.',
+        'title': '{hostname}: CT {vmname} ({vmid}) stopped',
+        'body': 'Container {vmname} (ID: {vmid}) has been stopped.',
         'label': 'CT stopped',
         'group': 'vm_ct',
         'default_enabled': False,
     },
     'ct_shutdown': {
-        'title': '{hostname}: CT {vmid} shutdown',
-        'body': '{vmname} ({vmid}) has been shut down.',
+        'title': '{hostname}: CT {vmname} ({vmid}) shut down',
+        'body': 'Container {vmname} (ID: {vmid}) has been cleanly shut down.',
         'label': 'CT shutdown',
         'group': 'vm_ct',
         'default_enabled': False,
     },
     'ct_restart': {
-        'title': '{hostname}: CT {vmid} restarted',
-        'body': '{vmname} ({vmid}) has been restarted.',
+        'title': '{hostname}: CT {vmname} ({vmid}) restarted',
+        'body': 'Container {vmname} (ID: {vmid}) has been restarted.',
         'label': 'CT restarted',
         'group': 'vm_ct',
         'default_enabled': False,
     },
     'ct_fail': {
-        'title': '{hostname}: CT {vmid} FAILED',
-        'body': '{vmname} ({vmid}) has failed.\n{reason}',
+        'title': '{hostname}: CT {vmname} ({vmid}) FAILED',
+        'body': 'Container {vmname} (ID: {vmid}) has crashed or failed to start.\nReason: {reason}',
         'label': 'CT FAILED',
         'group': 'vm_ct',
         'default_enabled': True,
     },
     'migration_start': {
-        'title': '{hostname}: Migration started - {vmid}',
-        'body': '{vmname} ({vmid}) migration to {target_node} started.',
+        'title': '{hostname}: Migration started — {vmname} ({vmid})',
+        'body': 'Live migration of {vmname} (ID: {vmid}) to node {target_node} has started.',
         'label': 'Migration started',
         'group': 'vm_ct',
         'default_enabled': True,
     },
     'migration_complete': {
-        'title': '{hostname}: Migration complete - {vmid}',
-        'body': '{vmname} ({vmid}) migrated successfully to {target_node}.',
+        'title': '{hostname}: Migration complete — {vmname} ({vmid})',
+        'body': '{vmname} (ID: {vmid}) successfully migrated to node {target_node}.',
         'label': 'Migration complete',
         'group': 'vm_ct',
         'default_enabled': True,
     },
     'migration_fail': {
-        'title': '{hostname}: Migration FAILED - {vmid}',
-        'body': '{vmname} ({vmid}) migration to {target_node} failed.\n{reason}',
+        'title': '{hostname}: Migration FAILED — {vmname} ({vmid})',
+        'body': 'Migration of {vmname} (ID: {vmid}) to node {target_node} failed.\nReason: {reason}',
         'label': 'Migration FAILED',
         'group': 'vm_ct',
         'default_enabled': True,
     },
     'replication_fail': {
-        'title': '{hostname}: Replication FAILED - {vmid}',
-        'body': 'Replication of {vmname} ({vmid}) has failed.\n{reason}',
+        'title': '{hostname}: Replication FAILED — {vmname} ({vmid})',
+        'body': 'Replication of {vmname} (ID: {vmid}) failed.\nReason: {reason}',
         'label': 'Replication FAILED',
         'group': 'vm_ct',
         'default_enabled': True,
     },
     'replication_complete': {
-        'title': '{hostname}: Replication complete - {vmid}',
-        'body': 'Replication of {vmname} ({vmid}) completed successfully.',
+        'title': '{hostname}: Replication complete — {vmname} ({vmid})',
+        'body': 'Replication of {vmname} (ID: {vmid}) completed successfully.',
         'label': 'Replication complete',
         'group': 'vm_ct',
         'default_enabled': False,
@@ -488,36 +488,36 @@ TEMPLATES = {
     
     # ── Backup / Snapshot events ──
     'backup_start': {
-        'title': '{hostname}: Backup started [{storage}]',
-        'body': '{reason}',
+        'title': '{hostname}: Backup started on {storage}',
+        'body': 'Backup job started on storage {storage}.\n{reason}',
         'label': 'Backup started',
         'group': 'backup',
         'default_enabled': False,
     },
     'backup_complete': {
-        'title': '{hostname}: Backup complete - {vmid}',
-        'body': 'Backup of {vmname} ({vmid}) completed successfully.\nSize: {size}',
+        'title': '{hostname}: Backup complete — {vmname} ({vmid})',
+        'body': 'Backup of {vmname} (ID: {vmid}) completed successfully.\nSize: {size}',
         'label': 'Backup complete',
         'group': 'backup',
         'default_enabled': True,
     },
     'backup_fail': {
-        'title': '{hostname}: Backup FAILED - {vmid}',
-        'body': 'Backup of {vmname} ({vmid}) has failed.\n{reason}',
+        'title': '{hostname}: Backup FAILED — {vmname} ({vmid})',
+        'body': 'Backup of {vmname} (ID: {vmid}) failed.\nReason: {reason}',
         'label': 'Backup FAILED',
         'group': 'backup',
         'default_enabled': True,
     },
     'snapshot_complete': {
-        'title': '{hostname}: Snapshot created - {vmid}',
-        'body': 'Snapshot of {vmname} ({vmid}) created: {snapshot_name}',
+        'title': '{hostname}: Snapshot created — {vmname} ({vmid})',
+        'body': 'Snapshot "{snapshot_name}" created for {vmname} (ID: {vmid}).',
         'label': 'Snapshot created',
         'group': 'backup',
         'default_enabled': False,
     },
     'snapshot_fail': {
-        'title': '{hostname}: Snapshot FAILED - {vmid}',
-        'body': 'Snapshot of {vmname} ({vmid}) failed.\n{reason}',
+        'title': '{hostname}: Snapshot FAILED — {vmname} ({vmid})',
+        'body': 'Snapshot creation for {vmname} (ID: {vmid}) failed.\nReason: {reason}',
         'label': 'Snapshot FAILED',
         'group': 'backup',
         'default_enabled': True,
@@ -525,50 +525,50 @@ TEMPLATES = {
     
     # ── Resource events (from Health Monitor) ──
     'cpu_high': {
-        'title': '{hostname}: High CPU usage ({value}%)',
-        'body': 'CPU usage is at {value}% on {cores} cores.\n{details}',
+        'title': '{hostname}: High CPU usage — {value}%',
+        'body': 'CPU usage has reached {value}% on {cores} cores.\n{details}',
         'label': 'High CPU usage',
         'group': 'resources',
         'default_enabled': True,
     },
     'ram_high': {
-        'title': '{hostname}: High memory usage ({value}%)',
+        'title': '{hostname}: High memory usage — {value}%',
         'body': 'Memory usage: {used} / {total} ({value}%).\n{details}',
         'label': 'High memory usage',
         'group': 'resources',
         'default_enabled': True,
     },
     'temp_high': {
-        'title': '{hostname}: High temperature ({value}C)',
-        'body': 'CPU temperature: {value}C (threshold: {threshold}C).\n{details}',
+        'title': '{hostname}: High CPU temperature — {value}°C',
+        'body': 'CPU temperature has reached {value}°C (threshold: {threshold}°C).\n{details}',
         'label': 'High temperature',
         'group': 'resources',
         'default_enabled': True,
     },
     'disk_space_low': {
         'title': '{hostname}: Low disk space on {mount}',
-        'body': '{mount}: {used}% used ({available} available).',
+        'body': 'Filesystem {mount}: {used}% used ({available} available).\nFree up disk space to avoid service disruption.',
         'label': 'Low disk space',
         'group': 'storage',
         'default_enabled': True,
     },
     'disk_io_error': {
-        'title': '{hostname}: Disk failure detected on {device}',
-        'body': '{reason}',
+        'title': '{hostname}: Disk failure detected — {device}',
+        'body': 'I/O error or disk failure detected on device {device}.\n{reason}',
         'label': 'Disk failure / I/O error',
         'group': 'storage',
         'default_enabled': True,
     },
     'storage_unavailable': {
-        'title': '{hostname}: Storage unavailable - {storage_name}',
-        'body': 'PVE storage "{storage_name}" ({storage_type}) is not available.\n{reason}',
+        'title': '{hostname}: Storage unavailable — {storage_name}',
+        'body': 'PVE storage "{storage_name}" (type: {storage_type}) is not accessible.\nReason: {reason}',
         'label': 'Storage unavailable',
         'group': 'storage',
         'default_enabled': True,
     },
     'load_high': {
-        'title': '{hostname}: High system load ({value})',
-        'body': 'System load average: {value} on {cores} cores.\n{details}',
+        'title': '{hostname}: High system load — {value}',
+        'body': 'System load average is {value} on {cores} cores.\n{details}',
         'label': 'High system load',
         'group': 'resources',
         'default_enabled': True,
@@ -577,14 +577,14 @@ TEMPLATES = {
     # ── Network events ──
     'network_down': {
         'title': '{hostname}: Network connectivity lost',
-        'body': 'Network connectivity check failed.\n{reason}',
+        'body': 'The node has lost network connectivity.\nReason: {reason}',
         'label': 'Network connectivity lost',
         'group': 'network',
         'default_enabled': True,
     },
     'network_latency': {
-        'title': '{hostname}: High network latency ({value}ms)',
-        'body': 'Latency to gateway: {value}ms (threshold: {threshold}ms).',
+        'title': '{hostname}: High network latency — {value}ms',
+        'body': 'Latency to gateway: {value}ms (threshold: {threshold}ms).\nThis may indicate network congestion or hardware issues.',
         'label': 'High network latency',
         'group': 'network',
         'default_enabled': False,
@@ -593,21 +593,21 @@ TEMPLATES = {
     # ── Security events ──
     'auth_fail': {
         'title': '{hostname}: Authentication failure',
-        'body': 'Failed login attempt from {source_ip}.\nUser: {username}\nService: {service}',
+        'body': 'Failed login attempt detected.\nSource IP: {source_ip}\nUser: {username}\nService: {service}',
         'label': 'Authentication failure',
         'group': 'security',
         'default_enabled': True,
     },
     'ip_block': {
         'title': '{hostname}: IP blocked by Fail2Ban',
-        'body': 'IP {source_ip} has been banned.\nJail: {jail}\nFailures: {failures}',
+        'body': 'IP address {source_ip} has been banned.\nJail: {jail}\nFailed attempts: {failures}',
         'label': 'IP blocked by Fail2Ban',
         'group': 'security',
         'default_enabled': True,
     },
     'firewall_issue': {
         'title': '{hostname}: Firewall issue detected',
-        'body': '{reason}',
+        'body': 'A firewall configuration issue has been detected.\nReason: {reason}',
         'label': 'Firewall issue detected',
         'group': 'security',
         'default_enabled': True,
@@ -623,21 +623,21 @@ TEMPLATES = {
     # ── Cluster events ──
     'split_brain': {
         'title': '{hostname}: SPLIT-BRAIN detected',
-        'body': 'Cluster split-brain condition detected.\nQuorum status: {quorum}',
+        'body': 'A cluster split-brain condition has been detected. Quorum may be lost.\nQuorum status: {quorum}',
         'label': 'SPLIT-BRAIN detected',
         'group': 'cluster',
         'default_enabled': True,
     },
     'node_disconnect': {
-        'title': '{hostname}: Node disconnected',
+        'title': '{hostname}: Node {node_name} disconnected',
         'body': 'Node {node_name} has disconnected from the cluster.',
         'label': 'Node disconnected',
         'group': 'cluster',
         'default_enabled': True,
     },
     'node_reconnect': {
-        'title': '{hostname}: Node reconnected',
-        'body': 'Node {node_name} has reconnected to the cluster.',
+        'title': '{hostname}: Node {node_name} reconnected',
+        'body': 'Node {node_name} has rejoined the cluster successfully.',
         'label': 'Node reconnected',
         'group': 'cluster',
         'default_enabled': True,
@@ -646,35 +646,35 @@ TEMPLATES = {
     # ── Services events ──
     'system_shutdown': {
         'title': '{hostname}: System shutting down',
-        'body': '{reason}',
+        'body': 'The node is shutting down.\n{reason}',
         'label': 'System shutting down',
         'group': 'services',
         'default_enabled': True,
     },
     'system_reboot': {
         'title': '{hostname}: System rebooting',
-        'body': '{reason}',
+        'body': 'The node is rebooting.\n{reason}',
         'label': 'System rebooting',
         'group': 'services',
         'default_enabled': True,
     },
     'system_problem': {
         'title': '{hostname}: System problem detected',
-        'body': '{reason}',
+        'body': 'A system-level problem has been detected.\nReason: {reason}',
         'label': 'System problem detected',
         'group': 'services',
         'default_enabled': True,
     },
     'service_fail': {
-        'title': '{hostname}: Service failed - {service_name}',
-        'body': '{reason}',
+        'title': '{hostname}: Service failed — {service_name}',
+        'body': 'System service "{service_name}" has failed.\nReason: {reason}',
         'label': 'Service failed',
         'group': 'services',
         'default_enabled': True,
     },
     'oom_kill': {
-        'title': '{hostname}: OOM Kill - {process}',
-        'body': '{reason}',
+        'title': '{hostname}: OOM Kill — {process}',
+        'body': 'Process "{process}" was killed by the Out-of-Memory manager.\n{reason}',
         'label': 'Out of memory kill',
         'group': 'services',
         'default_enabled': True,
@@ -725,14 +725,14 @@ TEMPLATES = {
     # ── Health Monitor events ──
     'health_persistent': {
         'title': '{hostname}: {count} active health issue(s)',
-        'body': 'The following health issues remain active:\n{issue_list}\n\nThis digest is sent once every 24 hours while issues persist.',
+        'body': 'The following health issues remain unresolved:\n{issue_list}\n\nThis digest is sent once every 24 hours while issues persist.',
         'label': 'Active health issues (daily)',
         'group': 'health',
         'default_enabled': True,
     },
     'health_issue_new': {
-        'title': '{hostname}: New health issue - {category}',
-        'body': 'New {severity} issue detected:\n{reason}',
+        'title': '{hostname}: New health issue — {category}',
+        'body': 'New {severity} issue detected in: {category}\nDetails: {reason}',
         'label': 'New health issue',
         'group': 'health',
         'default_enabled': True,
@@ -762,14 +762,14 @@ TEMPLATES = {
     },
     'pve_update': {
         'title': '{hostname}: Proxmox VE {new_version} available',
-        'body': 'Proxmox VE {current_version} -> {new_version}\n{details}',
+        'body': 'A new Proxmox VE release is available.\nCurrent: {current_version}  →  New: {new_version}\n{details}',
         'label': 'Proxmox VE update available',
         'group': 'updates',
         'default_enabled': True,
     },
     'update_complete': {
-        'title': '{hostname}: Update completed',
-        'body': '{details}',
+        'title': '{hostname}: System update completed',
+        'body': 'System packages have been successfully updated.\n{details}',
         'label': 'Update completed',
         'group': 'updates',
         'default_enabled': False,
@@ -1239,95 +1239,166 @@ AI_DETAIL_TOKENS = {
 }
 
 # System prompt template - informative, no recommendations
-AI_SYSTEM_PROMPT = """You are a technical assistant for ProxMenux Monitor, a Proxmox server monitoring system.
+AI_SYSTEM_PROMPT = """You are a system notification formatter for ProxMenux Monitor, a Proxmox VE monitoring tool.
 
-Your task is to translate and format system alerts to {language}.
+Your task is to translate and reformat incoming server alert messages into {language}.
 
-STRICT RULES:
-1. Translate BOTH the title and message body to {language}
-2. DO NOT use markdown formatting like **bold** or *italic*
-3. Use plain text only - no special formatting syntax
-4. Maintain an INFORMATIVE and OBJECTIVE tone
-5. DO NOT use formal introductions ("Dear...", "Esteemed...")
-6. DO NOT give recommendations or action suggestions
-7. Present only FACTS and TECHNICAL DATA
-8. Respect the requested detail level: {detail_level}
+═══ ABSOLUTE RULES ═══
+1. Translate BOTH title and body to {language}. Every word, label, and unit must be in {language}.
+2. NO markdown: no **bold**, no *italic*, no `code`, no headers (#), no bullet lists (- or *)
+3. Plain text only — the output is sent to chat apps and email which handle their own formatting
+4. Tone: factual, concise, technical. No greetings, no closings, no apologies
+5. DO NOT add recommendations, action items, or suggestions ("you should…", "consider…")
+6. Present ONLY the facts already in the input — do not invent or assume information
+7. Detail level to apply: {detail_level}
+   - brief    → 2-3 lines, essential data only (status + key metric)
+   - standard → short paragraph covering who/what/where and the key value
+   - detailed → full technical breakdown of all available fields
+8. Keep the "hostname: " prefix in the title. Translate only the descriptive part.
+   Example: "pve01: Updates available" → "pve01: Actualizaciones disponibles"
 {emoji_instructions}
 
-DETAIL LEVELS:
-- brief: 2-3 lines maximum, only essential information
-- standard: Concise paragraph with basic context
-- detailed: Complete information with all available technical details
+═══ KNOWN MESSAGE TYPES AND HOW TO FORMAT THEM ═══
 
-MESSAGE TYPES:
-- Some messages come from Proxmox VE webhooks with raw system data (backup logs, update lists, SMART errors)
-- Parse and present this data clearly, extracting key information (VM IDs, sizes, durations, errors)
-- For backup messages: highlight status (OK/ERROR), VM names, sizes, and duration
-- For update messages: list package names and counts clearly formatted
-- For disk/SMART errors: highlight affected device and error type
+BACKUP (backup_complete / backup_fail / backup_start):
+  Input contains: VM/CT names, IDs, size, duration, storage location, status per VM
+  Output body must list each VM on its own line: name, ID, status (ok/error), size, duration
+  End with a summary line: total VMs, total size, total time
 
-OUTPUT FORMAT (VERY IMPORTANT):
-You MUST return the response in this exact format with these exact markers:
+UPDATES (update_summary / pve_update):
+  Input contains: total count, security count, proxmox count, kernel count, package list
+  Output body must show each count on its own line with its label
+  List important packages below, one per line
+
+DISK / SMART ERRORS (disk_io_error / storage_unavailable):
+  Input contains: device name, error type, SMART values or I/O error codes
+  Output body: device, then the specific error or failing attribute
+
+RESOURCES (cpu_high / ram_high / temp_high / load_high):
+  Input contains: current value, threshold, core count
+  Output: current value vs threshold, context if available
+
+SECURITY (auth_fail / ip_block):
+  Input contains: source IP, user, service, jail, failure count
+  Output: list each field on its own line
+
+VM/CT LIFECYCLE (vm_start, vm_stop, vm_fail, ct_*, migration_*, replication_*):
+  Input contains: VM name, ID, target node (migrations), reason (failures)
+  Output: one or two lines confirming the event with key facts
+
+CLUSTER (split_brain / node_disconnect / node_reconnect):
+  Input: node name, quorum status
+  Output: state change + quorum value
+
+HEALTH (new_error / error_resolved / health_persistent / health_degraded):
+  Input: category, severity, duration, reason
+  Output: what changed, in which category, for how long (if resolved)
+
+═══ OUTPUT FORMAT (follow exactly — parsers rely on these markers) ═══
 [TITLE]
-Translated title here
+translated title here
 [BODY]
-Translated message body here
+translated body here
 
-- The [TITLE] section should contain ONLY the translated title (short, one line)
-- The [BODY] section contains the translated and formatted message
-- Do NOT include the markers [TITLE] or [BODY] as part of the content
-- Start body content directly (emoji if enabled, then text)
+CRITICAL OUTPUT RULES:
+- Write [TITLE] on its own line, then the title on the very next line
+- Write [BODY] on its own line, then the body starting on the very next line
+- Do NOT write "Title:", "Título:", "Body:", "Cuerpo:" or any other label
+- Do NOT include the literal words TITLE or BODY anywhere in the translated content
+- Do NOT add extra blank lines between [TITLE] and the title text
+- Do NOT add a blank line between [BODY] and the first body line"""
 
-If journal log context is provided, use it for more precise event information."""
-
-# Emoji instructions for rich format channels
+# Emoji instructions injected into AI_SYSTEM_PROMPT for rich channels (Telegram, Discord, Pushover)
 AI_EMOJI_INSTRUCTIONS = """
-10. ENRICH with contextual emojis:
-   - Start with a severity indicator circle: (blue=info), (yellow=warning), (red=critical)
-   - Add specific emojis for each data item, not just at the start
-   - Use emojis that match the content type precisely:
-   
-   UPDATES/PACKAGES:
-   - Total updates count
-   - Security updates
-   - Proxmox updates
-   - Kernel updates
-   - Package list items (bullet points)
-   
-   BACKUP/STORAGE:
-   - Backup status
-   - Storage/disk
-   - Sync/transfer
-   - Folder/directory
-   - Size/capacity
-   
-   SYSTEM/HARDWARE:
-   - Server/host
-   - Container/VM
-   - CPU/processor
-   - Memory/RAM
-   - Temperature
-   
-   NETWORK:
-   - Network/connection
-   - Speed/bandwidth
-   - Globe/internet
-   
-   SECURITY/ALERTS:
-   - Warning/alert
-   - Security/shield
-   - Error/problem
-   - Lock/authentication
-   
-   STATUS:
-   - Success/OK
-   - Failed/error
-   - Running/active
-   - Stopped/inactive"""
+9. EMOJI USAGE — use real Unicode emoji characters as line-start icons:
 
-# No emoji instructions for email/plain channels
+   ONE emoji per line, placed at the very beginning of the line, before all text.
+   Never place an emoji at the end of a line or mid-sentence.
+   Never use more than one emoji per line.
+   Do not add emojis to blank lines.
+
+   ── TITLE ICONS (use the one matching the event type) ──
+   VM started / CT started          ▶️
+   VM stopped / CT stopped          ⏹️
+   VM/CT shutdown                   ⏏️
+   VM/CT failed / crashed           💥
+   VM/CT restarted                  🔄
+   Migration started                🚚
+   Migration complete               ✅
+   Migration failed                 ❌
+   Replication failed               ❌
+   Replication complete             ✅
+   Backup started                   📦
+   Backup complete                  ✅
+   Backup failed                    ❌
+   Snapshot created                 📸
+   Snapshot failed                  ❌
+   High CPU                         🔥
+   High memory                      💧
+   High temperature                 🌡️
+   High load                        ⚠️
+   Low disk space                   📉
+   Disk I/O error                   💥
+   Storage unavailable              🚫
+   Network down                     🔌
+   High latency                     🐢
+   Auth failure                     🚨
+   IP blocked                       🚷
+   Firewall issue                   🔥
+   User permission change           🔑
+   Split-brain                      💢
+   Node disconnected                🔌
+   Node reconnected                 ✅
+   System shutdown                  ⏻
+   System reboot                    🔄
+   System problem                   ⚠️
+   Service failed                   ❌
+   OOM kill                         💣
+   New health error                 🆘
+   Health resolved                  ✅
+   Health escalated                 🔺
+   Health degraded                  ⚠️
+   Health persistent (digest)       📋
+   Updates available                📦
+   PVE update available             🆕
+   Update complete                  ✅
+
+   ── BODY LINE ICONS (prepend to matching lines in the body) ──
+   Lines starting with VM name / CT name / ID    🏷️
+   Lines with Size / Tamaño / Größe              📏
+   Lines with Duration / Duración / Dauer        ⏱️
+   Lines with Storage / Almacenamiento           🗄️
+   Lines with PBS path / archive                 🗃️
+   Lines with Status: ok / éxito / success       ✅
+   Lines with Status: error / failed / fallo     ❌
+   Lines with Total (backup summary)             📊
+   Lines with Total updates / Actualizaciones    📦
+   Lines with Security updates / Seguridad       🔒
+   Lines with Proxmox updates                   🔄
+   Lines with Kernel updates                    ⚙️
+   Lines with Important packages / Paquetes     📋
+   Lines with Source IP / IP origen             🌐
+   Lines with User / Usuario                    👤
+   Lines with Service / Servicio                ⚙️
+   Lines with Jail                              🔒
+   Lines with Failed attempts / Intentos        🔢
+   Lines with Node / Nodo                       🖥️
+   Lines with Reason / Motivo / Razón           📝
+   Lines with Temperature / Temperatura         🌡️
+   Lines with CPU usage / Uso CPU               🔥
+   Lines with Memory / Memoria                  💧
+   Lines with Load / Carga                      📊
+   Lines with Quorum                            👥
+   Lines with Device / Dispositivo              💿
+   Lines with Filesystem / Ruta / Mount         📂
+   Lines with Category / Categoría              📌
+   Lines with Duration (health resolved)        ⏱️
+   Lines with Severity / Severidad              🚦
+   Summary line at end of backup body           📊"""
+
+# No emoji instructions for email/plain text channels
 AI_NO_EMOJI_INSTRUCTIONS = """
-10. DO NOT use emojis or special icons - plain text only for email compatibility"""
+9. DO NOT use any emojis or special Unicode symbols. Plain ASCII text only for email compatibility."""
 
 
 class AIEnhancer:
