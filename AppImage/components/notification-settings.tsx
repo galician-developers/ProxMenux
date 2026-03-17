@@ -122,8 +122,8 @@ const AI_PROVIDERS = [
     model: "gpt-4o-mini",
     description: "Industry standard. Very accurate and widely used.",
     keyUrl: "https://platform.openai.com/api-keys",
-    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons/png/openai.png",
-    iconLight: "https://cdn.jsdelivr.net/gh/selfhst/icons/png/openai-light.png"
+    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/openai.webp",
+    iconLight: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/openai-light.webp"
   },
   { 
     value: "anthropic", 
@@ -131,8 +131,8 @@ const AI_PROVIDERS = [
     model: "claude-3-haiku-20240307",
     description: "Excellent for writing and translation. Fast and economical.",
     keyUrl: "https://console.anthropic.com/settings/keys",
-    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons/png/anthropic.png",
-    iconLight: "https://cdn.jsdelivr.net/gh/selfhst/icons/png/anthropic-light.png"
+    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/claude-dark.webp",
+    iconLight: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/claude-light.webp"
   },
   { 
     value: "gemini", 
@@ -140,8 +140,8 @@ const AI_PROVIDERS = [
     model: "gemini-1.5-flash",
     description: "Free tier available, great quality/price ratio.",
     keyUrl: "https://aistudio.google.com/app/apikey",
-    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons/png/google-gemini.png",
-    iconLight: "https://cdn.jsdelivr.net/gh/selfhst/icons/png/google-gemini.png"
+    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/google-gemini.webp",
+    iconLight: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/google-gemini.webp"
   },
   { 
     value: "ollama", 
@@ -149,8 +149,8 @@ const AI_PROVIDERS = [
     model: "llama3.2",
     description: "100% local execution. No costs, total privacy, no internet required.",
     keyUrl: "",
-    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons/png/ollama.png",
-    iconLight: "https://cdn.jsdelivr.net/gh/selfhst/icons/png/ollama.png"
+    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/ollama.webp",
+    iconLight: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/ollama-light.webp"
   },
   { 
     value: "openrouter", 
@@ -158,8 +158,8 @@ const AI_PROVIDERS = [
     model: "meta-llama/llama-3.3-70b-instruct",
     description: "Aggregator with access to 100+ models using a single API key. Maximum flexibility.",
     keyUrl: "https://openrouter.ai/keys",
-    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons/png/openrouter.png",
-    iconLight: "https://cdn.jsdelivr.net/gh/selfhst/icons/png/openrouter.png"
+    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/openrouter-dark.webp",
+    iconLight: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/openrouter-light.webp"
   },
 ]
 
@@ -1352,7 +1352,7 @@ export function NotificationSettings() {
                       {/* Provider + Info button */}
                       <div className="space-y-2">
                         <div className="flex items-center gap-2">
-                          <Label className="text-xs sm:text-sm text-muted-foreground">Provider</Label>
+                          <Label className="text-xs sm:text-sm text-foreground/80">Provider</Label>
                           <button
                             onClick={() => setShowProviderInfo(true)}
                             className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
@@ -1379,7 +1379,7 @@ export function NotificationSettings() {
                       {/* Ollama URL (conditional) */}
                       {config.ai_provider === "ollama" && (
                         <div className="space-y-2">
-                          <Label className="text-xs sm:text-sm text-muted-foreground">Ollama URL</Label>
+                          <Label className="text-xs sm:text-sm text-foreground/80">Ollama URL</Label>
                           <Input
                             className="h-9 text-sm font-mono"
                             placeholder="http://localhost:11434"
@@ -1394,7 +1394,7 @@ export function NotificationSettings() {
                       {config.ai_provider !== "ollama" && (
                         <div className="space-y-2">
                           <div className="flex items-center gap-2">
-                            <Label className="text-xs sm:text-sm text-muted-foreground">API Key</Label>
+                            <Label className="text-xs sm:text-sm text-foreground/80">API Key</Label>
                             {AI_PROVIDERS.find(p => p.value === config.ai_provider)?.keyUrl && (
                               <a
                                 href={AI_PROVIDERS.find(p => p.value === config.ai_provider)?.keyUrl}
@@ -1427,7 +1427,7 @@ export function NotificationSettings() {
                       
                       {/* Model (read-only display) */}
                       <div className="space-y-2">
-                        <Label className="text-xs sm:text-sm text-muted-foreground">Model</Label>
+                        <Label className="text-xs sm:text-sm text-foreground/80">Model</Label>
                         <div className="h-9 px-3 flex items-center rounded-md border border-border bg-muted/50 text-sm font-mono text-muted-foreground">
                           {AI_PROVIDERS.find(p => p.value === config.ai_provider)?.model || "default"}
                         </div>
@@ -1435,7 +1435,7 @@ export function NotificationSettings() {
                       
                       {/* Language selector */}
                       <div className="space-y-2">
-                        <Label className="text-xs sm:text-sm text-muted-foreground">Language</Label>
+                        <Label className="text-xs sm:text-sm text-foreground/80">Language</Label>
                         <Select
                           value={config.ai_language || "en"}
                           onValueChange={v => updateConfig(p => ({ ...p, ai_language: v }))}
@@ -1489,11 +1489,11 @@ export function NotificationSettings() {
                       
                       {/* Per-channel detail level */}
                       <div className="space-y-3 pt-3 border-t border-border/50">
-                        <Label className="text-xs sm:text-sm text-muted-foreground">Detail Level per Channel</Label>
+                        <Label className="text-xs sm:text-sm text-foreground/80">Detail Level per Channel</Label>
                         <div className="grid grid-cols-2 gap-3">
                           {CHANNEL_TYPES.map(ch => (
                             <div key={ch} className="flex items-center justify-between gap-2 px-3 py-2 rounded bg-muted/30">
-                              <span className="text-xs sm:text-sm text-muted-foreground capitalize">{ch}</span>
+                              <span className="text-xs sm:text-sm text-foreground/70 capitalize">{ch}</span>
                               <Select
                                 value={config.channel_ai_detail?.[ch] || "standard"}
                                 onValueChange={v => updateConfig(p => ({
@@ -1548,7 +1548,7 @@ export function NotificationSettings() {
     
       {/* AI Provider Information Modal */}
       <Dialog open={showProviderInfo} onOpenChange={setShowProviderInfo}>
-        <DialogContent className="max-w-md sm:max-w-lg md:max-w-xl">
+        <DialogContent className="max-w-[90vw] sm:max-w-xl md:max-w-2xl lg:max-w-3xl">
           <DialogHeader>
             <DialogTitle className="text-base sm:text-lg">AI Providers Information</DialogTitle>
           </DialogHeader>
@@ -1561,11 +1561,11 @@ export function NotificationSettings() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     {/* Provider icon with theme support */}
-                    <div className="w-8 h-8 rounded-md bg-background flex items-center justify-center border border-border shrink-0">
+                    <div className="w-10 h-10 rounded-md bg-background flex items-center justify-center border border-border shrink-0">
                       <img 
                         src={resolvedTheme === 'light' ? provider.iconLight : provider.icon} 
                         alt={provider.label}
-                        className="w-5 h-5 object-contain"
+                        className="w-7 h-7 object-contain"
                         onError={(e) => {
                           // Fallback if icon fails to load
                           (e.target as HTMLImageElement).style.display = 'none'
@@ -1578,10 +1578,10 @@ export function NotificationSettings() {
                     <Badge variant="outline" className="text-xs px-2 py-0.5">Local</Badge>
                   )}
                 </div>
-                <div className="text-xs sm:text-sm text-muted-foreground mt-2 ml-11">
+                <div className="text-xs sm:text-sm text-muted-foreground mt-2 ml-[52px]">
                   Default model: <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">{provider.model}</code>
                 </div>
-                <p className="text-xs sm:text-sm text-muted-foreground mt-2 ml-11 leading-relaxed">
+                <p className="text-xs sm:text-sm text-muted-foreground mt-2 ml-[52px] leading-relaxed">
                   {provider.description}
                 </p>
               </div>
