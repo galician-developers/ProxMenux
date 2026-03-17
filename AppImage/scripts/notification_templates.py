@@ -1244,13 +1244,14 @@ AI_SYSTEM_PROMPT = """You are a technical assistant for ProxMenux Monitor, a Pro
 Your task is to translate and format system alerts to {language}.
 
 STRICT RULES:
-1. Translate the message to the requested language
-2. Maintain an INFORMATIVE and OBJECTIVE tone
-3. DO NOT use formal introductions ("Dear...", "Esteemed...")
-4. DO NOT give recommendations or action suggestions
-5. DO NOT interpret data subjectively
-6. Present only FACTS and TECHNICAL DATA
-7. Respect the requested detail level: {detail_level}
+1. Translate BOTH the title and message body to {language}
+2. DO NOT use markdown formatting like **bold** or *italic*
+3. Use plain text only - no special formatting syntax
+4. Maintain an INFORMATIVE and OBJECTIVE tone
+5. DO NOT use formal introductions ("Dear...", "Esteemed...")
+6. DO NOT give recommendations or action suggestions
+7. Present only FACTS and TECHNICAL DATA
+8. Respect the requested detail level: {detail_level}
 {emoji_instructions}
 
 DETAIL LEVELS:
@@ -1262,30 +1263,71 @@ MESSAGE TYPES:
 - Some messages come from Proxmox VE webhooks with raw system data (backup logs, update lists, SMART errors)
 - Parse and present this data clearly, extracting key information (VM IDs, sizes, durations, errors)
 - For backup messages: highlight status (OK/ERROR), VM names, sizes, and duration
-- For update messages: list package names and counts
+- For update messages: list package names and counts clearly formatted
 - For disk/SMART errors: highlight affected device and error type
+
+OUTPUT FORMAT (VERY IMPORTANT):
+You MUST return the response in this exact format with these exact markers:
+[TITLE]
+Translated title here
+[BODY]
+Translated message body here
+
+- The [TITLE] section should contain ONLY the translated title (short, one line)
+- The [BODY] section contains the translated and formatted message
+- Do NOT include the markers [TITLE] or [BODY] as part of the content
+- Start body content directly (emoji if enabled, then text)
 
 If journal log context is provided, use it for more precise event information."""
 
 # Emoji instructions for rich format channels
 AI_EMOJI_INSTRUCTIONS = """
-8. ENRICH with contextual emojis and icons:
-   - Use appropriate emojis at the START of the title/message to indicate severity and type
-   - Severity indicators: Use a colored circle at the start (info=blue, warning=yellow, critical=red)
-   - Add relevant technical emojis: disk, server, network, security, backup, etc.
-   - Keep emojis contextual and professional, not decorative
-   - Examples of appropriate emojis:
-     * Disk/Storage: disk, folder, file
-     * Network: globe, signal, connection
-     * Security: shield, lock, key, warning
-     * System: gear, server, computer
-     * Status: checkmark, cross, warning, info
-     * Backup: save, sync, cloud
-     * Performance: chart, speedometer"""
+10. ENRICH with contextual emojis:
+   - Start with a severity indicator circle: (blue=info), (yellow=warning), (red=critical)
+   - Add specific emojis for each data item, not just at the start
+   - Use emojis that match the content type precisely:
+   
+   UPDATES/PACKAGES:
+   - Total updates count
+   - Security updates
+   - Proxmox updates
+   - Kernel updates
+   - Package list items (bullet points)
+   
+   BACKUP/STORAGE:
+   - Backup status
+   - Storage/disk
+   - Sync/transfer
+   - Folder/directory
+   - Size/capacity
+   
+   SYSTEM/HARDWARE:
+   - Server/host
+   - Container/VM
+   - CPU/processor
+   - Memory/RAM
+   - Temperature
+   
+   NETWORK:
+   - Network/connection
+   - Speed/bandwidth
+   - Globe/internet
+   
+   SECURITY/ALERTS:
+   - Warning/alert
+   - Security/shield
+   - Error/problem
+   - Lock/authentication
+   
+   STATUS:
+   - Success/OK
+   - Failed/error
+   - Running/active
+   - Stopped/inactive"""
 
 # No emoji instructions for email/plain channels
 AI_NO_EMOJI_INSTRUCTIONS = """
-8. DO NOT use emojis or special icons - plain text only for email compatibility"""
+10. DO NOT use emojis or special icons - plain text only for email compatibility"""
 
 
 class AIEnhancer:
@@ -1343,7 +1385,7 @@ class AIEnhancer:
     def enhance(self, title: str, body: str, severity: str,
                 detail_level: str = 'standard',
                 journal_context: str = '',
-                use_emojis: bool = False) -> Optional[str]:
+                use_emojis: bool = False) -> Optional[Dict[str, str]]:
         """Enhance/translate notification with AI.
         
         Args:
@@ -1355,7 +1397,7 @@ class AIEnhancer:
             use_emojis: Whether to include emojis in the response (for push channels)
             
         Returns:
-            Enhanced/translated text or None if failed
+            Dict with 'title' and 'body' keys, or None if failed
         """
         if not self._provider:
             return None
@@ -1384,10 +1426,48 @@ class AIEnhancer:
         
         try:
             result = self._provider.generate(system_prompt, user_msg, max_tokens)
-            return result
+            return self._parse_ai_response(result, title, body)
         except Exception as e:
             print(f"[AIEnhancer] Enhancement failed: {e}")
             return None
+    
+    def _parse_ai_response(self, response: str, original_title: str, original_body: str) -> Dict[str, str]:
+        """Parse AI response to extract title and body.
+        
+        Args:
+            response: Raw AI response text
+            original_title: Original title as fallback
+            original_body: Original body as fallback
+            
+        Returns:
+            Dict with 'title' and 'body' keys
+        """
+        if not response:
+            return {'title': original_title, 'body': original_body}
+        
+        # Try to parse [TITLE] and [BODY] markers
+        title_marker = '[TITLE]'
+        body_marker = '[BODY]'
+        
+        title_start = response.find(title_marker)
+        body_start = response.find(body_marker)
+        
+        if title_start != -1 and body_start != -1:
+            # Extract title (between [TITLE] and [BODY])
+            title_content = response[title_start + len(title_marker):body_start].strip()
+            # Extract body (after [BODY])
+            body_content = response[body_start + len(body_marker):].strip()
+            
+            return {
+                'title': title_content if title_content else original_title,
+                'body': body_content if body_content else original_body
+            }
+        
+        # Fallback: if markers not found, use whole response as body
+        return {
+            'title': original_title,
+            'body': response.strip()
+        }
     
     def test_connection(self) -> Dict[str, Any]:
         """Test the AI provider connection.
@@ -1426,22 +1506,47 @@ def format_with_ai(title: str, body: str, severity: str,
     Returns:
         Enhanced body string or original if AI fails
     """
+    result = format_with_ai_full(title, body, severity, ai_config, detail_level, journal_context, use_emojis)
+    return result.get('body', body)
+
+
+def format_with_ai_full(title: str, body: str, severity: str,
+                        ai_config: Dict[str, Any],
+                        detail_level: str = 'standard',
+                        journal_context: str = '',
+                        use_emojis: bool = False) -> Dict[str, str]:
+    """Format a message with AI enhancement/translation, returning both title and body.
+    
+    Args:
+        title: Notification title
+        body: Notification body
+        severity: Severity level
+        ai_config: Configuration dictionary with AI settings
+        detail_level: Level of detail (brief, standard, detailed)
+        journal_context: Optional journal log context
+        use_emojis: Whether to include emojis (for push channels like Telegram/Discord)
+    
+    Returns:
+        Dict with 'title' and 'body' keys (translated/enhanced)
+    """
+    default_result = {'title': title, 'body': body}
+    
     # Check if AI is enabled
     ai_enabled = ai_config.get('ai_enabled')
     if isinstance(ai_enabled, str):
         ai_enabled = ai_enabled.lower() == 'true'
     
     if not ai_enabled:
-        return body
+        return default_result
     
     # Check for API key (not required for Ollama)
     provider = ai_config.get('ai_provider', 'groq')
     if provider != 'ollama' and not ai_config.get('ai_api_key'):
-        return body
+        return default_result
     
     # For Ollama, check URL is configured
     if provider == 'ollama' and not ai_config.get('ai_ollama_url'):
-        return body
+        return default_result
     
     # Create enhancer and process
     enhancer = AIEnhancer(ai_config)
@@ -1452,15 +1557,19 @@ def format_with_ai(title: str, body: str, severity: str,
         use_emojis=use_emojis
     )
     
-    # Return enhanced text if successful, otherwise original
-    if enhanced:
+    # Return enhanced result if successful, otherwise original
+    if enhanced and isinstance(enhanced, dict):
+        result_title = enhanced.get('title', title)
+        result_body = enhanced.get('body', body)
+        
         # For detailed level (email), append original message for reference
         # This ensures full technical data is available even after AI processing
         if detail_level == 'detailed' and body and len(body) > 50:
             # Only append if original has substantial content
-            enhanced += "\n\n" + "-" * 40 + "\n"
-            enhanced += "Original message:\n"
-            enhanced += body
-        return enhanced
+            result_body += "\n\n" + "-" * 40 + "\n"
+            result_body += "Original message:\n"
+            result_body += body
+        
+        return {'title': result_title, 'body': result_body}
     
-    return body
+    return default_result

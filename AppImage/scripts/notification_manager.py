@@ -36,7 +36,7 @@ if BASE_DIR not in sys.path:
 
 from notification_channels import create_channel, CHANNEL_TYPES
 from notification_templates import (
-    render_template, format_with_ai, enrich_with_emojis, TEMPLATES,
+    render_template, format_with_ai, format_with_ai_full, enrich_with_emojis, TEMPLATES,
     EVENT_GROUPS, get_event_types_by_group, get_default_enabled_events
 )
 from notification_events import (
@@ -743,12 +743,14 @@ class NotificationManager:
                 # ── Per-channel AI enhancement ──
                 # Apply AI with channel-specific detail level and emoji setting
                 # If AI is enabled AND rich_format is on, AI will include emojis directly
-                ch_body = format_with_ai(
+                ai_result = format_with_ai_full(
                     ch_title, ch_body, severity, ai_config,
                     detail_level=detail_level,
                     journal_context=journal_context,
                     use_emojis=use_rich_format
                 )
+                ch_title = ai_result.get('title', ch_title)
+                ch_body = ai_result.get('body', ch_body)
                 
                 # Fallback emoji enrichment only if AI is disabled but rich_format is on
                 # (If AI processed the message with emojis, this is skipped)
@@ -1055,17 +1057,19 @@ class NotificationManager:
                 rich_key = f'{ch_name}.rich_format'
                 use_rich_format = self._config.get(rich_key, 'false') == 'true'
                 
-                ch_message = format_with_ai(
+                ai_result = format_with_ai_full(
                     title, message, severity, ai_config,
                     detail_level=detail_level,
                     use_emojis=use_rich_format
                 )
+                ch_title = ai_result.get('title', title)
+                ch_message = ai_result.get('body', message)
                 
-                result = channel.send(title, ch_message, severity, data)
+                result = channel.send(ch_title, ch_message, severity, data)
                 results[ch_name] = result
                 
                 self._record_history(
-                    event_type, ch_name, title, ch_message, severity,
+                    event_type, ch_name, ch_title, ch_message, severity,
                     result.get('success', False),
                     result.get('error', ''),
                     source
@@ -1138,7 +1142,7 @@ class NotificationManager:
         }
         
         # ProxMenux logo for welcome message
-        logo_url = 'https://macrimi.github.io/ProxMenux/logo.png'
+        logo_url = 'https://proxmenux.com/telegram.png'
         
         for ch_name, channel in targets.items():
             try:
@@ -1150,14 +1154,16 @@ class NotificationManager:
                 use_rich_format = self._config.get(rich_key, 'false') == 'true'
                 
                 # Apply AI enhancement (translates to configured language)
-                enhanced_message = format_with_ai(
+                ai_result = format_with_ai_full(
                     base_title, base_message, 'INFO', ai_config,
                     detail_level=detail_level,
                     use_emojis=use_rich_format
                 )
+                enhanced_title = ai_result.get('title', base_title)
+                enhanced_message = ai_result.get('body', base_message)
                 
                 # Send message
-                send_result = channel.send(base_title, enhanced_message, 'INFO')
+                send_result = channel.send(enhanced_title, enhanced_message, 'INFO')
                 success = send_result.get('success', False)
                 error = send_result.get('error', '')
                 
@@ -1168,7 +1174,7 @@ class NotificationManager:
                 results[ch_name] = {'success': success, 'error': error}
                 
                 self._record_history(
-                    'test', ch_name, base_title,
+                    'test', ch_name, enhanced_title,
                     enhanced_message[:500], 'INFO',
                     success, error, 'api'
                 )
