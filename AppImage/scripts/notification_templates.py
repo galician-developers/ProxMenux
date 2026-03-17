@@ -904,8 +904,13 @@ def render_template(event_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         'packages': '', 'pve_packages': '', 'version': '',
         'issue_list': '', 'error_key': '',
         'storage_name': '', 'storage_type': '',
+        'important_list': 'none',
     }
     variables.update(data)
+    
+    # Ensure important_list is never blank (fallback to 'none')
+    if not variables.get('important_list', '').strip():
+        variables['important_list'] = 'none'
     
     try:
         title = template['title'].format(**variables)
@@ -1256,6 +1261,10 @@ Your task is to translate and reformat incoming server alert messages into {lang
    - detailed → full technical breakdown of all available fields
 8. Keep the "hostname: " prefix in the title. Translate only the descriptive part.
    Example: "pve01: Updates available" → "pve01: Actualizaciones disponibles"
+9. EMPTY LIST VALUES — if the input contains a list field that is empty, "none", or "0":
+   - Always write the translated word for "none" on the line after the label, never leave it blank.
+   - Example (English input "none"):  📋 Important packages:\n📋 none
+   - Example (Spanish output):        📋 Paquetes importantes:\n📋 ninguno
 {emoji_instructions}
 
 ═══ KNOWN MESSAGE TYPES AND HOW TO FORMAT THEM ═══
@@ -1384,7 +1393,19 @@ AI_EMOJI_INSTRUCTIONS = """
    - VM events with a reason: after the main status line, before Reason / Node / Target lines
    - Health events: after the category/status line, before duration or detail lines
 
-   EXAMPLE — updates message:
+   EXAMPLE — updates message (no important packages):
+   [TITLE]
+   📦 amd: Updates available
+   [BODY]
+   📦 Total updates: 55
+   🔒 Security updates: 0
+   🔄 Proxmox updates: 0
+   ⚙️ Kernel updates: 0
+
+   📋 Important packages:
+   📋 none
+
+   EXAMPLE — updates message (with important packages):
    [TITLE]
    📦 amd: Updates available
    [BODY]
