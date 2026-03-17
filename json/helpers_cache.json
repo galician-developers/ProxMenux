@@ -17819,7 +17819,7 @@
     "execute_in": [
       "pve"
     ],
-    "config_path": "debian: /opt/zigbee2mqtt/data/configuration.yaml | alpine: /var/lib/zigbee2mqtt/configuration.yaml",
+    "config_path": "",
     "os": "debian"
   },
   {
@@ -17851,7 +17851,7 @@
     "execute_in": [
       "pve"
     ],
-    "config_path": "debian: /opt/zigbee2mqtt/data/configuration.yaml | alpine: /var/lib/zigbee2mqtt/configuration.yaml",
+    "config_path": "",
     "os": "alpine"
   },
   {
