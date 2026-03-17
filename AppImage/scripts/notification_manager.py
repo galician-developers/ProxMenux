@@ -615,17 +615,6 @@ class NotificationManager:
         # Render message from template (structured output)
         rendered = render_template(event.event_type, event.data)
         
-        # Optional AI enhancement (on text body only)
-        ai_config = {
-            'enabled': self._config.get('ai_enabled', 'false'),
-            'provider': self._config.get('ai_provider', ''),
-            'api_key': self._config.get('ai_api_key', ''),
-            'model': self._config.get('ai_model', ''),
-        }
-        body = format_with_ai(
-            rendered['title'], rendered['body'], severity, ai_config
-        )
-        
         # Enrich data with structured fields for channels that support them
         enriched_data = dict(event.data)
         enriched_data['_rendered_fields'] = rendered.get('fields', [])
@@ -633,9 +622,13 @@ class NotificationManager:
         enriched_data['_event_type'] = event.event_type
         enriched_data['_group'] = TEMPLATES.get(event.event_type, {}).get('group', 'other')
         
-        # Send through all active channels
+        # Pass journal context if available (for AI enrichment)
+        if '_journal_context' in event.data:
+            enriched_data['_journal_context'] = event.data['_journal_context']
+        
+        # Send through all active channels (AI applied per-channel with detail_level)
         self._dispatch_to_channels(
-            rendered['title'], body, severity,
+            rendered['title'], rendered['body'], severity,
             event.event_type, enriched_data, event.source
         )
     
@@ -647,6 +640,9 @@ class NotificationManager:
           - {channel}.events.{group}  = "true"/"false"  (category toggle, default "true")
           - {channel}.event.{type}    = "true"/"false"  (per-event toggle, default from template)
         No global fallback -- each channel decides independently what it receives.
+        
+        AI enhancement is applied per-channel with configurable detail level:
+          - {channel}.ai_detail_level = "brief" | "standard" | "detailed"
         """
         with self._lock:
             channels = dict(self._channels)
@@ -654,6 +650,19 @@ class NotificationManager:
         template = TEMPLATES.get(event_type, {})
         event_group = template.get('group', 'other')
         default_event_enabled = 'true' if template.get('default_enabled', True) else 'false'
+        
+        # Build AI config once (shared across channels, detail_level varies)
+        ai_config = {
+            'ai_enabled': self._config.get('ai_enabled', 'false'),
+            'ai_provider': self._config.get('ai_provider', 'groq'),
+            'ai_api_key': self._config.get('ai_api_key', ''),
+            'ai_model': self._config.get('ai_model', ''),
+            'ai_language': self._config.get('ai_language', 'en'),
+            'ai_ollama_url': self._config.get('ai_ollama_url', ''),
+        }
+        
+        # Get journal context if available
+        journal_context = data.get('_journal_context', '')
         
         for ch_name, channel in channels.items():
             # ── Per-channel category check ──
@@ -669,12 +678,33 @@ class NotificationManager:
                 continue  # Channel has this specific event disabled
             
             try:
-                # Per-channel emoji enrichment (opt-in via {channel}.rich_format)
                 ch_title, ch_body = title, body
+                
+                # ── Per-channel settings ──
+                detail_level_key = f'{ch_name}.ai_detail_level'
+                detail_level = self._config.get(detail_level_key, 'standard')
+                
                 rich_key = f'{ch_name}.rich_format'
-                if self._config.get(rich_key, 'false') == 'true':
+                use_rich_format = self._config.get(rich_key, 'false') == 'true'
+                
+                # ── Per-channel AI enhancement ──
+                # Apply AI with channel-specific detail level and emoji setting
+                # If AI is enabled AND rich_format is on, AI will include emojis directly
+                ch_body = format_with_ai(
+                    ch_title, ch_body, severity, ai_config,
+                    detail_level=detail_level,
+                    journal_context=journal_context,
+                    use_emojis=use_rich_format
+                )
+                
+                # Fallback emoji enrichment only if AI is disabled but rich_format is on
+                # (If AI processed the message with emojis, this is skipped)
+                ai_enabled_str = ai_config.get('ai_enabled', 'false')
+                ai_enabled = ai_enabled_str == 'true' if isinstance(ai_enabled_str, str) else bool(ai_enabled_str)
+                
+                if use_rich_format and not ai_enabled:
                     ch_title, ch_body = enrich_with_emojis(
-                        event_type, title, body, data
+                        event_type, ch_title, ch_body, data
                     )
                 
                 result = channel.send(ch_title, ch_body, severity, data)
@@ -946,14 +976,15 @@ class NotificationManager:
             message = rendered['body']
             severity = severity or rendered['severity']
         
-        # AI enhancement
+        # AI config for enhancement
         ai_config = {
-            'enabled': self._config.get('ai_enabled', 'false'),
-            'provider': self._config.get('ai_provider', ''),
-            'api_key': self._config.get('ai_api_key', ''),
-            'model': self._config.get('ai_model', ''),
+            'ai_enabled': self._config.get('ai_enabled', 'false'),
+            'ai_provider': self._config.get('ai_provider', 'groq'),
+            'ai_api_key': self._config.get('ai_api_key', ''),
+            'ai_model': self._config.get('ai_model', ''),
+            'ai_language': self._config.get('ai_language', 'en'),
+            'ai_ollama_url': self._config.get('ai_ollama_url', ''),
         }
-        message = format_with_ai(title, message, severity, ai_config)
         
         results = {}
         channels_sent = []
@@ -964,11 +995,24 @@ class NotificationManager:
         
         for ch_name, channel in channels.items():
             try:
-                result = channel.send(title, message, severity, data)
+                # Apply AI enhancement per channel with its detail level and emoji setting
+                detail_level_key = f'{ch_name}.ai_detail_level'
+                detail_level = self._config.get(detail_level_key, 'standard')
+                
+                rich_key = f'{ch_name}.rich_format'
+                use_rich_format = self._config.get(rich_key, 'false') == 'true'
+                
+                ch_message = format_with_ai(
+                    title, message, severity, ai_config,
+                    detail_level=detail_level,
+                    use_emojis=use_rich_format
+                )
+                
+                result = channel.send(title, ch_message, severity, data)
                 results[ch_name] = result
                 
                 self._record_history(
-                    event_type, ch_name, title, message, severity,
+                    event_type, ch_name, title, ch_message, severity,
                     result.get('success', False),
                     result.get('error', ''),
                     source

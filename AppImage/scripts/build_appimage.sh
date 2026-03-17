@@ -100,6 +100,16 @@ cp "$SCRIPT_DIR/oci_manager.py" "$APP_DIR/usr/bin/" 2>/dev/null || echo "⚠️ 
 cp "$SCRIPT_DIR/flask_oci_routes.py" "$APP_DIR/usr/bin/" 2>/dev/null || echo "⚠️  flask_oci_routes.py not found"
 cp "$SCRIPT_DIR/oci/description_templates.py" "$APP_DIR/usr/bin/" 2>/dev/null || echo "⚠️  description_templates.py not found"
 
+# Copy AI providers module for notification enhancement
+echo "📋 Copying AI providers module..."
+if [ -d "$SCRIPT_DIR/ai_providers" ]; then
+    mkdir -p "$APP_DIR/usr/bin/ai_providers"
+    cp "$SCRIPT_DIR/ai_providers/"*.py "$APP_DIR/usr/bin/ai_providers/"
+    echo "✅ AI providers module copied"
+else
+    echo "⚠️  ai_providers directory not found"
+fi
+
 echo "📋 Adding translation support..."
 cat > "$APP_DIR/usr/bin/translate_cli.py" << 'PYEOF'
 #!/usr/bin/env python3

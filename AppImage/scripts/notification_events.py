@@ -90,6 +90,60 @@ def _hostname() -> str:
         return 'proxmox'
 
 
+def capture_journal_context(keywords: list, lines: int = 30,
+                            since: str = "5 minutes ago") -> str:
+    """Capture relevant journal lines for AI context enrichment.
+    
+    Searches recent journald entries for lines matching any of the
+    provided keywords and returns them for AI analysis.
+    
+    Args:
+        keywords: List of terms to filter (e.g., ['sdh', 'ata8', 'I/O error'])
+        lines: Maximum number of lines to return (default: 30)
+        since: Time window for journalctl (default: "5 minutes ago")
+        
+    Returns:
+        Filtered journal output as string, or empty string if none found
+        
+    Example:
+        context = capture_journal_context(
+            keywords=['sdh', 'ata8', 'exception'],
+            lines=30
+        )
+    """
+    if not keywords:
+        return ""
+    
+    try:
+        # Build grep pattern from keywords
+        pattern = "|".join(re.escape(k) for k in keywords if k)
+        if not pattern:
+            return ""
+        
+        # Use journalctl with grep to filter relevant lines
+        cmd = (
+            f"journalctl --since='{since}' --no-pager -n 500 2>/dev/null | "
+            f"grep -iE '{pattern}' | tail -n {lines}"
+        )
+        
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+        return ""
+    except subprocess.TimeoutExpired:
+        return ""
+    except Exception as e:
+        # Silently fail - journal context is optional
+        return ""
+
+
 # ─── Journal Watcher (Real-time) ─────────────────────────────────
 
 class JournalWatcher:
@@ -725,11 +779,18 @@ class JournalWatcher:
             enriched = '\n'.join(parts)
             dev_display = f'/dev/{resolved}'
             
+            # Capture journal context for AI enrichment
+            journal_ctx = capture_journal_context(
+                keywords=[resolved, ata_port, 'I/O error', 'exception', 'SMART'],
+                lines=30
+            )
+            
             self._emit('disk_io_error', 'CRITICAL', {
                 'device': dev_display,
                 'reason': enriched,
                 'hostname': self._hostname,
                 'smart_status': 'FAILED',
+                '_journal_context': journal_ctx,
             }, entity='disk', entity_id=resolved)
             return
     
@@ -2238,6 +2299,21 @@ class ProxmoxHookWatcher:
             dur_m = re.search(r'Total running time:\s*(.+?)(?:\n|$)', message)
             if dur_m:
                 data['duration'] = dur_m.group(1).strip()
+        
+        # Capture journal context for critical/warning events (helps AI provide better context)
+        if severity in ('CRITICAL', 'WARNING') and event_type not in ('backup_complete', 'update_available'):
+            # Build keywords from available data for journal search
+            keywords = ['error', 'fail', 'warning']
+            if 'smartd' in message.lower() or 'smart' in title.lower():
+                keywords.extend(['smartd', 'SMART', 'ata'])
+            if pve_type == 'system-mail':
+                keywords.append('smartd')
+            if entity_id:
+                keywords.append(entity_id)
+            
+            journal_ctx = capture_journal_context(keywords=keywords, lines=20)
+            if journal_ctx:
+                data['_journal_context'] = journal_ctx
         
         event = NotificationEvent(
             event_type=event_type,

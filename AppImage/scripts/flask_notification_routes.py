@@ -101,6 +101,83 @@ def test_notification():
         return jsonify({'error': str(e)}), 500
 
 
+@notification_bp.route('/api/notifications/test-ai', methods=['POST'])
+def test_ai_connection():
+    """Test AI provider connection and configuration.
+    
+    Request body:
+        {
+            "provider": "groq" | "openai" | "anthropic" | "gemini" | "ollama" | "openrouter",
+            "api_key": "...",
+            "model": "..." (optional),
+            "ollama_url": "http://localhost:11434" (optional, for ollama)
+        }
+    
+    Returns:
+        {
+            "success": true/false,
+            "message": "Connection successful" or error message,
+            "model": "model used for test"
+        }
+    """
+    try:
+        data = request.get_json() or {}
+        
+        provider = data.get('provider', 'groq')
+        api_key = data.get('api_key', '')
+        model = data.get('model', '')
+        ollama_url = data.get('ollama_url', 'http://localhost:11434')
+        
+        # Validate required fields
+        if provider != 'ollama' and not api_key:
+            return jsonify({
+                'success': False,
+                'message': 'API key is required',
+                'model': ''
+            }), 400
+        
+        if provider == 'ollama' and not ollama_url:
+            return jsonify({
+                'success': False,
+                'message': 'Ollama URL is required',
+                'model': ''
+            }), 400
+        
+        # Import and use the AI providers module
+        import sys
+        import os
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        if script_dir not in sys.path:
+            sys.path.insert(0, script_dir)
+        
+        from ai_providers import get_provider, AIProviderError
+        
+        try:
+            ai_provider = get_provider(
+                provider,
+                api_key=api_key,
+                model=model,
+                base_url=ollama_url
+            )
+            
+            result = ai_provider.test_connection()
+            return jsonify(result)
+            
+        except AIProviderError as e:
+            return jsonify({
+                'success': False,
+                'message': str(e),
+                'model': model
+            }), 400
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Unexpected error: {str(e)}',
+            'model': ''
+        }), 500
+
+
 @notification_bp.route('/api/notifications/status', methods=['GET'])
 def get_notification_status():
     """Get notification service status."""

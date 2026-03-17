@@ -1215,107 +1215,252 @@ def enrich_with_emojis(event_type: str, title: str, body: str,
 
 # ─── AI Enhancement (Optional) ───────────────────────────────────
 
+# Supported languages for AI translation
+AI_LANGUAGES = {
+    'en': 'English',
+    'es': 'Spanish',
+    'fr': 'French',
+    'de': 'German',
+    'pt': 'Portuguese',
+    'it': 'Italian',
+    'ru': 'Russian',
+    'sv': 'Swedish',
+    'no': 'Norwegian',
+    'ja': 'Japanese',
+    'zh': 'Chinese',
+    'nl': 'Dutch',
+}
+
+# Token limits for different detail levels
+AI_DETAIL_TOKENS = {
+    'brief': 100,      # 2-3 lines, essential only
+    'standard': 200,   # Concise paragraph with context
+    'detailed': 400,   # Complete technical details
+}
+
+# System prompt template - informative, no recommendations
+AI_SYSTEM_PROMPT = """You are a technical assistant for ProxMenux Monitor, a Proxmox server monitoring system.
+
+Your task is to translate and format system alerts to {language}.
+
+STRICT RULES:
+1. Translate the message to the requested language
+2. Maintain an INFORMATIVE and OBJECTIVE tone
+3. DO NOT use formal introductions ("Dear...", "Esteemed...")
+4. DO NOT give recommendations or action suggestions
+5. DO NOT interpret data subjectively
+6. Present only FACTS and TECHNICAL DATA
+7. Respect the requested detail level: {detail_level}
+{emoji_instructions}
+
+DETAIL LEVELS:
+- brief: 2-3 lines maximum, only essential information
+- standard: Concise paragraph with basic context
+- detailed: Complete information with all available technical details
+
+MESSAGE TYPES:
+- Some messages come from Proxmox VE webhooks with raw system data (backup logs, update lists, SMART errors)
+- Parse and present this data clearly, extracting key information (VM IDs, sizes, durations, errors)
+- For backup messages: highlight status (OK/ERROR), VM names, sizes, and duration
+- For update messages: list package names and counts
+- For disk/SMART errors: highlight affected device and error type
+
+If journal log context is provided, use it for more precise event information."""
+
+# Emoji instructions for rich format channels
+AI_EMOJI_INSTRUCTIONS = """
+8. ENRICH with contextual emojis and icons:
+   - Use appropriate emojis at the START of the title/message to indicate severity and type
+   - Severity indicators: Use a colored circle at the start (info=blue, warning=yellow, critical=red)
+   - Add relevant technical emojis: disk, server, network, security, backup, etc.
+   - Keep emojis contextual and professional, not decorative
+   - Examples of appropriate emojis:
+     * Disk/Storage: disk, folder, file
+     * Network: globe, signal, connection
+     * Security: shield, lock, key, warning
+     * System: gear, server, computer
+     * Status: checkmark, cross, warning, info
+     * Backup: save, sync, cloud
+     * Performance: chart, speedometer"""
+
+# No emoji instructions for email/plain channels
+AI_NO_EMOJI_INSTRUCTIONS = """
+8. DO NOT use emojis or special icons - plain text only for email compatibility"""
+
+
 class AIEnhancer:
-    """Optional AI message enhancement using external LLM API.
+    """AI message enhancement using pluggable providers.
     
-    Enriches template-generated messages with context and suggestions.
-    Falls back to original message if AI is unavailable or fails.
+    Supports 6 providers: Groq, OpenAI, Anthropic, Gemini, Ollama, OpenRouter.
+    Translates and formats notifications based on configured language and detail level.
     """
     
-    SYSTEM_PROMPT = """You are a Proxmox system administrator assistant. 
-You receive a notification message about a server event and must enhance it with:
-1. A brief explanation of what this means in practical terms
-2. A suggested action if applicable (1-2 sentences max)
-
-Keep the response concise (max 3 sentences total). Do not repeat the original message.
-Respond in the same language as the input message."""
+    def __init__(self, config: Dict[str, Any]):
+        """Initialize AIEnhancer with configuration.
+        
+        Args:
+            config: Dictionary containing:
+                - ai_provider: Provider name (groq, openai, anthropic, gemini, ollama, openrouter)
+                - ai_api_key: API key (not required for ollama)
+                - ai_model: Optional model override
+                - ai_language: Target language code (en, es, fr, etc.)
+                - ai_ollama_url: URL for Ollama server (optional)
+        """
+        self.config = config
+        self._provider = None
+        self._init_provider()
     
-    def __init__(self, provider: str, api_key: str, model: str = ''):
-        self.provider = provider.lower()
-        self.api_key = api_key
-        self.model = model
-        self._enabled = bool(api_key)
+    def _init_provider(self):
+        """Initialize the AI provider based on configuration."""
+        try:
+            # Import here to avoid circular imports
+            import sys
+            import os
+            
+            # Add script directory to path for ai_providers import
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            if script_dir not in sys.path:
+                sys.path.insert(0, script_dir)
+            
+            from ai_providers import get_provider
+            
+            provider_name = self.config.get('ai_provider', 'groq')
+            self._provider = get_provider(
+                provider_name,
+                api_key=self.config.get('ai_api_key', ''),
+                model=self.config.get('ai_model', ''),
+                base_url=self.config.get('ai_ollama_url', ''),
+            )
+        except Exception as e:
+            print(f"[AIEnhancer] Failed to initialize provider: {e}")
+            self._provider = None
     
     @property
     def enabled(self) -> bool:
-        return self._enabled
+        """Check if AI enhancement is available."""
+        return self._provider is not None
     
-    def enhance(self, title: str, body: str, severity: str) -> Optional[str]:
-        """Enhance a notification message with AI context.
+    def enhance(self, title: str, body: str, severity: str,
+                detail_level: str = 'standard',
+                journal_context: str = '',
+                use_emojis: bool = False) -> Optional[str]:
+        """Enhance/translate notification with AI.
         
-        Returns enhanced body text, or None if enhancement fails/disabled.
+        Args:
+            title: Notification title
+            body: Notification body text
+            severity: Severity level (info, warning, critical)
+            detail_level: Level of detail (brief, standard, detailed)
+            journal_context: Optional journal log lines for context
+            use_emojis: Whether to include emojis in the response (for push channels)
+            
+        Returns:
+            Enhanced/translated text or None if failed
         """
-        if not self._enabled:
+        if not self._provider:
             return None
         
+        # Get language settings
+        language_code = self.config.get('ai_language', 'en')
+        language_name = AI_LANGUAGES.get(language_code, 'English')
+        
+        # Get token limit for detail level
+        max_tokens = AI_DETAIL_TOKENS.get(detail_level, 200)
+        
+        # Select emoji instructions based on channel type
+        emoji_instructions = AI_EMOJI_INSTRUCTIONS if use_emojis else AI_NO_EMOJI_INSTRUCTIONS
+        
+        # Build system prompt with emoji instructions
+        system_prompt = AI_SYSTEM_PROMPT.format(
+            language=language_name,
+            detail_level=detail_level,
+            emoji_instructions=emoji_instructions
+        )
+        
+        # Build user message
+        user_msg = f"Severity: {severity}\nTitle: {title}\nMessage:\n{body}"
+        if journal_context:
+            user_msg += f"\n\nJournal log context:\n{journal_context}"
+        
         try:
-            if self.provider in ('openai', 'groq'):
-                return self._call_openai_compatible(title, body, severity)
+            result = self._provider.generate(system_prompt, user_msg, max_tokens)
+            return result
         except Exception as e:
             print(f"[AIEnhancer] Enhancement failed: {e}")
-        
-        return None
+            return None
     
-    def _call_openai_compatible(self, title: str, body: str, severity: str) -> Optional[str]:
-        """Call OpenAI-compatible API (works with OpenAI, Groq, local)."""
-        if self.provider == 'groq':
-            url = 'https://api.groq.com/openai/v1/chat/completions'
-            model = self.model or 'llama-3.3-70b-versatile'
-        else:  # openai
-            url = 'https://api.openai.com/v1/chat/completions'
-            model = self.model or 'gpt-4o-mini'
+    def test_connection(self) -> Dict[str, Any]:
+        """Test the AI provider connection.
         
-        user_msg = f"Severity: {severity}\nTitle: {title}\nMessage: {body}"
-        
-        payload = json.dumps({
-            'model': model,
-            'messages': [
-                {'role': 'system', 'content': self.SYSTEM_PROMPT},
-                {'role': 'user', 'content': user_msg},
-            ],
-            'max_tokens': 150,
-            'temperature': 0.3,
-        }).encode('utf-8')
-        
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {self.api_key}',
-        }
-        
-        req = urllib.request.Request(url, data=payload, headers=headers)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            result = json.loads(resp.read().decode('utf-8'))
-            content = result['choices'][0]['message']['content'].strip()
-            return content if content else None
+        Returns:
+            Dict with success, message, and model info
+        """
+        if not self._provider:
+            return {
+                'success': False,
+                'message': 'Provider not initialized',
+                'model': ''
+            }
+        return self._provider.test_connection()
 
 
 def format_with_ai(title: str, body: str, severity: str,
-                   ai_config: Dict[str, str]) -> str:
-    """Format a message with optional AI enhancement.
+                   ai_config: Dict[str, Any],
+                   detail_level: str = 'standard',
+                   journal_context: str = '',
+                   use_emojis: bool = False) -> str:
+    """Format a message with AI enhancement/translation.
     
-    If AI is configured and succeeds, appends AI insight to the body.
-    Otherwise returns the original body unchanged.
+    Replaces the message body with AI-processed version if successful.
+    Falls back to original body if AI is unavailable or fails.
     
     Args:
         title: Notification title
         body: Notification body
         severity: Severity level
-        ai_config: {'enabled': 'true', 'provider': 'groq', 'api_key': '...', 'model': ''}
+        ai_config: Configuration dictionary with AI settings
+        detail_level: Level of detail (brief, standard, detailed)
+        journal_context: Optional journal log context
+        use_emojis: Whether to include emojis (for push channels like Telegram/Discord)
     
     Returns:
-        Enhanced body string
+        Enhanced body string or original if AI fails
     """
-    if ai_config.get('enabled') != 'true' or not ai_config.get('api_key'):
+    # Check if AI is enabled
+    ai_enabled = ai_config.get('ai_enabled')
+    if isinstance(ai_enabled, str):
+        ai_enabled = ai_enabled.lower() == 'true'
+    
+    if not ai_enabled:
         return body
     
-    enhancer = AIEnhancer(
-        provider=ai_config.get('provider', 'groq'),
-        api_key=ai_config['api_key'],
-        model=ai_config.get('model', ''),
+    # Check for API key (not required for Ollama)
+    provider = ai_config.get('ai_provider', 'groq')
+    if provider != 'ollama' and not ai_config.get('ai_api_key'):
+        return body
+    
+    # For Ollama, check URL is configured
+    if provider == 'ollama' and not ai_config.get('ai_ollama_url'):
+        return body
+    
+    # Create enhancer and process
+    enhancer = AIEnhancer(ai_config)
+    enhanced = enhancer.enhance(
+        title, body, severity,
+        detail_level=detail_level,
+        journal_context=journal_context,
+        use_emojis=use_emojis
     )
     
-    insight = enhancer.enhance(title, body, severity)
-    if insight:
-        return f"{body}\n\n---\n{insight}"
+    # Return enhanced text if successful, otherwise original
+    if enhanced:
+        # For detailed level (email), append original message for reference
+        # This ensures full technical data is available even after AI processing
+        if detail_level == 'detailed' and body and len(body) > 50:
+            # Only append if original has substantial content
+            enhanced += "\n\n" + "-" * 40 + "\n"
+            enhanced += "Original message:\n"
+            enhanced += body
+        return enhanced
     
     return body
