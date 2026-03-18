@@ -152,17 +152,6 @@ check_updates_beta() {
     fi
 }
 
-# ── Beta status banner ─────────────────────────────────────
-# Shows a subtle reminder in the terminal that this is a beta install.
-show_beta_banner() {
-    is_beta || return 0
-    local beta_ver
-    beta_ver=$(head -n 1 "$BETA_VERSION_FILE" 2>/dev/null || echo "unknown")
-    echo -e "\033[33m  ★ Beta Program — build ${beta_ver} (develop branch)\033[m"
-    echo -e "\033[38;5;244m    Report issues → https://github.com/MacRimi/ProxMenux/issues\033[m"
-    echo
-}
-
 # ── Main ───────────────────────────────────────────────────
 main_menu() {
     local MAIN_MENU="$LOCAL_SCRIPTS/menus/main_menu.sh"
@@ -171,6 +160,5 @@ main_menu() {
 
 load_language
 initialize_cache
-show_beta_banner
 check_updates
 main_menu
