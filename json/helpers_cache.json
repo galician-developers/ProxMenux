@@ -651,38 +651,6 @@
     "os": "alpine"
   },
   {
-    "name": "Alpine-ntfy",
-    "slug": "alpine-ntfy",
-    "desc": "ntfy is a simple HTTP-based pub-sub notification service that lets you send push notifications to your phone or desktop via scripts, without signup or cost.",
-    "script": "ct/alpine-ntfy.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/alpine-ntfy.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/alpine-ntfy.sh",
-    "type": "lxc",
-    "type_id": "nm9bra8mzye2scg",
-    "categories": [
-      "scriptcat00018"
-    ],
-    "category_names": [
-      "MQTT & Messaging"
-    ],
-    "notes": [
-      "Alpine-based LXC using apk package manager."
-    ],
-    "port": 80,
-    "website": "https://ntfy.sh/",
-    "documentation": "https://docs.ntfy.sh/",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/ntfy.webp",
-    "updateable": true,
-    "privileged": false,
-    "has_arm": false,
-    "is_dev": true,
-    "execute_in": [
-      "pve"
-    ],
-    "config_path": "/etc/ntfy/server.yml",
-    "os": "alpine"
-  },
-  {
     "name": "Redlib",
     "slug": "alpine-redlib",
     "desc": "An alternative private front-end to Reddit. Redlib hopes to provide an easier way to browse Reddit, without the ads, trackers, and bloat.",
@@ -3878,7 +3846,7 @@
     "notes": [
       "Type `cat ~/matrix.creds` to see admin username/password.",
       "Synapse-Admin is running on port 5173",
-      "For bridges Installation methods (WhatsApp, Signal, Discord, etc.), see: ´https://docs.mau.fi/bridges/go/setup.html´"
+      "For bridges Installation methods (WhatsApp, Signal, Discord, etc.), see: `https://docs.mau.fi/bridges/go/setup.html`"
     ],
     "port": 8008,
     "website": "https://element.io/",
@@ -7645,7 +7613,9 @@
     ],
     "notes": [
       "Register the first account via the web interface — it becomes the admin account.",
-      "Configure your AI provider API keys in /opt/librechat/.env and restart the service."
+      "Configure your AI provider API keys in /opt/librechat/.env and restart the service.",
+      "RAG API is included and running on port 8000. Set RAG_OPENAI_API_KEY in /opt/rag-api/.env to enable document Q&A.",
+      "For local embeddings without an API key, set EMBEDDINGS_PROVIDER=ollama and OLLAMA_BASE_URL=http://<ollama-host>:11434 in /opt/rag-api/.env and restart rag-api."
     ],
     "port": 3000,
     "website": "https://www.librechat.ai",
@@ -10040,6 +10010,36 @@
     ],
     "config_path": "/etc/ntfy/server.yml",
     "os": "debian"
+  },
+  {
+    "name": "ntfy",
+    "slug": "ntfy",
+    "desc": "ntfy (pronounced notify) is a simple HTTP-based pub-sub notification service. It allows you to send notifications to your phone or desktop via scripts from any computer, and/or using a REST API. It's infinitely flexible, and 100% free software.",
+    "script": "ct/ntfy.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/ntfy.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/ntfy.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00019"
+    ],
+    "category_names": [
+      "Automation & Scheduling"
+    ],
+    "notes": [],
+    "port": 80,
+    "website": "https://ntfy.sh/",
+    "documentation": "https://docs.ntfy.sh/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/ntfy.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": false,
+    "execute_in": [
+      "pve"
+    ],
+    "config_path": "/etc/ntfy/server.yml",
+    "os": "alpine"
   },
   {
     "name": "Nx Witness",
@@ -15291,6 +15291,38 @@
       "pve"
     ],
     "config_path": "/etc/telegraf/telegraf.conf",
+    "os": "debian"
+  },
+  {
+    "name": "Teleport",
+    "slug": "teleport",
+    "desc": "Teleport unifies identities — humans, machines, and AI — with strong identity implementation to speed up engineering, improve resiliency against identity-based attacks, and control AI in production infrastructure.",
+    "script": "ct/teleport.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/teleport.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/teleport.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00006"
+    ],
+    "category_names": [
+      "Authentication & Security"
+    ],
+    "notes": [
+      "After installation finishes, do `cat ~/teleportadmin.creds` inside LXC to get admin creation URL."
+    ],
+    "port": 3080,
+    "website": "https://goteleport.com/",
+    "documentation": "https://goteleport.com/docs/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/teleport.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "/etc/teleport.yaml",
     "os": "debian"
   },
   {
