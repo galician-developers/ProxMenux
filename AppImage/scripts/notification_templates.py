@@ -1394,7 +1394,7 @@ CRITICAL OUTPUT RULES:
 
 # Emoji instructions injected into AI_SYSTEM_PROMPT for rich channels (Telegram, Discord, Pushover)
 AI_EMOJI_INSTRUCTIONS = """
-9. EMOJI USAGE — place ONE emoji at the START of EVERY non-empty line (title and each body line).
+EMOJI USAGE — place ONE emoji at the START of EVERY non-empty line (title and each body line).
    Never skip a line. Never put the emoji at the end. Never use two emojis on the same line.
 
    Use these exact emoji for each kind of content:
@@ -1564,7 +1564,7 @@ AI_EMOJI_INSTRUCTIONS = """
 
 # No emoji instructions for email/plain text channels
 AI_NO_EMOJI_INSTRUCTIONS = """
-9. DO NOT use any emojis or special Unicode symbols. Plain ASCII text only for email compatibility."""
+DO NOT use any emojis or special Unicode symbols. Plain ASCII text only for email compatibility."""
 
 
 class AIEnhancer:
