@@ -61,6 +61,7 @@ interface NotificationConfig {
   ai_model: string
   ai_language: string
   ai_ollama_url: string
+  ai_openai_base_url: string
   channel_ai_detail: Record<string, string>
   hostname: string
   webhook_secret: string
@@ -211,6 +212,7 @@ const DEFAULT_CONFIG: NotificationConfig = {
   ai_model: "",
   ai_language: "en",
   ai_ollama_url: "http://localhost:11434",
+  ai_openai_base_url: "",
   channel_ai_detail: {
     telegram: "brief",
     gotify: "brief",
@@ -1390,6 +1392,26 @@ export function NotificationSettings() {
                         </div>
                       )}
                       
+                      {/* Custom Base URL for OpenAI-compatible APIs */}
+                      {config.ai_provider === "openai" && (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs sm:text-sm text-foreground/80">Custom Base URL</Label>
+                            <span className="text-xs text-muted-foreground">(optional)</span>
+                          </div>
+                          <Input
+                            className="h-9 text-sm font-mono"
+                            placeholder="Leave empty for OpenAI, or enter custom endpoint"
+                            value={config.ai_openai_base_url}
+                            onChange={e => updateConfig(p => ({ ...p, ai_openai_base_url: e.target.value }))}
+                            disabled={!editMode}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            For OpenAI-compatible APIs: BytePlus, LocalAI, LM Studio, vLLM, etc.
+                          </p>
+                        </div>
+                      )}
+                      
                       {/* API Key (not shown for Ollama) */}
                       {config.ai_provider !== "ollama" && (
                         <div className="space-y-2">
@@ -1584,6 +1606,21 @@ export function NotificationSettings() {
                 <p className="text-xs sm:text-sm text-muted-foreground mt-2 ml-[52px] leading-relaxed">
                   {provider.description}
                 </p>
+                {/* OpenAI compatibility note */}
+                {provider.value === "openai" && (
+                  <div className="mt-3 ml-[52px] p-3 rounded-md bg-blue-500/10 border border-blue-500/20">
+                    <p className="text-xs sm:text-sm text-blue-400 font-medium mb-1">OpenAI-Compatible APIs</p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      You can use any OpenAI-compatible API by setting a custom Base URL. Compatible services include:
+                    </p>
+                    <ul className="text-xs text-muted-foreground mt-1.5 space-y-0.5 ml-3">
+                      <li>BytePlus/ByteDance (Kimi K2.5)</li>
+                      <li>LocalAI, LM Studio, vLLM</li>
+                      <li>Together AI, Fireworks AI</li>
+                      <li>Any service using OpenAI format</li>
+                    </ul>
+                  </div>
+                )}
               </div>
             ))}
           </div>

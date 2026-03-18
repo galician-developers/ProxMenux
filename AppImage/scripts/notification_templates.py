@@ -1064,9 +1064,9 @@ EVENT_EMOJI = {
     'replication_fail':     '\u274C',
     'replication_complete': '\u2705',
     # Backups
-    'backup_start':         '\U0001F4E6',        # package
-    'backup_complete':      '\u2705',
-    'backup_fail':          '\u274C',
+    'backup_start':         '\U0001F4BE\U0001F680',  # 💾🚀 floppy + rocket
+    'backup_complete':      '\U0001F4BE\u2705',       # 💾✅ floppy + check
+    'backup_fail':          '\U0001F4BE\u274C',       # 💾❌ floppy + cross
     'snapshot_complete':    '\U0001F4F8',         # camera with flash
     'snapshot_fail':        '\u274C',
     # Resources
@@ -1240,7 +1240,7 @@ AI_LANGUAGES = {
 AI_DETAIL_TOKENS = {
     'brief': 100,      # 2-3 lines, essential only
     'standard': 200,   # Concise paragraph with context
-    'detailed': 400,   # Complete technical details
+    'detailed': 700,   # Complete technical details (raised: multi-VM backups can be long)
 }
 
 # System prompt template - informative, no recommendations
@@ -1255,7 +1255,9 @@ Your task is to translate and reformat incoming server alert messages into {lang
 4. Tone: factual, concise, technical. No greetings, no closings, no apologies
 5. DO NOT add recommendations, action items, or suggestions ("you should…", "consider…")
 6. Present ONLY the facts already in the input — do not invent or assume information
-7. Detail level to apply: {detail_level}
+7. PLAIN NARRATIVE LINES — if a line in the input is a complete sentence (not a "Label: value"
+   pair), translate it as-is. Never prepend "Message:", "Note:", or any other label to a sentence.
+8. Detail level to apply: {detail_level}
    - brief    → 2-3 lines, essential data only (status + key metric)
    - standard → short paragraph covering who/what/where and the key value
    - detailed → full technical breakdown of all available fields
@@ -1271,13 +1273,22 @@ Your task is to translate and reformat incoming server alert messages into {lang
 
 BACKUP (backup_complete / backup_fail / backup_start):
   Input contains: VM/CT names, IDs, size, duration, storage location, status per VM
-  Output body must list each VM on its own line: name, ID, status (ok/error), size, duration
-  End with a summary line: total VMs, total size, total time
+  Output body: first line is plain text (no emoji) describing the event briefly.
+  Then list each VM/CT with its fields. End with a summary line.
+  PARTIAL FAILURE RULE: if some VMs succeeded and at least one failed, use a combined title
+  like "Backup partially failed" / "Copia de seguridad parcialmente fallida" — never say
+  "backup failed" when there are also successful VMs in the same job.
+  NEVER omit the storage/archive line or the summary line — always include them even for long jobs.
 
 UPDATES (update_summary / pve_update):
   Input contains: total count, security count, proxmox count, kernel count, package list
-  Output body must show each count on its own line with its label
-  List important packages below, one per line
+  Output body must show each count on its own line with its label.
+  For the package list: use "• " (bullet + space) before each package name, NOT the 📋 emoji.
+  The 📋 emoji goes only on the "Important packages:" header line.
+  Example packages block:
+    📋 Important packages:
+    • pve-manager (9.1.4 -> 9.1.6)
+    • qemu-server (9.1.3 -> 9.1.4)
 
 DISK / SMART ERRORS (disk_io_error / storage_unavailable):
   Input contains: device name, error type, SMART values or I/O error codes
@@ -1403,36 +1414,60 @@ AI_EMOJI_INSTRUCTIONS = """
    ⚙️ Kernel updates: 0
 
    📋 Important packages:
-   📋 none
+   • none
 
    EXAMPLE — updates message (with important packages):
    [TITLE]
    📦 amd: Updates available
    [BODY]
-   📦 Total updates: 55
-   🔒 Security updates: 3
-   🔄 Proxmox updates: 2
+   📦 Total updates: 90
+   🔒 Security updates: 6
+   🔄 Proxmox updates: 14
    ⚙️ Kernel updates: 1
 
    📋 Important packages:
-   📋 pve-manager
-   📋 libssl3
+   • pve-manager (9.1.4 -> 9.1.6)
+   • qemu-server (9.1.3 -> 9.1.4)
+   • pve-container (6.0.18 -> 6.1.2)
 
    EXAMPLE — backup complete with multiple VMs:
    [TITLE]
-   ✅ pve01: Backup complete
+   💾✅ pve01: Backup complete
    [BODY]
+   Backup job finished on storage local-bak.
+
    🏷️ VM web01 (ID: 100)
    ✅ Status: ok
    📏 Size: 12.3 GiB
    ⏱️ Duration: 00:04:21
+   🗄️ Storage: vm/100/2026-03-17T22:00:08Z
 
    🏷️ CT db (ID: 101)
    ✅ Status: ok
    📏 Size: 4.1 GiB
    ⏱️ Duration: 00:01:10
+   🗄️ Storage: ct/101/2026-03-17T22:04:29Z
 
    📊 Total: 2 backups | 16.4 GiB | ⏱️ 00:05:31
+
+   EXAMPLE — backup partially failed (some ok, some failed):
+   [TITLE]
+   💾❌ pve01: Backup partially failed
+   [BODY]
+   Backup job finished with errors on storage PBS2.
+
+   🏷️ VM web01 (ID: 100)
+   ✅ Status: ok
+   📏 Size: 12.3 GiB
+   ⏱️ Duration: 00:04:21
+   🗄️ Storage: vm/100/2026-03-17T22:00:08Z
+
+   🏷️ VM broken (ID: 102)
+   ❌ Status: error
+   📏 Size: 0 B
+   ⏱️ Duration: 00:00:37
+
+   📊 Total: 2 backups | ❌ 1 failed | 12.3 GiB | ⏱️ 00:04:58
 
    EXAMPLE — disk I/O health warning:
    [TITLE]
@@ -1493,11 +1528,20 @@ class AIEnhancer:
             from ai_providers import get_provider
             
             provider_name = self.config.get('ai_provider', 'groq')
+            
+            # Determine base_url based on provider
+            if provider_name == 'ollama':
+                base_url = self.config.get('ai_ollama_url', '')
+            elif provider_name == 'openai':
+                base_url = self.config.get('ai_openai_base_url', '')
+            else:
+                base_url = ''
+            
             self._provider = get_provider(
                 provider_name,
                 api_key=self.config.get('ai_api_key', ''),
                 model=self.config.get('ai_model', ''),
-                base_url=self.config.get('ai_ollama_url', ''),
+                base_url=base_url,
             )
         except Exception as e:
             print(f"[AIEnhancer] Failed to initialize provider: {e}")

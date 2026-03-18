@@ -1162,9 +1162,11 @@ class NotificationManager:
                     ai_status    = f'AI: enabled ({ai_provider} / {ai_language})' if ai_enabled else 'AI: disabled'
                 
                 # Base test message — shows current channel config
+                # NOTE: narrative lines are intentionally unlabeled so the AI
+                # does not prepend "Message:" or other spurious field labels.
                 base_title = 'ProxMenux Test'
                 base_message = (
-                    'Welcome to ProxMenux Monitor!\n'
+                    'Welcome to ProxMenux Monitor!\n\n'
                     'This is a test message to verify your notification channel is working correctly.\n\n'
                     'Channel configuration:\n'
                     f'{icon_status}\n'
