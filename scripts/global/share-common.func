@@ -1,8 +1,12 @@
-#!/usr/bin/env bash
-# ==========================================================
-# ProxMenux - Global Share Functions (reusable)
-# File: scripts/global/share_common.func
-# ==========================================================
+#!/bin/bash
+# ProxMenux - Shared Common Functions
+# ============================================
+# Author      : MacRimi
+# License     : MIT
+# Version     : 1.0
+# Last Updated: 29/01/2026
+# ============================================
+# Common functions shared across multiple scripts
 
 
 
