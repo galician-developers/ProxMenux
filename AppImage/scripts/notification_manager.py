@@ -1453,6 +1453,11 @@ class NotificationManager:
                 ch_overrides['events'][event_type_key] = (saved or default) == 'true'
             channel_overrides[ch_type] = ch_overrides
         
+        # Build AI detail levels per channel
+        ai_detail_levels = {}
+        for ch_type in CHANNEL_TYPES:
+            ai_detail_levels[ch_type] = self._config.get(f'ai_detail_level_{ch_type}', 'standard')
+        
         config = {
             'enabled': self._enabled,
             'channels': channels,
@@ -1461,9 +1466,13 @@ class NotificationManager:
             'event_types_by_group': event_types_by_group,
             'channel_overrides': channel_overrides,
             'ai_enabled': self._config.get('ai_enabled', 'false') == 'true',
-            'ai_provider': self._config.get('ai_provider', 'openai'),
+            'ai_provider': self._config.get('ai_provider', 'groq'),
             'ai_api_key': self._config.get('ai_api_key', ''),
             'ai_model': self._config.get('ai_model', ''),
+            'ai_language': self._config.get('ai_language', 'en'),
+            'ai_ollama_url': self._config.get('ai_ollama_url', 'http://localhost:11434'),
+            'ai_openai_base_url': self._config.get('ai_openai_base_url', ''),
+            'ai_detail_levels': ai_detail_levels,
             'hostname': self._config.get('hostname', ''),
             'webhook_secret': self._config.get('webhook_secret', ''),
             'webhook_allowed_ips': self._config.get('webhook_allowed_ips', ''),

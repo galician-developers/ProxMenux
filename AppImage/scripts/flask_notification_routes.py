@@ -127,6 +127,7 @@ def test_ai_connection():
         api_key = data.get('api_key', '')
         model = data.get('model', '')
         ollama_url = data.get('ollama_url', 'http://localhost:11434')
+        openai_base_url = data.get('openai_base_url', '')
         
         # Validate required fields
         if provider != 'ollama' and not api_key:
@@ -152,12 +153,20 @@ def test_ai_connection():
         
         from ai_providers import get_provider, AIProviderError
         
+        # Determine base_url based on provider
+        if provider == 'ollama':
+            base_url = ollama_url
+        elif provider == 'openai':
+            base_url = openai_base_url  # Empty string means use default OpenAI API
+        else:
+            base_url = ''
+        
         try:
             ai_provider = get_provider(
                 provider,
                 api_key=api_key,
                 model=model,
-                base_url=ollama_url
+                base_url=base_url
             )
             
             result = ai_provider.test_connection()

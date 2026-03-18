@@ -467,6 +467,7 @@ export function NotificationSettings() {
       ai_model: cfg.ai_model,
       ai_language: cfg.ai_language,
       ai_ollama_url: cfg.ai_ollama_url,
+      ai_openai_base_url: cfg.ai_openai_base_url,
       hostname: cfg.hostname,
       webhook_secret: cfg.webhook_secret,
       webhook_allowed_ips: cfg.webhook_allowed_ips,
@@ -604,6 +605,7 @@ export function NotificationSettings() {
           api_key: config.ai_api_key,
           model: config.ai_model,
           ollama_url: config.ai_ollama_url,
+          openai_base_url: config.ai_openai_base_url,
         }),
       })
       setAiTestResult(data)
