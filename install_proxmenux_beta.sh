@@ -491,6 +491,9 @@ install_beta() {
     mkdir -p "$BASE_DIR" "$INSTALL_DIR"
     [ ! -f "$CONFIG_FILE" ] && echo '{}' > "$CONFIG_FILE"
 
+    # Preserve user/runtime directories that must never be overwritten
+    mkdir -p "$BASE_DIR/oci"
+
     cp "./scripts/utils.sh" "$UTILS_FILE"
     cp "./menu" "$INSTALL_DIR/$MENU_SCRIPT"
     cp "./version.txt" "$LOCAL_VERSION_FILE" 2>/dev/null || true
@@ -508,6 +511,11 @@ install_beta() {
     mkdir -p "$BASE_DIR/scripts"
     cp -r "./scripts/"* "$BASE_DIR/scripts/"
     chmod -R +x "$BASE_DIR/scripts/"
+
+    if [ -d "./oci" ]; then
+        mkdir -p "$BASE_DIR/oci"
+        cp -r "./oci/"* "$BASE_DIR/oci/" 2>/dev/null || true
+    fi
     chmod +x "$INSTALL_DIR/$MENU_SCRIPT"
     [ -f "$BASE_DIR/install_proxmenux.sh" ]      && chmod +x "$BASE_DIR/install_proxmenux.sh"
     [ -f "$BASE_DIR/install_proxmenux_beta.sh" ] && chmod +x "$BASE_DIR/install_proxmenux_beta.sh"
