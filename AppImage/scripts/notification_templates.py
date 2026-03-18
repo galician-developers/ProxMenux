@@ -1332,7 +1332,7 @@ UPDATES (update_summary / pve_update):
   - New version line:     🟢 prefix
   - Blank line before packages block
   - Packages header:      🗂️ prefix
-  - Package lines:        📌 prefix (not bullet •), include version arrow as: v{old} ➜ v{new}
+  - Package lines:        📌 prefix (not bullet •), include version arrow as: v{{old}} ➜ v{{new}}
 
   EXAMPLE — pve_update:
   [TITLE]
