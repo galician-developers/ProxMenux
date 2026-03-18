@@ -73,12 +73,20 @@ jobs:
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
+        # Guardar los archivos compilados antes de tocar git
+        mkdir -p /tmp/appimage-dist
+        cp AppImage/dist/*.AppImage /tmp/appimage-dist/
+        cp AppImage/dist/ProxMenux-Monitor.AppImage.sha256 /tmp/appimage-dist/
+
+        # Limpiar cambios locales para evitar conflictos
+        git stash --include-untracked
+
         git fetch origin "$CURRENT_BRANCH"
         git worktree add /tmp/target-branch origin/"$CURRENT_BRANCH"
 
         rm -f /tmp/target-branch/AppImage/*.AppImage /tmp/target-branch/AppImage/*.sha256 || true
-        cp AppImage/dist/*.AppImage /tmp/target-branch/AppImage/
-        cp AppImage/dist/ProxMenux-Monitor.AppImage.sha256 /tmp/target-branch/AppImage/
+        cp /tmp/appimage-dist/*.AppImage /tmp/target-branch/AppImage/
+        cp /tmp/appimage-dist/ProxMenux-Monitor.AppImage.sha256 /tmp/target-branch/AppImage/
 
         cd /tmp/target-branch
         git add AppImage/*.AppImage AppImage/*.sha256
