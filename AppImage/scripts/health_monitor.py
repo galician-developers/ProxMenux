@@ -1175,11 +1175,38 @@ class HealthMonitor:
                         existing = disk_errors_by_device[device_name]
                         if val.get('status') == 'CRITICAL':
                             existing['status'] = 'CRITICAL'
-                        # Append detail if different
+                        # Append detail if different - with smart deduplication
                         new_detail = val.get('reason', '')
                         existing_detail = existing.get('detail', '')
                         if new_detail and new_detail not in existing_detail:
-                            existing['detail'] = f"{existing_detail}; {new_detail}".strip('; ')
+                            # Check for semantic duplicates by extracting key info
+                            # Extract device references and key metrics from both
+                            new_parts = set(p.strip() for p in new_detail.replace(';', '\n').split('\n') if p.strip())
+                            existing_parts = set(p.strip() for p in existing_detail.replace(';', '\n').split('\n') if p.strip())
+                            
+                            # Find truly new information (parts not already present)
+                            unique_new_parts = []
+                            for part in new_parts:
+                                is_duplicate = False
+                                # Check if this part's core content exists in any existing part
+                                part_lower = part.lower()
+                                for ex_part in existing_parts:
+                                    ex_lower = ex_part.lower()
+                                    # If >60% of words overlap, consider it duplicate
+                                    part_words = set(part_lower.split())
+                                    ex_words = set(ex_lower.split())
+                                    if part_words and ex_words:
+                                        overlap = len(part_words & ex_words) / min(len(part_words), len(ex_words))
+                                        if overlap > 0.6:
+                                            is_duplicate = True
+                                            break
+                                if not is_duplicate:
+                                    unique_new_parts.append(part)
+                            
+                            # Only append truly unique parts
+                            if unique_new_parts:
+                                unique_text = '; '.join(unique_new_parts)
+                                existing['detail'] = f"{existing_detail}; {unique_text}".strip('; ')
                     continue  # Don't add raw disk error entry, we'll add consolidated later
             
             # Non-disk entries go directly to checks

@@ -762,7 +762,7 @@ TEMPLATES = {
     },
     'pve_update': {
         'title': '{hostname}: Proxmox VE {new_version} available',
-        'body': 'A new Proxmox VE release is available.\nCurrent: {current_version}  →  New: {new_version}\n{details}',
+        'body': 'A new Proxmox VE release is available.\nCurrent: {current_version}\nNew: {new_version}\n{details}',
         'label': 'Proxmox VE update available',
         'group': 'updates',
         'default_enabled': True,
@@ -1261,12 +1261,51 @@ Your task is to translate and reformat incoming server alert messages into {lang
    - brief    → 2-3 lines, essential data only (status + key metric)
    - standard → short paragraph covering who/what/where and the key value
    - detailed → full technical breakdown of all available fields
-8. Keep the "hostname: " prefix in the title. Translate only the descriptive part.
+9. Keep the "hostname: " prefix in the title. Translate only the descriptive part.
    Example: "pve01: Updates available" → "pve01: Actualizaciones disponibles"
-9. EMPTY LIST VALUES — if the input contains a list field that is empty, "none", or "0":
+10. EMPTY LIST VALUES — if the input contains a list field that is empty, "none", or "0":
    - Always write the translated word for "none" on the line after the label, never leave it blank.
-   - Example (English input "none"):  📋 Important packages:\n📋 none
-   - Example (Spanish output):        📋 Paquetes importantes:\n📋 ninguno
+   - Example (English input "none"):  🗂️ Important packages:\n• none
+   - Example (Spanish output):        🗂️ Paquetes importantes:\n• ninguno
+11. DEDUPLICATION — input may contain redundant or repeated information from multiple monitoring sources:
+   - Identify and merge duplicate facts (same device, same error, same metric mentioned twice)
+   - Present each unique fact exactly once in a clear, consolidated form
+   - If the same data appears in different formats, choose the most informative version
+12. PROXMOX CONTEXT — silently translate Proxmox technical references into plain language.
+    Never explain what the term means — just use the human-readable equivalent directly.
+
+    Service / process name mapping (replace the raw name with the friendly form):
+    - "pve-container@XXXX.service"  → "Container CT XXXX"
+    - "qemu-server@XXXX.service"    → "Virtual Machine VM XXXX"
+    - "pvesr-XXXX"                  → "storage replication job for XXXX"
+    - "vzdump"                      → "backup process"
+    - "pveproxy"                    → "Proxmox web proxy"
+    - "pvedaemon"                   → "Proxmox daemon"
+    - "pvestatd"                    → "Proxmox statistics service"
+    - "pvescheduler"                → "Proxmox task scheduler"
+    - "pve-cluster"                 → "Proxmox cluster service"
+    - "corosync"                    → "cluster communication service"
+    - "ceph-osd@N"                  → "Ceph storage disk N"
+    - "ceph-mon"                    → "Ceph monitor service"
+
+    systemd message patterns (rewrite the whole phrase, not just the service name):
+    - "systemd[1]: pve-container@9000.service: Failed"
+      → "Container CT 9000 service failed"
+    - "systemd[1]: qemu-server@100.service: Failed with result 'exit-code'"
+      → "Virtual Machine VM 100 failed to start"
+    - "systemd[1]: Started pve-container@9000.service"
+      → "Container CT 9000 started"
+
+    ATA / SMART / kernel error patterns (replace raw kernel log with plain description):
+    - "ata8.00: exception Emask 0x1 SAct 0x4ce0 SErr 0x40000 action 0x0"
+      → "ATA controller error on port 8"
+    - "blk_update_request: I/O error, dev sdX, sector NNNN"
+      → "I/O error on disk /dev/sdX at sector NNNN"
+    - "SCSI error: return code = 0x08000002"
+      → "SCSI communication error"
+
+    Apply these mappings everywhere: in the body narrative, in field values, and when
+    the raw technical string appears inside a longer sentence.
 {emoji_instructions}
 
 ═══ KNOWN MESSAGE TYPES AND HOW TO FORMAT THEM ═══
@@ -1285,14 +1324,39 @@ UPDATES (update_summary / pve_update):
   Output body must show each count on its own line with its label.
   For the package list: use "• " (bullet + space) before each package name, NOT the 📋 emoji.
   The 📋 emoji goes only on the "Important packages:" header line.
-  Example packages block:
-    📋 Important packages:
+
+  EXAMPLE — pve_update (new Proxmox VE version):
+  - First line: plain sentence announcing the new version (no emoji — it goes on the title)
+  - Blank line after the intro sentence
+  - Current version line: 🔹 prefix
+  - New version line:     🟢 prefix
+  - Blank line before packages block
+  - Packages header:      🗂️ prefix
+  - Package lines:        📌 prefix (not bullet •), include version arrow as: v{old} ➜ v{new}
+
+  EXAMPLE — pve_update:
+  [TITLE]
+  🆕 pve01: Proxmox VE 9.1.6 available
+  [BODY]
+  🚀 A new Proxmox VE release is available.
+
+  🔹 Current: 9.1.4
+  🟢 New: 9.1.6
+
+  🗂️ Important packages:
+  📌 pve-manager (v9.1.4 ➜ v9.1.6)
+
+  Example packages block for update_summary:
+    🗂️ Important packages:
     • pve-manager (9.1.4 -> 9.1.6)
     • qemu-server (9.1.3 -> 9.1.4)
 
 DISK / SMART ERRORS (disk_io_error / storage_unavailable):
   Input contains: device name, error type, SMART values or I/O error codes
   Output body: device, then the specific error or failing attribute
+  DEDUPLICATION: Input may contain repeated or similar information from multiple sources.
+  If you see the same device, error count, or technical details mentioned multiple times,
+  consolidate them into a single, clear statement. Never repeat the same information twice.
 
 RESOURCES (cpu_high / ram_high / temp_high / load_high):
   Input contains: current value, threshold, core count
@@ -1377,7 +1441,8 @@ AI_EMOJI_INSTRUCTIONS = """
    🔒  security updates / actualizaciones de seguridad / jail
    🔄  proxmox updates / actualizaciones de proxmox
    ⚙️  kernel updates / actualizaciones del kernel / service
-   📋  important packages / paquetes importantes
+   📋  important packages header (update_summary)
+   🗂️  important packages header (pve_update) / file index / archive listing
    🌐  source IP / IP origen
    👤  user / usuario
    📝  reason / motivo / razón / details
@@ -1413,7 +1478,7 @@ AI_EMOJI_INSTRUCTIONS = """
    🔄 Proxmox updates: 0
    ⚙️ Kernel updates: 0
 
-   📋 Important packages:
+   🗂️ Important packages:
    • none
 
    EXAMPLE — updates message (with important packages):
@@ -1425,10 +1490,21 @@ AI_EMOJI_INSTRUCTIONS = """
    🔄 Proxmox updates: 14
    ⚙️ Kernel updates: 1
 
-   📋 Important packages:
+   🗂️ Important packages:
    • pve-manager (9.1.4 -> 9.1.6)
    • qemu-server (9.1.3 -> 9.1.4)
    • pve-container (6.0.18 -> 6.1.2)
+   EXAMPLE — pve_update (new Proxmox VE version):
+   [TITLE]
+   🆕 pve01: Proxmox VE 9.1.6 available
+   [BODY]
+   🚀 A new Proxmox VE release is available.
+
+   🔹 Current: 9.1.4
+   🟢 New: 9.1.6
+
+   🗂️ Important packages:
+   📌 pve-manager (v9.1.4 ➜ v9.1.6)
 
    EXAMPLE — backup complete with multiple VMs:
    [TITLE]
