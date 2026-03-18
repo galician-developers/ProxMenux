@@ -1,4 +1,4 @@
-name: Build ProxMenux Monitor AppImage Manual
+name: Build AppImage Release
 
 on:
   workflow_dispatch:
@@ -14,8 +14,11 @@ jobs:
     runs-on: ubuntu-22.04
     
     steps:
-    - name: Checkout code
+    - name: Checkout main
       uses: actions/checkout@v5
+      with:
+        ref: main
+        token: ${{ secrets.GITHUB_TOKEN }}
       
     - name: Setup Node.js
       uses: actions/setup-node@v5
@@ -64,31 +67,17 @@ jobs:
           AppImage/dist/*.sha256
         retention-days: 30
 
-    - name: Commit AppImage to current branch
+    - name: Commit AppImage to main
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        CURRENT_BRANCH="${{ github.ref_name }}"
-        
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-        # Guardar los archivos compilados antes de tocar git
-        mkdir -p /tmp/appimage-dist
-        cp AppImage/dist/*.AppImage /tmp/appimage-dist/
-        cp AppImage/dist/ProxMenux-Monitor.AppImage.sha256 /tmp/appimage-dist/
+        rm -f AppImage/*.AppImage AppImage/*.sha256 || true
+        cp AppImage/dist/*.AppImage AppImage/
+        cp AppImage/dist/ProxMenux-Monitor.AppImage.sha256 AppImage/
 
-        # Limpiar cambios locales para evitar conflictos
-        git stash --include-untracked
-
-        git fetch origin "$CURRENT_BRANCH"
-        git worktree add /tmp/target-branch origin/"$CURRENT_BRANCH"
-
-        rm -f /tmp/target-branch/AppImage/*.AppImage /tmp/target-branch/AppImage/*.sha256 || true
-        cp /tmp/appimage-dist/*.AppImage /tmp/target-branch/AppImage/
-        cp /tmp/appimage-dist/ProxMenux-Monitor.AppImage.sha256 /tmp/target-branch/AppImage/
-
-        cd /tmp/target-branch
         git add AppImage/*.AppImage AppImage/*.sha256
-        git commit -m "Update AppImage build ($(date +'%Y-%m-%d %H:%M:%S'))" || echo "No changes to commit"
-        git push origin HEAD:"$CURRENT_BRANCH"
+        git commit -m "Update AppImage release build ($(date +'%Y-%m-%d %H:%M:%S'))" || echo "No changes to commit"
+        git push origin main
