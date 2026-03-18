@@ -1,24 +1,26 @@
-name: Build ProxMenux Monitor AppImage
+name: Build ProxMenux Monitor AppImage Manual
 
 on:
+  workflow_dispatch:
 
-  workflow_dispatch:  
-  
 permissions:
   contents: write
-  
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: ubuntu-22.04
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v5
       with:
-        node-version: '20'
+        node-version: '22'
         
     - name: Install dependencies
       working-directory: AppImage
@@ -47,7 +49,7 @@ jobs:
       run: echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
       
     - name: Upload AppImage artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: ProxMenux-${{ steps.version.outputs.VERSION }}-AppImage
         path: AppImage/dist/*.AppImage
@@ -72,7 +74,6 @@ jobs:
 
         rm -f AppImage/*.AppImage AppImage/*.sha256 || true
 
-        # Copy new files
         cp AppImage/dist/*.AppImage AppImage/
         cp AppImage/dist/ProxMenux-Monitor.AppImage.sha256 AppImage/
 
