@@ -2256,7 +2256,7 @@
     "port": 0,
     "website": "",
     "documentation": "",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/linuxcontainers.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/proxmox-helper-scripts.webp",
     "updateable": false,
     "privileged": false,
     "has_arm": false,
@@ -4796,7 +4796,7 @@
     "port": 0,
     "website": "",
     "documentation": "https://github.com/community-scripts/ProxmoxVE/discussions/805",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/linuxcontainers.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/proxmox-helper-scripts.webp",
     "updateable": false,
     "privileged": false,
     "has_arm": false,
@@ -6013,7 +6013,7 @@
     "port": 0,
     "website": "https://brew.sh/",
     "documentation": "https://docs.brew.sh/",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/homebrew.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/linux.webp",
     "updateable": false,
     "privileged": false,
     "has_arm": false,
@@ -7629,6 +7629,39 @@
     "os": "debian"
   },
   {
+    "name": "LibreChat",
+    "slug": "librechat",
+    "desc": "<div>\r\n<div>LibreChat is an open-source AI chat platform that supports multiple AI providers including OpenAI, Anthropic, Google, and more. It features conversation history, multi-modal support, custom endpoints, and a plugin system.</div>\r\n</div>",
+    "script": "ct/librechat.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/librechat.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/librechat.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00020"
+    ],
+    "category_names": [
+      "AI / Coding & Dev-Tools"
+    ],
+    "notes": [
+      "Register the first account via the web interface — it becomes the admin account.",
+      "Configure your AI provider API keys in /opt/librechat/.env and restart the service."
+    ],
+    "port": 3000,
+    "website": "https://www.librechat.ai",
+    "documentation": "https://www.librechat.ai/docs",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/librechat.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "pve"
+    ],
+    "config_path": "/opt/librechat/.env",
+    "os": "debian"
+  },
+  {
     "name": "LibreNMS",
     "slug": "librenms",
     "desc": "LibreNMS is an open-source, community-driven network monitoring system that provides automatic discovery, alerting, and performance tracking for network devices. It supports a wide range of hardware and integrates with various notification and logging platforms.",
@@ -8166,7 +8199,7 @@
     "port": 0,
     "website": "",
     "documentation": "",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/linuxcontainers.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/proxmox-helper-scripts.webp",
     "updateable": false,
     "privileged": false,
     "has_arm": false,
@@ -14450,7 +14483,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "pve"
     ],
@@ -14480,7 +14513,7 @@
     "port": 8000,
     "website": "https://www.splunk.com/en_us/download/splunk-enterprise.html",
     "documentation": "https://help.splunk.com",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/splunk-light.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/splunk.webp",
     "updateable": false,
     "privileged": false,
     "has_arm": false,
@@ -15124,7 +15157,7 @@
     "port": 9987,
     "website": "https://teamspeak.com/",
     "documentation": "https://support.teamspeak.com/hc/en-us/categories/360000302017-TeamSpeak-3",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/teamspeak-light.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/teamspeak.webp",
     "updateable": true,
     "privileged": false,
     "has_arm": false,
@@ -15157,7 +15190,7 @@
     "port": 9987,
     "website": "https://teamspeak.com/",
     "documentation": "https://support.teamspeak.com/hc/en-us/categories/360000302017-TeamSpeak-3",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/teamspeak-light.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/teamspeak.webp",
     "updateable": true,
     "privileged": false,
     "has_arm": false,
@@ -15275,7 +15308,9 @@
     "category_names": [
       "Authentication & Security"
     ],
-    "notes": [],
+    "notes": [
+      "Guacamole (guacd) is running at 127.0.0.1:4822. If RDP/VNC connections fail, verify the Guacamole URL in Termix Admin Settings is set to 127.0.0.1:4822."
+    ],
     "port": 80,
     "website": "https://termix.site/",
     "documentation": "https://docs.termix.site/",
@@ -16918,7 +16953,7 @@
     "port": 3000,
     "website": "https://wanderer.to",
     "documentation": "https://wanderer.to/welcome",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/wanderer-light.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/wanderer.webp",
     "updateable": true,
     "privileged": false,
     "has_arm": false,
