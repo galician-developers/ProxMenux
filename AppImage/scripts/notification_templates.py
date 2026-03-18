@@ -1237,10 +1237,11 @@ AI_LANGUAGES = {
 }
 
 # Token limits for different detail levels
+# max_tokens is a LIMIT, not fixed consumption - you only pay for tokens actually generated
 AI_DETAIL_TOKENS = {
-    'brief': 100,      # 2-3 lines, essential only
-    'standard': 200,   # Concise paragraph with context
-    'detailed': 700,   # Complete technical details (raised: multi-VM backups can be long)
+    'brief': 300,      # Short messages, 2-3 lines
+    'standard': 1000,  # Standard messages, sufficient for 15-20 VMs
+    'detailed': 2000,  # Complete technical reports with all details
 }
 
 # System prompt template - informative, no recommendations
@@ -1417,7 +1418,7 @@ EMOJI USAGE — place ONE emoji at the START of EVERY non-empty line (title and 
    💣  OOM kill
    ▶️  VM or CT started
    ⏹️  VM or CT stopped
-   ⏏️  VM or CT shutdown
+   🔽  VM or CT shutdown
    🔄  restarted / reboot / proxmox updates
    🔥  high CPU / firewall issue
    💧  high memory
@@ -1431,9 +1432,9 @@ EMOJI USAGE — place ONE emoji at the START of EVERY non-empty line (title and 
 
    BODY LINE emoji — pick by what the line is about:
    🏷️  VM name / CT name / ID / guest name
-   ✅  status ok / success / completed
+   ✔️  status ok / success / completed
    ❌  status error / failed
-   📏  size / tamaño / Größe
+   💽  size / tamaño / Größe
    ⏱️  duration / tiempo / Dauer
    🗄️  storage / almacenamiento / PBS
    🗃️  archive path / ruta de archivo
@@ -1513,14 +1514,14 @@ EMOJI USAGE — place ONE emoji at the START of EVERY non-empty line (title and 
    Backup job finished on storage local-bak.
 
    🏷️ VM web01 (ID: 100)
-   ✅ Status: ok
-   📏 Size: 12.3 GiB
+   ✔️ Status: ok
+   💽 Size: 12.3 GiB
    ⏱️ Duration: 00:04:21
    🗄️ Storage: vm/100/2026-03-17T22:00:08Z
 
    🏷️ CT db (ID: 101)
-   ✅ Status: ok
-   📏 Size: 4.1 GiB
+   ✔️ Status: ok
+   💽 Size: 4.1 GiB
    ⏱️ Duration: 00:01:10
    🗄️ Storage: ct/101/2026-03-17T22:04:29Z
 
@@ -1533,14 +1534,14 @@ EMOJI USAGE — place ONE emoji at the START of EVERY non-empty line (title and 
    Backup job finished with errors on storage PBS2.
 
    🏷️ VM web01 (ID: 100)
-   ✅ Status: ok
-   📏 Size: 12.3 GiB
+   ✔️ Status: ok
+   💽 Size: 12.3 GiB
    ⏱️ Duration: 00:04:21
    🗄️ Storage: vm/100/2026-03-17T22:00:08Z
 
    🏷️ VM broken (ID: 102)
    ❌ Status: error
-   📏 Size: 0 B
+   💽 Size: 0 B
    ⏱️ Duration: 00:00:37
 
    📊 Total: 2 backups | ❌ 1 failed | 12.3 GiB | ⏱️ 00:04:58
