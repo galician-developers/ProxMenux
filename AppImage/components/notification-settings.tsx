@@ -598,13 +598,20 @@ export function NotificationSettings() {
   }
 
   const fetchOllamaModels = useCallback(async (url: string) => {
-    if (!url) return
+    console.log("[v0] fetchOllamaModels called with URL:", url)
+    if (!url) {
+      console.log("[v0] fetchOllamaModels: URL is empty, returning")
+      return
+    }
     setLoadingOllamaModels(true)
+    console.log("[v0] fetchOllamaModels: Starting fetch...")
     try {
       const data = await fetchApi<{ success: boolean; models: string[]; message: string }>("/api/notifications/ollama-models", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ollama_url: url }),
       })
+      console.log("[v0] fetchOllamaModels: Response:", data)
       if (data.success && data.models && data.models.length > 0) {
         setOllamaModels(data.models)
         // Auto-select first model if current selection is empty or not in the list
@@ -1437,8 +1444,11 @@ export function NotificationSettings() {
                               variant="outline"
                               size="sm"
                               className="h-9 px-3 shrink-0"
-                              onClick={() => fetchOllamaModels(config.ai_ollama_url)}
-                              disabled={!editMode || loadingOllamaModels || !config.ai_ollama_url}
+                              onClick={() => {
+                                console.log("[v0] Load button clicked, URL:", config.ai_ollama_url)
+                                fetchOllamaModels(config.ai_ollama_url)
+                              }}
+                              disabled={loadingOllamaModels || !config.ai_ollama_url}
                             >
                               {loadingOllamaModels ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -1745,7 +1755,7 @@ export function NotificationSettings() {
               </div>
               <div className="ml-8 space-y-1 text-muted-foreground text-xs">
                 <p>After creating the bot, BotFather will give you a token like:</p>
-                <code className="block bg-muted px-2 py-1 rounded text-[11px] mt-1">7595377878:AAGExxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</code>
+                <code className="block bg-muted px-2 py-1 rounded text-[11px] mt-1">{"<bot_id>:<bot_secret>"}</code>
                 <p className="mt-1">Copy this token and paste it in the <strong>Bot Token</strong> field.</p>
               </div>
             </div>
