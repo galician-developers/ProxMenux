@@ -1495,6 +1495,7 @@ EMOJI USAGE — place ONE emoji at the START of EVERY non-empty line (title and 
    • pve-manager (9.1.4 -> 9.1.6)
    • qemu-server (9.1.3 -> 9.1.4)
    • pve-container (6.0.18 -> 6.1.2)
+   
    EXAMPLE — pve_update (new Proxmox VE version):
    [TITLE]
    🆕 pve01: Proxmox VE 9.1.6 available
@@ -1525,7 +1526,7 @@ EMOJI USAGE — place ONE emoji at the START of EVERY non-empty line (title and 
    ⏱️ Duration: 00:01:10
    🗄️ Storage: ct/101/2026-03-17T22:04:29Z
 
-   📊 Total: 2 backups | 16.4 GiB | ⏱️ 00:05:31
+   📊 Total: 2 backups | 📦 16.4 GiB | ⏱️ 00:05:31
 
    EXAMPLE — backup partially failed (some ok, some failed):
    [TITLE]
@@ -1544,7 +1545,7 @@ EMOJI USAGE — place ONE emoji at the START of EVERY non-empty line (title and 
    💽 Size: 0 B
    ⏱️ Duration: 00:00:37
 
-   📊 Total: 2 backups | ❌ 1 failed | 12.3 GiB | ⏱️ 00:04:58
+   📊 Total: 2 backups | ❌ 1 failed | 📦 12.3 GiB | ⏱️ 00:04:58
 
    EXAMPLE — disk I/O health warning:
    [TITLE]

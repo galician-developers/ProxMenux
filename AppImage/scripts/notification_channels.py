@@ -76,6 +76,9 @@ class NotificationChannel(ABC):
     def _http_request(self, url: str, data: bytes, headers: Dict[str, str],
                       method: str = 'POST') -> Tuple[int, str]:
         """Execute HTTP request with timeout. Returns (status_code, body)."""
+        # Ensure User-Agent is set to avoid Cloudflare 1010 errors
+        if 'User-Agent' not in headers:
+            headers['User-Agent'] = 'ProxMenux-Monitor/1.1'
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
             with urllib.request.urlopen(req, timeout=self.REQUEST_TIMEOUT) as resp:
