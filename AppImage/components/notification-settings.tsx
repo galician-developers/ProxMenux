@@ -15,7 +15,7 @@ import {
   Bell, BellOff, Send, CheckCircle2, XCircle, Loader2,
   AlertTriangle, Info, Settings2, Zap, Eye, EyeOff,
   Trash2, ChevronDown, ChevronUp, ChevronRight, TestTube2, Mail, Webhook,
-  Copy, Server, Shield, ExternalLink
+  Copy, Server, Shield, ExternalLink, RefreshCw
 } from "lucide-react"
 
 interface ChannelConfig {
@@ -247,6 +247,8 @@ export function NotificationSettings() {
   const [showProviderInfo, setShowProviderInfo] = useState(false)
   const [testingAI, setTestingAI] = useState(false)
   const [aiTestResult, setAiTestResult] = useState<{ success: boolean; message: string; model?: string } | null>(null)
+  const [ollamaModels, setOllamaModels] = useState<string[]>([])
+  const [loadingOllamaModels, setLoadingOllamaModels] = useState(false)
   const [webhookSetup, setWebhookSetup] = useState<{
     status: "idle" | "running" | "success" | "failed"
     fallback_commands: string[]
@@ -593,6 +595,37 @@ export function NotificationSettings() {
       setTimeout(() => setTestResult(null), 8000)
     }
   }
+
+  const fetchOllamaModels = useCallback(async (url: string) => {
+    if (!url) return
+    setLoadingOllamaModels(true)
+    try {
+      const data = await fetchApi<{ success: boolean; models: string[]; message: string }>("/api/notifications/ollama-models", {
+        method: "POST",
+        body: JSON.stringify({ ollama_url: url }),
+      })
+      if (data.success) {
+        setOllamaModels(data.models)
+        // If current model not in list and there are models available, select first one
+        if (data.models.length > 0 && !data.models.includes(config.ai_model)) {
+          updateConfig(p => ({ ...p, ai_model: data.models[0] }))
+        }
+      } else {
+        setOllamaModels([])
+      }
+    } catch {
+      setOllamaModels([])
+    } finally {
+      setLoadingOllamaModels(false)
+    }
+  }, [config.ai_model])
+
+  // Fetch Ollama models when provider is ollama and URL changes
+  useEffect(() => {
+    if (config.ai_provider === 'ollama' && config.ai_ollama_url) {
+      fetchOllamaModels(config.ai_ollama_url)
+    }
+  }, [config.ai_provider, config.ai_ollama_url, fetchOllamaModels])
 
   const handleTestAI = async () => {
     setTestingAI(true)
@@ -1449,12 +1482,47 @@ export function NotificationSettings() {
                         </div>
                       )}
                       
-                      {/* Model (read-only display) */}
+                      {/* Model - selector for Ollama, read-only for others */}
                       <div className="space-y-2">
                         <Label className="text-xs sm:text-sm text-foreground/80">Model</Label>
-                        <div className="h-9 px-3 flex items-center rounded-md border border-border bg-muted/50 text-sm font-mono text-muted-foreground">
-                          {AI_PROVIDERS.find(p => p.value === config.ai_provider)?.model || "default"}
-                        </div>
+                        {config.ai_provider === "ollama" ? (
+                          <div className="flex items-center gap-2">
+                            <Select
+                              value={config.ai_model || ""}
+                              onValueChange={v => updateConfig(p => ({ ...p, ai_model: v }))}
+                              disabled={!editMode || loadingOllamaModels}
+                            >
+                              <SelectTrigger className="h-9 text-sm font-mono flex-1">
+                                <SelectValue placeholder={loadingOllamaModels ? "Loading models..." : "Select model"}>
+                                  {config.ai_model || (loadingOllamaModels ? "Loading..." : "Select model")}
+                                </SelectValue>
+                              </SelectTrigger>
+                              <SelectContent>
+                                {ollamaModels.length > 0 ? (
+                                  ollamaModels.map(m => (
+                                    <SelectItem key={m} value={m} className="font-mono">{m}</SelectItem>
+                                  ))
+                                ) : (
+                                  <SelectItem value="_none" disabled className="text-muted-foreground">
+                                    {loadingOllamaModels ? "Loading models..." : "No models found"}
+                                  </SelectItem>
+                                )}
+                              </SelectContent>
+                            </Select>
+                            <button
+                              onClick={() => fetchOllamaModels(config.ai_ollama_url)}
+                              disabled={!editMode || loadingOllamaModels}
+                              className="h-9 w-9 flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors shrink-0 disabled:opacity-50"
+                              title="Refresh models"
+                            >
+                              <RefreshCw className={`h-4 w-4 ${loadingOllamaModels ? 'animate-spin' : ''}`} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="h-9 px-3 flex items-center rounded-md border border-border bg-muted/50 text-sm font-mono text-muted-foreground">
+                            {AI_PROVIDERS.find(p => p.value === config.ai_provider)?.model || "default"}
+                          </div>
+                        )}
                       </div>
                       
                       {/* Language selector */}

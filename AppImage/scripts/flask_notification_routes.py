@@ -101,6 +101,57 @@ def test_notification():
         return jsonify({'error': str(e)}), 500
 
 
+@notification_bp.route('/api/notifications/ollama-models', methods=['POST'])
+def get_ollama_models():
+    """Fetch available models from an Ollama server.
+    
+    Request body:
+        {
+            "ollama_url": "http://localhost:11434"
+        }
+    
+    Returns:
+        {
+            "success": true/false,
+            "models": ["model1", "model2", ...],
+            "message": "error message if failed"
+        }
+    """
+    try:
+        import urllib.request
+        import urllib.error
+        
+        data = request.get_json() or {}
+        ollama_url = data.get('ollama_url', 'http://localhost:11434')
+        
+        url = f"{ollama_url.rstrip('/')}/api/tags"
+        req = urllib.request.Request(url, method='GET')
+        req.add_header('User-Agent', 'ProxMenux-Monitor/1.1')
+        
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read().decode('utf-8'))
+            models = [m.get('name', '').split(':')[0] for m in result.get('models', [])]
+            # Remove duplicates and sort
+            models = sorted(list(set(models)))
+            return jsonify({
+                'success': True,
+                'models': models,
+                'message': f'Found {len(models)} models'
+            })
+    except urllib.error.URLError as e:
+        return jsonify({
+            'success': False,
+            'models': [],
+            'message': f'Cannot connect to Ollama: {str(e.reason)}'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'models': [],
+            'message': f'Error: {str(e)}'
+        })
+
+
 @notification_bp.route('/api/notifications/test-ai', methods=['POST'])
 def test_ai_connection():
     """Test AI provider connection and configuration.
