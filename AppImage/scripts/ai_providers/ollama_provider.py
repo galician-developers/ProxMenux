@@ -93,12 +93,27 @@ class OllamaProvider(AIProvider):
             req = urllib.request.Request(url, method='GET')
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read().decode('utf-8'))
-                models = [m.get('name', '').split(':')[0] for m in data.get('models', [])]
                 
-                if self.model not in models and f"{self.model}:latest" not in [m.get('name', '') for m in data.get('models', [])]:
+                # Get full model names (with tags) for comparison
+                full_model_names = [m.get('name', '') for m in data.get('models', [])]
+                # Also get base names (without tags) for fallback matching
+                base_model_names = [name.split(':')[0] for name in full_model_names]
+                
+                # Check if the requested model matches any available model
+                # Match by: exact name, base name, or requested model without tag
+                requested_base = self.model.split(':')[0] if ':' in self.model else self.model
+                
+                model_found = (
+                    self.model in full_model_names or  # Exact match (e.g., "llama3.2:latest")
+                    self.model in base_model_names or  # Base name match (e.g., "llama3.2")
+                    requested_base in base_model_names  # Requested base matches available base
+                )
+                
+                if not model_found:
+                    display_models = full_model_names[:5] if full_model_names else ['none']
                     return {
                         'success': False,
-                        'message': f"Model '{self.model}' not found. Available: {', '.join(models[:5])}...",
+                        'message': f"Model '{self.model}' not found. Available: {', '.join(display_models)}{'...' if len(full_model_names) > 5 else ''}",
                         'model': self.model
                     }
         except urllib.error.URLError:
