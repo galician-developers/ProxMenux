@@ -605,12 +605,15 @@ export function NotificationSettings() {
         method: "POST",
         body: JSON.stringify({ ollama_url: url }),
       })
-      if (data.success) {
+      if (data.success && data.models && data.models.length > 0) {
         setOllamaModels(data.models)
-        // If current model not in list and there are models available, select first one
-        if (data.models.length > 0 && !data.models.includes(config.ai_model)) {
-          updateConfig(p => ({ ...p, ai_model: data.models[0] }))
-        }
+        // Auto-select first model if current selection is empty or not in the list
+        updateConfig(prev => {
+          if (!prev.ai_model || !data.models.includes(prev.ai_model)) {
+            return { ...prev, ai_model: data.models[0] }
+          }
+          return prev
+        })
       } else {
         setOllamaModels([])
       }
@@ -619,15 +622,11 @@ export function NotificationSettings() {
     } finally {
       setLoadingOllamaModels(false)
     }
-  }, [config.ai_model])
-
-  // Fetch Ollama models when provider is ollama and URL changes
-  useEffect(() => {
-    if (config.ai_provider === 'ollama' && config.ai_ollama_url) {
-      fetchOllamaModels(config.ai_ollama_url)
-    }
-  }, [config.ai_provider, config.ai_ollama_url, fetchOllamaModels])
-
+  }, [])
+  
+  // Note: We removed the automatic useEffect that fetched models on URL change
+  // because it caused infinite loops. Users now use the "Load" button explicitly.
+  
   const handleTestAI = async () => {
     setTestingAI(true)
     setAiTestResult(null)
