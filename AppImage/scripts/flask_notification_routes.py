@@ -5,6 +5,7 @@ Blueprint pattern matching flask_health_routes.py / flask_security_routes.py.
 
 import hmac
 import time
+import json
 import hashlib
 from collections import deque
 from flask import Blueprint, jsonify, request
