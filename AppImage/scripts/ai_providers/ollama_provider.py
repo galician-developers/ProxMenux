@@ -62,8 +62,13 @@ class OllamaProvider(AIProvider):
             'Content-Type': 'application/json',
         }
         
+        # Cloud models (e.g., kimi-k2.5:cloud, minimax-m2.7:cloud) need longer timeout
+        # because requests go through: ProxMenux -> Ollama -> Cloud Provider -> back
+        is_cloud_model = ':cloud' in self.model.lower()
+        timeout = 120 if is_cloud_model else 30  # 2 minutes for cloud, 30s for local
+        
         try:
-            result = self._make_request(url, payload, headers, timeout=30)
+            result = self._make_request(url, payload, headers, timeout=timeout)
         except AIProviderError as e:
             if "Connection" in str(e) or "refused" in str(e).lower():
                 raise AIProviderError(
@@ -130,4 +135,14 @@ class OllamaProvider(AIProvider):
             }
         
         # If server is up and model exists, do the actual test
+        # For cloud models, we skip the full test (which sends a message)
+        # because it would take too long. The model availability check above is sufficient.
+        is_cloud_model = ':cloud' in self.model.lower()
+        if is_cloud_model:
+            return {
+                'success': True,
+                'message': f"Cloud model '{self.model}' is available via Ollama",
+                'model': self.model
+            }
+        
         return super().test_connection()
