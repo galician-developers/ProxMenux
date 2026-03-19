@@ -12257,7 +12257,7 @@
       "Documents & Notes"
     ],
     "notes": [
-      "After running the update script, logging in as a system user in ProjectSend is necessary to upgrade the database."
+      "After running the update script, logging in as a system user in ProjectSend is necessary to upgrade the database. Finish the installation at http://[ip-address]/install"
     ],
     "port": 80,
     "website": "https://projectsend.org/",
