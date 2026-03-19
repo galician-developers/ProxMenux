@@ -245,6 +245,7 @@ export function NotificationSettings() {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [originalConfig, setOriginalConfig] = useState<NotificationConfig>(DEFAULT_CONFIG)
   const [showProviderInfo, setShowProviderInfo] = useState(false)
+  const [showTelegramHelp, setShowTelegramHelp] = useState(false)
   const [testingAI, setTestingAI] = useState(false)
   const [aiTestResult, setAiTestResult] = useState<{ success: boolean; message: string; model?: string } | null>(null)
   const [ollamaModels, setOllamaModels] = useState<string[]>([])
@@ -953,7 +954,15 @@ export function NotificationSettings() {
                 {/* Telegram */}
                 <TabsContent value="telegram" className="space-y-3 pt-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-xs font-medium">Enable Telegram</Label>
+                    <div className="flex items-center gap-2">
+                      <Label className="text-xs font-medium">Enable Telegram</Label>
+                      <button
+                        onClick={() => setShowTelegramHelp(true)}
+                        className="text-[10px] text-blue-500 hover:text-blue-400 hover:underline"
+                      >
+                        +setup guide
+                      </button>
+                    </div>
                     <button
                       className={`relative w-9 h-[18px] rounded-full transition-colors ${
                         config.channels.telegram?.enabled ? "bg-blue-600" : "bg-muted-foreground/20 border border-muted-foreground/40"
@@ -1693,6 +1702,85 @@ export function NotificationSettings() {
                 )}
               </div>
             ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Telegram Setup Guide Modal */}
+      <Dialog open={showTelegramHelp} onOpenChange={setShowTelegramHelp}>
+        <DialogContent className="max-w-[90vw] sm:max-w-xl md:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base sm:text-lg">Telegram Bot Setup Guide</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1 text-sm">
+            {/* Step 1 */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="h-6 w-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">1</span>
+                <h4 className="font-medium">Create a Bot with BotFather</h4>
+              </div>
+              <div className="ml-8 space-y-1 text-muted-foreground text-xs">
+                <p>1. Open Telegram and search for <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">@BotFather</a></p>
+                <p>2. Send the command <code className="bg-muted px-1 rounded">/newbot</code></p>
+                <p>3. Choose a name for your bot (e.g., "ProxMenux Notifications")</p>
+                <p>4. Choose a username ending in "bot" (e.g., "proxmenux_alerts_bot")</p>
+              </div>
+            </div>
+
+            {/* Step 2 */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="h-6 w-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">2</span>
+                <h4 className="font-medium">Get the Bot Token</h4>
+              </div>
+              <div className="ml-8 space-y-1 text-muted-foreground text-xs">
+                <p>After creating the bot, BotFather will give you a token like:</p>
+                <code className="block bg-muted px-2 py-1 rounded text-[11px] mt-1">7595377878:AAGExxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</code>
+                <p className="mt-1">Copy this token and paste it in the <strong>Bot Token</strong> field.</p>
+              </div>
+            </div>
+
+            {/* Step 3 */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="h-6 w-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">3</span>
+                <h4 className="font-medium">Get Your Chat ID</h4>
+              </div>
+              <div className="ml-8 space-y-2 text-muted-foreground text-xs">
+                <p className="font-medium text-foreground/80">Option A: Using a Bot (Easiest)</p>
+                <p>1. Search for <a href="https://t.me/userinfobot" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">@userinfobot</a> or <a href="https://t.me/getmyid_bot" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">@getmyid_bot</a> on Telegram</p>
+                <p>2. Send any message and it will reply with your Chat ID</p>
+                
+                <p className="font-medium text-foreground/80 mt-2">Option B: Manual Method</p>
+                <p>1. Send a message to your new bot</p>
+                <p>2. Open this URL in your browser (replace YOUR_TOKEN):</p>
+                <code className="block bg-muted px-2 py-1 rounded text-[11px] break-all">https://api.telegram.org/botYOUR_TOKEN/getUpdates</code>
+                <p>3. Look for <code className="bg-muted px-1 rounded">"chat":&#123;"id": XXXXXX&#125;</code> - that number is your Chat ID</p>
+              </div>
+            </div>
+
+            {/* Step 4 */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="h-6 w-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">4</span>
+                <h4 className="font-medium">For Groups or Channels</h4>
+              </div>
+              <div className="ml-8 space-y-1 text-muted-foreground text-xs">
+                <p>1. Add your bot to the group/channel as administrator</p>
+                <p>2. Send a message in the group</p>
+                <p>3. Use the getUpdates URL method above to find the group Chat ID</p>
+                <p>4. Group IDs are negative numbers (e.g., <code className="bg-muted px-1 rounded">-1001234567890</code>)</p>
+              </div>
+            </div>
+
+            {/* Summary */}
+            <div className="mt-4 p-3 rounded-md bg-blue-500/10 border border-blue-500/20">
+              <p className="text-xs text-blue-400 font-medium mb-1">Quick Summary</p>
+              <ul className="text-xs text-muted-foreground space-y-0.5">
+                <li><strong>Bot Token:</strong> Identifies your bot (from BotFather)</li>
+                <li><strong>Chat ID:</strong> Where to send messages (your ID or group ID)</li>
+              </ul>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
