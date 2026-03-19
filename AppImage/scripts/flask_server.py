@@ -2639,6 +2639,24 @@ def get_proxmox_storage():
         for unavailable_storage in unavailable_storages:
             if unavailable_storage['name'] not in existing_storage_names:
                 storage_list.append(unavailable_storage)
+        
+        # Get storage exclusions to mark excluded storages
+        try:
+            excluded_health = health_persistence.get_excluded_storage_names('health')
+            remote_types = health_persistence.REMOTE_STORAGE_TYPES
+            
+            for storage in storage_list:
+                storage_name = storage.get('name', '')
+                storage_type = storage.get('type', '').lower()
+                
+                # Mark if this is a remote storage type
+                storage['is_remote'] = storage_type in remote_types
+                
+                # Mark if excluded from health monitoring
+                storage['excluded'] = storage_name in excluded_health
+        except Exception:
+            # If exclusion check fails, continue without it
+            pass
 
         return {'storage': storage_list}
         

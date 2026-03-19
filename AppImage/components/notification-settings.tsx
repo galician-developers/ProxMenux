@@ -1426,13 +1426,34 @@ export function NotificationSettings() {
                       {config.ai_provider === "ollama" && (
                         <div className="space-y-2">
                           <Label className="text-xs sm:text-sm text-foreground/80">Ollama URL</Label>
-                          <Input
-                            className="h-9 text-sm font-mono"
-                            placeholder="http://localhost:11434"
-                            value={config.ai_ollama_url}
-                            onChange={e => updateConfig(p => ({ ...p, ai_ollama_url: e.target.value }))}
-                            disabled={!editMode}
-                          />
+                          <div className="flex items-center gap-2">
+                            <Input
+                              className="h-9 text-sm font-mono flex-1"
+                              placeholder="http://localhost:11434"
+                              value={config.ai_ollama_url}
+                              onChange={e => updateConfig(p => ({ ...p, ai_ollama_url: e.target.value }))}
+                              disabled={!editMode}
+                            />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-9 px-3 shrink-0"
+                              onClick={() => fetchOllamaModels(config.ai_ollama_url)}
+                              disabled={!editMode || loadingOllamaModels || !config.ai_ollama_url}
+                            >
+                              {loadingOllamaModels ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <>
+                                  <RefreshCw className="h-4 w-4 mr-1" />
+                                  Load
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                          {ollamaModels.length > 0 && (
+                            <p className="text-xs text-green-500">{ollamaModels.length} models found</p>
+                          )}
                         </div>
                       )}
                       
@@ -1495,38 +1516,28 @@ export function NotificationSettings() {
                       <div className="space-y-2">
                         <Label className="text-xs sm:text-sm text-foreground/80">Model</Label>
                         {config.ai_provider === "ollama" ? (
-                          <div className="flex items-center gap-2">
-                            <Select
-                              value={config.ai_model || ""}
-                              onValueChange={v => updateConfig(p => ({ ...p, ai_model: v }))}
-                              disabled={!editMode || loadingOllamaModels}
-                            >
-                              <SelectTrigger className="h-9 text-sm font-mono flex-1">
-                                <SelectValue placeholder={loadingOllamaModels ? "Loading models..." : "Select model"}>
-                                  {config.ai_model || (loadingOllamaModels ? "Loading..." : "Select model")}
-                                </SelectValue>
-                              </SelectTrigger>
-                              <SelectContent>
-                                {ollamaModels.length > 0 ? (
-                                  ollamaModels.map(m => (
-                                    <SelectItem key={m} value={m} className="font-mono">{m}</SelectItem>
-                                  ))
-                                ) : (
-                                  <SelectItem value="_none" disabled className="text-muted-foreground">
-                                    {loadingOllamaModels ? "Loading models..." : "No models found"}
-                                  </SelectItem>
-                                )}
-                              </SelectContent>
-                            </Select>
-                            <button
-                              onClick={() => fetchOllamaModels(config.ai_ollama_url)}
-                              disabled={!editMode || loadingOllamaModels}
-                              className="h-9 w-9 flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors shrink-0 disabled:opacity-50"
-                              title="Refresh models"
-                            >
-                              <RefreshCw className={`h-4 w-4 ${loadingOllamaModels ? 'animate-spin' : ''}`} />
-                            </button>
-                          </div>
+                          <Select
+                            value={config.ai_model || ""}
+                            onValueChange={v => updateConfig(p => ({ ...p, ai_model: v }))}
+                            disabled={!editMode || loadingOllamaModels || ollamaModels.length === 0}
+                          >
+                            <SelectTrigger className="h-9 text-sm font-mono">
+                              <SelectValue placeholder={ollamaModels.length === 0 ? "Click 'Load' to fetch models" : "Select model"}>
+                                {config.ai_model || (ollamaModels.length === 0 ? "Click 'Load' to fetch models" : "Select model")}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              {ollamaModels.length > 0 ? (
+                                ollamaModels.map(m => (
+                                  <SelectItem key={m} value={m} className="font-mono">{m}</SelectItem>
+                                ))
+                              ) : (
+                                <SelectItem value="_none" disabled className="text-muted-foreground">
+                                  No models loaded - click Load button
+                                </SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
                         ) : (
                           <div className="h-9 px-3 flex items-center rounded-md border border-border bg-muted/50 text-sm font-mono text-muted-foreground">
                             {AI_PROVIDERS.find(p => p.value === config.ai_provider)?.model || "default"}

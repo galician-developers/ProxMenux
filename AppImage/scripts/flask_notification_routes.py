@@ -130,9 +130,10 @@ def get_ollama_models():
         
         with urllib.request.urlopen(req, timeout=10) as resp:
             result = json.loads(resp.read().decode('utf-8'))
-            models = [m.get('name', '').split(':')[0] for m in result.get('models', [])]
-            # Remove duplicates and sort
-            models = sorted(list(set(models)))
+            # Keep full model names (including tags like :latest, :3b-instruct-q4_0)
+            models = [m.get('name', '') for m in result.get('models', []) if m.get('name')]
+            # Sort alphabetically
+            models = sorted(models)
             return jsonify({
                 'success': True,
                 'models': models,

@@ -674,11 +674,20 @@ export function StorageOverview() {
               {proxmoxStorage.storage
                 .filter((storage) => storage && storage.name && storage.used >= 0 && storage.available >= 0)
                 .sort((a, b) => a.name.localeCompare(b.name))
-                .map((storage) => (
+                .map((storage) => {
+                  // Check if storage is excluded from monitoring
+                  const isExcluded = storage.excluded === true
+                  const hasError = storage.status === "error" && !isExcluded
+                  
+                  return (
                   <div
                     key={storage.name}
                     className={`border rounded-lg p-4 ${
-                      storage.status === "error" ? "border-red-500/50 bg-red-500/5" : ""
+                      hasError 
+                        ? "border-red-500/50 bg-red-500/5" 
+                        : isExcluded 
+                          ? "border-purple-500/30 bg-purple-500/5 opacity-75" 
+                          : ""
                     }`}
                   >
                     <div className="flex items-center justify-between mb-3">
@@ -687,27 +696,40 @@ export function StorageOverview() {
                         <Database className="h-5 w-5 text-muted-foreground" />
                         <h3 className="font-semibold text-lg">{storage.name}</h3>
                         <Badge className={getStorageTypeBadge(storage.type)}>{storage.type}</Badge>
+                        {isExcluded && (
+                          <Badge className="bg-purple-500/10 text-purple-400 border-purple-500/20 text-[10px]">
+                            excluded
+                          </Badge>
+                        )}
                       </div>
 
                       <div className="flex md:hidden items-center gap-2 flex-1">
                         <Database className="h-5 w-5 text-muted-foreground flex-shrink-0" />
                         <Badge className={getStorageTypeBadge(storage.type)}>{storage.type}</Badge>
                         <h3 className="font-semibold text-base flex-1 min-w-0 truncate">{storage.name}</h3>
-                        {getStatusIcon(storage.status)}
+                        {isExcluded ? (
+                          <Badge className="bg-purple-500/10 text-purple-400 border-purple-500/20 text-[10px]">
+                            excluded
+                          </Badge>
+                        ) : (
+                          getStatusIcon(storage.status)
+                        )}
                       </div>
 
                       {/* Desktop: Badge active + Porcentaje */}
                       <div className="hidden md:flex items-center gap-2">
                         <Badge
                           className={
-                            storage.status === "active"
-                              ? "bg-green-500/10 text-green-500 border-green-500/20"
-                              : storage.status === "error"
-                                ? "bg-red-500/10 text-red-500 border-red-500/20"
-                                : "bg-gray-500/10 text-gray-500 border-gray-500/20"
+                            isExcluded
+                              ? "bg-purple-500/10 text-purple-400 border-purple-500/20"
+                              : storage.status === "active"
+                                ? "bg-green-500/10 text-green-500 border-green-500/20"
+                                : storage.status === "error"
+                                  ? "bg-red-500/10 text-red-500 border-red-500/20"
+                                  : "bg-gray-500/10 text-gray-500 border-gray-500/20"
                           }
                         >
-                          {storage.status}
+                          {isExcluded ? "not monitored" : storage.status}
                         </Badge>
                         <span className="text-sm font-medium">{storage.percent}%</span>
                       </div>
@@ -750,7 +772,8 @@ export function StorageOverview() {
                       </div>
                     </div>
                   </div>
-                ))}
+                  )
+                })}
             </div>
           </CardContent>
         </Card>

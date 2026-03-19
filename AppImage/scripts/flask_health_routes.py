@@ -326,3 +326,133 @@ def save_health_settings():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ── Remote Storage Exclusions Endpoints ──
+
+@health_bp.route('/api/health/remote-storages', methods=['GET'])
+def get_remote_storages():
+    """
+    Get list of all remote storages with their exclusion status.
+    Remote storages are those that can be offline (PBS, NFS, CIFS, etc.)
+    """
+    try:
+        from proxmox_storage_monitor import proxmox_storage_monitor
+        
+        # Get current storage status
+        storage_status = proxmox_storage_monitor.get_storage_status()
+        all_storages = storage_status.get('available', []) + storage_status.get('unavailable', [])
+        
+        # Filter to only remote types
+        remote_types = health_persistence.REMOTE_STORAGE_TYPES
+        remote_storages = [s for s in all_storages if s.get('type', '').lower() in remote_types]
+        
+        # Get current exclusions
+        exclusions = {e['storage_name']: e for e in health_persistence.get_excluded_storages()}
+        
+        # Combine info
+        result = []
+        for storage in remote_storages:
+            name = storage.get('name', '')
+            exclusion = exclusions.get(name, {})
+            result.append({
+                'name': name,
+                'type': storage.get('type', 'unknown'),
+                'status': storage.get('status', 'unknown'),
+                'total': storage.get('total', 0),
+                'used': storage.get('used', 0),
+                'available': storage.get('available', 0),
+                'percent': storage.get('percent', 0),
+                'exclude_health': exclusion.get('exclude_health', 0) == 1,
+                'exclude_notifications': exclusion.get('exclude_notifications', 0) == 1,
+                'excluded_at': exclusion.get('excluded_at'),
+                'reason': exclusion.get('reason')
+            })
+        
+        return jsonify({
+            'storages': result,
+            'remote_types': list(remote_types)
+        })
+    except ImportError:
+        return jsonify({'error': 'Storage monitor not available', 'storages': []}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@health_bp.route('/api/health/storage-exclusions', methods=['GET'])
+def get_storage_exclusions():
+    """Get all storage exclusions."""
+    try:
+        exclusions = health_persistence.get_excluded_storages()
+        return jsonify({'exclusions': exclusions})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@health_bp.route('/api/health/storage-exclusions', methods=['POST'])
+def save_storage_exclusion():
+    """
+    Add or update a storage exclusion.
+    
+    Request body:
+    {
+        "storage_name": "pbs-backup",
+        "storage_type": "pbs",
+        "exclude_health": true,
+        "exclude_notifications": true,
+        "reason": "PBS server is offline daily"
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data or 'storage_name' not in data:
+            return jsonify({'error': 'storage_name is required'}), 400
+        
+        storage_name = data['storage_name']
+        storage_type = data.get('storage_type', 'unknown')
+        exclude_health = data.get('exclude_health', True)
+        exclude_notifications = data.get('exclude_notifications', True)
+        reason = data.get('reason')
+        
+        # Check if already excluded
+        existing = health_persistence.get_excluded_storages()
+        exists = any(e['storage_name'] == storage_name for e in existing)
+        
+        if exists:
+            # Update existing
+            success = health_persistence.update_storage_exclusion(
+                storage_name, exclude_health, exclude_notifications
+            )
+        else:
+            # Add new
+            success = health_persistence.exclude_storage(
+                storage_name, storage_type, exclude_health, exclude_notifications, reason
+            )
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': f'Storage {storage_name} exclusion saved',
+                'storage_name': storage_name
+            })
+        else:
+            return jsonify({'error': 'Failed to save exclusion'}), 500
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@health_bp.route('/api/health/storage-exclusions/<storage_name>', methods=['DELETE'])
+def delete_storage_exclusion(storage_name):
+    """Remove a storage from the exclusion list."""
+    try:
+        success = health_persistence.remove_storage_exclusion(storage_name)
+        if success:
+            return jsonify({
+                'success': True,
+                'message': f'Storage {storage_name} removed from exclusions'
+            })
+        else:
+            return jsonify({'error': 'Storage not found in exclusions'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

@@ -648,6 +648,19 @@ class NotificationManager:
             if self._is_backup_running():
                 return
         
+        # Check storage exclusions for storage-related events.
+        # If the storage is excluded from notifications, suppress the event entirely.
+        _STORAGE_EVENTS = {'storage_unavailable', 'storage_low_space', 'storage_warning', 'storage_error'}
+        if event.event_type in _STORAGE_EVENTS:
+            storage_name = event.data.get('storage_name') or event.data.get('name')
+            if storage_name:
+                try:
+                    from health_persistence import health_persistence
+                    if health_persistence.is_storage_excluded(storage_name, 'notifications'):
+                        return  # Storage is excluded from notifications, skip silently
+                except Exception:
+                    pass  # Continue if check fails
+        
         # Check cooldown
         if not self._check_cooldown(event):
             return

@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
-import { Wrench, Package, Ruler, HeartPulse, Cpu, MemoryStick, HardDrive, CircleDot, Network, Server, Settings2, FileText, RefreshCw, Shield, AlertTriangle, Info, Loader2, Check } from "lucide-react"
+import { Wrench, Package, Ruler, HeartPulse, Cpu, MemoryStick, HardDrive, CircleDot, Network, Server, Settings2, FileText, RefreshCw, Shield, AlertTriangle, Info, Loader2, Check, Database, CloudOff } from "lucide-react"
 import { NotificationSettings } from "./notification-settings"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
+import { Switch } from "./ui/switch"
 import { Input } from "./ui/input"
 import { Badge } from "./ui/badge"
 import { getNetworkUnit } from "../lib/format-network"
@@ -47,6 +48,20 @@ interface ProxMenuxTool {
   enabled: boolean
 }
 
+interface RemoteStorage {
+  name: string
+  type: string
+  status: string
+  total: number
+  used: number
+  available: number
+  percent: number
+  exclude_health: boolean
+  exclude_notifications: boolean
+  excluded_at?: string
+  reason?: string
+}
+
 export function Settings() {
   const [proxmenuxTools, setProxmenuxTools] = useState<ProxMenuxTool[]>([])
   const [loadingTools, setLoadingTools] = useState(true)
@@ -61,11 +76,17 @@ export function Settings() {
   const [savedAllHealth, setSavedAllHealth] = useState(false)
   const [pendingChanges, setPendingChanges] = useState<Record<string, number>>({})
   const [customValues, setCustomValues] = useState<Record<string, string>>({})
+  
+  // Remote Storage Exclusions
+  const [remoteStorages, setRemoteStorages] = useState<RemoteStorage[]>([])
+  const [loadingStorages, setLoadingStorages] = useState(true)
+  const [savingStorage, setSavingStorage] = useState<string | null>(null)
 
   useEffect(() => {
     loadProxmenuxTools()
     getUnitsSettings()
     loadHealthSettings()
+    loadRemoteStorages()
   }, [])
 
   const loadProxmenuxTools = async () => {
@@ -111,6 +132,53 @@ export function Settings() {
       console.error("Failed to load health settings:", err)
     } finally {
       setLoadingHealth(false)
+    }
+  }
+
+  const loadRemoteStorages = async () => {
+    try {
+      const data = await fetchApi("/api/health/remote-storages")
+      if (data.storages) {
+        setRemoteStorages(data.storages)
+      }
+    } catch (err) {
+      console.error("Failed to load remote storages:", err)
+    } finally {
+      setLoadingStorages(false)
+    }
+  }
+
+  const handleStorageExclusionChange = async (storageName: string, storageType: string, excludeHealth: boolean, excludeNotifications: boolean) => {
+    setSavingStorage(storageName)
+    try {
+      // If both are false, remove the exclusion
+      if (!excludeHealth && !excludeNotifications) {
+        await fetchApi(`/api/health/storage-exclusions/${encodeURIComponent(storageName)}`, {
+          method: "DELETE"
+        })
+      } else {
+        await fetchApi("/api/health/storage-exclusions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            storage_name: storageName,
+            storage_type: storageType,
+            exclude_health: excludeHealth,
+            exclude_notifications: excludeNotifications
+          })
+        })
+      }
+      
+      // Update local state
+      setRemoteStorages(prev => prev.map(s => 
+        s.name === storageName 
+          ? { ...s, exclude_health: excludeHealth, exclude_notifications: excludeNotifications }
+          : s
+      ))
+    } catch (err) {
+      console.error("Failed to update storage exclusion:", err)
+    } finally {
+      setSavingStorage(null)
     }
   }
 
@@ -432,6 +500,120 @@ export function Settings() {
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
                   These settings apply when you dismiss a warning from the Health Monitor. 
                   Critical CPU temperature alerts always trigger regardless of settings to protect your hardware.
+                </p>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Remote Storage Exclusions */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Database className="h-5 w-5 text-purple-500" />
+            <CardTitle>Remote Storage Exclusions</CardTitle>
+          </div>
+          <CardDescription>
+            Exclude remote storages (PBS, NFS, CIFS, etc.) from health monitoring and notifications.
+            Use this for storages that are intentionally offline or have limited API access.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loadingStorages ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin h-8 w-8 border-4 border-purple-500 border-t-transparent rounded-full" />
+            </div>
+          ) : remoteStorages.length === 0 ? (
+            <div className="text-center py-8">
+              <CloudOff className="h-12 w-12 text-muted-foreground mx-auto mb-3 opacity-50" />
+              <p className="text-muted-foreground">No remote storages detected</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                PBS, NFS, CIFS, and other remote storages will appear here when configured
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-0">
+              {/* Header */}
+              <div className="grid grid-cols-[1fr_auto_auto] gap-4 pb-2 mb-1 border-b border-border">
+                <span className="text-xs font-medium text-muted-foreground">Storage</span>
+                <span className="text-xs font-medium text-muted-foreground text-center w-20">Health</span>
+                <span className="text-xs font-medium text-muted-foreground text-center w-20">Alerts</span>
+              </div>
+              
+              {/* Storage rows */}
+              <div className="divide-y divide-border/50">
+                {remoteStorages.map((storage) => {
+                  const isExcluded = storage.exclude_health || storage.exclude_notifications
+                  const isSaving = savingStorage === storage.name
+                  const isOffline = storage.status === 'error' || storage.total === 0
+                  
+                  return (
+                    <div key={storage.name} className="grid grid-cols-[1fr_auto_auto] gap-4 py-3 items-center">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-2 h-2 rounded-full shrink-0 ${
+                          isOffline ? 'bg-red-500' : 'bg-green-500'
+                        }`} />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium truncate">{storage.name}</span>
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">
+                              {storage.type}
+                            </Badge>
+                          </div>
+                          {isOffline && (
+                            <p className="text-[11px] text-red-400 mt-0.5">Offline or unavailable</p>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center justify-center w-20">
+                        {isSaving ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        ) : (
+                          <Switch
+                            checked={!storage.exclude_health}
+                            onCheckedChange={(checked) => {
+                              handleStorageExclusionChange(
+                                storage.name,
+                                storage.type,
+                                !checked,
+                                storage.exclude_notifications
+                              )
+                            }}
+                          />
+                        )}
+                      </div>
+                      
+                      <div className="flex items-center justify-center w-20">
+                        {isSaving ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        ) : (
+                          <Switch
+                            checked={!storage.exclude_notifications}
+                            onCheckedChange={(checked) => {
+                              handleStorageExclusionChange(
+                                storage.name,
+                                storage.type,
+                                storage.exclude_health,
+                                !checked
+                              )
+                            }}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              
+              {/* Info footer */}
+              <div className="flex items-start gap-2 mt-3 pt-3 border-t border-border">
+                <Info className="h-3.5 w-3.5 text-purple-400 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  <strong>Health:</strong> When OFF, the storage won't trigger warnings/critical alerts in the Health Monitor.
+                  <br />
+                  <strong>Alerts:</strong> When OFF, no notifications will be sent for this storage.
                 </p>
               </div>
             </div>

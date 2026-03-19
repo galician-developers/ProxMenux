@@ -4431,6 +4431,8 @@ class HealthMonitor:
         Detects unavailable storages configured in PVE.
         Returns CRITICAL if any configured storage is unavailable.
         Returns None if the module is not available.
+        
+        Respects storage exclusions: excluded storages are reported as INFO, not CRITICAL.
         """
         if not PROXMOX_STORAGE_AVAILABLE:
             return None
@@ -4443,12 +4445,22 @@ class HealthMonitor:
             storage_status = proxmox_storage_monitor.get_storage_status()
             unavailable_storages = storage_status.get('unavailable', [])
             
-            if not unavailable_storages:
-                # All storages are available. We should also clear any previously recorded storage errors.
+            # Get excluded storage names for health monitoring
+            excluded_names = health_persistence.get_excluded_storage_names('health')
+            
+            # Separate excluded storages from real issues
+            excluded_unavailable = [s for s in unavailable_storages if s.get('name', '') in excluded_names]
+            real_unavailable = [s for s in unavailable_storages if s.get('name', '') not in excluded_names]
+            
+            if not real_unavailable:
+                # All non-excluded storages are available. Clear any previously recorded storage errors.
                 active_errors = health_persistence.get_active_errors()
                 for error in active_errors:
                     if error.get('category') == 'storage' and error.get('error_key', '').startswith('storage_unavailable_'):
-                        health_persistence.clear_error(error['error_key'])
+                        # Only clear if not an excluded storage
+                        storage_name = error.get('error_key', '').replace('storage_unavailable_', '')
+                        if storage_name not in excluded_names:
+                            health_persistence.clear_error(error['error_key'])
                 
                 # Build checks from all configured storages for descriptive display
                 available_storages = storage_status.get('available', [])
@@ -4460,12 +4472,24 @@ class HealthMonitor:
                         'status': 'OK',
                         'detail': f'{st_type} storage available'
                     }
+                
+                # Add excluded unavailable storages as INFO (not CRITICAL)
+                for st in excluded_unavailable:
+                    st_name = st.get('name', 'unknown')
+                    st_type = st.get('type', 'unknown')
+                    checks[st_name] = {
+                        'status': 'INFO',
+                        'detail': f'{st_type} storage excluded from monitoring',
+                        'excluded': True
+                    }
+                
                 if not checks:
                     checks['proxmox_storages'] = {'status': 'OK', 'detail': 'All storages available'}
                 return {'status': 'OK', 'checks': checks}
             
             storage_details = {}
-            for storage in unavailable_storages:
+            # Only process non-excluded unavailable storages as errors
+            for storage in real_unavailable:
                 storage_name = storage['name']
                 error_key = f'storage_unavailable_{storage_name}'
                 status_detail = storage.get('status_detail', 'unavailable')
@@ -4508,6 +4532,17 @@ class HealthMonitor:
                     'detail': st_info.get('reason', 'Unavailable'),
                     'dismissable': False
                 }
+            
+            # Add excluded unavailable storages as INFO (not as errors)
+            for st in excluded_unavailable:
+                st_name = st.get('name', 'unknown')
+                st_type = st.get('type', 'unknown')
+                checks[st_name] = {
+                    'status': 'INFO',
+                    'detail': f'{st_type} storage excluded from monitoring (offline)',
+                    'excluded': True
+                }
+            
             # Also add available storages
             available_list = storage_status.get('available', [])
             unavail_names = {s['name'] for s in unavailable_storages}
@@ -4518,12 +4553,21 @@ class HealthMonitor:
                         'detail': f'{st.get("type", "unknown")} storage available'
                     }
             
-            return {
-                'status': 'CRITICAL',
-                'reason': f'{len(unavailable_storages)} Proxmox storage(s) unavailable',
-                'details': storage_details,
-                'checks': checks
-            }
+            # Determine overall status based on non-excluded issues only
+            if real_unavailable:
+                return {
+                    'status': 'CRITICAL',
+                    'reason': f'{len(real_unavailable)} Proxmox storage(s) unavailable',
+                    'details': storage_details,
+                    'checks': checks
+                }
+            else:
+                # Only excluded storages are unavailable - this is OK
+                return {
+                    'status': 'OK',
+                    'reason': 'All monitored storages available',
+                    'checks': checks
+                }
         
         except Exception as e:
             print(f"[HealthMonitor] Error checking Proxmox storage: {e}")

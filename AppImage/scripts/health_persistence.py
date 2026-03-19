@@ -235,6 +235,22 @@ class HealthPersistence:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_obs_disk ON disk_observations(disk_registry_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_obs_dismissed ON disk_observations(dismissed)')
         
+        # ── Remote Storage Exclusions System ──
+        # Allows users to permanently exclude remote storages (PBS, NFS, CIFS, etc.)
+        # from health monitoring and notifications
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS excluded_storages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                storage_name TEXT UNIQUE NOT NULL,
+                storage_type TEXT NOT NULL,
+                excluded_at TEXT NOT NULL,
+                exclude_health INTEGER DEFAULT 1,
+                exclude_notifications INTEGER DEFAULT 1,
+                reason TEXT
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_excluded_storage ON excluded_storages(storage_name)')
+        
         conn.commit()
         conn.close()
     
@@ -1843,6 +1859,173 @@ class HealthPersistence:
         except Exception as e:
             print(f"[HealthPersistence] Error cleaning orphan observations: {e}")
             return 0
+
+
+    # ── Remote Storage Exclusions Methods ──
+    
+    # Types considered "remote" and eligible for exclusion
+    REMOTE_STORAGE_TYPES = {'pbs', 'nfs', 'cifs', 'glusterfs', 'iscsi', 'iscsidirect', 'cephfs', 'rbd'}
+    
+    def is_remote_storage_type(self, storage_type: str) -> bool:
+        """Check if a storage type is considered remote/external."""
+        return storage_type.lower() in self.REMOTE_STORAGE_TYPES
+    
+    def get_excluded_storages(self) -> List[Dict[str, Any]]:
+        """Get list of all excluded remote storages."""
+        try:
+            with self._db_connection(row_factory=True) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT storage_name, storage_type, excluded_at, 
+                           exclude_health, exclude_notifications, reason
+                    FROM excluded_storages
+                ''')
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"[HealthPersistence] Error getting excluded storages: {e}")
+            return []
+    
+    def is_storage_excluded(self, storage_name: str, check_type: str = 'health') -> bool:
+        """
+        Check if a storage is excluded from monitoring.
+        
+        Args:
+            storage_name: Name of the storage
+            check_type: 'health' or 'notifications'
+        
+        Returns:
+            True if storage is excluded for the given check type
+        """
+        try:
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                column = 'exclude_health' if check_type == 'health' else 'exclude_notifications'
+                cursor.execute(f'''
+                    SELECT {column} FROM excluded_storages 
+                    WHERE storage_name = ?
+                ''', (storage_name,))
+                row = cursor.fetchone()
+                return row is not None and row[0] == 1
+        except Exception:
+            return False
+    
+    def exclude_storage(self, storage_name: str, storage_type: str, 
+                       exclude_health: bool = True, exclude_notifications: bool = True,
+                       reason: str = None) -> bool:
+        """
+        Add a storage to the exclusion list.
+        
+        Args:
+            storage_name: Name of the storage to exclude
+            storage_type: Type of storage (pbs, nfs, etc.)
+            exclude_health: Whether to exclude from health monitoring
+            exclude_notifications: Whether to exclude from notifications
+            reason: Optional reason for exclusion
+        
+        Returns:
+            True if successfully excluded
+        """
+        try:
+            now = datetime.now().isoformat()
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO excluded_storages 
+                    (storage_name, storage_type, excluded_at, exclude_health, exclude_notifications, reason)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(storage_name) DO UPDATE SET
+                        exclude_health = excluded.exclude_health,
+                        exclude_notifications = excluded.exclude_notifications,
+                        reason = excluded.reason
+                ''', (storage_name, storage_type, now, 
+                      1 if exclude_health else 0, 
+                      1 if exclude_notifications else 0, 
+                      reason))
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"[HealthPersistence] Error excluding storage: {e}")
+            return False
+    
+    def update_storage_exclusion(self, storage_name: str, 
+                                 exclude_health: Optional[bool] = None,
+                                 exclude_notifications: Optional[bool] = None) -> bool:
+        """
+        Update exclusion settings for a storage.
+        
+        Args:
+            storage_name: Name of the storage
+            exclude_health: New value for health exclusion (None = don't change)
+            exclude_notifications: New value for notifications exclusion (None = don't change)
+        
+        Returns:
+            True if successfully updated
+        """
+        try:
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                
+                updates = []
+                values = []
+                
+                if exclude_health is not None:
+                    updates.append('exclude_health = ?')
+                    values.append(1 if exclude_health else 0)
+                
+                if exclude_notifications is not None:
+                    updates.append('exclude_notifications = ?')
+                    values.append(1 if exclude_notifications else 0)
+                
+                if not updates:
+                    return True
+                
+                values.append(storage_name)
+                cursor.execute(f'''
+                    UPDATE excluded_storages 
+                    SET {', '.join(updates)}
+                    WHERE storage_name = ?
+                ''', values)
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            print(f"[HealthPersistence] Error updating storage exclusion: {e}")
+            return False
+    
+    def remove_storage_exclusion(self, storage_name: str) -> bool:
+        """Remove a storage from the exclusion list."""
+        try:
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    DELETE FROM excluded_storages WHERE storage_name = ?
+                ''', (storage_name,))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            print(f"[HealthPersistence] Error removing storage exclusion: {e}")
+            return False
+    
+    def get_excluded_storage_names(self, check_type: str = 'health') -> set:
+        """
+        Get set of storage names excluded for a specific check type.
+        
+        Args:
+            check_type: 'health' or 'notifications'
+        
+        Returns:
+            Set of excluded storage names
+        """
+        try:
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                column = 'exclude_health' if check_type == 'health' else 'exclude_notifications'
+                cursor.execute(f'''
+                    SELECT storage_name FROM excluded_storages 
+                    WHERE {column} = 1
+                ''')
+                return {row[0] for row in cursor.fetchall()}
+        except Exception:
+            return set()
 
 
 # Global instance
