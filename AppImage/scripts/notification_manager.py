@@ -52,7 +52,18 @@ SETTINGS_PREFIX = 'notification.'
 ENCRYPTION_KEY_FILE = Path('/usr/local/share/proxmenux/.notification_key')
 
 # Keys that contain sensitive data and should be encrypted
-SENSITIVE_KEYS = {'ai_api_key', 'telegram.token', 'gotify.token', 'discord.webhook_url', 'email.password'}
+SENSITIVE_KEYS = {
+    'ai_api_key',  # Legacy - kept for migration
+    'ai_api_key_groq',
+    'ai_api_key_gemini', 
+    'ai_api_key_anthropic',
+    'ai_api_key_openai',
+    'ai_api_key_openrouter',
+    'telegram.token',
+    'gotify.token',
+    'discord.webhook_url',
+    'email.password'
+}
 
 
 # ─── Encryption for Sensitive Data ───────────────────────────────
@@ -718,10 +729,13 @@ class NotificationManager:
         default_event_enabled = 'true' if template.get('default_enabled', True) else 'false'
         
         # Build AI config once (shared across channels, detail_level varies)
+        # Use per-provider API key
+        ai_provider = self._config.get('ai_provider', 'groq')
+        ai_api_key = self._config.get(f'ai_api_key_{ai_provider}', '') or self._config.get('ai_api_key', '')
         ai_config = {
             'ai_enabled': self._config.get('ai_enabled', 'false'),
-            'ai_provider': self._config.get('ai_provider', 'groq'),
-            'ai_api_key': self._config.get('ai_api_key', ''),
+            'ai_provider': ai_provider,
+            'ai_api_key': ai_api_key,
             'ai_model': self._config.get('ai_model', ''),
             'ai_language': self._config.get('ai_language', 'en'),
             'ai_ollama_url': self._config.get('ai_ollama_url', ''),
@@ -1046,11 +1060,13 @@ class NotificationManager:
             message = rendered['body']
             severity = severity or rendered['severity']
         
-        # AI config for enhancement
+        # AI config for enhancement - use per-provider API key
+        ai_provider = self._config.get('ai_provider', 'groq')
+        ai_api_key = self._config.get(f'ai_api_key_{ai_provider}', '') or self._config.get('ai_api_key', '')
         ai_config = {
             'ai_enabled': self._config.get('ai_enabled', 'false'),
-            'ai_provider': self._config.get('ai_provider', 'groq'),
-            'ai_api_key': self._config.get('ai_api_key', ''),
+            'ai_provider': ai_provider,
+            'ai_api_key': ai_api_key,
             'ai_model': self._config.get('ai_model', ''),
             'ai_language': self._config.get('ai_language', 'en'),
             'ai_ollama_url': self._config.get('ai_ollama_url', ''),
@@ -1140,11 +1156,13 @@ class NotificationManager:
             else:
                 return {'success': False, 'error': f'Channel {channel_name} not configured'}
         
-        # AI config for enhancement
+        # AI config for enhancement - use per-provider API key
+        ai_provider = self._config.get('ai_provider', 'groq')
+        ai_api_key = self._config.get(f'ai_api_key_{ai_provider}', '') or self._config.get('ai_api_key', '')
         ai_config = {
             'ai_enabled': self._config.get('ai_enabled', 'false'),
-            'ai_provider': self._config.get('ai_provider', 'groq'),
-            'ai_api_key': self._config.get('ai_api_key', ''),
+            'ai_provider': ai_provider,
+            'ai_api_key': ai_api_key,
             'ai_model': self._config.get('ai_model', ''),
             'ai_language': self._config.get('ai_language', 'en'),
             'ai_ollama_url': self._config.get('ai_ollama_url', ''),
@@ -1153,8 +1171,6 @@ class NotificationManager:
         ai_enabled = self._config.get('ai_enabled', 'false')
         if isinstance(ai_enabled, str):
             ai_enabled = ai_enabled.lower() == 'true'
-        
-        ai_provider = self._config.get('ai_provider', 'groq')
         ai_language = self._config.get('ai_language', 'en')
         
         # ProxMenux logo for welcome message
@@ -1504,6 +1520,42 @@ class NotificationManager:
             except Exception as e:
                 print(f"[NotificationManager] Failed to migrate AI model: {e}")
         
+        # Get per-provider API keys
+        current_provider = self._config.get('ai_provider', 'groq')
+        ai_api_keys = {
+            'groq': self._config.get('ai_api_key_groq', ''),
+            'gemini': self._config.get('ai_api_key_gemini', ''),
+            'anthropic': self._config.get('ai_api_key_anthropic', ''),
+            'openai': self._config.get('ai_api_key_openai', ''),
+            'openrouter': self._config.get('ai_api_key_openrouter', ''),
+        }
+        
+        # Migrate legacy ai_api_key to per-provider key if exists
+        legacy_api_key = self._config.get('ai_api_key', '')
+        if legacy_api_key and not ai_api_keys.get(current_provider):
+            # Migrate legacy key to current provider
+            ai_api_keys[current_provider] = legacy_api_key
+            try:
+                conn = sqlite3.connect(str(DB_PATH), timeout=10)
+                cursor = conn.cursor()
+                # Save migrated key
+                migrated_key = encrypt_sensitive_value(legacy_api_key) if legacy_api_key else ''
+                cursor.execute('''
+                    INSERT OR REPLACE INTO user_settings (setting_key, setting_value, updated_at)
+                    VALUES (?, ?, ?)
+                ''', (f'{SETTINGS_PREFIX}ai_api_key_{current_provider}', migrated_key, datetime.now().isoformat()))
+                # Clear legacy key
+                cursor.execute('''
+                    DELETE FROM user_settings WHERE setting_key = ?
+                ''', (f'{SETTINGS_PREFIX}ai_api_key',))
+                conn.commit()
+                conn.close()
+                self._config[f'ai_api_key_{current_provider}'] = legacy_api_key
+                del self._config['ai_api_key']
+                print(f"[NotificationManager] Migrated legacy API key to {current_provider}")
+            except Exception as e:
+                print(f"[NotificationManager] Failed to migrate legacy API key: {e}")
+        
         config = {
             'enabled': self._enabled,
             'channels': channels,
@@ -1512,8 +1564,8 @@ class NotificationManager:
             'event_types_by_group': event_types_by_group,
             'channel_overrides': channel_overrides,
             'ai_enabled': self._config.get('ai_enabled', 'false') == 'true',
-            'ai_provider': self._config.get('ai_provider', 'groq'),
-            'ai_api_key': self._config.get('ai_api_key', ''),
+            'ai_provider': current_provider,
+            'ai_api_keys': ai_api_keys,
             'ai_model': migrated_model,
             'ai_language': self._config.get('ai_language', 'en'),
             'ai_ollama_url': self._config.get('ai_ollama_url', 'http://localhost:11434'),

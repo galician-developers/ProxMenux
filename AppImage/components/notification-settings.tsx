@@ -57,7 +57,7 @@ interface NotificationConfig {
   channel_overrides: Record<string, ChannelOverrides>
   ai_enabled: boolean
   ai_provider: string
-  ai_api_key: string
+  ai_api_keys: Record<string, string>  // Per-provider API keys
   ai_model: string
   ai_language: string
   ai_ollama_url: string
@@ -208,7 +208,13 @@ const DEFAULT_CONFIG: NotificationConfig = {
   },
   ai_enabled: false,
   ai_provider: "groq",
-  ai_api_key: "",
+  ai_api_keys: {
+    groq: "",
+    gemini: "",
+    anthropic: "",
+    openai: "",
+    openrouter: "",
+  },
   ai_model: "",
   ai_language: "en",
   ai_ollama_url: "http://localhost:11434",
@@ -261,8 +267,19 @@ export function NotificationSettings() {
       const data = await fetchApi<{ success: boolean; config: NotificationConfig }>("/api/notifications/settings")
       if (data.success && data.config) {
         // Backend automatically migrates deprecated AI models to current versions
-        setConfig(data.config)
-        setOriginalConfig(data.config)
+        // Ensure ai_api_keys object exists (fallback for older configs)
+        const configWithKeys = {
+          ...data.config,
+          ai_api_keys: data.config.ai_api_keys || {
+            groq: "",
+            gemini: "",
+            anthropic: "",
+            openai: "",
+            openrouter: "",
+          }
+        }
+        setConfig(configWithKeys)
+        setOriginalConfig(configWithKeys)
       }
     } catch (err) {
       console.error("Failed to load notification settings:", err)
@@ -467,7 +484,6 @@ export function NotificationSettings() {
       enabled: String(cfg.enabled),
       ai_enabled: String(cfg.ai_enabled),
       ai_provider: cfg.ai_provider,
-      ai_api_key: cfg.ai_api_key,
       ai_model: cfg.ai_model,
       ai_language: cfg.ai_language,
       ai_ollama_url: cfg.ai_ollama_url,
@@ -478,6 +494,14 @@ export function NotificationSettings() {
       pbs_host: cfg.pbs_host,
       pve_host: cfg.pve_host,
       pbs_trusted_sources: cfg.pbs_trusted_sources,
+    }
+    // Flatten per-provider API keys
+    if (cfg.ai_api_keys) {
+      for (const [provider, key] of Object.entries(cfg.ai_api_keys)) {
+        if (key) {
+          flat[`ai_api_key_${provider}`] = key
+        }
+      }
     }
     // Flatten channels: { telegram: { enabled, bot_token, chat_id } } -> telegram.enabled, telegram.bot_token, ...
     for (const [chName, chCfg] of Object.entries(cfg.channels)) {
@@ -633,12 +657,18 @@ export function NotificationSettings() {
     setTestingAI(true)
     setAiTestResult(null)
     try {
+      // Get the API key for the current provider
+      const currentApiKey = config.ai_api_keys?.[config.ai_provider] || ""
+      // Get the model from provider config (for non-Ollama providers) or from config for Ollama
+      const providerConfig = AI_PROVIDERS.find(p => p.value === config.ai_provider)
+      const modelToUse = config.ai_provider === 'ollama' ? config.ai_model : (providerConfig?.model || config.ai_model)
+      
       const data = await fetchApi<{ success: boolean; message: string; model: string }>("/api/notifications/test-ai", {
         method: "POST",
         body: JSON.stringify({
           provider: config.ai_provider,
-          api_key: config.ai_api_key,
-          model: config.ai_model,
+          api_key: currentApiKey,
+          model: modelToUse,
           ollama_url: config.ai_ollama_url,
           openai_base_url: config.ai_openai_base_url,
         }),
@@ -1504,14 +1534,20 @@ export function NotificationSettings() {
                             )}
                           </div>
                           <div className="flex items-center gap-2">
-                            <Input
-                              type={showSecrets["ai_key"] ? "text" : "password"}
-                              className="h-9 text-sm font-mono"
-                              placeholder="sk-..."
-                              value={config.ai_api_key}
-                              onChange={e => updateConfig(p => ({ ...p, ai_api_key: e.target.value }))}
-                              disabled={!editMode}
-                            />
+                        <Input
+                          type={showSecrets["ai_key"] ? "text" : "password"}
+                          className="h-9 text-sm font-mono"
+                          placeholder="sk-..."
+                          value={config.ai_api_keys?.[config.ai_provider] || ""}
+                          onChange={e => updateConfig(p => ({ 
+                            ...p, 
+                            ai_api_keys: { 
+                              ...p.ai_api_keys, 
+                              [p.ai_provider]: e.target.value 
+                            } 
+                          }))}
+                          disabled={!editMode}
+                        />
                             <button
                               className="h-9 w-9 flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors shrink-0"
                               onClick={() => toggleSecret("ai_key")}
@@ -1579,7 +1615,7 @@ export function NotificationSettings() {
                       {/* Test Connection button */}
                       <button
                         onClick={handleTestAI}
-                        disabled={!editMode || testingAI || (config.ai_provider !== "ollama" && !config.ai_api_key)}
+                        disabled={!editMode || testingAI || (config.ai_provider !== "ollama" && !config.ai_api_keys?.[config.ai_provider])}
                         className="w-full h-9 flex items-center justify-center gap-2 rounded-md text-sm font-medium bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       >
                         {testingAI ? (
