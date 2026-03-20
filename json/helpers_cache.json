@@ -769,7 +769,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [],
     "config_path": "/opt/wakapi/config.yml",
     "os": "alpine"
@@ -3204,6 +3204,39 @@
     "os": "debian"
   },
   {
+    "name": "degoog",
+    "slug": "degoog",
+    "desc": "Search aggregator that queries multiple engines and supports plugins, themes, and extension repositories.",
+    "script": "ct/degoog.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/degoog.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/degoog.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00000"
+    ],
+    "category_names": [
+      "Miscellaneous"
+    ],
+    "notes": [
+      "Project is currently marked beta upstream and not intended for production use yet.",
+      "Add extension store repositories in Settings after first start (official repo: https://github.com/fccview/fccview-degoog-extensions)."
+    ],
+    "port": 4444,
+    "website": "https://github.com/fccview/degoog",
+    "documentation": "https://fccview.github.io/degoog/",
+    "logo": "https://raw.githubusercontent.com/fccview/degoog/main/src/public/images/degoog-logo.png",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "/opt/degoog/.env",
+    "os": "debian"
+  },
+  {
     "name": "Deluge",
     "slug": "deluge",
     "desc": "Deluge is a free, open-source, lightweight BitTorrent client. It supports various platforms including Windows, Linux, and macOS, and offers features such as peer exchange, DHT, and magnet links.",
@@ -3312,14 +3345,14 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00023"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Finance & Budgeting"
     ],
     "notes": [
       "Minimum 4GB RAM and 4 CPU cores recommended for production use.",
-      "Admin user is created with username 'admin'. Set password in first login.",
+      "Admin credentials are saved in `/root/discourse.creds` inside the container.",
       "Configure SMTP settings in admin panel for email notifications."
     ],
     "port": 80,
@@ -3331,12 +3364,12 @@
     "has_arm": false,
     "is_dev": true,
     "execute_in": [
-      "pve"
+      "lxc"
     ],
     "config_path": "/opt/discourse/.env",
     "default_credentials": {
       "username": "admin",
-      "password": ""
+      "password": "ChangeMe12345678"
     },
     "os": "debian"
   },
@@ -4759,7 +4792,7 @@
     ],
     "notes": [
       "Execute within the Proxmox shell",
-      "This is designed to work with SSDs on ext4 filesystems only."
+      "This is designed to work with SSDs / Thin Provisioned storage only."
     ],
     "port": 0,
     "website": "",
@@ -5314,7 +5347,7 @@
     "is_dev": false,
     "execute_in": [],
     "config_path": "/opt/gluetun-data/.env",
-    "os": ""
+    "os": "debian"
   },
   {
     "name": "go2rtc",
@@ -6280,7 +6313,7 @@
     "has_arm": false,
     "is_dev": true,
     "execute_in": [
-      "pve"
+      "lxc"
     ],
     "config_path": "/opt/igotify/.env",
     "os": "debian"
@@ -6641,7 +6674,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "pve"
     ],
@@ -9383,6 +9416,41 @@
       "pve"
     ],
     "config_path": "/etc/netbird/config.json",
+    "os": "debian"
+  },
+  {
+    "name": "netboot.xyz",
+    "slug": "netboot-xyz",
+    "desc": "netboot.xyz is a network boot utility that lets you boot into any type of operating system or utility disk directly from a BIOS/UEFI, without needing a physical boot media. It uses iPXE to present a user-friendly menu of operating systems and tools.",
+    "script": "ct/netboot-xyz.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/netboot-xyz.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/netboot-xyz.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00004"
+    ],
+    "category_names": [
+      "Network & Firewall"
+    ],
+    "notes": [
+      "Configure your DHCP server: set `next-server` to the container IP, and `boot-filename` to `netboot.xyz.efi` (UEFI) or `netboot.xyz.kpxe` (BIOS/legacy).",
+      "For UEFI HTTP boot (no DHCP changes required), load the bootloader directly from your firmware: `http://IP/netboot.xyz.efi`.",
+      "Customize menus by editing `/var/www/html/boot.cfg`. Changes are picked up immediately — no service restart needed.",
+      "TFTP is available on port 69/UDP and HTTP on port 80, both serving from `/var/www/html`."
+    ],
+    "port": 80,
+    "website": "https://netboot.xyz/",
+    "documentation": "https://netboot.xyz/docs/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/netboot-xyz.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "/var/www/html/boot.cfg",
     "os": "debian"
   },
   {
@@ -14116,7 +14184,8 @@
       "Authentication & Security"
     ],
     "notes": [
-      "After installation, update EMAIL_DOMAIN in /opt/simplelogin/.env with your actual domain and configure DNS (MX, SPF, DKIM) accordingly.",
+      "After installation, update EMAIL_DOMAIN and URL in /opt/simplelogin/.env with your actual domain and configure DNS (MX, SPF, DKIM) accordingly.",
+      "A working SMTP setup (Postfix + valid domain/DNS) is required. Registration sends an activation email that must be delivered.",
       "DKIM keys are generated at /opt/simplelogin/dkim/. Add the public key as a TXT record: dkim._domainkey.yourdomain.com",
       "Create your first admin account by visiting the web interface and registering."
     ],
@@ -14129,7 +14198,7 @@
     "has_arm": false,
     "is_dev": true,
     "execute_in": [
-      "pve"
+      "lxc"
     ],
     "config_path": "/opt/simplelogin/.env",
     "os": "debian"
@@ -15960,7 +16029,7 @@
     "has_arm": false,
     "is_dev": true,
     "execute_in": [
-      "pve"
+      "lxc"
     ],
     "config_path": "/opt/twenty/.env",
     "os": "debian"
@@ -16829,18 +16898,24 @@
     "category_names": [
       "Files & Downloads"
     ],
-    "notes": [],
+    "notes": [
+      "S3 access credentials are generated during installation and stored in /etc/versitygw.d/gateway.conf",
+      "Data is stored in /opt/versitygw-data (POSIX backend)",
+      "Use any S3-compatible client to connect to the gateway endpoint"
+    ],
     "port": 7070,
     "website": "https://www.versity.com/",
     "documentation": "https://github.com/versity/versitygw/wiki",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/versity.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/versitygw.webp",
     "updateable": true,
     "privileged": false,
     "has_arm": false,
     "is_dev": true,
-    "execute_in": [],
+    "execute_in": [
+      "lxc"
+    ],
     "config_path": "/etc/versitygw.d/gateway.conf",
-    "os": ""
+    "os": "debian"
   },
   {
     "name": "VictoriaMetrics",
