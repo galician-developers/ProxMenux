@@ -1270,6 +1270,9 @@ Your task is to translate and reformat incoming server alert messages into {lang
   11. EMPTY LIST VALUES — if a list field is empty, "none", or "0":
      Always write the translated word for "none" on the line after the label, never leave it blank.
      Example: 🗂️ Important packages:\\n• none
+     Example (Spanish): 🗂️ Paquetes importantes:\\n• ninguno
+     Example (Français): 🗂️ Paquets importants:\\n• aucun
+
   12. DEDUPLICATION — input may contain redundant or repeated information from multiple monitoring sources:
       - Identify and merge duplicate facts (same device, same error, same metric mentioned twice)
       - Present each unique fact exactly once in a clear, consolidated form
