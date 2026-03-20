@@ -1692,7 +1692,14 @@ class NotificationManager:
             verified_models = []
             recommended_model = ''
             try:
-                config_path = Path(__file__).parent.parent / 'config' / 'verified_ai_models.json'
+                # Try AppImage path first (scripts and config both in /usr/bin/)
+                script_dir = Path(__file__).parent
+                config_path = script_dir / 'config' / 'verified_ai_models.json'
+                
+                if not config_path.exists():
+                    # Try development path (AppImage/scripts/ -> AppImage/config/)
+                    config_path = script_dir.parent / 'config' / 'verified_ai_models.json'
+                
                 if config_path.exists():
                     with open(config_path, 'r') as f:
                         verified_config = json.load(f)

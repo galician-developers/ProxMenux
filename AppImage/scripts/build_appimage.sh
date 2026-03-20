@@ -110,6 +110,17 @@ else
     echo "⚠️  ai_providers directory not found"
 fi
 
+# Copy config files (verified AI models, etc.)
+echo "📋 Copying config files..."
+CONFIG_DIR="$APPIMAGE_ROOT/config"
+if [ -d "$CONFIG_DIR" ]; then
+    mkdir -p "$APP_DIR/usr/bin/config"
+    cp "$CONFIG_DIR/"*.json "$APP_DIR/usr/bin/config/" 2>/dev/null || true
+    echo "✅ Config files copied"
+else
+    echo "⚠️  config directory not found"
+fi
+
 echo "📋 Adding translation support..."
 cat > "$APP_DIR/usr/bin/translate_cli.py" << 'PYEOF'
 #!/usr/bin/env python3

@@ -104,12 +104,26 @@ def test_notification():
 
 
 def load_verified_models():
-    """Load verified models from config file."""
+    """Load verified models from config file.
+    
+    Checks multiple paths:
+    1. Same directory as script (AppImage: /usr/bin/config/)
+    2. Parent directory config folder (dev: AppImage/config/)
+    """
     try:
-        config_path = Path(__file__).parent.parent / 'config' / 'verified_ai_models.json'
+        # Try AppImage path first (scripts and config both in /usr/bin/)
+        script_dir = Path(__file__).parent
+        config_path = script_dir / 'config' / 'verified_ai_models.json'
+        
+        if not config_path.exists():
+            # Try development path (AppImage/scripts/ -> AppImage/config/)
+            config_path = script_dir.parent / 'config' / 'verified_ai_models.json'
+        
         if config_path.exists():
             with open(config_path, 'r') as f:
                 return json.load(f)
+        else:
+            print(f"[flask_notification_routes] Config not found at {config_path}")
     except Exception as e:
         print(f"[flask_notification_routes] Failed to load verified models: {e}")
     return {}
