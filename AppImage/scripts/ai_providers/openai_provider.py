@@ -27,11 +27,29 @@ class OpenAIProvider(AIProvider):
     DEFAULT_API_URL = "https://api.openai.com/v1/chat/completions"
     DEFAULT_MODELS_URL = "https://api.openai.com/v1/models"
     
+    # Models to exclude (not suitable for chat/text generation)
+    EXCLUDED_PATTERNS = [
+        'embedding', 'whisper', 'tts', 'dall-e', 'image',
+        'instruct', 'realtime', 'audio', 'moderation',
+        'search', 'code-search', 'text-similarity', 'babbage', 'davinci',
+        'curie', 'ada', 'transcribe'
+    ]
+    
+    # Recommended models for chat (in priority order)
+    RECOMMENDED_PREFIXES = ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-4', 'gpt-3.5-turbo']
+    
     def list_models(self) -> List[str]:
-        """List available OpenAI models.
+        """List available OpenAI models for chat completions.
+        
+        Filters to only chat-capable models, excluding:
+        - Embedding models
+        - Audio/speech models (whisper, tts)
+        - Image models (dall-e)
+        - Instruct models (different API)
+        - Legacy models (babbage, davinci, etc.)
         
         Returns:
-            List of model IDs available for chat completions.
+            List of model IDs suitable for chat completions.
         """
         if not self.api_key:
             return []
@@ -58,11 +76,30 @@ class OpenAIProvider(AIProvider):
             models = []
             for model in data.get('data', []):
                 model_id = model.get('id', '')
-                # Filter to chat models only (skip embeddings, etc.)
-                if model_id and ('gpt' in model_id.lower() or 'turbo' in model_id.lower()):
-                    models.append(model_id)
+                if not model_id:
+                    continue
+                
+                model_lower = model_id.lower()
+                
+                # Must be a GPT model
+                if 'gpt' not in model_lower:
+                    continue
+                
+                # Exclude non-chat models
+                if any(pattern in model_lower for pattern in self.EXCLUDED_PATTERNS):
+                    continue
+                
+                models.append(model_id)
             
-            return models
+            # Sort with recommended models first
+            def sort_key(m):
+                m_lower = m.lower()
+                for i, prefix in enumerate(self.RECOMMENDED_PREFIXES):
+                    if m_lower.startswith(prefix):
+                        return (i, m)
+                return (len(self.RECOMMENDED_PREFIXES), m)
+            
+            return sorted(models, key=sort_key)
         except Exception as e:
             print(f"[OpenAIProvider] Failed to list models: {e}")
             return []

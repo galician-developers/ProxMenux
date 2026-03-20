@@ -19,12 +19,23 @@ class OpenRouterProvider(AIProvider):
     API_URL = "https://openrouter.ai/api/v1/chat/completions"
     MODELS_URL = "https://openrouter.ai/api/v1/models"
     
+    # Exclude non-text models  
+    EXCLUDED_PATTERNS = ['image', 'vision', 'audio', 'video', 'embedding', 'moderation']
+    
+    # Recommended model prefixes (popular, reliable, good for notifications)
+    RECOMMENDED_PREFIXES = [
+        'meta-llama/llama-3', 'anthropic/claude', 'google/gemini',
+        'openai/gpt', 'mistralai/mistral', 'mistralai/mixtral'
+    ]
+    
     def list_models(self) -> List[str]:
-        """List available OpenRouter models.
+        """List available OpenRouter models for chat completions.
+        
+        OpenRouter has 300+ models. This filters to text generation models
+        and prioritizes popular, reliable options.
         
         Returns:
-            List of model IDs available. OpenRouter has 100+ models,
-            this returns only the most popular free/low-cost options.
+            List of model IDs suitable for text generation.
         """
         if not self.api_key:
             return []
@@ -42,10 +53,26 @@ class OpenRouterProvider(AIProvider):
             models = []
             for model in data.get('data', []):
                 model_id = model.get('id', '')
-                if model_id:
-                    models.append(model_id)
+                if not model_id:
+                    continue
+                
+                model_lower = model_id.lower()
+                
+                # Exclude non-text models
+                if any(pattern in model_lower for pattern in self.EXCLUDED_PATTERNS):
+                    continue
+                
+                models.append(model_id)
             
-            return models
+            # Sort with recommended models first
+            def sort_key(m):
+                m_lower = m.lower()
+                for i, prefix in enumerate(self.RECOMMENDED_PREFIXES):
+                    if m_lower.startswith(prefix):
+                        return (i, m)
+                return (len(self.RECOMMENDED_PREFIXES), m)
+            
+            return sorted(models, key=sort_key)
         except Exception as e:
             print(f"[OpenRouterProvider] Failed to list models: {e}")
             return []

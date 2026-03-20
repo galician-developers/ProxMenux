@@ -58,7 +58,8 @@ interface NotificationConfig {
   ai_enabled: boolean
   ai_provider: string
   ai_api_keys: Record<string, string>  // Per-provider API keys
-  ai_model: string
+  ai_models: Record<string, string>    // Per-provider selected models
+  ai_model: string                     // Current active model (for the selected provider)
   ai_language: string
   ai_ollama_url: string
   ai_openai_base_url: string
@@ -209,6 +210,14 @@ const DEFAULT_CONFIG: NotificationConfig = {
     openai: "",
     openrouter: "",
   },
+  ai_models: {
+    groq: "",
+    ollama: "",
+    gemini: "",
+    anthropic: "",
+    openai: "",
+    openrouter: "",
+  },
   ai_model: "",
   ai_language: "en",
   ai_ollama_url: "http://localhost:11434",
@@ -260,20 +269,32 @@ export function NotificationSettings() {
     try {
       const data = await fetchApi<{ success: boolean; config: NotificationConfig }>("/api/notifications/settings")
       if (data.success && data.config) {
-        // Backend automatically migrates deprecated AI models to current versions
-        // Ensure ai_api_keys object exists (fallback for older configs)
-        const configWithKeys = {
+        // Ensure ai_api_keys and ai_models objects exist (fallback for older configs)
+        const configWithDefaults = {
           ...data.config,
           ai_api_keys: data.config.ai_api_keys || {
             groq: "",
+            ollama: "",
+            gemini: "",
+            anthropic: "",
+            openai: "",
+            openrouter: "",
+          },
+          ai_models: data.config.ai_models || {
+            groq: "",
+            ollama: "",
             gemini: "",
             anthropic: "",
             openai: "",
             openrouter: "",
           }
         }
-        setConfig(configWithKeys)
-        setOriginalConfig(configWithKeys)
+        // If ai_model exists but ai_models doesn't have it, save it
+        if (configWithDefaults.ai_model && !configWithDefaults.ai_models[configWithDefaults.ai_provider]) {
+          configWithDefaults.ai_models[configWithDefaults.ai_provider] = configWithDefaults.ai_model
+        }
+        setConfig(configWithDefaults)
+        setOriginalConfig(configWithDefaults)
       }
     } catch (err) {
       console.error("Failed to load notification settings:", err)
@@ -494,6 +515,14 @@ export function NotificationSettings() {
       for (const [provider, key] of Object.entries(cfg.ai_api_keys)) {
         if (key) {
           flat[`ai_api_key_${provider}`] = key
+        }
+      }
+    }
+    // Flatten per-provider selected models
+    if (cfg.ai_models) {
+      for (const [provider, model] of Object.entries(cfg.ai_models)) {
+        if (model) {
+          flat[`ai_model_${provider}`] = model
         }
       }
     }
@@ -1452,10 +1481,23 @@ export function NotificationSettings() {
                         <Select
                           value={config.ai_provider}
                           onValueChange={v => {
-                            // When changing provider, clear model and models list
-                            // User will need to click "Load" to fetch available models
-                            updateConfig(p => ({ ...p, ai_provider: v, ai_model: '' }))
-                            setProviderModels([])
+                            // Save current model for current provider before switching
+                            const currentProvider = config.ai_provider
+                            const currentModel = config.ai_model
+                            
+                            // Restore previously saved model for the new provider (if any)
+                            const savedModel = config.ai_models?.[v] || ''
+                            
+                            updateConfig(p => ({ 
+                              ...p, 
+                              ai_provider: v, 
+                              ai_model: savedModel,
+                              ai_models: {
+                                ...p.ai_models,
+                                [currentProvider]: currentModel  // Save old provider's model
+                              }
+                            }))
+                            setProviderModels([])  // Clear loaded models list
                           }}
                           disabled={!editMode}
                         >
@@ -1551,7 +1593,11 @@ export function NotificationSettings() {
                         <div className="flex items-center gap-2">
                           <Select
                             value={config.ai_model || ""}
-                            onValueChange={v => updateConfig(p => ({ ...p, ai_model: v }))}
+                            onValueChange={v => updateConfig(p => ({ 
+                              ...p, 
+                              ai_model: v,
+                              ai_models: { ...p.ai_models, [p.ai_provider]: v }  // Also save per-provider
+                            }))}
                             disabled={!editMode || loadingProviderModels || providerModels.length === 0}
                           >
                             <SelectTrigger className="h-9 text-sm font-mono flex-1">

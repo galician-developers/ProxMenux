@@ -18,11 +18,19 @@ class GroqProvider(AIProvider):
     API_URL = "https://api.groq.com/openai/v1/chat/completions"
     MODELS_URL = "https://api.groq.com/openai/v1/models"
     
+    # Exclude non-chat models
+    EXCLUDED_PATTERNS = ['whisper', 'tts', 'guard', 'tool-use']
+    
+    # Recommended models (in priority order - versatile/large models first)
+    RECOMMENDED_PREFIXES = ['llama-3.3', 'llama-3.1-70b', 'llama-3.1-8b', 'mixtral', 'gemma']
+    
     def list_models(self) -> List[str]:
-        """List available Groq models.
+        """List available Groq models for chat completions.
+        
+        Filters out non-chat models (whisper, guard, etc.)
         
         Returns:
-            List of model IDs available for chat completions.
+            List of model IDs suitable for chat completions.
         """
         if not self.api_key:
             return []
@@ -40,10 +48,26 @@ class GroqProvider(AIProvider):
             models = []
             for model in data.get('data', []):
                 model_id = model.get('id', '')
-                if model_id:
-                    models.append(model_id)
+                if not model_id:
+                    continue
+                
+                model_lower = model_id.lower()
+                
+                # Exclude non-chat models
+                if any(pattern in model_lower for pattern in self.EXCLUDED_PATTERNS):
+                    continue
+                
+                models.append(model_id)
             
-            return models
+            # Sort with recommended models first
+            def sort_key(m):
+                m_lower = m.lower()
+                for i, prefix in enumerate(self.RECOMMENDED_PREFIXES):
+                    if m_lower.startswith(prefix):
+                        return (i, m)
+                return (len(self.RECOMMENDED_PREFIXES), m)
+            
+            return sorted(models, key=sort_key)
         except Exception as e:
             print(f"[GroqProvider] Failed to list models: {e}")
             return []

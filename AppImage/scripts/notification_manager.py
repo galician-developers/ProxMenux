@@ -1501,10 +1501,21 @@ class NotificationManager:
         current_provider = self._config.get('ai_provider', 'groq')
         ai_api_keys = {
             'groq': self._config.get('ai_api_key_groq', ''),
+            'ollama': '',  # Ollama doesn't need API key
             'gemini': self._config.get('ai_api_key_gemini', ''),
             'anthropic': self._config.get('ai_api_key_anthropic', ''),
             'openai': self._config.get('ai_api_key_openai', ''),
             'openrouter': self._config.get('ai_api_key_openrouter', ''),
+        }
+        
+        # Get per-provider selected models
+        ai_models = {
+            'groq': self._config.get('ai_model_groq', ''),
+            'ollama': self._config.get('ai_model_ollama', ''),
+            'gemini': self._config.get('ai_model_gemini', ''),
+            'anthropic': self._config.get('ai_model_anthropic', ''),
+            'openai': self._config.get('ai_model_openai', ''),
+            'openrouter': self._config.get('ai_model_openrouter', ''),
         }
         
         # Migrate legacy ai_api_key to per-provider key if exists
@@ -1543,6 +1554,7 @@ class NotificationManager:
             'ai_enabled': self._config.get('ai_enabled', 'false') == 'true',
             'ai_provider': current_provider,
             'ai_api_keys': ai_api_keys,
+            'ai_models': ai_models,
             'ai_model': self._config.get('ai_model', ''),
             'ai_language': self._config.get('ai_language', 'en'),
             'ai_ollama_url': self._config.get('ai_ollama_url', 'http://localhost:11434'),

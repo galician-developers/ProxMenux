@@ -17,8 +17,21 @@ class GeminiProvider(AIProvider):
     REQUIRES_API_KEY = True
     API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
     
+    # Patterns to exclude from model list (experimental, preview, specialized)
+    EXCLUDED_PATTERNS = [
+        'preview', 'exp', 'experimental', 'computer-use', 
+        'deep-research', 'image', 'embedding', 'aqa', 'tts',
+        'learnlm', 'imagen', 'veo'
+    ]
+    
     def list_models(self) -> List[str]:
         """List available Gemini models that support generateContent.
+        
+        Filters to only stable text generation models, excluding:
+        - Preview/experimental models
+        - Image generation models
+        - Embedding models
+        - Specialized models (computer-use, deep-research, etc.)
         
         Returns:
             List of model IDs available for text generation.
@@ -44,10 +57,28 @@ class GeminiProvider(AIProvider):
                 
                 # Only include models that support generateContent
                 supported_methods = model.get('supportedGenerationMethods', [])
-                if 'generateContent' in supported_methods:
-                    models.append(model_id)
+                if 'generateContent' not in supported_methods:
+                    continue
+                
+                # Exclude experimental, preview, and specialized models
+                model_lower = model_id.lower()
+                if any(pattern in model_lower for pattern in self.EXCLUDED_PATTERNS):
+                    continue
+                
+                models.append(model_id)
             
-            return models
+            # Sort with recommended models first (flash-lite, flash, pro)
+            def sort_key(m):
+                m_lower = m.lower()
+                if 'flash-lite' in m_lower:
+                    return (0, m)  # Best for notifications (fast, cheap)
+                if 'flash' in m_lower:
+                    return (1, m)
+                if 'pro' in m_lower:
+                    return (2, m)
+                return (3, m)
+            
+            return sorted(models, key=sort_key)
         except Exception as e:
             print(f"[GeminiProvider] Failed to list models: {e}")
             return []
