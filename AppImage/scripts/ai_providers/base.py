@@ -1,6 +1,6 @@
 """Base class for AI providers."""
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 
 class AIProviderError(Exception):
@@ -17,7 +17,6 @@ class AIProvider(ABC):
     
     # Provider metadata (override in subclasses)
     NAME = "base"
-    DEFAULT_MODEL = ""
     REQUIRES_API_KEY = True
     
     def __init__(self, api_key: str = "", model: str = "", base_url: str = ""):
@@ -25,11 +24,11 @@ class AIProvider(ABC):
         
         Args:
             api_key: API key for authentication (not required for local providers)
-            model: Model name to use (defaults to DEFAULT_MODEL if empty)
+            model: Model name to use (required - user selects from loaded models)
             base_url: Base URL for API calls (used by Ollama and custom endpoints)
         """
         self.api_key = api_key
-        self.model = model or self.DEFAULT_MODEL
+        self.model = model  # Model must be provided by user after loading from provider
         self.base_url = base_url
     
     @abstractmethod
@@ -99,6 +98,39 @@ class AIProvider(ABC):
                 'message': f'Unexpected error: {str(e)}',
                 'model': self.model
             }
+    
+    def list_models(self) -> List[str]:
+        """List available models from the provider.
+        
+        Returns:
+            List of model IDs available for use.
+            Returns empty list if the provider doesn't support listing.
+        """
+        # Default implementation - subclasses should override
+        return []
+    
+    def get_recommended_model(self) -> str:
+        """Get the recommended model for this provider.
+        
+        Checks if the current model is available. If not, returns
+        the first available model from the provider's model list.
+        This is fully dynamic - no hardcoded fallback models.
+        
+        Returns:
+            Recommended model ID, or empty string if no models available
+        """
+        available = self.list_models()
+        if not available:
+            # Can't get model list - keep current model and hope it works
+            return self.model
+        
+        # Check if current model is available
+        if self.model and self.model in available:
+            return self.model
+        
+        # Current model not available - return first available model
+        # Models are typically sorted, so first one is usually a good default
+        return available[0]
     
     def _make_request(self, url: str, payload: dict, headers: dict, 
                       timeout: int = 15) -> dict:

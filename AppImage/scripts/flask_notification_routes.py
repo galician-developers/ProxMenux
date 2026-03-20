@@ -102,50 +102,101 @@ def test_notification():
         return jsonify({'error': str(e)}), 500
 
 
-@notification_bp.route('/api/notifications/ollama-models', methods=['POST'])
-def get_ollama_models():
-    """Fetch available models from an Ollama server.
+@notification_bp.route('/api/notifications/provider-models', methods=['POST'])
+def get_provider_models():
+    """Fetch available models from any AI provider.
     
     Request body:
         {
-            "ollama_url": "http://localhost:11434"
+            "provider": "gemini|groq|openai|openrouter|ollama|anthropic",
+            "api_key": "your-api-key",  // Not needed for ollama
+            "ollama_url": "http://localhost:11434",  // Only for ollama
+            "openai_base_url": "https://custom.endpoint/v1"  // Optional for openai
         }
     
     Returns:
         {
             "success": true/false,
             "models": ["model1", "model2", ...],
-            "message": "error message if failed"
+            "message": "status message"
         }
     """
     try:
-        import urllib.request
-        import urllib.error
-        
         data = request.get_json() or {}
+        provider = data.get('provider', '')
+        api_key = data.get('api_key', '')
         ollama_url = data.get('ollama_url', 'http://localhost:11434')
+        openai_base_url = data.get('openai_base_url', '')
         
-        url = f"{ollama_url.rstrip('/')}/api/tags"
-        req = urllib.request.Request(url, method='GET')
-        req.add_header('User-Agent', 'ProxMenux-Monitor/1.1')
+        if not provider:
+            return jsonify({'success': False, 'models': [], 'message': 'Provider not specified'})
         
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            result = json.loads(resp.read().decode('utf-8'))
-            # Keep full model names (including tags like :latest, :3b-instruct-q4_0)
-            models = [m.get('name', '') for m in result.get('models', []) if m.get('name')]
-            # Sort alphabetically
-            models = sorted(models)
+        # Handle Ollama separately (local, no API key)
+        if provider == 'ollama':
+            import urllib.request
+            import urllib.error
+            
+            url = f"{ollama_url.rstrip('/')}/api/tags"
+            req = urllib.request.Request(url, method='GET')
+            req.add_header('User-Agent', 'ProxMenux-Monitor/1.1')
+            
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                result = json.loads(resp.read().decode('utf-8'))
+                models = [m.get('name', '') for m in result.get('models', []) if m.get('name')]
+                models = sorted(models)
+                return jsonify({
+                    'success': True,
+                    'models': models,
+                    'message': f'Found {len(models)} models'
+                })
+        
+        # Handle Anthropic - no models list API, return known models
+        if provider == 'anthropic':
+            # Anthropic doesn't have a models list endpoint
+            # Return the known stable aliases that auto-update
+            models = [
+                'claude-3-5-haiku-latest',
+                'claude-3-5-sonnet-latest',
+                'claude-3-opus-latest',
+            ]
             return jsonify({
                 'success': True,
                 'models': models,
-                'message': f'Found {len(models)} models'
+                'message': 'Anthropic uses stable aliases that auto-update'
             })
-    except urllib.error.URLError as e:
+        
+        # For other providers, use the provider's list_models method
+        if not api_key:
+            return jsonify({'success': False, 'models': [], 'message': 'API key required'})
+        
+        from ai_providers import get_provider
+        ai_provider = get_provider(
+            provider, 
+            api_key=api_key, 
+            model='', 
+            base_url=openai_base_url if provider == 'openai' else None
+        )
+        
+        if not ai_provider:
+            return jsonify({'success': False, 'models': [], 'message': f'Unknown provider: {provider}'})
+        
+        models = ai_provider.list_models()
+        
+        if not models:
+            return jsonify({
+                'success': False, 
+                'models': [], 
+                'message': 'Could not retrieve models. Check your API key.'
+            })
+        
+        # Sort and return
+        models = sorted(models)
         return jsonify({
-            'success': False,
-            'models': [],
-            'message': f'Cannot connect to Ollama: {str(e.reason)}'
+            'success': True,
+            'models': models,
+            'message': f'Found {len(models)} models'
         })
+        
     except Exception as e:
         return jsonify({
             'success': False,

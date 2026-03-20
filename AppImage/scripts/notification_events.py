@@ -1664,6 +1664,8 @@ class PollingCollector:
         'vms': 'system_problem',
     }
     
+    AI_MODEL_CHECK_INTERVAL = 86400  # 24h between AI model availability checks
+    
     def __init__(self, event_queue: Queue, poll_interval: int = 60):
         self._queue = event_queue
         self._running = False
@@ -1671,6 +1673,7 @@ class PollingCollector:
         self._poll_interval = poll_interval
         self._hostname = _hostname()
         self._last_update_check = 0
+        self._last_ai_model_check = 0
         # In-memory cache: error_key -> last notification timestamp
         self._last_notified: Dict[str, float] = {}
         # Track known error keys + metadata so we can detect new ones AND emit recovery
@@ -1704,6 +1707,7 @@ class PollingCollector:
             try:
                 self._check_persistent_health()
                 self._check_updates()
+                self._check_ai_model_availability()
             except Exception as e:
                 print(f"[PollingCollector] Error: {e}")
             
@@ -2132,6 +2136,48 @@ class PollingCollector:
                 ))
         except Exception:
             pass
+    
+    # ── AI Model availability check ────────────────────────────
+    
+    def _check_ai_model_availability(self):
+        """Check if configured AI model is still available (every 24h).
+        
+        If the model has been deprecated by the provider, automatically
+        migrates to the best available fallback and notifies the admin.
+        """
+        now = time.time()
+        if now - self._last_ai_model_check < self.AI_MODEL_CHECK_INTERVAL:
+            return
+        
+        self._last_ai_model_check = now
+        
+        try:
+            from notification_manager import notification_manager
+            result = notification_manager.verify_and_update_ai_model()
+            
+            if result.get('migrated'):
+                # Model was deprecated and migrated - notify admin
+                old_model = result.get('old_model', 'unknown')
+                new_model = result.get('new_model', 'unknown')
+                
+                event_data = {
+                    'old_model': old_model,
+                    'new_model': new_model,
+                    'provider': notification_manager._config.get('ai_provider', 'unknown'),
+                    'message': f"AI model '{old_model}' is no longer available. Automatically migrated to '{new_model}'.",
+                }
+                
+                self._queue.put(NotificationEvent(
+                    'ai_model_migrated', 'WARNING', event_data,
+                    source='polling', entity='ai', entity_id='model',
+                ))
+                
+                print(f"[PollingCollector] AI model migrated: {old_model} -> {new_model}")
+                
+        except ImportError:
+            pass
+        except Exception as e:
+            print(f"[PollingCollector] AI model check failed: {e}")
     
     # ── Persistence helpers ────────────────────────────────────
     

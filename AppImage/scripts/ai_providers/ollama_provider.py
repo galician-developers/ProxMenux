@@ -11,7 +11,6 @@ class OllamaProvider(AIProvider):
     """Ollama provider for local AI execution."""
     
     NAME = "ollama"
-    DEFAULT_MODEL = "llama3.2"
     REQUIRES_API_KEY = False
     DEFAULT_URL = "http://localhost:11434"
     
@@ -20,7 +19,7 @@ class OllamaProvider(AIProvider):
         
         Args:
             api_key: Not used for Ollama (local execution)
-            model: Model name (default: llama3.2)
+            model: Model name (user must select from loaded models)
             base_url: Ollama server URL (default: http://localhost:11434)
         """
         super().__init__(api_key, model, base_url)

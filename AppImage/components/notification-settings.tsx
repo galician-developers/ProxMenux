@@ -111,7 +111,6 @@ const AI_PROVIDERS = [
   { 
     value: "groq", 
     label: "Groq",
-    model: "llama-3.3-70b-versatile",
     description: "Very fast, generous free tier (30 req/min). Ideal to start.",
     keyUrl: "https://console.groq.com/keys",
     icon: "/icons/Groq Logo_White 25.svg",
@@ -120,7 +119,6 @@ const AI_PROVIDERS = [
   { 
     value: "openai", 
     label: "OpenAI",
-    model: "gpt-4o-mini",
     description: "Industry standard. Very accurate and widely used.",
     keyUrl: "https://platform.openai.com/api-keys",
     icon: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/openai.webp",
@@ -129,7 +127,6 @@ const AI_PROVIDERS = [
   { 
     value: "anthropic", 
     label: "Anthropic (Claude)",
-    model: "claude-3-5-haiku-latest",
     description: "Excellent for writing and translation. Fast and economical.",
     keyUrl: "https://console.anthropic.com/settings/keys",
     icon: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/claude-light.webp",
@@ -138,7 +135,6 @@ const AI_PROVIDERS = [
   { 
     value: "gemini", 
     label: "Google Gemini",
-    model: "gemini-2.0-flash",
     description: "Free tier available, great quality/price ratio.",
     keyUrl: "https://aistudio.google.com/app/apikey",
     icon: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/google-gemini.webp",
@@ -147,7 +143,6 @@ const AI_PROVIDERS = [
   { 
     value: "ollama", 
     label: "Ollama (Local)",
-    model: "",
     description: "Uses models available on your Ollama server. 100% local, no costs, total privacy.",
     keyUrl: "",
     icon: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/ollama.webp",
@@ -156,7 +151,6 @@ const AI_PROVIDERS = [
   { 
     value: "openrouter", 
     label: "OpenRouter",
-    model: "meta-llama/llama-3.3-70b-instruct",
     description: "Aggregator with access to 100+ models using a single API key. Maximum flexibility.",
     keyUrl: "https://openrouter.ai/keys",
     icon: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/openrouter-light.webp",
@@ -254,8 +248,8 @@ export function NotificationSettings() {
   const [showTelegramHelp, setShowTelegramHelp] = useState(false)
   const [testingAI, setTestingAI] = useState(false)
   const [aiTestResult, setAiTestResult] = useState<{ success: boolean; message: string; model?: string } | null>(null)
-  const [ollamaModels, setOllamaModels] = useState<string[]>([])
-  const [loadingOllamaModels, setLoadingOllamaModels] = useState(false)
+  const [providerModels, setProviderModels] = useState<string[]>([])
+  const [loadingProviderModels, setLoadingProviderModels] = useState(false)
   const [webhookSetup, setWebhookSetup] = useState<{
     status: "idle" | "running" | "success" | "failed"
     fallback_commands: string[]
@@ -622,17 +616,32 @@ export function NotificationSettings() {
     }
   }
 
-  const fetchOllamaModels = useCallback(async (url: string) => {
-    if (!url) return
-    setLoadingOllamaModels(true)
+  const fetchProviderModels = useCallback(async () => {
+    const provider = config.ai_provider
+    const apiKey = config.ai_api_keys?.[provider] || ""
+    
+    // For Ollama, we need the URL; for others, we need the API key
+    if (provider === 'ollama') {
+      if (!config.ai_ollama_url) return
+    } else if (provider !== 'anthropic') {
+      // Anthropic doesn't have a models list endpoint, skip validation
+      if (!apiKey) return
+    }
+    
+    setLoadingProviderModels(true)
     try {
-      const data = await fetchApi<{ success: boolean; models: string[]; message: string }>("/api/notifications/ollama-models", {
+      const data = await fetchApi<{ success: boolean; models: string[]; message: string }>("/api/notifications/provider-models", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ollama_url: url }),
+        body: JSON.stringify({ 
+          provider,
+          api_key: apiKey,
+          ollama_url: config.ai_ollama_url,
+          openai_base_url: config.ai_openai_base_url,
+        }),
       })
       if (data.success && data.models && data.models.length > 0) {
-        setOllamaModels(data.models)
+        setProviderModels(data.models)
         // Auto-select first model if current selection is empty or not in the list
         updateConfig(prev => {
           if (!prev.ai_model || !data.models.includes(prev.ai_model)) {
@@ -641,17 +650,16 @@ export function NotificationSettings() {
           return prev
         })
       } else {
-        setOllamaModels([])
+        setProviderModels([])
       }
     } catch {
-      setOllamaModels([])
+      setProviderModels([])
     } finally {
-      setLoadingOllamaModels(false)
+      setLoadingProviderModels(false)
     }
-  }, [])
+  }, [config.ai_provider, config.ai_api_keys, config.ai_ollama_url, config.ai_openai_base_url])
   
-  // Note: We removed the automatic useEffect that fetched models on URL change
-  // because it caused infinite loops. Users now use the "Load" button explicitly.
+  // Note: Users use the "Load" button explicitly to fetch models.
   
   const handleTestAI = async () => {
     setTestingAI(true)
@@ -659,9 +667,13 @@ export function NotificationSettings() {
     try {
       // Get the API key for the current provider
       const currentApiKey = config.ai_api_keys?.[config.ai_provider] || ""
-      // Get the model from provider config (for non-Ollama providers) or from config for Ollama
-      const providerConfig = AI_PROVIDERS.find(p => p.value === config.ai_provider)
-      const modelToUse = config.ai_provider === 'ollama' ? config.ai_model : (providerConfig?.model || config.ai_model)
+      // Use the model selected by the user (loaded from provider)
+      const modelToUse = config.ai_model
+      
+      if (!modelToUse) {
+        setAiTestResult({ success: false, message: "No model selected. Click 'Load' to fetch available models first." })
+        return
+      }
       
       const data = await fetchApi<{ success: boolean; message: string; model: string }>("/api/notifications/test-ai", {
         method: "POST",
@@ -1440,14 +1452,10 @@ export function NotificationSettings() {
                         <Select
                           value={config.ai_provider}
                           onValueChange={v => {
-                            // When changing provider, also update the model to the new provider's default
-                            const newProvider = AI_PROVIDERS.find(p => p.value === v)
-                            const newModel = newProvider?.model || ''
-                            updateConfig(p => ({ ...p, ai_provider: v, ai_model: newModel }))
-                            // Clear Ollama models list when switching away from Ollama
-                            if (v !== 'ollama') {
-                              setOllamaModels([])
-                            }
+                            // When changing provider, clear model and models list
+                            // User will need to click "Load" to fetch available models
+                            updateConfig(p => ({ ...p, ai_provider: v, ai_model: '' }))
+                            setProviderModels([])
                           }}
                           disabled={!editMode}
                         >
@@ -1466,34 +1474,13 @@ export function NotificationSettings() {
                       {config.ai_provider === "ollama" && (
                         <div className="space-y-2">
                           <Label className="text-xs sm:text-sm text-foreground/80">Ollama URL</Label>
-                          <div className="flex items-center gap-2">
-                            <Input
-                              className="h-9 text-sm font-mono flex-1"
-                              placeholder="http://localhost:11434"
-                              value={config.ai_ollama_url}
-                              onChange={e => updateConfig(p => ({ ...p, ai_ollama_url: e.target.value }))}
-                              disabled={!editMode}
-                            />
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-9 px-3 shrink-0"
-                              onClick={() => fetchOllamaModels(config.ai_ollama_url)}
-                              disabled={loadingOllamaModels || !config.ai_ollama_url}
-                            >
-                              {loadingOllamaModels ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <>
-                                  <RefreshCw className="h-4 w-4 mr-1" />
-                                  Load
-                                </>
-                              )}
-                            </Button>
-                          </div>
-                          {ollamaModels.length > 0 && (
-                            <p className="text-xs text-green-500">{ollamaModels.length} models found</p>
-                          )}
+                          <Input
+                            className="h-9 text-sm font-mono"
+                            placeholder="http://localhost:11434"
+                            value={config.ai_ollama_url}
+                            onChange={e => updateConfig(p => ({ ...p, ai_ollama_url: e.target.value }))}
+                            disabled={!editMode}
+                          />
                         </div>
                       )}
                       
@@ -1558,23 +1545,23 @@ export function NotificationSettings() {
                         </div>
                       )}
                       
-                      {/* Model - selector for Ollama, read-only for others */}
+                      {/* Model - selector with Load button for all providers */}
                       <div className="space-y-2">
                         <Label className="text-xs sm:text-sm text-foreground/80">Model</Label>
-                        {config.ai_provider === "ollama" ? (
+                        <div className="flex items-center gap-2">
                           <Select
                             value={config.ai_model || ""}
                             onValueChange={v => updateConfig(p => ({ ...p, ai_model: v }))}
-                            disabled={!editMode || loadingOllamaModels || ollamaModels.length === 0}
+                            disabled={!editMode || loadingProviderModels || providerModels.length === 0}
                           >
-                            <SelectTrigger className="h-9 text-sm font-mono">
-                              <SelectValue placeholder={ollamaModels.length === 0 ? "Click 'Load' to fetch models" : "Select model"}>
-                                {config.ai_model || (ollamaModels.length === 0 ? "Click 'Load' to fetch models" : "Select model")}
+                            <SelectTrigger className="h-9 text-sm font-mono flex-1">
+                              <SelectValue placeholder={providerModels.length === 0 ? "Click 'Load' to fetch models" : "Select model"}>
+                                {config.ai_model || (providerModels.length === 0 ? "Click 'Load' to fetch models" : "Select model")}
                               </SelectValue>
                             </SelectTrigger>
                             <SelectContent>
-                              {ollamaModels.length > 0 ? (
-                                ollamaModels.map(m => (
+                              {providerModels.length > 0 ? (
+                                providerModels.map(m => (
                                   <SelectItem key={m} value={m} className="font-mono">{m}</SelectItem>
                                 ))
                               ) : (
@@ -1584,10 +1571,29 @@ export function NotificationSettings() {
                               )}
                             </SelectContent>
                           </Select>
-                        ) : (
-                          <div className="h-9 px-3 flex items-center rounded-md border border-border bg-muted/50 text-sm font-mono text-muted-foreground">
-                            {AI_PROVIDERS.find(p => p.value === config.ai_provider)?.model || "default"}
-                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-9 px-3 shrink-0"
+                            onClick={() => fetchProviderModels()}
+                            disabled={
+                              loadingProviderModels || 
+                              (config.ai_provider === 'ollama' && !config.ai_ollama_url) ||
+                              (config.ai_provider !== 'ollama' && config.ai_provider !== 'anthropic' && !config.ai_api_keys?.[config.ai_provider])
+                            }
+                          >
+                            {loadingProviderModels ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <>
+                                <RefreshCw className="h-4 w-4 mr-1" />
+                                Load
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                        {providerModels.length > 0 && (
+                          <p className="text-xs text-green-500">{providerModels.length} models available</p>
                         )}
                       </div>
                       
@@ -1615,7 +1621,12 @@ export function NotificationSettings() {
                       {/* Test Connection button */}
                       <button
                         onClick={handleTestAI}
-                        disabled={!editMode || testingAI || (config.ai_provider !== "ollama" && !config.ai_api_keys?.[config.ai_provider])}
+                        disabled={
+                          !editMode || 
+                          testingAI || 
+                          !config.ai_model ||
+                          (config.ai_provider !== "ollama" && !config.ai_api_keys?.[config.ai_provider])
+                        }
                         className="w-full h-9 flex items-center justify-center gap-2 rounded-md text-sm font-medium bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       >
                         {testingAI ? (
@@ -1736,11 +1747,11 @@ export function NotificationSettings() {
                     <Badge variant="outline" className="text-xs px-2 py-0.5">Local</Badge>
                   )}
                 </div>
-                <div className="text-xs sm:text-sm text-muted-foreground mt-2 ml-[52px]">
-                  Default model: <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">{provider.model}</code>
-                </div>
                 <p className="text-xs sm:text-sm text-muted-foreground mt-2 ml-[52px] leading-relaxed">
                   {provider.description}
+                </p>
+                <p className="text-xs text-muted-foreground/70 mt-1 ml-[52px]">
+                  Click &apos;Load&apos; to fetch available models from this provider.
                 </p>
                 {/* OpenAI compatibility note */}
                 {provider.value === "openai" && (

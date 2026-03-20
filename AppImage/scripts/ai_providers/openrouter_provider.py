@@ -4,7 +4,10 @@ OpenRouter is an aggregator that provides access to 100+ AI models
 using a single API key. Maximum flexibility for choosing models.
 Uses OpenAI-compatible API format.
 """
-from typing import Optional
+from typing import Optional, List
+import json
+import urllib.request
+import urllib.error
 from .base import AIProvider, AIProviderError
 
 
@@ -12,9 +15,40 @@ class OpenRouterProvider(AIProvider):
     """OpenRouter provider for multi-model access."""
     
     NAME = "openrouter"
-    DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct"
     REQUIRES_API_KEY = True
     API_URL = "https://openrouter.ai/api/v1/chat/completions"
+    MODELS_URL = "https://openrouter.ai/api/v1/models"
+    
+    def list_models(self) -> List[str]:
+        """List available OpenRouter models.
+        
+        Returns:
+            List of model IDs available. OpenRouter has 100+ models,
+            this returns only the most popular free/low-cost options.
+        """
+        if not self.api_key:
+            return []
+        
+        try:
+            req = urllib.request.Request(
+                self.MODELS_URL,
+                headers={'Authorization': f'Bearer {self.api_key}'},
+                method='GET'
+            )
+            
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+            
+            models = []
+            for model in data.get('data', []):
+                model_id = model.get('id', '')
+                if model_id:
+                    models.append(model_id)
+            
+            return models
+        except Exception as e:
+            print(f"[OpenRouterProvider] Failed to list models: {e}")
+            return []
     
     def generate(self, system_prompt: str, user_message: str,
                  max_tokens: int = 200) -> Optional[str]:

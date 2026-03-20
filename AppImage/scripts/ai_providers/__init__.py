@@ -29,40 +29,35 @@ PROVIDERS = {
 }
 
 # Provider metadata for UI display
+# Note: No hardcoded models - users load models dynamically from each provider
 PROVIDER_INFO = {
     'groq': {
         'name': 'Groq',
-        'default_model': 'llama-3.3-70b-versatile',
         'description': 'Fast inference, generous free tier (30 req/min). Ideal to get started.',
         'requires_api_key': True,
     },
     'openai': {
         'name': 'OpenAI',
-        'default_model': 'gpt-4o-mini',
         'description': 'Industry standard. Very accurate and widely used.',
         'requires_api_key': True,
     },
     'anthropic': {
         'name': 'Anthropic (Claude)',
-        'default_model': 'claude-3-5-haiku-latest',
         'description': 'Excellent for writing and translation. Fast and affordable.',
         'requires_api_key': True,
     },
     'gemini': {
         'name': 'Google Gemini',
-        'default_model': 'gemini-2.0-flash',
         'description': 'Free tier available, very good quality/price ratio.',
         'requires_api_key': True,
     },
     'ollama': {
         'name': 'Ollama (Local)',
-        'default_model': 'llama3.2',
         'description': '100% local execution. No costs, complete privacy, no internet required.',
         'requires_api_key': False,
     },
     'openrouter': {
         'name': 'OpenRouter',
-        'default_model': 'meta-llama/llama-3.3-70b-instruct',
         'description': 'Aggregator with access to 100+ models using a single API key. Maximum flexibility.',
         'requires_api_key': True,
     },

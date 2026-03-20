@@ -1493,32 +1493,9 @@ class NotificationManager:
         for ch_type in CHANNEL_TYPES:
             ai_detail_levels[ch_type] = self._config.get(f'ai_detail_level_{ch_type}', 'standard')
         
-        # Migrate deprecated AI model names to current versions
-        DEPRECATED_MODELS = {
-            'gemini-1.5-flash': 'gemini-2.0-flash',
-            'gemini-1.5-pro': 'gemini-2.0-flash',
-            'claude-3-haiku-20240307': 'claude-3-5-haiku-latest',
-            'claude-3-sonnet-20240229': 'claude-3-5-sonnet-latest',
-        }
-        
-        current_model = self._config.get('ai_model', '')
-        migrated_model = DEPRECATED_MODELS.get(current_model, current_model)
-        
-        # If model was deprecated, update it in the database automatically
-        if current_model and current_model != migrated_model:
-            try:
-                conn = sqlite3.connect(str(DB_PATH), timeout=10)
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT OR REPLACE INTO user_settings (setting_key, setting_value, updated_at)
-                    VALUES (?, ?, ?)
-                ''', (f'{SETTINGS_PREFIX}ai_model', migrated_model, datetime.now().isoformat()))
-                conn.commit()
-                conn.close()
-                self._config['ai_model'] = migrated_model
-                print(f"[NotificationManager] Migrated AI model from '{current_model}' to '{migrated_model}'")
-            except Exception as e:
-                print(f"[NotificationManager] Failed to migrate AI model: {e}")
+        # Note: Model migration for deprecated models is handled by the periodic
+        # verify_and_update_ai_model() check. Users now load models dynamically
+        # from providers using the "Load" button in the UI.
         
         # Get per-provider API keys
         current_provider = self._config.get('ai_provider', 'groq')
@@ -1566,7 +1543,7 @@ class NotificationManager:
             'ai_enabled': self._config.get('ai_enabled', 'false') == 'true',
             'ai_provider': current_provider,
             'ai_api_keys': ai_api_keys,
-            'ai_model': migrated_model,
+            'ai_model': self._config.get('ai_model', ''),
             'ai_language': self._config.get('ai_language', 'en'),
             'ai_ollama_url': self._config.get('ai_ollama_url', 'http://localhost:11434'),
             'ai_openai_base_url': self._config.get('ai_openai_base_url', ''),
@@ -1663,6 +1640,108 @@ class NotificationManager:
             return result
         except Exception as e:
             return {'success': False, 'error': str(e)}
+
+
+    def verify_and_update_ai_model(self) -> Dict[str, Any]:
+        """Verify current AI model is available, update if deprecated.
+        
+        This method checks if the configured AI model is still available
+        from the provider. If not, it automatically migrates to the best
+        available fallback model and notifies the administrator.
+        
+        Should be called periodically (e.g., every 24 hours) to catch
+        model deprecations before they cause notification failures.
+        
+        Returns:
+            Dict with:
+                - checked: bool - whether check was performed
+                - migrated: bool - whether model was changed
+                - old_model: str - previous model (if migrated)
+                - new_model: str - current/new model
+                - message: str - status message
+        """
+        if self._config.get('ai_enabled', 'false') != 'true':
+            return {'checked': False, 'migrated': False, 'message': 'AI not enabled'}
+        
+        provider_name = self._config.get('ai_provider', 'groq')
+        current_model = self._config.get('ai_model', '')
+        
+        # Skip Ollama - user manages their own models
+        if provider_name == 'ollama':
+            return {'checked': False, 'migrated': False, 'message': 'Ollama models managed locally'}
+        
+        # Get the API key for this provider
+        api_key = self._config.get(f'ai_api_key_{provider_name}', '') or self._config.get('ai_api_key', '')
+        if not api_key:
+            return {'checked': False, 'migrated': False, 'message': 'No API key configured'}
+        
+        try:
+            from ai_providers import get_provider
+            provider = get_provider(provider_name, api_key=api_key, model=current_model)
+            
+            if not provider:
+                return {'checked': False, 'migrated': False, 'message': f'Unknown provider: {provider_name}'}
+            
+            # Get available models
+            available_models = provider.list_models()
+            
+            if not available_models:
+                # Can't verify (provider doesn't support listing or API error)
+                return {'checked': True, 'migrated': False, 'message': 'Could not retrieve model list'}
+            
+            # Check if current model is available
+            if current_model in available_models:
+                return {
+                    'checked': True,
+                    'migrated': False,
+                    'new_model': current_model,
+                    'message': f'Model {current_model} is available'
+                }
+            
+            # Model not available - find best fallback
+            recommended = provider.get_recommended_model()
+            
+            if recommended == current_model:
+                # No better option found
+                return {
+                    'checked': True,
+                    'migrated': False,
+                    'new_model': current_model,
+                    'message': f'Model {current_model} not in list but no alternative found'
+                }
+            
+            # Migrate to new model
+            old_model = current_model
+            try:
+                conn = sqlite3.connect(str(DB_PATH), timeout=10)
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT OR REPLACE INTO user_settings (setting_key, setting_value, updated_at)
+                    VALUES (?, ?, ?)
+                ''', (f'{SETTINGS_PREFIX}ai_model', recommended, datetime.now().isoformat()))
+                conn.commit()
+                conn.close()
+                self._config['ai_model'] = recommended
+                
+                print(f"[NotificationManager] AI model migrated: {old_model} -> {recommended}")
+                
+                return {
+                    'checked': True,
+                    'migrated': True,
+                    'old_model': old_model,
+                    'new_model': recommended,
+                    'message': f'Model migrated from {old_model} to {recommended}'
+                }
+            except Exception as e:
+                return {
+                    'checked': True,
+                    'migrated': False,
+                    'message': f'Failed to save new model: {e}'
+                }
+                
+        except Exception as e:
+            print(f"[NotificationManager] Model verification failed: {e}")
+            return {'checked': False, 'migrated': False, 'message': str(e)}
 
 
 # ─── Singleton (for server mode) ─────────────────────────────────
