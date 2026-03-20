@@ -1350,17 +1350,9 @@ SECURITY (auth_fail / ip_block):
   Input contains: source IP, user, service, jail, failure count
   Output: list each field on its own line
 
-VM/CT LIFECYCLE (vm_start, vm_stop, vm_shutdown, vm_fail, vm_restart,
-                 ct_start, ct_stop, ct_shutdown, ct_fail, ct_restart,
-                 migration_start, migration_complete, migration_fail,
-                 replication_complete, replication_fail):
-  - Line 1: 🏷️ [Type] [name] (ID: [id])
-            where Type is "Virtual machine" for VMs or "Container" for CTs
-  - Line 2: [status emoji] [action sentence — no subject, no ID repeated]
-            ✔️ for success states (started, stopped, shut down, restarted, migrated)
-            ❌ for failure states
-  - Line 3 (only on failure): blank line + 📝 Reason: [reason]
-  - Line 4 (only on migration): 🎯 Target: [target_node]
+VM/CT LIFECYCLE (vm_start, vm_stop, vm_fail, ct_*, migration_*, replication_*):
+  Input contains: VM name, ID, target node (migrations), reason (failures)
+  Output: one or two lines confirming the event with key facts
 
 CLUSTER (split_brain / node_disconnect / node_reconnect):
   Input: node name, quorum status
