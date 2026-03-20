@@ -2151,7 +2151,8 @@ class PollingCollector:
             for fp, ts in cursor.fetchall():
                 error_key = fp.replace('health_', '', 1)
                 self._last_notified[error_key] = ts
-                self._known_errors.add(error_key)
+                # _known_errors is a dict (not a set), store minimal metadata
+                self._known_errors[error_key] = {'error_key': error_key, 'first_seen': ts}
             conn.close()
         except Exception as e:
             print(f"[PollingCollector] Failed to load last_notified: {e}")

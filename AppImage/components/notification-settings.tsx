@@ -147,8 +147,8 @@ const AI_PROVIDERS = [
   { 
     value: "ollama", 
     label: "Ollama (Local)",
-    model: "llama3.2",
-    description: "100% local execution. No costs, total privacy, no internet required.",
+    model: "",
+    description: "Uses models available on your Ollama server. 100% local, no costs, total privacy.",
     keyUrl: "",
     icon: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/ollama.webp",
     iconLight: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/ollama-light.webp"
