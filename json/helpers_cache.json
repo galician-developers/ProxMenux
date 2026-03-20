@@ -3312,10 +3312,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00023"
+      "scriptcat00000"
     ],
     "category_names": [
-      "Finance & Budgeting"
+      "Miscellaneous"
     ],
     "notes": [
       "Minimum 4GB RAM and 4 CPU cores recommended for production use.",
@@ -12174,7 +12174,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "pve"
     ],
@@ -15318,7 +15318,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
