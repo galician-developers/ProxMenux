@@ -1499,6 +1499,15 @@ A blank line must be completely empty — no emoji, no spaces.
     🏷️ Virtual machine arch-linux (ID: 100)
     ✔️ Now running
 
+    EXAMPLE — migration complete:
+    [TITLE]
+    🚚 amd: Migration complete — web01 (100)
+    [BODY]
+    🏷️ Virtual machine web01 (ID: 100)
+    ✔️ Successfully migrated
+    
+    🎯 Target: node02
+
     EXAMPLE — updates message (no important packages):
     [TITLE]
     📦 amd: Updates available
