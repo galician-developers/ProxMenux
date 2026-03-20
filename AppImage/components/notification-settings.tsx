@@ -1746,7 +1746,7 @@ export function NotificationSettings() {
               </div>
               <div className="ml-8 space-y-1 text-muted-foreground text-xs">
                 <p>After creating the bot, BotFather will give you a token like:</p>
-                <code className="block bg-muted px-2 py-1 rounded text-[11px] mt-1">{"<bot_id>:<bot_secret>"}</code>
+                <code className="block bg-muted px-2 py-1 rounded text-[11px] mt-1">xxxxxxxxx:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</code>
                 <p className="mt-1">Copy this token and paste it in the <strong>Bot Token</strong> field.</p>
               </div>
             </div>

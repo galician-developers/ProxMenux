@@ -1675,6 +1675,9 @@ class AIEnhancer:
         
         try:
             result = self._provider.generate(system_prompt, user_msg, max_tokens)
+            if result is None:
+                print(f"[AIEnhancer] Provider returned None - possible timeout or connection issue")
+                return None
             return self._parse_ai_response(result, title, body)
         except Exception as e:
             print(f"[AIEnhancer] Enhancement failed: {e}")
@@ -1811,9 +1814,13 @@ def format_with_ai_full(title: str, body: str, severity: str,
         result_title = enhanced.get('title', title)
         result_body = enhanced.get('body', body)
         
-        # For detailed level (email), append original message for reference
+        # For email channel with detailed level, append original message for reference
         # This ensures full technical data is available even after AI processing
-        if detail_level == 'detailed' and body and len(body) > 50:
+        # Only for email - other channels (Telegram, Discord, Gotify) should not get duplicates
+        channel_type = ai_config.get('channel_type', '').lower()
+        is_email = channel_type == 'email'
+        
+        if is_email and detail_level == 'detailed' and body and len(body) > 50:
             # Only append if original has substantial content
             result_body += "\n\n" + "-" * 40 + "\n"
             result_body += "Original message:\n"

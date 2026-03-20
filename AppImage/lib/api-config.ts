@@ -89,12 +89,26 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
     cache: "no-store",
   })
 
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error(`Unauthorized: ${endpoint}`)
+    if (!response.ok) {
+      if (response.status === 401) {
+        console.error("[v0] fetchApi: 401 UNAUTHORIZED -", endpoint, "- Token present:", !!token)
+        throw new Error(`Unauthorized: ${endpoint}`)
+      }
+      throw new Error(`API request failed: ${response.status} ${response.statusText}`)
     }
-    throw new Error(`API request failed: ${response.status} ${response.statusText}`)
-  }
 
-  return response.json()
+    // Check content type to ensure we're getting JSON
+    const contentType = response.headers.get("content-type")
+    if (!contentType || !contentType.includes("application/json")) {
+      const text = await response.text()
+      console.error("[v0] fetchApi: Expected JSON but got:", contentType, "- Body preview:", text.substring(0, 200))
+      throw new Error(`Expected JSON response but got ${contentType || "unknown content type"}`)
+    }
+
+    try {
+      return await response.json()
+    } catch (jsonError) {
+      console.error("[v0] fetchApi: JSON parse error for", endpoint, "-", jsonError)
+      throw new Error(`Invalid JSON response from ${endpoint}`)
+    }
 }

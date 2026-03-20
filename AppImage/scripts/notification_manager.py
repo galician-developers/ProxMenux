@@ -756,8 +756,10 @@ class NotificationManager:
                 # ── Per-channel AI enhancement ──
                 # Apply AI with channel-specific detail level and emoji setting
                 # If AI is enabled AND rich_format is on, AI will include emojis directly
+                # Pass channel_type so AI knows whether to append original (email only)
+                channel_ai_config = {**ai_config, 'channel_type': ch_name}
                 ai_result = format_with_ai_full(
-                    ch_title, ch_body, severity, ai_config,
+                    ch_title, ch_body, severity, channel_ai_config,
                     detail_level=detail_level,
                     journal_context=journal_context,
                     use_emojis=use_rich_format
@@ -1070,8 +1072,10 @@ class NotificationManager:
                 rich_key = f'{ch_name}.rich_format'
                 use_rich_format = self._config.get(rich_key, 'false') == 'true'
                 
+                # Pass channel_type so AI knows whether to append original (email only)
+                channel_ai_config = {**ai_config, 'channel_type': ch_name}
                 ai_result = format_with_ai_full(
-                    title, message, severity, ai_config,
+                    title, message, severity, channel_ai_config,
                     detail_level=detail_level,
                     use_emojis=use_rich_format
                 )
@@ -1188,8 +1192,10 @@ class NotificationManager:
                 )
                 
                 # Apply AI enhancement (translates to configured language)
+                # Pass channel_type so AI knows whether to append original (email only)
+                channel_ai_config = {**ai_config, 'channel_type': ch_name}
                 ai_result = format_with_ai_full(
-                    base_title, base_message, 'INFO', ai_config,
+                    base_title, base_message, 'INFO', channel_ai_config,
                     detail_level=detail_level,
                     use_emojis=use_rich_format
                 )
@@ -1206,7 +1212,7 @@ class NotificationManager:
                     # Translate caption if AI is active
                     if ai_enabled:
                         caption_result = format_with_ai_full(
-                            '', logo_caption, 'INFO', ai_config,
+                            '', logo_caption, 'INFO', channel_ai_config,
                             detail_level='brief', use_emojis=use_rich_format
                         )
                         caption = caption_result.get('body', logo_caption)
