@@ -1272,7 +1272,6 @@ Your task is to translate and reformat incoming server alert messages into {lang
      Example: 🗂️ Important packages:\\n• none
      Example (Spanish): 🗂️ Paquetes importantes:\\n• ninguno
      Example (Français): 🗂️ Paquets importants:\\n• aucun
-
   12. DEDUPLICATION — input may contain redundant or repeated information from multiple monitoring sources:
       - Identify and merge duplicate facts (same device, same error, same metric mentioned twice)
       - Present each unique fact exactly once in a clear, consolidated form

@@ -1409,7 +1409,16 @@ export function NotificationSettings() {
                         </div>
                         <Select
                           value={config.ai_provider}
-                          onValueChange={v => updateConfig(p => ({ ...p, ai_provider: v }))}
+                          onValueChange={v => {
+                            // When changing provider, also update the model to the new provider's default
+                            const newProvider = AI_PROVIDERS.find(p => p.value === v)
+                            const newModel = newProvider?.model || ''
+                            updateConfig(p => ({ ...p, ai_provider: v, ai_model: newModel }))
+                            // Clear Ollama models list when switching away from Ollama
+                            if (v !== 'ollama') {
+                              setOllamaModels([])
+                            }
+                          }}
                           disabled={!editMode}
                         >
                           <SelectTrigger className="h-9 text-sm">
