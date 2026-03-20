@@ -102,9 +102,25 @@ def test_notification():
         return jsonify({'error': str(e)}), 500
 
 
+def load_verified_models():
+    """Load verified models from config file."""
+    try:
+        config_path = Path(__file__).parent.parent / 'config' / 'verified_ai_models.json'
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"[flask_notification_routes] Failed to load verified models: {e}")
+    return {}
+
+
 @notification_bp.route('/api/notifications/provider-models', methods=['POST'])
 def get_provider_models():
-    """Fetch available models from any AI provider.
+    """Fetch available models from AI provider, filtered by verified models list.
+    
+    Only returns models that:
+    1. Are available from the provider's API
+    2. Are in our verified_ai_models.json list (tested to work)
     
     Request body:
         {
@@ -118,6 +134,7 @@ def get_provider_models():
         {
             "success": true/false,
             "models": ["model1", "model2", ...],
+            "recommended": "recommended-model",
             "message": "status message"
         }
     """
@@ -131,7 +148,13 @@ def get_provider_models():
         if not provider:
             return jsonify({'success': False, 'models': [], 'message': 'Provider not specified'})
         
-        # Handle Ollama separately (local, no API key)
+        # Load verified models config
+        verified_config = load_verified_models()
+        provider_config = verified_config.get(provider, {})
+        verified_models = set(provider_config.get('models', []))
+        recommended = provider_config.get('recommended', '')
+        
+        # Handle Ollama separately (local, no filtering)
         if provider == 'ollama':
             import urllib.request
             import urllib.error
@@ -147,25 +170,25 @@ def get_provider_models():
                 return jsonify({
                     'success': True,
                     'models': models,
-                    'message': f'Found {len(models)} models'
+                    'recommended': models[0] if models else '',
+                    'message': f'Found {len(models)} local models'
                 })
         
-        # Handle Anthropic - no models list API, return known models
+        # Handle Anthropic - no models list API, return verified models directly
         if provider == 'anthropic':
-            # Anthropic doesn't have a models list endpoint
-            # Return the known stable aliases that auto-update
-            models = [
+            models = list(verified_models) if verified_models else [
                 'claude-3-5-haiku-latest',
                 'claude-3-5-sonnet-latest',
                 'claude-3-opus-latest',
             ]
             return jsonify({
                 'success': True,
-                'models': models,
-                'message': 'Anthropic uses stable aliases that auto-update'
+                'models': sorted(models),
+                'recommended': recommended or models[0],
+                'message': f'{len(models)} verified models'
             })
         
-        # For other providers, use the provider's list_models method
+        # For other providers, fetch from API and filter by verified list
         if not api_key:
             return jsonify({'success': False, 'models': [], 'message': 'API key required'})
         
@@ -180,21 +203,51 @@ def get_provider_models():
         if not ai_provider:
             return jsonify({'success': False, 'models': [], 'message': f'Unknown provider: {provider}'})
         
-        models = ai_provider.list_models()
+        # Get all models from provider API
+        api_models = ai_provider.list_models()
         
-        if not models:
+        if not api_models:
+            # API failed, fall back to verified list only
+            if verified_models:
+                models = sorted(verified_models)
+                return jsonify({
+                    'success': True,
+                    'models': models,
+                    'recommended': recommended or models[0],
+                    'message': f'{len(models)} verified models (API unavailable)'
+                })
             return jsonify({
                 'success': False, 
                 'models': [], 
                 'message': 'Could not retrieve models. Check your API key.'
             })
         
-        # Sort and return
-        models = sorted(models)
+        # Filter: only models that are BOTH in API and verified list
+        if verified_models:
+            api_models_set = set(api_models)
+            filtered_models = [m for m in verified_models if m in api_models_set]
+            
+            if not filtered_models:
+                # No intersection - maybe verified list is outdated
+                # Return verified list anyway (will fail on use if truly unavailable)
+                filtered_models = list(verified_models)
+            
+            # Sort with recommended first
+            def sort_key(m):
+                if m == recommended:
+                    return (0, m)
+                return (1, m)
+            
+            models = sorted(filtered_models, key=sort_key)
+        else:
+            # No verified list for this provider, return all from API
+            models = sorted(api_models)
+        
         return jsonify({
             'success': True,
             'models': models,
-            'message': f'Found {len(models)} models'
+            'recommended': recommended if recommended in models else (models[0] if models else ''),
+            'message': f'{len(models)} verified models available'
         })
         
     except Exception as e:

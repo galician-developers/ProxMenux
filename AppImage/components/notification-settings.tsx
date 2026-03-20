@@ -659,7 +659,7 @@ export function NotificationSettings() {
     
     setLoadingProviderModels(true)
     try {
-      const data = await fetchApi<{ success: boolean; models: string[]; message: string }>("/api/notifications/provider-models", {
+      const data = await fetchApi<{ success: boolean; models: string[]; recommended: string; message: string }>("/api/notifications/provider-models", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
@@ -671,10 +671,15 @@ export function NotificationSettings() {
       })
       if (data.success && data.models && data.models.length > 0) {
         setProviderModels(data.models)
-        // Auto-select first model if current selection is empty or not in the list
+        // Auto-select recommended model if current selection is empty or not in the list
         updateConfig(prev => {
           if (!prev.ai_model || !data.models.includes(prev.ai_model)) {
-            return { ...prev, ai_model: data.models[0] }
+            const modelToSelect = data.recommended || data.models[0]
+            return { 
+              ...prev, 
+              ai_model: modelToSelect,
+              ai_models: { ...prev.ai_models, [provider]: modelToSelect }
+            }
           }
           return prev
         })

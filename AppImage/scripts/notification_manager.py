@@ -1688,17 +1688,37 @@ class NotificationManager:
             return {'checked': False, 'migrated': False, 'message': 'No API key configured'}
         
         try:
+            # Load verified models from config
+            verified_models = []
+            recommended_model = ''
+            try:
+                config_path = Path(__file__).parent.parent / 'config' / 'verified_ai_models.json'
+                if config_path.exists():
+                    with open(config_path, 'r') as f:
+                        verified_config = json.load(f)
+                        provider_config = verified_config.get(provider_name, {})
+                        verified_models = provider_config.get('models', [])
+                        recommended_model = provider_config.get('recommended', '')
+            except Exception as e:
+                print(f"[NotificationManager] Failed to load verified models: {e}")
+            
             from ai_providers import get_provider
             provider = get_provider(provider_name, api_key=api_key, model=current_model)
             
             if not provider:
                 return {'checked': False, 'migrated': False, 'message': f'Unknown provider: {provider_name}'}
             
-            # Get available models
-            available_models = provider.list_models()
+            # Get available models from API
+            api_models = provider.list_models()
             
-            if not available_models:
-                # Can't verify (provider doesn't support listing or API error)
+            # Combine: use verified models that are also in API (or all verified if API fails)
+            if api_models and verified_models:
+                available_models = [m for m in verified_models if m in api_models]
+            elif verified_models:
+                available_models = verified_models
+            elif api_models:
+                available_models = api_models
+            else:
                 return {'checked': True, 'migrated': False, 'message': 'Could not retrieve model list'}
             
             # Check if current model is available
@@ -1710,11 +1730,10 @@ class NotificationManager:
                     'message': f'Model {current_model} is available'
                 }
             
-            # Model not available - find best fallback
-            recommended = provider.get_recommended_model()
+            # Model not available - use recommended or first available
+            recommended = recommended_model if recommended_model in available_models else (available_models[0] if available_models else '')
             
-            if recommended == current_model:
-                # No better option found
+            if not recommended or recommended == current_model:
                 return {
                     'checked': True,
                     'migrated': False,
