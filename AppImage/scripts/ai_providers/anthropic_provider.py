@@ -1,7 +1,7 @@
 """Anthropic (Claude) provider implementation.
 
 Anthropic's Claude models are excellent for text generation and translation.
-Claude Haiku is particularly fast and affordable for notification enhancement.
+Claude 3.5 Haiku is fast and affordable for notification enhancement.
 """
 from typing import Optional
 from .base import AIProvider, AIProviderError
@@ -11,7 +11,7 @@ class AnthropicProvider(AIProvider):
     """Anthropic provider using their Messages API."""
     
     NAME = "anthropic"
-    DEFAULT_MODEL = "claude-3-haiku-20240307"
+    DEFAULT_MODEL = "claude-3-5-haiku-latest"
     REQUIRES_API_KEY = True
     API_URL = "https://api.anthropic.com/v1/messages"
     API_VERSION = "2023-06-01"

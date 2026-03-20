@@ -44,13 +44,13 @@ PROVIDER_INFO = {
     },
     'anthropic': {
         'name': 'Anthropic (Claude)',
-        'default_model': 'claude-3-haiku-20240307',
+        'default_model': 'claude-3-5-haiku-latest',
         'description': 'Excellent for writing and translation. Fast and affordable.',
         'requires_api_key': True,
     },
     'gemini': {
         'name': 'Google Gemini',
-        'default_model': 'gemini-1.5-flash',
+        'default_model': 'gemini-2.0-flash',
         'description': 'Free tier available, very good quality/price ratio.',
         'requires_api_key': True,
     },

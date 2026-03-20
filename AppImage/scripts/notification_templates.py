@@ -1470,8 +1470,7 @@ A blank line must be completely empty — no emoji, no spaces.
    🔄 Proxmox updates: 0
    ⚙️ Kernel updates: 0
 
-   🗂️ Important packages:
-   • none
+   🗂️ Important packages: 0
 
    EXAMPLE — updates message (with important packages):
    [TITLE]

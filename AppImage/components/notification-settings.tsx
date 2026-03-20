@@ -129,7 +129,7 @@ const AI_PROVIDERS = [
   { 
     value: "anthropic", 
     label: "Anthropic (Claude)",
-    model: "claude-3-haiku-20240307",
+    model: "claude-3-5-haiku-latest",
     description: "Excellent for writing and translation. Fast and economical.",
     keyUrl: "https://console.anthropic.com/settings/keys",
     icon: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/claude-light.webp",
@@ -138,7 +138,7 @@ const AI_PROVIDERS = [
   { 
     value: "gemini", 
     label: "Google Gemini",
-    model: "gemini-1.5-flash",
+    model: "gemini-2.0-flash",
     description: "Free tier available, great quality/price ratio.",
     keyUrl: "https://aistudio.google.com/app/apikey",
     icon: "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/google-gemini.webp",
@@ -260,6 +260,7 @@ export function NotificationSettings() {
     try {
       const data = await fetchApi<{ success: boolean; config: NotificationConfig }>("/api/notifications/settings")
       if (data.success && data.config) {
+        // Backend automatically migrates deprecated AI models to current versions
         setConfig(data.config)
         setOriginalConfig(data.config)
       }
