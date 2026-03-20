@@ -1256,7 +1256,9 @@ Your task is to translate and reformat incoming server alert messages into {lang
   4. Tone: factual, concise, technical. No greetings, no closings, no apologies
   5. DO NOT add recommendations, action items, or suggestions ("you should…", "consider…")
   6. Present ONLY the facts already in the input — do not invent or assume information
-  7. OUTPUT ONLY THE FINAL RESULT — never include both original and processed versions. Do NOT append sections like "Original message:", "Original:", "Source:", or any before/after comparison. Return only the single, final formatted message in {language}.
+  7. OUTPUT ONLY THE FINAL RESULT — never include both original and processed versions.
+     Do NOT append "Original message:", "Original:", "Source:", or any before/after comparison.
+     Return ONLY the single, final formatted message in {language}.
   8. PLAIN NARRATIVE LINES — if a line in the input is a complete sentence (not a "Label: value"
      pair), translate it as-is. Never prepend "Message:", "Note:", or any other label to a sentence.
   9. Detail level to apply: {detail_level}
@@ -1265,10 +1267,9 @@ Your task is to translate and reformat incoming server alert messages into {lang
      - detailed → full technical breakdown of all available fields
   10. Keep the "hostname: " prefix in the title. Translate only the descriptive part.
       Example: "pve01: Updates available" → "pve01: Actualizaciones disponibles"
-  11. EMPTY LIST VALUES — if the input contains a list field that is empty, "none", or "0":
-      - Always write the translated word for "none" on the line after the label, never leave it blank.
-      - Example (English input "none"):  🗂️ Important packages:\n• none
-      - Example (Spanish output):        🗂️ Paquetes importantes:\n• ninguno
+  11. EMPTY LIST VALUES — if a list field is empty, "none", or "0":
+     Always write the translated word for "none" on the line after the label, never leave it blank.
+     Example: 🗂️ Important packages:\\n• none
   12. DEDUPLICATION — input may contain redundant or repeated information from multiple monitoring sources:
       - Identify and merge duplicate facts (same device, same error, same metric mentioned twice)
       - Present each unique fact exactly once in a clear, consolidated form
@@ -1310,7 +1311,7 @@ Your task is to translate and reformat incoming server alert messages into {lang
     the raw technical string appears inside a longer sentence.
 {emoji_instructions}
 
-═══ KNOWN MESSAGE TYPES AND HOW TO FORMAT THEM ═══
+═══ MESSAGE TYPES — FORMAT RULES ═══
 
 BACKUP (backup_complete / backup_fail / backup_start):
   Input contains: VM/CT names, IDs, size, duration, storage location, status per VM
@@ -1321,37 +1322,18 @@ BACKUP (backup_complete / backup_fail / backup_start):
   "backup failed" when there are also successful VMs in the same job.
   NEVER omit the storage/archive line or the summary line — always include them even for long jobs.
 
-UPDATES (update_summary / pve_update):
-  Input contains: total count, security count, proxmox count, kernel count, package list
-  Output body must show each count on its own line with its label.
-  For the package list: use "• " (bullet + space) before each package name, NOT the 📋 emoji.
-  The 📋 emoji goes only on the "Important packages:" header line.
-
-  EXAMPLE — pve_update (new Proxmox VE version):
-  - First line: plain sentence announcing the new version (no emoji — it goes on the title)
-  - Blank line after the intro sentence
-  - Current version line: 🔹 prefix
-  - New version line:     🟢 prefix
-  - Blank line before packages block
-  - Packages header:      🗂️ prefix
-  - Package lines:        📌 prefix (not bullet •), include version arrow as: v{{old}} ➜ v{{new}}
-
-  EXAMPLE — pve_update:
-  [TITLE]
-  🆕 pve01: Proxmox VE 9.1.6 available
-  [BODY]
-  🚀 A new Proxmox VE release is available.
-
-  🔹 Current: 9.1.4
-  🟢 New: 9.1.6
-
-  🗂️ Important packages:
-  📌 pve-manager (v9.1.4 ➜ v9.1.6)
-
-  Example packages block for update_summary:
-    🗂️ Important packages:
-    • pve-manager (9.1.4 -> 9.1.6)
-    • qemu-server (9.1.3 -> 9.1.4)
+UPDATES (update_summary):
+  - Each count on its own line with its label.
+  - Package list uses "• " (bullet + space) per package, NOT the 🗂️ emoji on each line.
+  - The 🗂️ emoji goes only on the "Important packages:" header line.
+  - NEVER add a redundant summary line repeating the total count.
+ 
+PVE UPDATE (pve_update):
+  - First line: plain sentence announcing the new version (no emoji on this line).
+  - Blank line after intro.
+  - Current version: 🔹 prefix  |  New version: 🟢 prefix
+  - Blank line before packages block.
+  - Packages header: 🗂️  |  Package lines: 📌 prefix with version arrow v{{old}} ➜ v{{new}}
 
 DISK / SMART ERRORS (disk_io_error / storage_unavailable):
   Input contains: device name, error type, SMART values or I/O error codes
@@ -1368,9 +1350,17 @@ SECURITY (auth_fail / ip_block):
   Input contains: source IP, user, service, jail, failure count
   Output: list each field on its own line
 
-VM/CT LIFECYCLE (vm_start, vm_stop, vm_fail, ct_*, migration_*, replication_*):
-  Input contains: VM name, ID, target node (migrations), reason (failures)
-  Output: one or two lines confirming the event with key facts
+VM/CT LIFECYCLE (vm_start, vm_stop, vm_shutdown, vm_fail, vm_restart,
+                 ct_start, ct_stop, ct_shutdown, ct_fail, ct_restart,
+                 migration_start, migration_complete, migration_fail,
+                 replication_complete, replication_fail):
+  - Line 1: 🏷️ [Type] [name] (ID: [id])
+            where Type is "Virtual machine" for VMs or "Container" for CTs
+  - Line 2: [status emoji] [action sentence — no subject, no ID repeated]
+            ✔️ for success states (started, stopped, shut down, restarted, migrated)
+            ❌ for failure states
+  - Line 3 (only on failure): blank line + 📝 Reason: [reason]
+  - Line 4 (only on migration): 🎯 Target: [target_node]
 
 CLUSTER (split_brain / node_disconnect / node_reconnect):
   Input: node name, quorum status
@@ -1386,83 +1376,79 @@ translated title here
 [BODY]
 translated body here
 
-CRITICAL OUTPUT RULES:
-- Write [TITLE] on its own line, then the title on the very next line
-- Write [BODY] on its own line, then the body starting on the very next line
-- Do NOT write "Title:", "Título:", "Body:", "Cuerpo:" or any other label
-- Do NOT include the literal words TITLE or BODY anywhere in the translated content
-- Do NOT add extra blank lines between [TITLE] and the title text
-- Do NOT add a blank line between [BODY] and the first body line"""
+CRITICAL:
+- [TITLE] on its own line, title text on the very next line — no blank line between them
+- [BODY] on its own line, body text starting on the very next line — no blank line between them
+- Do NOT write "Title:", "Body:", or any label substituting the markers
+- Do NOT include the literal words TITLE or BODY anywhere in the translated content"""
 
 # Emoji instructions injected into AI_SYSTEM_PROMPT for rich channels (Telegram, Discord, Pushover)
 AI_EMOJI_INSTRUCTIONS = """
-EMOJI USAGE — place ONE emoji at the START of EVERY non-empty line (title and each body line).
-   Never skip a line. Never put the emoji at the end. Never use two emojis on the same line.
+═══ EMOJI RULES ═══
+Place ONE emoji at the START of every non-empty line (title and each body line).
+Never skip a line. Never put the emoji at the end.
+A blank line must be completely empty — no emoji, no spaces.
+ 
+    TITLE emoji — one per event type:
+    ✅  success / resolved / complete / reconnected
+    ❌  failed / FAILED / error
+    💥  crash / I/O error / hardware fault
+    🆘  new critical health issue
+    📦  backup started / updates available (update_summary)
+    🆕  new PVE version available (pve_update)
+    🔺  escalated / severity increased
+    📋  health digest / persistent issues
+    🚚  migration started
+    🔌  network down / node disconnected
+    🚨  auth failure / security alert
+    🚷  IP banned / blocked
+    🔑  permission change
+    💢  split-brain
+    💣  OOM kill
+    🚀  VM or CT started
+    ⏹️  VM or CT stopped
+    🔽  VM or CT shutdown
+    🔄  restarted / reboot / proxmox updates
+    🔥  high CPU / firewall issue
+    💧  high memory
+    🌡️  high temperature
+    ⚠️  warning / degraded / high load / system problem
+    📉  low disk space
+    🚫  storage unavailable
+    🐢  high latency
+    📸  snapshot created
+    ⏻  system shutdown
+    
+    BODY LINE emoji — one per line based on content:
+    🏷️  VM name / CT name / ID line (first line of VM/CT lifecycle events)
+    ✔️  status ok / success / action confirmed
+    ❌  status error / failed
+    💽  size (individual VM/CT backup)
+    💾  total backup size (summary line only)
+    ⏱️  duration
+    🗄️  storage location / PBS path
+    📦  total updates count
+    🔒  security updates / jail
+    🔄  proxmox updates
+    ⚙️  kernel updates / service name
+    🗂️  important packages header
+    🌐  source IP
+    👤  user
+    📝  reason / details
+    🌡️  temperature
+    🔥  CPU usage
+    💧  memory usage
+    📊  summary line / statistics
+    👥  quorum / cluster nodes
+    💿  disk device
+    📂  filesystem / mount point
+    📌  category / package item (pve_update)
+    🚦  severity
+    🖥️  node name
+    🎯  target node
+    🔹  current version (pve_update)
+    🟢  new version (pve_update)
 
-   Use these exact emoji for each kind of content:
-
-   TITLE emoji — pick by event type:
-   ✅  success / resolved / complete / reconnected
-   ❌  failed / FAILED / error
-   💥  crash / collision / I/O error
-   🆘  new critical health issue
-   📦  updates available
-   💾  backup started
-   🆕  new PVE version available
-   🔺  escalated / severity increased
-   📋  health digest / persistent issues
-   🚚  migration started
-   🔌  network down / node disconnected
-   🚨  auth failure / security alert
-   🚷  IP banned / blocked
-   🔑  permission change
-   💢  split-brain
-   💣  OOM kill
-   ▶️  VM or CT started
-   ⏹️  VM or CT stopped
-   🔽  VM or CT shutdown
-   🔄  restarted / reboot / proxmox updates
-   🔥  high CPU / firewall issue
-   💧  high memory
-   🌡️  high temperature
-   ⚠️  warning / degraded / high load / system problem
-   📉  low disk space
-   🚫  storage unavailable
-   🐢  high latency
-   📸  snapshot created
-   ⏻  system shutdown
-
-   BODY LINE emoji — pick by what the line is about:
-   🏷️  VM name / CT name / ID / guest name
-   ✔️  status ok / success / completed
-   ❌  status error / failed
-   💽  size / tamaño / Größe
-   💾  total backup size (summary line only)
-   ⏱️  duration / tiempo / Dauer
-   🗄️  storage / almacenamiento / PBS
-   🗃️  archive path / ruta de archivo
-   📦  total updates / total actualizaciones
-   🔒  security updates / actualizaciones de seguridad / jail
-   🔄  proxmox updates / actualizaciones de proxmox
-   ⚙️  kernel updates / actualizaciones del kernel / service
-   📋  important packages header (update_summary)
-   🗂️  important packages header (pve_update) / file index / archive listing
-   🌐  source IP / IP origen
-   👤  user / usuario
-   📝  reason / motivo / razón / details
-   🌡️  temperature / temperatura
-   🔥  CPU usage / uso de CPU
-   💧  memory / memoria
-   📊  statistics / load / carga / summary line
-   👥  quorum / cluster
-   💿  disk device / dispositivo
-   📂  filesystem / mount / ruta
-   📌  category / categoría
-   🚦  severity / severidad
-   🖥️  node / nodo
-   🎯  target / destino
-   🔹  current version (pve_update)
-   🟢  new version (pve_update)
 
    BLANK LINES FOR READABILITY — insert ONE blank line between logical sections within the body.
    Blank lines go BETWEEN groups, not before the first line or after the last line.
@@ -1561,13 +1547,16 @@ EMOJI USAGE — place ONE emoji at the START of EVERY non-empty line (title and 
    ⚠️ 1 sector currently unreadable (pending)
    📝 Disk reports sectors in pending reallocation state
 
-   EXAMPLE — VM failed:
+   EXAMPLE — health degraded (multiple issues):
    [TITLE]
-   💥 pve01: VM web01 (100) FAILED
+   ⚠️ amd: 2 health checks degraded
    [BODY]
-   🏷️ Virtual machine web01 (ID: 100) failed to start.
+   💥 Disk I/O error on /dev/sda: 1 sector currently unreadable (pending)
 
-   📝 Reason: kernel segfault"""
+   🏷️ Container CT 9005: failed to start
+   🏷️ Container CT 9004: failed to start
+   🏷️ Container CT 9002: failed to start"""
+
 
 # No emoji instructions for email/plain text channels
 AI_NO_EMOJI_INSTRUCTIONS = """
