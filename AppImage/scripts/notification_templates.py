@@ -1461,30 +1461,6 @@ A blank line must be completely empty — no emoji, no spaces.
    - VM events with a reason: after the main status line, before Reason / Node / Target lines
    - Health events: after the category/status line, before duration or detail lines
 
-    EXAMPLE — update_summary (no important packages):
-    [TITLE]
-    📦 amd: Updates available
-    [BODY]
-    📦 Total updates: 62
-    🔒 Security updates: 2
-    🔄 Proxmox updates: 5
-    ⚙️ Kernel updates: 0
-    
-    🗂️ Important packages: 0
-    
-    EXAMPLE — update_summary (with packages):
-    [TITLE]
-    📦 amd: Updates available
-    [BODY]
-    📦 Total updates: 90
-    🔒 Security updates: 6
-    🔄 Proxmox updates: 14
-    ⚙️ Kernel updates: 1
-    
-    🗂️ Important packages:
-    • pve-manager (9.1.4 -> 9.1.6)
-    • qemu-server (9.1.3 -> 9.1.4)
-
     EXAMPLE — CT shutdown:
     [TITLE]
     🔽 amd: CT alpine (101) shut down
@@ -1512,12 +1488,13 @@ A blank line must be completely empty — no emoji, no spaces.
     [TITLE]
     📦 amd: Updates available
     [BODY]
-    📦 Total updates: 55
-    🔒 Security updates: 0
+    📦 Total updates: 24
+    🔒 Security updates: 6
     🔄 Proxmox updates: 0
     ⚙️ Kernel updates: 0
 
-    🗂️ Important packages: 0
+    🗂️ Important packages:
+    • none
 
     EXAMPLE — updates message (with important packages):
     [TITLE]
@@ -1601,7 +1578,7 @@ A blank line must be completely empty — no emoji, no spaces.
 
     🏷️ Container CT 9005: ❌ failed to start
     🏷️ Container CT 9004: ❌ failed to start
-    🏷️ Container CT 9002: ❌failed to start"""
+    🏷️ Container CT 9002: ❌ failed to start"""
 
 
 # No emoji instructions for email/plain text channels
