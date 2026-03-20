@@ -1461,6 +1461,20 @@ A blank line must be completely empty — no emoji, no spaces.
    - VM events with a reason: after the main status line, before Reason / Node / Target lines
    - Health events: after the category/status line, before duration or detail lines
 
+   EXAMPLE — CT shutdown:
+   [TITLE]
+   🔽 amd: CT alpine (101) shut down
+   [BODY]
+   🏷️ Container alpine (ID: 101)
+   ✔️ Cleanly shut down
+
+   EXAMPLE — VM started:
+   [TITLE]
+   🚀 pve01: VM arch-linux (100) started
+   [BODY]
+   🏷️ Virtual machine arch-linux (ID: 100)
+   ✔️ Now running
+
    EXAMPLE — updates message (no important packages):
    [TITLE]
    📦 amd: Updates available
@@ -1544,17 +1558,7 @@ A blank line must be completely empty — no emoji, no spaces.
    💿 Device: /dev/sda
 
    ⚠️ 1 sector currently unreadable (pending)
-   📝 Disk reports sectors in pending reallocation state
-
-   EXAMPLE — health degraded (multiple issues):
-   [TITLE]
-   ⚠️ amd: 2 health checks degraded
-   [BODY]
-   💥 Disk I/O error on /dev/sda: 1 sector currently unreadable (pending)
-
-   🏷️ Container CT 9005: failed to start
-   🏷️ Container CT 9004: failed to start
-   🏷️ Container CT 9002: failed to start"""
+   📝 Disk reports sectors in pending reallocation state"""
 
 
 # No emoji instructions for email/plain text channels
