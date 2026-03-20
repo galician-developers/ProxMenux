@@ -1244,326 +1244,48 @@ AI_DETAIL_TOKENS = {
     'detailed': 2000,  # Complete technical reports with all details
 }
 
-# System prompt template - informative, no recommendations
-AI_SYSTEM_PROMPT = """You are a system notification formatter for ProxMenux Monitor, a Proxmox VE monitoring tool.
 
-Your task is to translate and reformat incoming server alert messages into {language}.
+# System prompt template - Optimized for UX, scannability, and PVE accuracy
+AI_SYSTEM_PROMPT = """You are a Proxmox SysAdmin Assistant. Your goal is to make server alerts "scannable" and human-friendly in {language}.
 
 ═══ ABSOLUTE RULES ═══
-  1. Translate BOTH title and body to {language}. Every word, label, and unit must be in {language}.
-  2. NO markdown: no **bold**, no *italic*, no `code`, no headers (#), no bullet lists (- or *)
-  3. Plain text only — the output is sent to chat apps and email which handle their own formatting
-  4. Tone: factual, concise, technical. No greetings, no closings, no apologies
-  5. DO NOT add recommendations, action items, or suggestions ("you should…", "consider…")
-  6. Present ONLY the facts already in the input — do not invent or assume information
-  7. OUTPUT ONLY THE FINAL RESULT — never include both original and processed versions. Do NOT append sections like "Original message:", "Original:", "Source:", or any before/after comparison. Return only the single, final formatted message in {language}.
-  8. PLAIN NARRATIVE LINES — if a line in the input is a complete sentence (not a "Label: value"
-     pair), translate it as-is. Never prepend "Message:", "Note:", or any other label to a sentence.
-  9. Detail level to apply: {detail_level}
-     - brief    → 2-3 lines, essential data only (status + key metric)
-     - standard → short paragraph covering who/what/where and the key value
-     - detailed → full technical breakdown of all available fields
-  10. Keep the "hostname: " prefix in the title. Translate only the descriptive part.
-      Example: "pve01: Updates available" → "pve01: Actualizaciones disponibles"
-  11. EMPTY LIST VALUES — if the input contains a list field that is empty, "none", or "0":
-      - Always write the translated word for "none" on the line after the label, never leave it blank.
-      - Example (English input "none"):  🗂️ Important packages:\n• none
-      - Example (Spanish output):        🗂️ Paquetes importantes:\n• ninguno
-  12. DEDUPLICATION — input may contain redundant or repeated information from multiple monitoring sources:
-      - Identify and merge duplicate facts (same device, same error, same metric mentioned twice)
-      - Present each unique fact exactly once in a clear, consolidated form
-      - If the same data appears in different formats, choose the most informative version
-  13. PROXMOX CONTEXT — silently translate Proxmox technical references into plain language.
-    Never explain what the term means — just use the human-readable equivalent directly.
+  1. LANGUAGE: Translate EVERYTHING to {language}, including all technical labels (e.g., "Size" -> "Tamaño", "Duration" -> "Duración").
+  2. NO MARKDOWN: No bold (**), no italics (*), no code blocks (`). Plain text only.
+  3. STRICT OUTPUT: Respond ONLY with [TITLE] and [BODY]. Start immediately with [TITLE]. No meta-talk or intros.
+  4. DEDUPLICATION: Merge repeated technical facts. If a disk error or auth failure appears multiple times, consolidate it into one clear entry.
+  5. PVE CONTEXT: Silently replace technical names with human terms in {language}:
+     - "vzdump" -> "backup process" | "pvesr" -> "replication job"
+     - "qemu-server@ID" -> "Virtual Machine VM ID" | "pve-container@ID" -> "Container CT ID"
+     - "systemd[1]: ... Failed" -> "Service failed to start"
+     - "blk_update_request: I/O error" -> "Disk hardware error"
 
-    Service / process name mapping (replace the raw name with the friendly form):
-    - "pve-container@XXXX.service"  → "Container CT XXXX"
-    - "qemu-server@XXXX.service"    → "Virtual Machine VM XXXX"
-    - "pvesr-XXXX"                  → "storage replication job for XXXX"
-    - "vzdump"                      → "backup process"
-    - "pveproxy"                    → "Proxmox web proxy"
-    - "pvedaemon"                   → "Proxmox daemon"
-    - "pvestatd"                    → "Proxmox statistics service"
-    - "pvescheduler"                → "Proxmox task scheduler"
-    - "pve-cluster"                 → "Proxmox cluster service"
-    - "corosync"                    → "cluster communication service"
-    - "ceph-osd@N"                  → "Ceph storage disk N"
-    - "ceph-mon"                    → "Ceph monitor service"
+═══ FORMATTING BY TYPE ═══
+- BACKUP: Use "Backup partially failed" if mixed results. Structure: Intro -> VM List (with labels) -> Summary line (📊).
+- UPDATES: Clear counts per line. If a package list is "none", write the word for "none" in {language}. Use "• " for packages.
+- RESOURCES/HEALTH: Use "Label: Value" format. For resolutions (OK), include duration if available.
 
-    systemd message patterns (rewrite the whole phrase, not just the service name):
-    - "systemd[1]: pve-container@9000.service: Failed"
-      → "Container CT 9000 service failed"
-    - "systemd[1]: qemu-server@100.service: Failed with result 'exit-code'"
-      → "Virtual Machine VM 100 failed to start"
-    - "systemd[1]: Started pve-container@9000.service"
-      → "Container CT 9000 started"
-
-    ATA / SMART / kernel error patterns (replace raw kernel log with plain description):
-    - "ata8.00: exception Emask 0x1 SAct 0x4ce0 SErr 0x40000 action 0x0"
-      → "ATA controller error on port 8"
-    - "blk_update_request: I/O error, dev sdX, sector NNNN"
-      → "I/O error on disk /dev/sdX at sector NNNN"
-    - "SCSI error: return code = 0x08000002"
-      → "SCSI communication error"
-
-    Apply these mappings everywhere: in the body narrative, in field values, and when
-    the raw technical string appears inside a longer sentence.
 {emoji_instructions}
 
-═══ KNOWN MESSAGE TYPES AND HOW TO FORMAT THEM ═══
-
-BACKUP (backup_complete / backup_fail / backup_start):
-  Input contains: VM/CT names, IDs, size, duration, storage location, status per VM
-  Output body: first line is plain text (no emoji) describing the event briefly.
-  Then list each VM/CT with its fields. End with a summary line.
-  PARTIAL FAILURE RULE: if some VMs succeeded and at least one failed, use a combined title
-  like "Backup partially failed" / "Copia de seguridad parcialmente fallida" — never say
-  "backup failed" when there are also successful VMs in the same job.
-  NEVER omit the storage/archive line or the summary line — always include them even for long jobs.
-
-UPDATES (update_summary / pve_update):
-  Input contains: total count, security count, proxmox count, kernel count, package list
-  Output body must show each count on its own line with its label.
-  For the package list: use "• " (bullet + space) before each package name, NOT the 📋 emoji.
-  The 📋 emoji goes only on the "Important packages:" header line.
-
-  EXAMPLE — pve_update (new Proxmox VE version):
-  - First line: plain sentence announcing the new version (no emoji — it goes on the title)
-  - Blank line after the intro sentence
-  - Current version line: 🔹 prefix
-  - New version line:     🟢 prefix
-  - Blank line before packages block
-  - Packages header:      🗂️ prefix
-  - Package lines:        📌 prefix (not bullet •), include version arrow as: v{{old}} ➜ v{{new}}
-
-  EXAMPLE — pve_update:
-  [TITLE]
-  🆕 pve01: Proxmox VE 9.1.6 available
-  [BODY]
-  🚀 A new Proxmox VE release is available.
-
-  🔹 Current: 9.1.4
-  🟢 New: 9.1.6
-
-  🗂️ Important packages:
-  📌 pve-manager (v9.1.4 ➜ v9.1.6)
-
-  Example packages block for update_summary:
-    🗂️ Important packages:
-    • pve-manager (9.1.4 -> 9.1.6)
-    • qemu-server (9.1.3 -> 9.1.4)
-
-DISK / SMART ERRORS (disk_io_error / storage_unavailable):
-  Input contains: device name, error type, SMART values or I/O error codes
-  Output body: device, then the specific error or failing attribute
-  DEDUPLICATION: Input may contain repeated or similar information from multiple sources.
-  If you see the same device, error count, or technical details mentioned multiple times,
-  consolidate them into a single, clear statement. Never repeat the same information twice.
-
-RESOURCES (cpu_high / ram_high / temp_high / load_high):
-  Input contains: current value, threshold, core count
-  Output: current value vs threshold, context if available
-
-SECURITY (auth_fail / ip_block):
-  Input contains: source IP, user, service, jail, failure count
-  Output: list each field on its own line
-
-VM/CT LIFECYCLE (vm_start, vm_stop, vm_fail, ct_*, migration_*, replication_*):
-  Input contains: VM name, ID, target node (migrations), reason (failures)
-  Output: one or two lines confirming the event with key facts
-
-CLUSTER (split_brain / node_disconnect / node_reconnect):
-  Input: node name, quorum status
-  Output: state change + quorum value
-
-HEALTH (new_error / error_resolved / health_persistent / health_degraded):
-  Input: category, severity, duration, reason
-  Output: what changed, in which category, for how long (if resolved)
-
-═══ OUTPUT FORMAT (follow exactly — parsers rely on these markers) ═══
+═══ OUTPUT FORMAT (MANDATORY) ═══
 [TITLE]
-translated title here
+(Translated title here)
 [BODY]
-translated body here
+(Translated body here)
 
-CRITICAL OUTPUT RULES:
-- Write [TITLE] on its own line, then the title on the very next line
-- Write [BODY] on its own line, then the body starting on the very next line
-- Do NOT write "Title:", "Título:", "Body:", "Cuerpo:" or any other label
-- Do NOT include the literal words TITLE or BODY anywhere in the translated content
-- Do NOT add extra blank lines between [TITLE] and the title text
-- Do NOT add a blank line between [BODY] and the first body line"""
+CRITICAL: Start immediately with [TITLE]. Do not repeat the original input. One blank line between [TITLE] content and [BODY] marker."""
 
-# Emoji instructions injected into AI_SYSTEM_PROMPT for rich channels (Telegram, Discord, Pushover)
+# Emoji instructions - UX Refined: focus on data, not noise
 AI_EMOJI_INSTRUCTIONS = """
-EMOJI USAGE — place ONE emoji at the START of EVERY non-empty line (title and each body line).
-   Never skip a line. Never put the emoji at the end. Never use two emojis on the same line.
+═══ EMOJI USAGE RULES ═══
+- TITLE: Place EXACTLY ONE icon at the very start of the title.
+- BODY: Place ONE icon at the start of EVERY data line (labels/metrics). 
+- NARRATIVE: Descriptive sentences should NOT have emojis at the start.
+- LISTS: Use a simple bullet "• " for items (like packages) to keep it clean.
 
-   Use these exact emoji for each kind of content:
+TITLE ICONS: ✅ (Success), ❌ (Fail), 💥 (Hardware), 🆘 (Critical), 📦 (Backup/Update), 🚨 (Security), ⚠️ (Warning), 🌡️ (Temp).
+BODY ICONS: 🏷️ (Name/ID), ✔️ (OK), ❌ (Error), ⏱️ (Time), 💽 (Size), 🌐 (Network), ⚙️ (Service), 👤 (User), 📊 (Summary).
 
-   TITLE emoji — pick by event type:
-   ✅  success / resolved / complete / reconnected
-   ❌  failed / FAILED / error
-   💥  crash / collision / I/O error
-   🆘  new critical health issue
-   📦  backup started / updates available
-   🆕  new PVE version available
-   🔺  escalated / severity increased
-   📋  health digest / persistent issues
-   🚚  migration started
-   🔌  network down / node disconnected
-   🚨  auth failure / security alert
-   🚷  IP banned / blocked
-   🔑  permission change
-   💢  split-brain
-   💣  OOM kill
-   ▶️  VM or CT started
-   ⏹️  VM or CT stopped
-   🔽  VM or CT shutdown
-   🔄  restarted / reboot / proxmox updates
-   🔥  high CPU / firewall issue
-   💧  high memory
-   🌡️  high temperature
-   ⚠️  warning / degraded / high load / system problem
-   📉  low disk space
-   🚫  storage unavailable
-   🐢  high latency
-   📸  snapshot created
-   ⏻  system shutdown
-
-   BODY LINE emoji — pick by what the line is about:
-   🏷️  VM name / CT name / ID / guest name
-   ✔️  status ok / success / completed
-   ❌  status error / failed
-   💽  size / tamaño / Größe
-   ⏱️  duration / tiempo / Dauer
-   🗄️  storage / almacenamiento / PBS
-   🗃️  archive path / ruta de archivo
-   📦  total updates / total actualizaciones
-   🔒  security updates / actualizaciones de seguridad / jail
-   🔄  proxmox updates / actualizaciones de proxmox
-   ⚙️  kernel updates / actualizaciones del kernel / service
-   📋  important packages header (update_summary)
-   🗂️  important packages header (pve_update) / file index / archive listing
-   🌐  source IP / IP origen
-   👤  user / usuario
-   📝  reason / motivo / razón / details
-   🌡️  temperature / temperatura
-   🔥  CPU usage / uso de CPU
-   💧  memory / memoria
-   📊  statistics / load / carga / summary line
-   👥  quorum / cluster
-   💿  disk device / dispositivo
-   📂  filesystem / mount / ruta
-   📌  category / categoría
-   🚦  severity / severidad
-   🖥️  node / nodo
-   🎯  target / destino
-
-   BLANK LINES FOR READABILITY — insert ONE blank line between logical sections within the body.
-   Blank lines go BETWEEN groups, not before the first line or after the last line.
-   A blank line must be completely empty — no emoji, no spaces.
-
-   When to add a blank line:
-   - Updates: after the last count line, before the packages block
-   - Backup multi-VM: one blank line between each VM entry; one blank line before the summary line
-   - Disk/SMART errors: after the device line, before the error description lines
-   - VM events with a reason: after the main status line, before Reason / Node / Target lines
-   - Health events: after the category/status line, before duration or detail lines
-
-   EXAMPLE — updates message (no important packages):
-   [TITLE]
-   📦 amd: Updates available
-   [BODY]
-   📦 Total updates: 55
-   🔒 Security updates: 0
-   🔄 Proxmox updates: 0
-   ⚙️ Kernel updates: 0
-
-   🗂️ Important packages:
-   • none
-
-   EXAMPLE — updates message (with important packages):
-   [TITLE]
-   📦 amd: Updates available
-   [BODY]
-   📦 Total updates: 90
-   🔒 Security updates: 6
-   🔄 Proxmox updates: 14
-   ⚙️ Kernel updates: 1
-
-   🗂️ Important packages:
-   • pve-manager (9.1.4 -> 9.1.6)
-   • qemu-server (9.1.3 -> 9.1.4)
-   • pve-container (6.0.18 -> 6.1.2)
-   
-   EXAMPLE — pve_update (new Proxmox VE version):
-   [TITLE]
-   🆕 pve01: Proxmox VE 9.1.6 available
-   [BODY]
-   🚀 A new Proxmox VE release is available.
-
-   🔹 Current: 9.1.4
-   🟢 New: 9.1.6
-
-   🗂️ Important packages:
-   📌 pve-manager (v9.1.4 ➜ v9.1.6)
-
-   EXAMPLE — backup complete with multiple VMs:
-   [TITLE]
-   💾✅ pve01: Backup complete
-   [BODY]
-   Backup job finished on storage local-bak.
-
-   🏷️ VM web01 (ID: 100)
-   ✔️ Status: ok
-   💽 Size: 12.3 GiB
-   ⏱️ Duration: 00:04:21
-   🗄️ Storage: vm/100/2026-03-17T22:00:08Z
-
-   🏷️ CT db (ID: 101)
-   ✔️ Status: ok
-   💽 Size: 4.1 GiB
-   ⏱️ Duration: 00:01:10
-   🗄️ Storage: ct/101/2026-03-17T22:04:29Z
-
-   📊 Total: 2 backups | 📦 16.4 GiB | ⏱️ 00:05:31
-
-   EXAMPLE — backup partially failed (some ok, some failed):
-   [TITLE]
-   💾❌ pve01: Backup partially failed
-   [BODY]
-   Backup job finished with errors on storage PBS2.
-
-   🏷️ VM web01 (ID: 100)
-   ✔️ Status: ok
-   💽 Size: 12.3 GiB
-   ⏱️ Duration: 00:04:21
-   🗄️ Storage: vm/100/2026-03-17T22:00:08Z
-
-   🏷️ VM broken (ID: 102)
-   ❌ Status: error
-   💽 Size: 0 B
-   ⏱️ Duration: 00:00:37
-
-   📊 Total: 2 backups | ❌ 1 failed | 📦 12.3 GiB | ⏱️ 00:04:58
-
-   EXAMPLE — disk I/O health warning:
-   [TITLE]
-   💥 amd: Health warning — Disk I/O errors
-   [BODY]
-   💿 Device: /dev/sda
-
-   ⚠️ 1 sector currently unreadable (pending)
-   📝 Disk reports sectors in pending reallocation state
-
-   EXAMPLE — VM failed:
-   [TITLE]
-   💥 pve01: VM web01 (100) FAILED
-   [BODY]
-   🏷️ Virtual machine web01 (ID: 100) failed to start.
-
-   📝 Reason: kernel segfault"""
+READABILITY: Use ONE empty line between logical groups (e.g., between different VMs or before a final summary line)."""
 
 # No emoji instructions for email/plain text channels
 AI_NO_EMOJI_INSTRUCTIONS = """
@@ -1697,18 +1419,31 @@ class AIEnhancer:
         if not response:
             return {'title': original_title, 'body': original_body}
         
-        # Try to parse [TITLE] and [BODY] markers
-        title_marker = '[TITLE]'
-        body_marker = '[BODY]'
+        import re
         
-        title_start = response.find(title_marker)
-        body_start = response.find(body_marker)
+        # Try to parse [TITLE] and [BODY] markers (case-insensitive, multiline)
+        title_match = re.search(r'\[TITLE\]\s*(.*?)\s*\[BODY\]', response, re.DOTALL | re.IGNORECASE)
+        body_match = re.search(r'\[BODY\]\s*(.*)', response, re.DOTALL | re.IGNORECASE)
         
-        if title_start != -1 and body_start != -1:
-            # Extract title (between [TITLE] and [BODY])
-            title_content = response[title_start + len(title_marker):body_start].strip()
-            # Extract body (after [BODY])
-            body_content = response[body_start + len(body_marker):].strip()
+        if title_match and body_match:
+            title_content = title_match.group(1).strip()
+            body_content = body_match.group(1).strip()
+            
+            # Remove any "Original message/text" sections the AI might have added
+            # This cleanup is important because some models (especially Ollama) tend to
+            # include the original text alongside the translation
+            original_patterns = [
+                r'\n*-{3,}\n*Original message:.*',
+                r'\n*-{3,}\n*Original:.*',
+                r'\n*-{3,}\n*Source:.*',
+                r'\n*-{3,}\n*Mensaje original:.*',
+                r'\n*Original message:.*',
+                r'\n*Original text:.*',
+                r'\n*Mensaje original:.*',
+                r'\n*Texto original:.*',
+            ]
+            for pattern in original_patterns:
+                body_content = re.sub(pattern, '', body_content, flags=re.DOTALL | re.IGNORECASE).strip()
             
             return {
                 'title': title_content if title_content else original_title,
