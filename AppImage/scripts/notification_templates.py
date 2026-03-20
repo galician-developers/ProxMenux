@@ -1406,7 +1406,8 @@ EMOJI USAGE — place ONE emoji at the START of EVERY non-empty line (title and 
    ❌  failed / FAILED / error
    💥  crash / collision / I/O error
    🆘  new critical health issue
-   📦  backup started / updates available
+   📦  updates available
+   💾  backup started
    🆕  new PVE version available
    🔺  escalated / severity increased
    📋  health digest / persistent issues
@@ -1436,6 +1437,7 @@ EMOJI USAGE — place ONE emoji at the START of EVERY non-empty line (title and 
    ✔️  status ok / success / completed
    ❌  status error / failed
    💽  size / tamaño / Größe
+   💾  total backup size (summary line only)
    ⏱️  duration / tiempo / Dauer
    🗄️  storage / almacenamiento / PBS
    🗃️  archive path / ruta de archivo
@@ -1459,6 +1461,8 @@ EMOJI USAGE — place ONE emoji at the START of EVERY non-empty line (title and 
    🚦  severity / severidad
    🖥️  node / nodo
    🎯  target / destino
+   🔹  current version (pve_update)
+   🟢  new version (pve_update)
 
    BLANK LINES FOR READABILITY — insert ONE blank line between logical sections within the body.
    Blank lines go BETWEEN groups, not before the first line or after the last line.
@@ -1527,7 +1531,7 @@ EMOJI USAGE — place ONE emoji at the START of EVERY non-empty line (title and 
    ⏱️ Duration: 00:01:10
    🗄️ Storage: ct/101/2026-03-17T22:04:29Z
 
-   📊 Total: 2 backups | 📦 16.4 GiB | ⏱️ 00:05:31
+   📊 Total: 2 backups | 💾 16.4 GiB | ⏱️ 00:05:31
 
    EXAMPLE — backup partially failed (some ok, some failed):
    [TITLE]
@@ -1546,7 +1550,7 @@ EMOJI USAGE — place ONE emoji at the START of EVERY non-empty line (title and 
    💽 Size: 0 B
    ⏱️ Duration: 00:00:37
 
-   📊 Total: 2 backups | ❌ 1 failed | 📦 12.3 GiB | ⏱️ 00:04:58
+   📊 Total: 2 backups | ❌ 1 failed | 💾 12.3 GiB | ⏱️ 00:04:58
 
    EXAMPLE — disk I/O health warning:
    [TITLE]
