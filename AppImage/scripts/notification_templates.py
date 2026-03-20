@@ -1461,104 +1461,138 @@ A blank line must be completely empty — no emoji, no spaces.
    - VM events with a reason: after the main status line, before Reason / Node / Target lines
    - Health events: after the category/status line, before duration or detail lines
 
-   EXAMPLE — CT shutdown:
-   [TITLE]
-   🔽 amd: CT alpine (101) shut down
-   [BODY]
-   🏷️ Container alpine (ID: 101)
-   ✔️ Cleanly shut down
+    EXAMPLE — update_summary (no important packages):
+    [TITLE]
+    📦 amd: Updates available
+    [BODY]
+    📦 Total updates: 62
+    🔒 Security updates: 2
+    🔄 Proxmox updates: 5
+    ⚙️ Kernel updates: 0
+    
+    🗂️ Important packages: 0
+    
+    EXAMPLE — update_summary (with packages):
+    [TITLE]
+    📦 amd: Updates available
+    [BODY]
+    📦 Total updates: 90
+    🔒 Security updates: 6
+    🔄 Proxmox updates: 14
+    ⚙️ Kernel updates: 1
+    
+    🗂️ Important packages:
+    • pve-manager (9.1.4 -> 9.1.6)
+    • qemu-server (9.1.3 -> 9.1.4)
 
-   EXAMPLE — VM started:
-   [TITLE]
-   🚀 pve01: VM arch-linux (100) started
-   [BODY]
-   🏷️ Virtual machine arch-linux (ID: 100)
-   ✔️ Now running
+    EXAMPLE — CT shutdown:
+    [TITLE]
+    🔽 amd: CT alpine (101) shut down
+    [BODY]
+    🏷️ Container alpine (ID: 101)
+    ✔️ Cleanly shut down
 
-   EXAMPLE — updates message (no important packages):
-   [TITLE]
-   📦 amd: Updates available
-   [BODY]
-   📦 Total updates: 55
-   🔒 Security updates: 0
-   🔄 Proxmox updates: 0
-   ⚙️ Kernel updates: 0
+    EXAMPLE — VM started:
+    [TITLE]
+    🚀 pve01: VM arch-linux (100) started
+    [BODY]
+    🏷️ Virtual machine arch-linux (ID: 100)
+    ✔️ Now running
 
-   🗂️ Important packages: 0
+    EXAMPLE — updates message (no important packages):
+    [TITLE]
+    📦 amd: Updates available
+    [BODY]
+    📦 Total updates: 55
+    🔒 Security updates: 0
+    🔄 Proxmox updates: 0
+    ⚙️ Kernel updates: 0
 
-   EXAMPLE — updates message (with important packages):
-   [TITLE]
-   📦 amd: Updates available
-   [BODY]
-   📦 Total updates: 90
-   🔒 Security updates: 6
-   🔄 Proxmox updates: 14
-   ⚙️ Kernel updates: 1
+    🗂️ Important packages: 0
 
-   🗂️ Important packages:
-   • pve-manager (9.1.4 -> 9.1.6)
-   • qemu-server (9.1.3 -> 9.1.4)
-   • pve-container (6.0.18 -> 6.1.2)
-   
-   EXAMPLE — pve_update (new Proxmox VE version):
-   [TITLE]
-   🆕 pve01: Proxmox VE 9.1.6 available
-   [BODY]
-   🚀 A new Proxmox VE release is available.
+    EXAMPLE — updates message (with important packages):
+    [TITLE]
+    📦 amd: Updates available
+    [BODY]
+    📦 Total updates: 90
+    🔒 Security updates: 6
+    🔄 Proxmox updates: 14
+    ⚙️ Kernel updates: 1
 
-   🔹 Current: 9.1.4
-   🟢 New: 9.1.6
+    🗂️ Important packages:
+    • pve-manager (9.1.4 -> 9.1.6)
+    • qemu-server (9.1.3 -> 9.1.4)
+    • pve-container (6.0.18 -> 6.1.2)
+    
+    EXAMPLE — pve_update (new Proxmox VE version):
+    [TITLE]
+    🆕 pve01: Proxmox VE 9.1.6 available
+    [BODY]
+    🚀 A new Proxmox VE release is available.
 
-   🗂️ Important packages:
-   📌 pve-manager (v9.1.4 ➜ v9.1.6)
+    🔹 Current: 9.1.4
+    🟢 New: 9.1.6
 
-   EXAMPLE — backup complete with multiple VMs:
-   [TITLE]
-   💾✅ pve01: Backup complete
-   [BODY]
-   Backup job finished on storage local-bak.
+    🗂️ Important packages:
+    📌 pve-manager (v9.1.4 ➜ v9.1.6)
 
-   🏷️ VM web01 (ID: 100)
-   ✔️ Status: ok
-   💽 Size: 12.3 GiB
-   ⏱️ Duration: 00:04:21
-   🗄️ Storage: vm/100/2026-03-17T22:00:08Z
+    EXAMPLE — backup complete with multiple VMs:
+    [TITLE]
+    💾✅ pve01: Backup complete
+    [BODY]
+    Backup job finished on storage local-bak.
 
-   🏷️ CT db (ID: 101)
-   ✔️ Status: ok
-   💽 Size: 4.1 GiB
-   ⏱️ Duration: 00:01:10
-   🗄️ Storage: ct/101/2026-03-17T22:04:29Z
+    🏷️ VM web01 (ID: 100)
+    ✔️ Status: ok
+    💽 Size: 12.3 GiB
+    ⏱️ Duration: 00:04:21
+    🗄️ Storage: vm/100/2026-03-17T22:00:08Z
 
-   📊 Total: 2 backups | 💾 16.4 GiB | ⏱️ 00:05:31
+    🏷️ CT db (ID: 101)
+    ✔️ Status: ok
+    💽 Size: 4.1 GiB
+    ⏱️ Duration: 00:01:10
+    🗄️ Storage: ct/101/2026-03-17T22:04:29Z
 
-   EXAMPLE — backup partially failed (some ok, some failed):
-   [TITLE]
-   💾❌ pve01: Backup partially failed
-   [BODY]
-   Backup job finished with errors on storage PBS2.
+    📊 Total: 2 backups | 💾 16.4 GiB | ⏱️ 00:05:31
 
-   🏷️ VM web01 (ID: 100)
-   ✔️ Status: ok
-   💽 Size: 12.3 GiB
-   ⏱️ Duration: 00:04:21
-   🗄️ Storage: vm/100/2026-03-17T22:00:08Z
+    EXAMPLE — backup partially failed (some ok, some failed):
+    [TITLE]
+    💾❌ pve01: Backup partially failed
+    [BODY]
+    Backup job finished with errors on storage PBS2.
 
-   🏷️ VM broken (ID: 102)
-   ❌ Status: error
-   💽 Size: 0 B
-   ⏱️ Duration: 00:00:37
+    🏷️ VM web01 (ID: 100)
+    ✔️ Status: ok
+    💽 Size: 12.3 GiB
+    ⏱️ Duration: 00:04:21
+    🗄️ Storage: vm/100/2026-03-17T22:00:08Z
 
-   📊 Total: 2 backups | ❌ 1 failed | 💾 12.3 GiB | ⏱️ 00:04:58
+    🏷️ VM broken (ID: 102)
+    ❌ Status: error
+    💽 Size: 0 B
+    ⏱️ Duration: 00:00:37
 
-   EXAMPLE — disk I/O health warning:
-   [TITLE]
-   💥 amd: Health warning — Disk I/O errors
-   [BODY]
-   💿 Device: /dev/sda
+    📊 Total: 2 backups | ❌ 1 failed | 💾 12.3 GiB | ⏱️ 00:04:58
 
-   ⚠️ 1 sector currently unreadable (pending)
-   📝 Disk reports sectors in pending reallocation state"""
+    EXAMPLE — disk I/O health warning:
+    [TITLE]
+    💥 amd: Health warning — Disk I/O errors
+    [BODY]
+    💿 Device: /dev/sda
+
+    ⚠️ 1 sector currently unreadable (pending)
+    📝 Disk reports sectors in pending reallocation state
+
+    EXAMPLE — health degraded (multiple issues):
+    [TITLE]
+    ⚠️ amd: 2 health checks degraded
+    [BODY]
+    💥 Disk I/O error on /dev/sda: 1 sector currently unreadable (pending)
+
+    🏷️ Container CT 9005: ❌ failed to start
+    🏷️ Container CT 9004: ❌ failed to start
+    🏷️ Container CT 9002: ❌failed to start"""
 
 
 # No emoji instructions for email/plain text channels
