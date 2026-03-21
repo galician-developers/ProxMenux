@@ -1787,6 +1787,7 @@ export function NotificationSettings() {
                                 AI translates and formats notifications to your selected language. Each channel can have different detail levels.
                               </p>
                             </div>
+                          </div>
                         </div>
                       )}
                       
