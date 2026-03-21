@@ -368,6 +368,13 @@ export function NotificationSettings() {
     if (showHistory) loadHistory()
   }, [showHistory, loadHistory])
 
+  // Auto-expand AI section when AI is enabled
+  useEffect(() => {
+    if (config.ai_enabled) {
+      setShowAdvanced(true)
+    }
+  }, [config.ai_enabled])
+
   const updateConfig = (updater: (prev: NotificationConfig) => NotificationConfig) => {
     setConfig(prev => {
       const next = updater(prev)
@@ -529,21 +536,23 @@ export function NotificationSettings() {
 
   /** Flatten the nested NotificationConfig into the flat key-value map the backend expects. */
   const flattenConfig = (cfg: NotificationConfig): Record<string, string> => {
-    const flat: Record<string, string> = {
-      enabled: String(cfg.enabled),
-      ai_enabled: String(cfg.ai_enabled),
-      ai_provider: cfg.ai_provider,
-      ai_model: cfg.ai_model,
-      ai_language: cfg.ai_language,
-      ai_ollama_url: cfg.ai_ollama_url,
-      ai_openai_base_url: cfg.ai_openai_base_url,
-      hostname: cfg.hostname,
-      webhook_secret: cfg.webhook_secret,
-      webhook_allowed_ips: cfg.webhook_allowed_ips,
-      pbs_host: cfg.pbs_host,
-      pve_host: cfg.pve_host,
-      pbs_trusted_sources: cfg.pbs_trusted_sources,
-    }
+  const flat: Record<string, string> = {
+    enabled: String(cfg.enabled),
+    ai_enabled: String(cfg.ai_enabled),
+    ai_provider: cfg.ai_provider,
+    ai_model: cfg.ai_model,
+    ai_language: cfg.ai_language,
+    ai_ollama_url: cfg.ai_ollama_url,
+    ai_openai_base_url: cfg.ai_openai_base_url,
+    ai_prompt_mode: cfg.ai_prompt_mode || "default",
+    ai_custom_prompt: cfg.ai_custom_prompt || "",
+    hostname: cfg.hostname,
+    webhook_secret: cfg.webhook_secret,
+    webhook_allowed_ips: cfg.webhook_allowed_ips,
+    pbs_host: cfg.pbs_host,
+    pve_host: cfg.pve_host,
+    pbs_trusted_sources: cfg.pbs_trusted_sources,
+  }
     // Flatten per-provider API keys
     if (cfg.ai_api_keys) {
       for (const [provider, key] of Object.entries(cfg.ai_api_keys)) {
