@@ -787,6 +787,20 @@ TEMPLATES = {
         ),
         'label': 'AI model auto-updated',
         'group': 'system',
+        'severity': 'info',
+        'default_enabled': True,
+    },
+    
+    # ── ProxMenux updates ──
+    'proxmenux_update': {
+        'title': '{hostname}: ProxMenux {new_version} available',
+        'body': (
+            'A new version of ProxMenux is available.\n'
+            'Current: {current_version}\n'
+            'New: {new_version}'
+        ),
+        'label': 'ProxMenux update available',
+        'group': 'updates',
         'default_enabled': True,
     },
     
@@ -1121,8 +1135,9 @@ EVENT_EMOJI = {
     'update_summary':       '\U0001F4E6',
     'pve_update':           '\U0001F195',         # NEW
     'update_complete':      '\u2705',
+    'proxmenux_update':     '\U0001F195',         # NEW
     # AI
-    'ai_model_migrated':    '\U0001F916',         # robot
+    'ai_model_migrated':    '\U0001F504',         # arrows counterclockwise (refresh/update)
 }
 
 # Decorative field-level icons for body text enrichment

@@ -1673,7 +1673,11 @@ class PollingCollector:
         self._poll_interval = poll_interval
         self._hostname = _hostname()
         self._last_update_check = 0
+        self._last_proxmenux_check = 0
         self._last_ai_model_check = 0
+        # Track notified ProxMenux versions to avoid duplicates
+        self._notified_proxmenux_version: str | None = None
+        self._notified_proxmenux_beta_version: str | None = None
         # In-memory cache: error_key -> last notification timestamp
         self._last_notified: Dict[str, float] = {}
         # Track known error keys + metadata so we can detect new ones AND emit recovery
@@ -1707,6 +1711,7 @@ class PollingCollector:
             try:
                 self._check_persistent_health()
                 self._check_updates()
+                self._check_proxmenux_updates()
                 self._check_ai_model_availability()
             except Exception as e:
                 print(f"[PollingCollector] Error: {e}")
@@ -2134,6 +2139,95 @@ class PollingCollector:
                     'pve_update', 'INFO', pve_data,
                     source='polling', entity='node', entity_id='',
                 ))
+        except Exception:
+            pass
+    
+    # ── ProxMenux update check ────────────────────────────────
+    
+    PROXMENUX_VERSION_FILE = '/usr/local/share/proxmenux/version.txt'
+    PROXMENUX_BETA_VERSION_FILE = '/usr/local/share/proxmenux/beta_version.txt'
+    REPO_MAIN_VERSION_URL = 'https://raw.githubusercontent.com/MacRimi/ProxMenux/main/version.txt'
+    REPO_DEVELOP_VERSION_URL = 'https://raw.githubusercontent.com/MacRimi/ProxMenux/develop/version.txt'
+    
+    def _check_proxmenux_updates(self):
+        """Check for ProxMenux updates (main and beta channels).
+        
+        Compares local version files with remote GitHub repository versions
+        and emits notifications when updates are available.
+        Uses same 24h interval as system updates.
+        """
+        import urllib.request
+        
+        now = time.time()
+        if now - self._last_proxmenux_check < self.UPDATE_CHECK_INTERVAL:
+            return
+        
+        self._last_proxmenux_check = now
+        
+        def read_local_version(path: str) -> str | None:
+            """Read version from local file."""
+            try:
+                if os.path.exists(path):
+                    with open(path, 'r') as f:
+                        return f.read().strip()
+            except Exception:
+                pass
+            return None
+        
+        def read_remote_version(url: str) -> str | None:
+            """Fetch version from remote URL."""
+            try:
+                req = urllib.request.Request(url, headers={'User-Agent': 'ProxMenux-Monitor/1.0'})
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    return resp.read().decode('utf-8').strip()
+            except Exception:
+                pass
+            return None
+        
+        def version_tuple(v: str) -> tuple:
+            """Convert version string to tuple for comparison."""
+            try:
+                return tuple(int(x) for x in v.split('.'))
+            except Exception:
+                return (0,)
+        
+        try:
+            # Check main version
+            local_main = read_local_version(self.PROXMENUX_VERSION_FILE)
+            if local_main:
+                remote_main = read_remote_version(self.REPO_MAIN_VERSION_URL)
+                if remote_main and version_tuple(remote_main) > version_tuple(local_main):
+                    # Only notify if we haven't already notified for this version
+                    if self._notified_proxmenux_version != remote_main:
+                        self._notified_proxmenux_version = remote_main
+                        data = {
+                            'hostname': self._hostname,
+                            'current_version': local_main,
+                            'new_version': remote_main,
+                        }
+                        self._queue.put(NotificationEvent(
+                            'proxmenux_update', 'INFO', data,
+                            source='polling', entity='node', entity_id='',
+                        ))
+            
+            # Check beta version (only if user has beta file)
+            local_beta = read_local_version(self.PROXMENUX_BETA_VERSION_FILE)
+            if local_beta:
+                remote_beta = read_remote_version(self.REPO_DEVELOP_VERSION_URL)
+                if remote_beta and version_tuple(remote_beta) > version_tuple(local_beta):
+                    # Only notify if we haven't already notified for this version
+                    if self._notified_proxmenux_beta_version != remote_beta:
+                        self._notified_proxmenux_beta_version = remote_beta
+                        data = {
+                            'hostname': self._hostname,
+                            'current_version': local_beta,
+                            'new_version': f'{remote_beta} (Beta)',
+                        }
+                        # Use same event_type - single toggle controls both
+                        self._queue.put(NotificationEvent(
+                            'proxmenux_update', 'INFO', data,
+                            source='polling', entity='node', entity_id='',
+                        ))
         except Exception:
             pass
     

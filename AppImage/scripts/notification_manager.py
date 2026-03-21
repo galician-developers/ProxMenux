@@ -1178,6 +1178,13 @@ class NotificationManager:
         if isinstance(ai_enabled, str):
             ai_enabled = ai_enabled.lower() == 'true'
         ai_language = self._config.get('ai_language', 'en')
+        ai_prompt_mode = self._config.get('ai_prompt_mode', 'default')
+        
+        # Determine AI info string based on prompt mode
+        if ai_prompt_mode == 'custom':
+            ai_info = f'{ai_provider} / custom prompt'
+        else:
+            ai_info = f'{ai_provider} / {ai_language}'
         
         # ProxMenux logo for welcome message
         logo_url = 'https://proxmenux.com/telegram.png'
@@ -1195,10 +1202,10 @@ class NotificationManager:
                 # Build status indicators for icons and AI, adapted to channel format
                 if use_rich_format:
                     icon_status  = '✅ Icons: enabled'
-                    ai_status    = f'✅ AI: enabled ({ai_provider} / {ai_language})' if ai_enabled else '❌ AI: disabled'
+                    ai_status    = f'✅ AI: enabled ({ai_info})' if ai_enabled else '❌ AI: disabled'
                 else:
                     icon_status  = 'Icons: disabled'
-                    ai_status    = f'AI: enabled ({ai_provider} / {ai_language})' if ai_enabled else 'AI: disabled'
+                    ai_status    = f'AI: enabled ({ai_info})' if ai_enabled else 'AI: disabled'
                 
                 # Base test message — shows current channel config
                 # NOTE: narrative lines are intentionally unlabeled so the AI
