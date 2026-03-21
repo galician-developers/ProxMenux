@@ -5412,8 +5412,8 @@ def get_hardware_info():
                             if any(keyword in device_class for keyword in ['VGA', 'Display', '3D']):
                                 device_type = 'Graphics Card'
                                 include_device = True
-                            # Storage controllers
-                            elif any(keyword in device_class for keyword in ['SATA', 'RAID', 'Mass storage', 'Non-Volatile memory']):
+                            # Storage controllers (including SCSI/SAS HBA cards like LSI 9400-16i)
+                            elif any(keyword in device_class for keyword in ['SATA', 'RAID', 'Mass storage', 'Non-Volatile memory', 'SCSI', 'Serial Attached SCSI', 'SAS']):
                                 device_type = 'Storage Controller'
                                 include_device = True
                             # Network controllers
