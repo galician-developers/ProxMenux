@@ -1697,6 +1697,13 @@ class PollingCollector:
     def stop(self):
         self._running = False
     
+    def _sleep_until_offset(self, cycle_start: float, offset: float):
+        """Sleep until the specified offset within the current cycle."""
+        target = cycle_start + offset
+        now = time.time()
+        if now < target:
+            time.sleep(target - now)
+    
     # ── Main loop ──────────────────────────────────────────────
     
     def _poll_loop(self):
@@ -1707,16 +1714,49 @@ class PollingCollector:
                 return
             time.sleep(1)
         
+        # Staggered execution: spread checks across the polling interval
+        # to avoid CPU spikes when multiple checks run simultaneously.
+        # Schedule: health=10s, updates=30s, proxmenux=45s, ai_model=50s
+        STAGGER_HEALTH = 10
+        STAGGER_UPDATES = 30
+        STAGGER_PROXMENUX = 45
+        STAGGER_AI_MODEL = 50
+        
         while self._running:
+            cycle_start = time.time()
+            
             try:
+                # Health check at offset 10s
+                self._sleep_until_offset(cycle_start, STAGGER_HEALTH)
+                if not self._running:
+                    return
                 self._check_persistent_health()
+                
+                # Updates check at offset 30s
+                self._sleep_until_offset(cycle_start, STAGGER_UPDATES)
+                if not self._running:
+                    return
                 self._check_updates()
+                
+                # ProxMenux check at offset 45s
+                self._sleep_until_offset(cycle_start, STAGGER_PROXMENUX)
+                if not self._running:
+                    return
                 self._check_proxmenux_updates()
+                
+                # AI model check at offset 50s
+                self._sleep_until_offset(cycle_start, STAGGER_AI_MODEL)
+                if not self._running:
+                    return
                 self._check_ai_model_availability()
+                
             except Exception as e:
                 print(f"[PollingCollector] Error: {e}")
             
-            for _ in range(self._poll_interval):
+            # Sleep remaining time until next cycle
+            elapsed = time.time() - cycle_start
+            remaining = max(self._poll_interval - elapsed, 1)
+            for _ in range(int(remaining)):
                 if not self._running:
                     return
                 time.sleep(1)

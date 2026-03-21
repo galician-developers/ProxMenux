@@ -585,17 +585,51 @@ def get_temperature_history(timeframe="hour"):
         return {"data": [], "stats": {"min": 0, "max": 0, "avg": 0, "current": 0}}
 
 def _temperature_collector_loop():
-    """Background thread: collect temperature every 60s, cleanup every hour."""
-    cleanup_counter = 0
+    """Background thread: collect temperature and latency with staggered timing.
+    
+    Staggered schedule to avoid CPU spikes:
+    - Temperature record: every 60s at offset 40s
+    - Latency pings: every 60s at offset 25s  
+    - Cleanup: every 60 min at offset 120s
+    """
+    import time as _time
+    
+    RECORD_INTERVAL = 60
+    TEMP_OFFSET = 40      # Record temp at :40 of each minute
+    LATENCY_OFFSET = 25   # Record latency at :25 of each minute
+    CLEANUP_INTERVAL = 3600  # 60 minutes
+    CLEANUP_OFFSET = 120  # Cleanup at 2 min after the hour mark
+    
+    # Initial delays to stagger from other collectors
+    _time.sleep(LATENCY_OFFSET)  # Start latency first
+    
+    last_temp = _time.monotonic()
+    last_latency = _time.monotonic()
+    last_cleanup = _time.monotonic() - CLEANUP_INTERVAL + CLEANUP_OFFSET  # First cleanup after offset
+    
     while True:
+        now = _time.monotonic()
+        
+        # Latency pings (offset 25s - runs first in each cycle)
+        if now - last_latency >= RECORD_INTERVAL:
+            _record_latency()
+            last_latency = now
+        
+        # Temperature record (offset 40s - 15s after latency)
+        _time.sleep(15)
         _record_temperature()
-        _record_latency()  # Also record latency in the same loop
-        cleanup_counter += 1
-        if cleanup_counter >= 60:  # Every 60 iterations = 60 minutes
+        last_temp = _time.monotonic()
+        
+        # Cleanup check (every hour, offset from main cycles)
+        if _time.monotonic() - last_cleanup >= CLEANUP_INTERVAL:
             _cleanup_old_temperature_data()
             _cleanup_old_latency_data()
-            cleanup_counter = 0
-        time.sleep(60)
+            last_cleanup = _time.monotonic()
+        
+        # Sleep remaining time until next cycle
+        elapsed = _time.monotonic() - last_latency
+        remaining = max(RECORD_INTERVAL - elapsed, 1)
+        _time.sleep(remaining)
 
 
 # ── Latency History (SQLite) ──────────────────────────────────────────────────
@@ -817,11 +851,13 @@ def get_current_latency(target='gateway'):
 def _health_collector_loop():
     """Background thread: run full health checks every 5 minutes.
     Keeps the health cache always fresh and records events/errors in the DB.
-    Also emits notifications when a health category degrades (OK -> WARNING/CRITICAL)."""
+    Also emits notifications when a health category degrades (OK -> WARNING/CRITICAL).
+    
+    Staggered: starts at 55s offset to avoid collision with other collectors."""
     from health_monitor import health_monitor
     
-    # Wait 30s after startup to let other services initialize
-    time.sleep(30)
+    # Wait 55s after startup (staggered from other collectors: temp=40s, latency=25s)
+    time.sleep(55)
     
     # Track previous status per category to detect transitions
     _prev_statuses = {}
@@ -950,19 +986,22 @@ def _vital_signs_sampler():
     
     Runs independently of the 5-min health collector loop.
     - CPU usage:   sampled every 30s  (3 samples in 1.5 min for hysteresis)
-    - Temperature:  sampled every 10s  (18 samples in 3 min for temporal logic)
+    - Temperature: sampled every 15s  (12 samples in 3 min for temporal logic)
     Uses time.monotonic() to avoid drift.
+    
+    Staggered intervals: CPU at offset 0, Temp at offset 7s to avoid collision.
     """
     from health_monitor import health_monitor
     
     # Wait 15s after startup for sensors to be ready
     time.sleep(15)
     
-    TEMP_INTERVAL = 10   # seconds
+    TEMP_INTERVAL = 15   # seconds (was 10s - reduced frequency by 33%)
     CPU_INTERVAL  = 30   # seconds
     
-    next_temp = time.monotonic()
+    # Stagger: CPU starts immediately, Temp starts after 7s offset
     next_cpu  = time.monotonic()
+    next_temp = time.monotonic() + 7
     
     print("[ProxMenux] Vital signs sampler started (CPU: 30s, Temp: 10s)")
     
