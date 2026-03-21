@@ -184,21 +184,37 @@ const AI_DETAIL_LEVELS = [
 ]
 
 // Example custom prompt for users to adapt
-const EXAMPLE_CUSTOM_PROMPT = `You are a notification formatter for ProxMenux Monitor.
+const EXAMPLE_CUSTOM_PROMPT = `You are a system notification formatter for ProxMenux Monitor, a Proxmox VE monitoring tool.
 
-Your task is to translate and format server notifications.
+Your task is to translate and reformat incoming server alert messages into {language}.
 
-RULES:
-1. Translate to the user's language
-2. Use plain text only (no markdown)
-3. Be concise and factual
-4. Do not add recommendations
+═══ ABSOLUTE RULES ═══
+1. Translate BOTH title and body to {language}. Every word, label, and unit must be in {language}.
+2. NO markdown: no **bold**, no *italic*, no `code`, no headers (#), no bullet lists (- or *)
+3. Plain text only — the output is sent to chat apps and email which handle their own formatting
+4. Tone: factual, concise, technical. No greetings, no closings, no apologies
+5. DO NOT add recommendations, action items, or suggestions ("you should…", "consider…")
+6. Present ONLY the facts already in the input — do not invent or assume information
+7. OUTPUT ONLY THE FINAL RESULT — never include both original and processed versions.
+   Do NOT append "Original message:", "Original:", "Source:", or any before/after comparison.
+   Return ONLY the single, final formatted message in {language}.
+8. PLAIN NARRATIVE LINES — if a line in the input is a complete sentence (not a "Label: value"
+   pair), translate it as-is. Never prepend "Message:", "Note:", or any other label to a sentence.
+9. Detail level to apply: {detail_level}
+   - brief    → 2-3 lines, essential data only (status + key metric)
+   - standard → short paragraph covering who/what/where and the key value
+   - detailed → full technical breakdown of all available fields
+10. Keep the "hostname: " prefix in the title. Translate only the descriptive part.
+    Example: "pve01: Updates available" → "pve01: Actualizaciones disponibles"
+11. EMPTY LIST VALUES — if a list field is empty, "none", or "0":
+    Always write the translated word for "none" on the line after the label, never leave it blank.
+12. DEDUPLICATION — input may contain redundant or repeated information from multiple monitoring sources:
+    - Identify and merge duplicate facts (same device, same error, same metric mentioned twice)
+    - Present each unique fact exactly once in a clear, consolidated form
+    - If the same data appears in different formats, choose the most informative version
 
-OUTPUT FORMAT:
-[TITLE]
-your title here
-[BODY]
-your message here`
+IMPORTANT:
+- Do NOT include the literal words TITLE or BODY anywhere in the translated content`
 
 const DEFAULT_CONFIG: NotificationConfig = {
   enabled: false,
@@ -1873,21 +1889,6 @@ export function NotificationSettings() {
                                 <Upload className="h-4 w-4" />
                                 Import
                               </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={editingCustomPrompt || !config.ai_custom_prompt}
-                                onClick={() => {
-                                  if (confirm("Clear the custom prompt and start from scratch?")) {
-                                    updateConfig(p => ({ ...p, ai_custom_prompt: "" }))
-                                    handleSave()
-                                  }
-                                }}
-                                className="flex items-center gap-1 text-red-400 hover:text-red-300 hover:border-red-400"
-                              >
-                                <RotateCcw className="h-4 w-4" />
-                                Clear
-                              </Button>
                             </div>
                             <div className="flex items-start gap-2 p-3 rounded-md bg-purple-500/10 border border-purple-500/20">
                               <Info className="h-4 w-4 text-purple-400 shrink-0 mt-0.5" />
@@ -2151,6 +2152,8 @@ export function NotificationSettings() {
                 size="sm"
                 onClick={() => {
                   updateConfig(p => ({ ...p, ai_custom_prompt: EXAMPLE_CUSTOM_PROMPT }))
+                  setCustomPromptDraft(EXAMPLE_CUSTOM_PROMPT)
+                  setEditingCustomPrompt(true)
                   setShowCustomPromptInfo(false)
                 }}
                 className="flex-1"
@@ -2159,10 +2162,14 @@ export function NotificationSettings() {
               </Button>
               <Button
                 size="sm"
-                onClick={() => setShowCustomPromptInfo(false)}
+                onClick={() => {
+                  setCustomPromptDraft("")
+                  setEditingCustomPrompt(true)
+                  setShowCustomPromptInfo(false)
+                }}
                 className="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
               >
-                Got it
+                Start from Scratch
               </Button>
             </div>
           </div>
