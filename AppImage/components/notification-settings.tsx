@@ -16,7 +16,7 @@ import {
   AlertTriangle, Info, Settings2, Zap, Eye, EyeOff,
   Trash2, ChevronDown, ChevronUp, ChevronRight, TestTube2, Mail, Webhook,
   Copy, Server, Shield, ExternalLink, RefreshCw, Download, Upload,
-  Cloud, Cpu, Globe, MessageSquareText, Sparkles
+  Cloud, Brain, Globe, MessageSquareText, Sparkles, Pencil, Save, RotateCcw
 } from "lucide-react"
 
 interface ChannelConfig {
@@ -282,6 +282,8 @@ export function NotificationSettings() {
   const [providerModels, setProviderModels] = useState<string[]>([])
   const [loadingProviderModels, setLoadingProviderModels] = useState(false)
   const [showCustomPromptInfo, setShowCustomPromptInfo] = useState(false)
+  const [editingCustomPrompt, setEditingCustomPrompt] = useState(false)
+  const [customPromptDraft, setCustomPromptDraft] = useState("")
   const [webhookSetup, setWebhookSetup] = useState<{
     status: "idle" | "running" | "success" | "failed"
     fallback_commands: string[]
@@ -1624,7 +1626,7 @@ export function NotificationSettings() {
                       {/* Model - selector with Load button for all providers */}
                       <div className="space-y-2">
                         <div className="flex items-center gap-2">
-                          <Cpu className="h-4 w-4 text-blue-400" />
+                          <Brain className="h-4 w-4 text-blue-400" />
                           <Label className="text-xs sm:text-sm text-foreground/80">Model</Label>
                         </div>
                         <div className="flex items-center gap-2">
@@ -1775,11 +1777,56 @@ export function NotificationSettings() {
                         {config.ai_prompt_mode === "custom" && (
                           <div className="space-y-3">
                             <div className="space-y-2">
-                              <Label className="text-xs sm:text-sm text-foreground/80">Custom Prompt</Label>
+                              <div className="flex items-center justify-between">
+                                <Label className="text-xs sm:text-sm text-foreground/80">Custom Prompt</Label>
+                                <div className="flex gap-1">
+                                  {!editingCustomPrompt ? (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => {
+                                        setCustomPromptDraft(config.ai_custom_prompt || "")
+                                        setEditingCustomPrompt(true)
+                                      }}
+                                      className="h-7 px-2 text-xs flex items-center gap-1"
+                                    >
+                                      <Pencil className="h-3 w-3" />
+                                      Edit
+                                    </Button>
+                                  ) : (
+                                    <>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                          updateConfig(p => ({ ...p, ai_custom_prompt: customPromptDraft }))
+                                          setEditingCustomPrompt(false)
+                                          handleSave()
+                                        }}
+                                        className="h-7 px-2 text-xs flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white border-green-600"
+                                      >
+                                        <Save className="h-3 w-3" />
+                                        Save
+                                      </Button>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                          setEditingCustomPrompt(false)
+                                          setCustomPromptDraft("")
+                                        }}
+                                        className="h-7 px-2 text-xs"
+                                      >
+                                        Cancel
+                                      </Button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
                               <textarea
-                                value={config.ai_custom_prompt || ""}
-                                onChange={e => updateConfig(p => ({ ...p, ai_custom_prompt: e.target.value }))}
-                                disabled={!editMode}
+                                value={editingCustomPrompt ? customPromptDraft : (config.ai_custom_prompt || "")}
+                                onChange={e => setCustomPromptDraft(e.target.value)}
+                                disabled={!editingCustomPrompt}
                                 placeholder="Enter your custom prompt instructions for the AI..."
                                 className="w-full h-48 px-3 py-2 text-sm rounded-md border border-border bg-background resize-y focus:outline-none focus:ring-2 focus:ring-purple-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
                               />
@@ -1788,7 +1835,7 @@ export function NotificationSettings() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                disabled={!editMode}
+                                disabled={editingCustomPrompt}
                                 onClick={() => {
                                   const blob = new Blob([config.ai_custom_prompt || ""], { type: "text/plain" })
                                   const url = URL.createObjectURL(blob)
@@ -1806,7 +1853,7 @@ export function NotificationSettings() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                disabled={!editMode}
+                                disabled={editingCustomPrompt}
                                 onClick={() => {
                                   const input = document.createElement("input")
                                   input.type = "file"
@@ -1816,6 +1863,7 @@ export function NotificationSettings() {
                                     if (file) {
                                       const text = await file.text()
                                       updateConfig(p => ({ ...p, ai_custom_prompt: text }))
+                                      handleSave()
                                     }
                                   }
                                   input.click()
@@ -1824,6 +1872,21 @@ export function NotificationSettings() {
                               >
                                 <Upload className="h-4 w-4" />
                                 Import
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={editingCustomPrompt || !config.ai_custom_prompt}
+                                onClick={() => {
+                                  if (confirm("Clear the custom prompt and start from scratch?")) {
+                                    updateConfig(p => ({ ...p, ai_custom_prompt: "" }))
+                                    handleSave()
+                                  }
+                                }}
+                                className="flex items-center gap-1 text-red-400 hover:text-red-300 hover:border-red-400"
+                              >
+                                <RotateCcw className="h-4 w-4" />
+                                Clear
                               </Button>
                             </div>
                             <div className="flex items-start gap-2 p-3 rounded-md bg-purple-500/10 border border-purple-500/20">
