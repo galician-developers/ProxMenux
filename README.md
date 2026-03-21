@@ -170,14 +170,6 @@ Contributions, bug reports and feature suggestions are welcome!
 [![Star History Chart](https://api.star-history.com/svg?repos=MacRimi/ProxMenux&type=Date)](https://www.star-history.com/#MacRimi/ProxMenux&Date)
 
 
-<a href="https://www.star-history.com/?repos=MacRimi%2FProxMenux&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=MacRimi/ProxMenux&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=MacRimi/ProxMenux&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=MacRimi/ProxMenux&type=date&legend=top-left" />
- </picture>
-</a>
-
 
 <div style="display: flex; justify-content: center; align-items: center;">
   <a href="https://ko-fi.com/G2G313ECAN" target="_blank" style="display: flex; align-items: center; text-decoration: none;">
