@@ -1806,25 +1806,25 @@ export function NotificationSettings() {
                                         variant="outline"
                                         size="sm"
                                         onClick={() => {
-                                          updateConfig(p => ({ ...p, ai_custom_prompt: customPromptDraft }))
-                                          setEditingCustomPrompt(false)
-                                          handleSave()
-                                        }}
-                                        className="h-7 px-2 text-xs flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white border-green-600"
-                                      >
-                                        <Save className="h-3 w-3" />
-                                        Save
-                                      </Button>
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => {
                                           setEditingCustomPrompt(false)
                                           setCustomPromptDraft("")
                                         }}
                                         className="h-7 px-2 text-xs"
                                       >
                                         Cancel
+                                      </Button>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                          updateConfig(p => ({ ...p, ai_custom_prompt: customPromptDraft }))
+                                          setEditingCustomPrompt(false)
+                                          handleSave()
+                                        }}
+                                        className="h-7 px-2 text-xs flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white border-blue-600"
+                                      >
+                                        <Save className="h-3 w-3" />
+                                        Save
                                       </Button>
                                     </>
                                   )}
