@@ -707,10 +707,10 @@ class HealthMonitor:
         
         try:
             result = subprocess.run(
-                ['sensors', '-A', '-u'],
+                ['journalctl', '--since', '10 minutes ago', '--no-pager', '-p', 'warning'],
                 capture_output=True,
                 text=True,
-                timeout=2
+                timeout=10
             )
             
             if result.returncode == 0:
@@ -2470,7 +2470,7 @@ class HealthMonitor:
                 ['journalctl', '--since', '10 minutes ago', '--no-pager', '-p', 'warning'],
                 capture_output=True,
                 text=True,
-                timeout=3
+                timeout=10
             )
             
             # Check if vzdump is running -- QMP timeouts during backup are normal
@@ -2642,7 +2642,7 @@ class HealthMonitor:
                 ['journalctl', '--since', '10 minutes ago', '--no-pager', '-p', 'warning'],
                 capture_output=True,
                 text=True,
-                timeout=3
+                timeout=10
             )
             
             _vzdump_running = self._is_vzdump_active()
@@ -3088,7 +3088,7 @@ class HealthMonitor:
                 ['journalctl', '--since', '3 minutes ago', '--no-pager', '-p', 'warning'],
                 capture_output=True,
                 text=True,
-                timeout=3
+                timeout=10
             )
             
             # Fetch logs from the previous 3-minute interval to detect spikes/cascades
@@ -3096,7 +3096,7 @@ class HealthMonitor:
                 ['journalctl', '--since', '6 minutes ago', '--until', '3 minutes ago', '--no-pager', '-p', 'warning'],
                 capture_output=True,
                 text=True,
-                timeout=3
+                timeout=10
             )
             
             if result_recent.returncode == 0:
@@ -3967,7 +3967,7 @@ class HealthMonitor:
                      '--output=cat', '-n', '5000'],
                     capture_output=True,
                     text=True,
-                    timeout=5
+                    timeout=20
                 )
                 
                 failed_logins = 0
@@ -4182,7 +4182,7 @@ class HealthMonitor:
                  '--output=short-precise'],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=15
             )
             
             if result.returncode != 0:
