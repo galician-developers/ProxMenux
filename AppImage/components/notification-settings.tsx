@@ -15,7 +15,8 @@ import {
   Bell, BellOff, Send, CheckCircle2, XCircle, Loader2,
   AlertTriangle, Info, Settings2, Zap, Eye, EyeOff,
   Trash2, ChevronDown, ChevronUp, ChevronRight, TestTube2, Mail, Webhook,
-  Copy, Server, Shield, ExternalLink, RefreshCw, Download, Upload
+  Copy, Server, Shield, ExternalLink, RefreshCw, Download, Upload,
+  Cloud, Cpu, Globe, MessageSquareText, Sparkles
 } from "lucide-react"
 
 interface ChannelConfig {
@@ -1472,14 +1473,17 @@ export function NotificationSettings() {
                 )}
               </button>
 
-              {showAdvanced && (
-                <div className="space-y-4 mt-3 p-4 rounded-lg bg-muted/30 border border-border/50">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-sm font-medium">AI-Enhanced Messages</span>
-                      <p className="text-xs sm:text-sm text-muted-foreground">Use AI to generate contextual notification messages</p>
-                    </div>
-                    <button
+{showAdvanced && (
+                  <div className="space-y-4 mt-3 p-4 rounded-lg bg-muted/30 border border-border/50">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-start gap-3">
+                        <Sparkles className="h-5 w-5 text-purple-400 mt-0.5 shrink-0" />
+                        <div>
+                          <span className="text-sm font-medium">AI-Enhanced Messages</span>
+                          <p className="text-xs sm:text-sm text-muted-foreground">Use AI to generate contextual notification messages</p>
+                        </div>
+                      </div>
+                      <button
                       className={`relative w-9 h-[18px] rounded-full transition-colors ${
                         config.ai_enabled ? "bg-purple-600" : "bg-muted-foreground/20 border border-muted-foreground/40"
                       } ${!editMode ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
@@ -1499,6 +1503,7 @@ export function NotificationSettings() {
                       {/* Provider + Info button */}
                       <div className="space-y-2">
                         <div className="flex items-center gap-2">
+                          <Cloud className="h-4 w-4 text-purple-400" />
                           <Label className="text-xs sm:text-sm text-foreground/80">Provider</Label>
                           <button
                             onClick={() => setShowProviderInfo(true)}
@@ -1618,7 +1623,10 @@ export function NotificationSettings() {
                       
                       {/* Model - selector with Load button for all providers */}
                       <div className="space-y-2">
-                        <Label className="text-xs sm:text-sm text-foreground/80">Model</Label>
+                        <div className="flex items-center gap-2">
+                          <Cpu className="h-4 w-4 text-blue-400" />
+                          <Label className="text-xs sm:text-sm text-foreground/80">Model</Label>
+                        </div>
                         <div className="flex items-center gap-2">
                           <Select
                             value={config.ai_model || ""}
@@ -1674,7 +1682,10 @@ export function NotificationSettings() {
                       
                       {/* Language selector */}
                       <div className="space-y-2">
-                        <Label className="text-xs sm:text-sm text-foreground/80">Language</Label>
+                        <div className="flex items-center gap-2">
+                          <Globe className="h-4 w-4 text-green-400" />
+                          <Label className="text-xs sm:text-sm text-foreground/80">Language</Label>
+                        </div>
                         <Select
                           value={config.ai_language || "en"}
                           onValueChange={v => updateConfig(p => ({ ...p, ai_language: v }))}
@@ -1696,7 +1707,10 @@ export function NotificationSettings() {
                       {/* Prompt Mode section */}
                       <div className="space-y-3 pt-3 border-t border-border/50">
                         <div className="space-y-2">
-                          <Label className="text-xs sm:text-sm text-foreground/80">Prompt Mode</Label>
+                          <div className="flex items-center gap-2">
+                            <MessageSquareText className="h-4 w-4 text-amber-400" />
+                            <Label className="text-xs sm:text-sm text-foreground/80">Prompt Mode</Label>
+                          </div>
                           <Select
                             value={config.ai_prompt_mode || "default"}
                             onValueChange={v => {
