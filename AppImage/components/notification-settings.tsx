@@ -1698,60 +1698,61 @@ export function NotificationSettings() {
                         )}
                       </div>
                       
-                      {/* Language selector */}
+                      {/* Prompt Mode section */}
                       <div className="space-y-2">
                         <div className="flex items-center gap-2">
-                          <Globe className="h-4 w-4 text-green-400" />
-                          <Label className="text-xs sm:text-sm text-foreground/80">Language</Label>
+                          <MessageSquareText className="h-4 w-4 text-amber-400" />
+                          <Label className="text-xs sm:text-sm text-foreground/80">Prompt Mode</Label>
                         </div>
                         <Select
-                          value={config.ai_language || "en"}
-                          onValueChange={v => updateConfig(p => ({ ...p, ai_language: v }))}
+                          value={config.ai_prompt_mode || "default"}
+                          onValueChange={v => {
+                            updateConfig(p => ({ ...p, ai_prompt_mode: v }))
+                            // Show info modal when switching to custom for the first time
+                            if (v === "custom" && !config.ai_custom_prompt) {
+                              setShowCustomPromptInfo(true)
+                            }
+                          }}
                           disabled={!editMode}
                         >
                           <SelectTrigger className="h-9 text-sm">
-                            <SelectValue placeholder="Select language">
-                              {AI_LANGUAGES.find(l => l.value === (config.ai_language || "en"))?.label || "English"}
-                            </SelectValue>
+                            <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {AI_LANGUAGES.map(l => (
-                              <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
-                            ))}
+                            <SelectItem value="default">Default Prompt</SelectItem>
+                            <SelectItem value="custom">Custom Prompt</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                       
-                      {/* Prompt Mode section */}
-                      <div className="space-y-3 pt-3 border-t border-border/50">
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <MessageSquareText className="h-4 w-4 text-amber-400" />
-                            <Label className="text-xs sm:text-sm text-foreground/80">Prompt Mode</Label>
+                      {/* Default mode options: Language and Detail Level per Channel */}
+                      {(config.ai_prompt_mode || "default") === "default" && (
+                        <div className="space-y-3 pt-3 border-t border-border/50">
+                          {/* Language selector - only for default mode */}
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Globe className="h-4 w-4 text-green-400" />
+                              <Label className="text-xs sm:text-sm text-foreground/80">Language</Label>
+                            </div>
+                            <Select
+                              value={config.ai_language || "en"}
+                              onValueChange={v => updateConfig(p => ({ ...p, ai_language: v }))}
+                              disabled={!editMode}
+                            >
+                              <SelectTrigger className="h-9 text-sm">
+                                <SelectValue placeholder="Select language">
+                                  {AI_LANGUAGES.find(l => l.value === (config.ai_language || "en"))?.label || "English"}
+                                </SelectValue>
+                              </SelectTrigger>
+                              <SelectContent>
+                                {AI_LANGUAGES.map(l => (
+                                  <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
-                          <Select
-                            value={config.ai_prompt_mode || "default"}
-                            onValueChange={v => {
-                              updateConfig(p => ({ ...p, ai_prompt_mode: v }))
-                              // Show info modal when switching to custom for the first time
-                              if (v === "custom" && !config.ai_custom_prompt) {
-                                setShowCustomPromptInfo(true)
-                              }
-                            }}
-                            disabled={!editMode}
-                          >
-                            <SelectTrigger className="h-9 text-sm">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="default">Default Prompt</SelectItem>
-                              <SelectItem value="custom">Custom Prompt</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        
-                        {/* Default mode: Detail Level per Channel */}
-                        {(config.ai_prompt_mode || "default") === "default" && (
+                          
+                          {/* Detail Level per Channel */}
                           <div className="space-y-3">
                             <Label className="text-xs sm:text-sm text-foreground/80">Detail Level per Channel</Label>
                             <div className="grid grid-cols-2 gap-3">
@@ -1786,12 +1787,12 @@ export function NotificationSettings() {
                                 AI translates and formats notifications to your selected language. Each channel can have different detail levels.
                               </p>
                             </div>
-                          </div>
-                        )}
-                        
-                        {/* Custom mode: Editable prompt textarea */}
-                        {config.ai_prompt_mode === "custom" && (
-                          <div className="space-y-3">
+                        </div>
+                      )}
+                      
+                      {/* Custom mode: Editable prompt textarea */}
+                      {config.ai_prompt_mode === "custom" && (
+                        <div className="space-y-3 pt-3 border-t border-border/50">
                             <div className="space-y-2">
                               <div className="flex items-center justify-between">
                                 <Label className="text-xs sm:text-sm text-foreground/80">Custom Prompt</Label>
@@ -1895,10 +1896,9 @@ export function NotificationSettings() {
                               <p className="text-xs sm:text-sm text-purple-400/90 leading-relaxed">
                                 Define your own prompt rules and format. You control the detail level and style of all notifications. Export to share with others or import prompts from the community.
                               </p>
-                            </div>
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
                       
                       {/* Test Connection button - moved to end */}
                       <div className="space-y-3 pt-3 border-t border-border/50">
@@ -2135,6 +2135,10 @@ export function NotificationSettings() {
                 <li className="flex items-start gap-2">
                   <span className="text-purple-400 mt-0.5">3.</span>
                   <span>The prompt receives raw Proxmox event data as input</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-purple-400 mt-0.5">4.</span>
+                  <span>Define the output language in your prompt (the Language selector only applies to Default mode)</span>
                 </li>
               </ul>
             </div>
