@@ -1036,8 +1036,24 @@ def get_uptime():
         pass
         return "N/A"
 
+# Cache for expensive system info calls (pveversion, apt updates)
+_system_info_cache = {
+    'proxmox_version': None,
+    'proxmox_version_time': 0,
+    'available_updates': 0,
+    'available_updates_time': 0,
+}
+_SYSTEM_INFO_CACHE_TTL = 21600  # 6 hours - update notifications are sent once per 24h
+
 def get_proxmox_version():
-    """Get Proxmox version if available."""
+    """Get Proxmox version if available. Cached for 6 hours."""
+    global _system_info_cache
+    
+    now = time.time()
+    if _system_info_cache['proxmox_version'] is not None and \
+       now - _system_info_cache['proxmox_version_time'] < _SYSTEM_INFO_CACHE_TTL:
+        return _system_info_cache['proxmox_version']
+    
     proxmox_version = None
     try:
         result = subprocess.run(['pveversion'], capture_output=True, text=True, timeout=5)
@@ -1047,15 +1063,23 @@ def get_proxmox_version():
             if '/' in version_line:
                 proxmox_version = version_line.split('/')[1]
     except FileNotFoundError:
-        # print("Warning: pveversion command not found - Proxmox may not be installed.")
         pass
     except Exception as e:
-        # print(f"Warning: Error getting Proxmox version: {e}")
         pass
+    
+    _system_info_cache['proxmox_version'] = proxmox_version
+    _system_info_cache['proxmox_version_time'] = now
     return proxmox_version
 
 def get_available_updates():
-    """Get the number of available package updates."""
+    """Get the number of available package updates. Cached for 6 hours."""
+    global _system_info_cache
+    
+    now = time.time()
+    if _system_info_cache['available_updates_time'] > 0 and \
+       now - _system_info_cache['available_updates_time'] < _SYSTEM_INFO_CACHE_TTL:
+        return _system_info_cache['available_updates']
+    
     available_updates = 0
     try:
         # Use apt list --upgradable to count available updates
@@ -1065,11 +1089,12 @@ def get_available_updates():
             lines = result.stdout.strip().split('\n')
             available_updates = max(0, len(lines) - 1)
     except FileNotFoundError:
-        # print("Warning: apt command not found - cannot check for updates.")
         pass
     except Exception as e:
-        # print(f"Warning: Error checking for updates: {e}")
         pass
+    
+    _system_info_cache['available_updates'] = available_updates
+    _system_info_cache['available_updates_time'] = now
     return available_updates
 
 # AGREGANDO FUNCIÓN PARA PARSEAR PROCESOS DE INTEL_GPU_TOP (SIN -J)
