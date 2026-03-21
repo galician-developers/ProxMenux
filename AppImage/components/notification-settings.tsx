@@ -9,13 +9,13 @@ import { Label } from "./ui/label"
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog"
 import { fetchApi } from "../lib/api-config"
 import {
   Bell, BellOff, Send, CheckCircle2, XCircle, Loader2,
   AlertTriangle, Info, Settings2, Zap, Eye, EyeOff,
   Trash2, ChevronDown, ChevronUp, ChevronRight, TestTube2, Mail, Webhook,
-  Copy, Server, Shield, ExternalLink, RefreshCw
+  Copy, Server, Shield, ExternalLink, RefreshCw, Download, Upload
 } from "lucide-react"
 
 interface ChannelConfig {
@@ -63,6 +63,8 @@ interface NotificationConfig {
   ai_language: string
   ai_ollama_url: string
   ai_openai_base_url: string
+  ai_prompt_mode: string  // 'default' or 'custom'
+  ai_custom_prompt: string  // User's custom prompt
   channel_ai_detail: Record<string, string>
   hostname: string
   webhook_secret: string
@@ -180,6 +182,23 @@ const AI_DETAIL_LEVELS = [
   { value: "detailed", label: "Detailed", desc: "Complete technical details" },
 ]
 
+// Example custom prompt for users to adapt
+const EXAMPLE_CUSTOM_PROMPT = `You are a notification formatter for ProxMenux Monitor.
+
+Your task is to translate and format server notifications.
+
+RULES:
+1. Translate to the user's language
+2. Use plain text only (no markdown)
+3. Be concise and factual
+4. Do not add recommendations
+
+OUTPUT FORMAT:
+[TITLE]
+your title here
+[BODY]
+your message here`
+
 const DEFAULT_CONFIG: NotificationConfig = {
   enabled: false,
   channels: {
@@ -222,6 +241,8 @@ const DEFAULT_CONFIG: NotificationConfig = {
   ai_language: "en",
   ai_ollama_url: "http://localhost:11434",
   ai_openai_base_url: "",
+  ai_prompt_mode: "default",
+  ai_custom_prompt: "",
   channel_ai_detail: {
     telegram: "brief",
     gotify: "brief",
@@ -259,6 +280,7 @@ export function NotificationSettings() {
   const [aiTestResult, setAiTestResult] = useState<{ success: boolean; message: string; model?: string } | null>(null)
   const [providerModels, setProviderModels] = useState<string[]>([])
   const [loadingProviderModels, setLoadingProviderModels] = useState(false)
+  const [showCustomPromptInfo, setShowCustomPromptInfo] = useState(false)
   const [webhookSetup, setWebhookSetup] = useState<{
     status: "idle" | "running" | "success" | "failed"
     fallback_commands: string[]
@@ -269,7 +291,7 @@ export function NotificationSettings() {
     try {
       const data = await fetchApi<{ success: boolean; config: NotificationConfig }>("/api/notifications/settings")
       if (data.success && data.config) {
-        // Ensure ai_api_keys and ai_models objects exist (fallback for older configs)
+        // Ensure ai_api_keys, ai_models, and prompt settings exist (fallback for older configs)
         const configWithDefaults = {
           ...data.config,
           ai_api_keys: data.config.ai_api_keys || {
@@ -287,7 +309,9 @@ export function NotificationSettings() {
             anthropic: "",
             openai: "",
             openrouter: "",
-          }
+          },
+          ai_prompt_mode: data.config.ai_prompt_mode || "default",
+          ai_custom_prompt: data.config.ai_custom_prompt || "",
         }
         // If ai_model exists but ai_models doesn't have it, save it
         if (configWithDefaults.ai_model && !configWithDefaults.ai_models[configWithDefaults.ai_provider]) {
@@ -1669,80 +1693,173 @@ export function NotificationSettings() {
                         </Select>
                       </div>
                       
-                      {/* Test Connection button */}
-                      <button
-                        onClick={handleTestAI}
-                        disabled={
-                          !editMode || 
-                          testingAI || 
-                          !config.ai_model ||
-                          (config.ai_provider !== "ollama" && !config.ai_api_keys?.[config.ai_provider])
-                        }
-                        className="w-full h-9 flex items-center justify-center gap-2 rounded-md text-sm font-medium bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        {testingAI ? (
-                          <><Loader2 className="h-4 w-4 animate-spin" /> Testing...</>
-                        ) : (
-                          <><Zap className="h-4 w-4" /> Test Connection</>
-                        )}
-                      </button>
-                      
-                      {/* Test result */}
-                      {aiTestResult && (
-                        <div className={`flex items-start gap-2 p-3 rounded-md ${
-                          aiTestResult.success 
-                            ? "bg-green-500/10 border border-green-500/20" 
-                            : "bg-red-500/10 border border-red-500/20"
-                        }`}>
-                          {aiTestResult.success 
-                            ? <CheckCircle2 className="h-4 w-4 text-green-400 shrink-0 mt-0.5" />
-                            : <XCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
-                          }
-                          <p className={`text-xs sm:text-sm leading-relaxed ${
-                            aiTestResult.success ? "text-green-400/90" : "text-red-400/90"
-                          }`}>
-                            {aiTestResult.message}
-                            {aiTestResult.model && ` (${aiTestResult.model})`}
-                          </p>
-                        </div>
-                      )}
-                      
-                      {/* Per-channel detail level */}
+                      {/* Prompt Mode section */}
                       <div className="space-y-3 pt-3 border-t border-border/50">
-                        <Label className="text-xs sm:text-sm text-foreground/80">Detail Level per Channel</Label>
-                        <div className="grid grid-cols-2 gap-3">
-                          {CHANNEL_TYPES.map(ch => (
-                            <div key={ch} className="flex items-center justify-between gap-2 px-3 py-2 rounded bg-muted/30">
-                              <span className="text-xs sm:text-sm text-foreground/70 capitalize">{ch}</span>
-                              <Select
-                                value={config.channel_ai_detail?.[ch] || "standard"}
-                                onValueChange={v => updateConfig(p => ({
-                                  ...p,
-                                  channel_ai_detail: { ...p.channel_ai_detail, [ch]: v }
-                                }))}
-                                disabled={!editMode}
-                              >
-                                <SelectTrigger className="h-7 w-[90px] text-xs px-2">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {AI_DETAIL_LEVELS.map(l => (
-                                    <SelectItem key={l.value} value={l.value} className="text-xs">
-                                      {l.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          ))}
+                        <div className="space-y-2">
+                          <Label className="text-xs sm:text-sm text-foreground/80">Prompt Mode</Label>
+                          <Select
+                            value={config.ai_prompt_mode || "default"}
+                            onValueChange={v => {
+                              updateConfig(p => ({ ...p, ai_prompt_mode: v }))
+                              // Show info modal when switching to custom for the first time
+                              if (v === "custom" && !config.ai_custom_prompt) {
+                                setShowCustomPromptInfo(true)
+                              }
+                            }}
+                            disabled={!editMode}
+                          >
+                            <SelectTrigger className="h-9 text-sm">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="default">Default Prompt</SelectItem>
+                              <SelectItem value="custom">Custom Prompt</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
+                        
+                        {/* Default mode: Detail Level per Channel */}
+                        {(config.ai_prompt_mode || "default") === "default" && (
+                          <div className="space-y-3">
+                            <Label className="text-xs sm:text-sm text-foreground/80">Detail Level per Channel</Label>
+                            <div className="grid grid-cols-2 gap-3">
+                              {CHANNEL_TYPES.map(ch => (
+                                <div key={ch} className="flex items-center justify-between gap-2 px-3 py-2 rounded bg-muted/30">
+                                  <span className="text-xs sm:text-sm text-foreground/70 capitalize">{ch}</span>
+                                  <Select
+                                    value={config.channel_ai_detail?.[ch] || "standard"}
+                                    onValueChange={v => updateConfig(p => ({
+                                      ...p,
+                                      channel_ai_detail: { ...p.channel_ai_detail, [ch]: v }
+                                    }))}
+                                    disabled={!editMode}
+                                  >
+                                    <SelectTrigger className="h-7 w-[90px] text-xs px-2">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {AI_DETAIL_LEVELS.map(l => (
+                                        <SelectItem key={l.value} value={l.value} className="text-xs">
+                                          {l.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="flex items-start gap-2 p-3 rounded-md bg-purple-500/10 border border-purple-500/20">
+                              <Info className="h-4 w-4 text-purple-400 shrink-0 mt-0.5" />
+                              <p className="text-xs sm:text-sm text-purple-400/90 leading-relaxed">
+                                AI translates and formats notifications to your selected language. Each channel can have different detail levels.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Custom mode: Editable prompt textarea */}
+                        {config.ai_prompt_mode === "custom" && (
+                          <div className="space-y-3">
+                            <div className="space-y-2">
+                              <Label className="text-xs sm:text-sm text-foreground/80">Custom Prompt</Label>
+                              <textarea
+                                value={config.ai_custom_prompt || ""}
+                                onChange={e => updateConfig(p => ({ ...p, ai_custom_prompt: e.target.value }))}
+                                disabled={!editMode}
+                                placeholder="Enter your custom prompt instructions for the AI..."
+                                className="w-full h-48 px-3 py-2 text-sm rounded-md border border-border bg-background resize-y focus:outline-none focus:ring-2 focus:ring-purple-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                              />
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={!editMode}
+                                onClick={() => {
+                                  const blob = new Blob([config.ai_custom_prompt || ""], { type: "text/plain" })
+                                  const url = URL.createObjectURL(blob)
+                                  const a = document.createElement("a")
+                                  a.href = url
+                                  a.download = "proxmenux_custom_prompt.txt"
+                                  a.click()
+                                  URL.revokeObjectURL(url)
+                                }}
+                                className="flex items-center gap-1"
+                              >
+                                <Download className="h-4 w-4" />
+                                Export
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={!editMode}
+                                onClick={() => {
+                                  const input = document.createElement("input")
+                                  input.type = "file"
+                                  input.accept = ".txt,.md"
+                                  input.onchange = async (e) => {
+                                    const file = (e.target as HTMLInputElement).files?.[0]
+                                    if (file) {
+                                      const text = await file.text()
+                                      updateConfig(p => ({ ...p, ai_custom_prompt: text }))
+                                    }
+                                  }
+                                  input.click()
+                                }}
+                                className="flex items-center gap-1"
+                              >
+                                <Upload className="h-4 w-4" />
+                                Import
+                              </Button>
+                            </div>
+                            <div className="flex items-start gap-2 p-3 rounded-md bg-purple-500/10 border border-purple-500/20">
+                              <Info className="h-4 w-4 text-purple-400 shrink-0 mt-0.5" />
+                              <p className="text-xs sm:text-sm text-purple-400/90 leading-relaxed">
+                                Define your own prompt rules and format. You control the detail level and style of all notifications. Export to share with others or import prompts from the community.
+                              </p>
+                            </div>
+                          </div>
+                        )}
                       </div>
                       
-                      <div className="flex items-start gap-2 p-3 rounded-md bg-purple-500/10 border border-purple-500/20">
-                        <Info className="h-4 w-4 text-purple-400 shrink-0 mt-0.5" />
-                        <p className="text-xs sm:text-sm text-purple-400/90 leading-relaxed">
-                          AI enhancement translates and formats notifications to your selected language. Each channel can have different detail levels. If the AI service is unavailable, standard templates are used as fallback.
-                        </p>
+                      {/* Test Connection button - moved to end */}
+                      <div className="space-y-3 pt-3 border-t border-border/50">
+                        <button
+                          onClick={handleTestAI}
+                          disabled={
+                            !editMode || 
+                            testingAI || 
+                            !config.ai_model ||
+                            (config.ai_provider !== "ollama" && !config.ai_api_keys?.[config.ai_provider])
+                          }
+                          className="w-full h-9 flex items-center justify-center gap-2 rounded-md text-sm font-medium bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {testingAI ? (
+                            <><Loader2 className="h-4 w-4 animate-spin" /> Testing...</>
+                          ) : (
+                            <><Zap className="h-4 w-4" /> Test Connection</>
+                          )}
+                        </button>
+                        
+                        {/* Test result */}
+                        {aiTestResult && (
+                          <div className={`flex items-start gap-2 p-3 rounded-md ${
+                            aiTestResult.success 
+                              ? "bg-green-500/10 border border-green-500/20" 
+                              : "bg-red-500/10 border border-red-500/20"
+                          }`}>
+                            {aiTestResult.success 
+                              ? <CheckCircle2 className="h-4 w-4 text-green-400 shrink-0 mt-0.5" />
+                              : <XCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+                            }
+                            <p className={`text-xs sm:text-sm leading-relaxed ${
+                              aiTestResult.success ? "text-green-400/90" : "text-red-400/90"
+                            }`}>
+                              {aiTestResult.message}
+                              {aiTestResult.model && ` (${aiTestResult.model})`}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </>
                   )}
@@ -1899,6 +2016,77 @@ export function NotificationSettings() {
                 <li><strong>Bot Token:</strong> Identifies your bot (from BotFather)</li>
                 <li><strong>Chat ID:</strong> Where to send messages (your ID or group ID)</li>
               </ul>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Custom Prompt Info Modal */}
+      <Dialog open={showCustomPromptInfo} onOpenChange={setShowCustomPromptInfo}>
+        <DialogContent className="max-w-[90vw] sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <Settings2 className="h-5 w-5 text-purple-400" />
+              Custom Prompt Mode
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              Create your own AI prompt for ProxMenux Monitor notifications
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 text-sm">
+            <div className="space-y-2">
+              <h4 className="font-medium text-foreground/90">What is a custom prompt?</h4>
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                The prompt defines how the AI formats your notifications. With a custom prompt, you control the style, detail level, and format of all messages.
+              </p>
+            </div>
+            
+            <div className="space-y-2">
+              <h4 className="font-medium text-foreground/90">Important requirements</h4>
+              <ul className="text-muted-foreground text-xs space-y-1.5">
+                <li className="flex items-start gap-2">
+                  <span className="text-purple-400 mt-0.5">1.</span>
+                  <span>Your prompt must output in this format:<br/>
+                    <code className="bg-muted px-1.5 py-0.5 rounded text-[11px]">[TITLE]</code> followed by the title, then <code className="bg-muted px-1.5 py-0.5 rounded text-[11px]">[BODY]</code> followed by the message
+                  </span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-purple-400 mt-0.5">2.</span>
+                  <span>Use plain text only (no markdown) for compatibility with all channels</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-purple-400 mt-0.5">3.</span>
+                  <span>The prompt receives raw Proxmox event data as input</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="font-medium text-foreground/90">Getting started</h4>
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                We have added an example prompt to get you started. You can adapt it, export it to share with others, or import prompts from the community.
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  updateConfig(p => ({ ...p, ai_custom_prompt: EXAMPLE_CUSTOM_PROMPT }))
+                  setShowCustomPromptInfo(false)
+                }}
+                className="flex-1"
+              >
+                Load Example
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setShowCustomPromptInfo(false)}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
+              >
+                Got it
+              </Button>
             </div>
           </div>
         </DialogContent>

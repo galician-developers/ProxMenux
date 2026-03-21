@@ -1682,18 +1682,23 @@ class AIEnhancer:
         language_code = self.config.get('ai_language', 'en')
         language_name = AI_LANGUAGES.get(language_code, 'English')
         
-        # Get token limit for detail level
-        max_tokens = AI_DETAIL_TOKENS.get(detail_level, 200)
+        # Check for custom prompt mode
+        prompt_mode = self.config.get('ai_prompt_mode', 'default')
+        custom_prompt = self.config.get('ai_custom_prompt', '')
         
-        # Select emoji instructions based on channel type
-        emoji_instructions = AI_EMOJI_INSTRUCTIONS if use_emojis else AI_NO_EMOJI_INSTRUCTIONS
-        
-        # Build system prompt with emoji instructions
-        system_prompt = AI_SYSTEM_PROMPT.format(
-            language=language_name,
-            detail_level=detail_level,
-            emoji_instructions=emoji_instructions
-        )
+        if prompt_mode == 'custom' and custom_prompt.strip():
+            # Custom prompt: user controls everything, use higher token limit
+            system_prompt = custom_prompt
+            max_tokens = 500  # Allow more tokens for custom prompts
+        else:
+            # Default prompt: use detail level and emoji settings
+            max_tokens = AI_DETAIL_TOKENS.get(detail_level, 200)
+            emoji_instructions = AI_EMOJI_INSTRUCTIONS if use_emojis else AI_NO_EMOJI_INSTRUCTIONS
+            system_prompt = AI_SYSTEM_PROMPT.format(
+                language=language_name,
+                detail_level=detail_level,
+                emoji_instructions=emoji_instructions
+            )
         
         # Build user message
         user_msg = f"Severity: {severity}\nTitle: {title}\nMessage:\n{body}"

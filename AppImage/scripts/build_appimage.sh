@@ -110,12 +110,13 @@ else
     echo "⚠️  ai_providers directory not found"
 fi
 
-# Copy config files (verified AI models, etc.)
+# Copy config files (verified AI models, prompts, etc.)
 echo "📋 Copying config files..."
 CONFIG_DIR="$APPIMAGE_ROOT/config"
 if [ -d "$CONFIG_DIR" ]; then
     mkdir -p "$APP_DIR/usr/bin/config"
     cp "$CONFIG_DIR/"*.json "$APP_DIR/usr/bin/config/" 2>/dev/null || true
+    cp "$CONFIG_DIR/"*.txt "$APP_DIR/usr/bin/config/" 2>/dev/null || true
     echo "✅ Config files copied"
 else
     echo "⚠️  config directory not found"

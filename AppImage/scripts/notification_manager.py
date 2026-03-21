@@ -739,6 +739,8 @@ class NotificationManager:
             'ai_model': self._config.get('ai_model', ''),
             'ai_language': self._config.get('ai_language', 'en'),
             'ai_ollama_url': self._config.get('ai_ollama_url', ''),
+            'ai_prompt_mode': self._config.get('ai_prompt_mode', 'default'),
+            'ai_custom_prompt': self._config.get('ai_custom_prompt', ''),
         }
         
         # Get journal context if available
@@ -1070,6 +1072,8 @@ class NotificationManager:
             'ai_model': self._config.get('ai_model', ''),
             'ai_language': self._config.get('ai_language', 'en'),
             'ai_ollama_url': self._config.get('ai_ollama_url', ''),
+            'ai_prompt_mode': self._config.get('ai_prompt_mode', 'default'),
+            'ai_custom_prompt': self._config.get('ai_custom_prompt', ''),
         }
         
         results = {}
@@ -1166,6 +1170,8 @@ class NotificationManager:
             'ai_model': self._config.get('ai_model', ''),
             'ai_language': self._config.get('ai_language', 'en'),
             'ai_ollama_url': self._config.get('ai_ollama_url', ''),
+            'ai_prompt_mode': self._config.get('ai_prompt_mode', 'default'),
+            'ai_custom_prompt': self._config.get('ai_custom_prompt', ''),
         }
         
         ai_enabled = self._config.get('ai_enabled', 'false')
@@ -1559,6 +1565,8 @@ class NotificationManager:
             'ai_language': self._config.get('ai_language', 'en'),
             'ai_ollama_url': self._config.get('ai_ollama_url', 'http://localhost:11434'),
             'ai_openai_base_url': self._config.get('ai_openai_base_url', ''),
+            'ai_prompt_mode': self._config.get('ai_prompt_mode', 'default'),
+            'ai_custom_prompt': self._config.get('ai_custom_prompt', ''),
             'ai_detail_levels': ai_detail_levels,
             'hostname': self._config.get('hostname', ''),
             'webhook_secret': self._config.get('webhook_secret', ''),
