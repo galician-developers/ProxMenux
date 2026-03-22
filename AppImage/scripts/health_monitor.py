@@ -4014,13 +4014,13 @@ class HealthMonitor:
                     self._journalctl_24h_cache = {'count': failed_logins, 'time': current_time}
                 
                 if failed_logins > 50:
-                        msg = f'{failed_logins} failed login attempts in 24h'
-                        issues.append(msg)
-                        checks['login_attempts'] = {'status': 'WARNING', 'detail': msg, 'count': failed_logins, 'dismissable': True}
-                    elif failed_logins > 0:
-                        checks['login_attempts'] = {'status': 'OK', 'detail': f'{failed_logins} failed attempts in 24h (within threshold)', 'count': failed_logins}
-                    else:
-                        checks['login_attempts'] = {'status': 'OK', 'detail': 'No failed login attempts in 24h', 'count': 0}
+                    msg = f'{failed_logins} failed login attempts in 24h'
+                    issues.append(msg)
+                    checks['login_attempts'] = {'status': 'WARNING', 'detail': msg, 'count': failed_logins, 'dismissable': True}
+                elif failed_logins > 0:
+                    checks['login_attempts'] = {'status': 'OK', 'detail': f'{failed_logins} failed attempts in 24h (within threshold)', 'count': failed_logins}
+                else:
+                    checks['login_attempts'] = {'status': 'OK', 'detail': 'No failed login attempts in 24h', 'count': 0}
             except Exception:
                 checks['login_attempts'] = {'status': 'OK', 'detail': 'Unable to check login attempts'}
             
