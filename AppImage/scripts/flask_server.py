@@ -5721,52 +5721,45 @@ def get_hardware_info():
                 fans = []
                 
                 for line in sensors_output.split('\n'):
-                        line = line.strip()
-                        if not line:
-                            continue
-                        
-                        # Chip names don't have ":" and are not indented
-                        if not ':' in line and not line.startswith(' ') and not line.startswith('Adapter'):
-                            current_chip = line
-                            continue
-                        
-                        # Detect adapter line
-                        if line.startswith('Adapter:'):
-                            current_adapter = line.replace('Adapter:', '').strip()
-                            continue
-                        
-                        # Parse fan sensors
-                        if ':' in line and not line.startswith(' '):
-                            parts = line.split(':', 1)
-                            sensor_name = parts[0].strip()
-                            value_part = parts[1].strip()
-                            
-                            # Look for fan sensors (RPM)
-                            if 'RPM' in value_part:
-                                rpm_match = re.search(r'([\d.]+)\s*RPM', value_part)
-                                if rpm_match:
-                                    fan_speed = int(float(rpm_match.group(1)))
-                                    
-                                    identified_name = identify_fan(sensor_name, current_adapter, current_chip)
-                                    
-                                    fans.append({
-                                        'name': identified_name,
-                                        'original_name': sensor_name,
-                                        'speed': fan_speed,
-                                        'unit': 'RPM',
-                                        'adapter': current_adapter
-                                    })
-                                    # print(f"[v0] Fan sensor: {identified_name} ({sensor_name}) = {fan_speed} RPM")
-                                    pass
+                    line = line.strip()
+                    if not line:
+                        continue
                     
-                    hardware_data['sensors']['fans'] = fans
-                    # print(f"[v0] Found {len(fans)} fan sensor(s)")
-                    pass
-            except Exception as e:
-                # print(f"[v0] Error getting fan info: {e}")
-                pass
+                    # Chip names don't have ":" and are not indented
+                    if not ':' in line and not line.startswith(' ') and not line.startswith('Adapter'):
+                        current_chip = line
+                        continue
+                    
+                    # Detect adapter line
+                    if line.startswith('Adapter:'):
+                        current_adapter = line.replace('Adapter:', '').strip()
+                        continue
+                    
+                    # Parse fan sensors
+                    if ':' in line and not line.startswith(' '):
+                        parts = line.split(':', 1)
+                        sensor_name = parts[0].strip()
+                        value_part = parts[1].strip()
+                        
+                        # Look for fan sensors (RPM)
+                        if 'RPM' in value_part:
+                            rpm_match = re.search(r'([\d.]+)\s*RPM', value_part)
+                            if rpm_match:
+                                fan_speed = int(float(rpm_match.group(1)))
+                                
+                                identified_name = identify_fan(sensor_name, current_adapter, current_chip)
+                                
+                                fans.append({
+                                    'name': identified_name,
+                                    'original_name': sensor_name,
+                                    'speed': fan_speed,
+                                    'unit': 'RPM',
+                                    'adapter': current_adapter
+                                })
+                
+                hardware_data['sensors']['fans'] = fans
         except Exception as e:
-            # print(f"[v0] Error getting psutil sensors: {e}")
+            # print(f"[v0] Error getting fan sensors: {e}")
             pass
         
         # Power Supply / UPS
