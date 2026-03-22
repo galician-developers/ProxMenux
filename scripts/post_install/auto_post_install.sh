@@ -231,7 +231,7 @@ optimize_journald() {
 Storage=persistent
 SplitMode=none
 RateLimitIntervalSec=30s
-RateLimitBurst=1000
+RateLimitBurst=500
 ForwardToSyslog=no
 ForwardToWall=no
 Seal=no
@@ -599,6 +599,14 @@ EOF
 
 
 install_log2ram_auto() {
+
+    # ── Reinstall detection ─────────────────────────────────────────────────
+    # If log2ram was previously installed by ProxMenux (register_tool "log2ram" true),
+    # skip hardware detection and reinstall directly — no prompts, transparent to user.
+    if [[ -f "$TOOLS_JSON" ]] && jq -e '.log2ram == true' "$TOOLS_JSON" >/dev/null 2>&1; then
+        msg_ok "$(translate "Log2RAM already registered — updating to latest configuration")"
+    else
+    # ── First-time install: detect SSD/M.2 ─────────────────────────────────
     msg_info "$(translate "Checking if system disk is SSD or M.2...")"
 
     local is_ssd=false
@@ -635,6 +643,8 @@ install_log2ram_auto() {
             return 0
         fi
     fi
+
+    fi  # end first-time install block
 
     msg_info "$(translate "Cleaning previous Log2RAM installation...")"
 
@@ -727,7 +737,7 @@ L2R_BIN="$(command -v log2ram || true)"
 SIZE_MiB="$(grep -E '^SIZE=' "$CONF_FILE" 2>/dev/null | cut -d'=' -f2 | tr -dc '0-9')"
 [[ -z "$SIZE_MiB" ]] && SIZE_MiB=128
 LIMIT_BYTES=$(( SIZE_MiB * 1024 * 1024 ))
-THRESHOLD_BYTES=$(( LIMIT_BYTES * 90 / 100 ))
+THRESHOLD_BYTES=$(( LIMIT_BYTES * 95 / 100 ))
 
 USED_BYTES="$(df -B1 --output=used /var/log 2>/dev/null | tail -1 | tr -dc '0-9')"
 [[ -z "$USED_BYTES" ]] && exit 0
@@ -747,13 +757,15 @@ EOF
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 MAILTO=""
-*/5 * * * * root /usr/local/bin/log2ram-check.sh >/dev/null 2>&1
+# Runs every 10 min starting at :03 to avoid overlap with debian-sa1 (:00/:10/:20...)
+# nice -n 19 + ionice -c 3 ensures minimum CPU/IO priority (no visible spikes)
+3-59/10 * * * * root nice -n 19 ionice -c 3 /usr/local/bin/log2ram-check.sh >/dev/null 2>&1
 EOF
     chmod 0644 /etc/cron.d/log2ram-auto-sync
     chown root:root /etc/cron.d/log2ram-auto-sync
 
     systemctl restart cron >/dev/null 2>&1 || true
-    msg_ok "$(translate "Auto-sync enabled when /var/log exceeds 90% of") $LOG2RAM_SIZE"
+    msg_ok "$(translate "Auto-sync enabled when /var/log exceeds 95% of") $LOG2RAM_SIZE"
 
 
     msg_info "$(translate "Adjusting systemd-journald limits to match Log2RAM size...")"
@@ -783,12 +795,7 @@ EOF
 Storage=persistent
 SplitMode=none
 RateLimitIntervalSec=30s
-RateLimitBurst=1000
-ForwardToSyslog=no
-ForwardToWall=no
-Seal=no
-Compress=yes
-SystemMaxUse=${USE_MB}M
+RateLimitBurst=500
 SystemKeepFree=${KEEP_MB}M
 RuntimeMaxUse=${RUNTIME_MB}M
 # MaxLevelStore=info: required for ProxMenux Monitor log display and Fail2Ban detection.
