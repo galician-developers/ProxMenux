@@ -7656,15 +7656,15 @@ def api_vm_control(vmid):
         data = request.get_json()
         action = data.get('action')  # start, stop, shutdown, reboot
         
-    if action not in ['start', 'stop', 'shutdown', 'reboot']:
-        return jsonify({'error': 'Invalid action'}), 400
-    
-    # Get VM type and node
-    resources = get_cached_pvesh_cluster_resources_vm()
-    
-    if resources:
-        vm_info = None
-        for resource in resources:
+        if action not in ['start', 'stop', 'shutdown', 'reboot']:
+            return jsonify({'error': 'Invalid action'}), 400
+        
+        # Get VM type and node
+        resources = get_cached_pvesh_cluster_resources_vm()
+        
+        if resources:
+            vm_info = None
+            for resource in resources:
                 if resource.get('vmid') == vmid:
                     vm_info = resource
                     break
@@ -7695,8 +7695,6 @@ def api_vm_control(vmid):
         else:
             return jsonify({'error': 'Failed to get VM details'}), 500
     except Exception as e:
-        # print(f"Error controlling VM: {e}")
-        pass
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/vms/<int:vmid>/config', methods=['PUT'])
