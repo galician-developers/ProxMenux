@@ -1045,6 +1045,150 @@ _system_info_cache = {
 }
 _SYSTEM_INFO_CACHE_TTL = 21600  # 6 hours - update notifications are sent once per 24h
 
+# Cache for pvesh cluster resources (reduces repeated API calls)
+_pvesh_cache = {
+    'cluster_resources_vm': None,
+    'cluster_resources_vm_time': 0,
+    'cluster_resources_storage': None,
+    'cluster_resources_storage_time': 0,
+    'storage_list': None,
+    'storage_list_time': 0,
+}
+_PVESH_CACHE_TTL = 30  # 30 seconds - balances freshness with performance
+
+# Cache for sensors output (temperature readings)
+_sensors_cache = {
+    'output': None,
+    'time': 0,
+}
+_SENSORS_CACHE_TTL = 10  # 10 seconds - temperature changes slowly
+
+# Cache for hardware info (lspci, dmidecode, lsblk)
+_hardware_cache = {
+    'lspci': None,
+    'lspci_time': 0,
+    'dmidecode': None,
+    'dmidecode_time': 0,
+    'lsblk': None,
+    'lsblk_time': 0,
+}
+_HARDWARE_CACHE_TTL = 300  # 5 minutes - hardware doesn't change
+
+
+def get_cached_pvesh_cluster_resources_vm():
+    """Get cluster VM resources with 30s cache."""
+    global _pvesh_cache
+    now = time.time()
+    
+    if _pvesh_cache['cluster_resources_vm'] is not None and \
+       now - _pvesh_cache['cluster_resources_vm_time'] < _PVESH_CACHE_TTL:
+        return _pvesh_cache['cluster_resources_vm']
+    
+    try:
+        result = subprocess.run(
+            ['pvesh', 'get', '/cluster/resources', '--type', 'vm', '--output-format', 'json'],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            _pvesh_cache['cluster_resources_vm'] = data
+            _pvesh_cache['cluster_resources_vm_time'] = now
+            return data
+    except Exception:
+        pass
+    return _pvesh_cache['cluster_resources_vm'] or []
+
+
+def get_cached_sensors_output():
+    """Get sensors output with 10s cache."""
+    global _sensors_cache
+    now = time.time()
+    
+    if _sensors_cache['output'] is not None and \
+       now - _sensors_cache['time'] < _SENSORS_CACHE_TTL:
+        return _sensors_cache['output']
+    
+    try:
+        result = subprocess.run(['sensors'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            _sensors_cache['output'] = result.stdout
+            _sensors_cache['time'] = now
+            return result.stdout
+    except Exception:
+        pass
+    return _sensors_cache['output'] or ''
+
+
+def get_cached_lspci():
+    """Get lspci output with 5 minute cache."""
+    global _hardware_cache
+    now = time.time()
+    
+    if _hardware_cache['lspci'] is not None and \
+       now - _hardware_cache['lspci_time'] < _HARDWARE_CACHE_TTL:
+        return _hardware_cache['lspci']
+    
+    try:
+        result = subprocess.run(['lspci'], capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            _hardware_cache['lspci'] = result.stdout
+            _hardware_cache['lspci_time'] = now
+            return result.stdout
+    except Exception:
+        pass
+    return _hardware_cache['lspci'] or ''
+
+
+def get_cached_lspci_vmm():
+    """Get lspci -vmm output with 5 minute cache."""
+    global _hardware_cache
+    now = time.time()
+    
+    cache_key = 'lspci_vmm'
+    if cache_key not in _hardware_cache:
+        _hardware_cache[cache_key] = None
+        _hardware_cache[cache_key + '_time'] = 0
+    
+    if _hardware_cache[cache_key] is not None and \
+       now - _hardware_cache[cache_key + '_time'] < _HARDWARE_CACHE_TTL:
+        return _hardware_cache[cache_key]
+    
+    try:
+        result = subprocess.run(['lspci', '-vmm'], capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            _hardware_cache[cache_key] = result.stdout
+            _hardware_cache[cache_key + '_time'] = now
+            return result.stdout
+    except Exception:
+        pass
+    return _hardware_cache[cache_key] or ''
+
+
+def get_cached_lspci_k():
+    """Get lspci -k output with 5 minute cache."""
+    global _hardware_cache
+    now = time.time()
+    
+    cache_key = 'lspci_k'
+    if cache_key not in _hardware_cache:
+        _hardware_cache[cache_key] = None
+        _hardware_cache[cache_key + '_time'] = 0
+    
+    if _hardware_cache[cache_key] is not None and \
+       now - _hardware_cache[cache_key + '_time'] < _HARDWARE_CACHE_TTL:
+        return _hardware_cache[cache_key]
+    
+    try:
+        result = subprocess.run(['lspci', '-k'], capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            _hardware_cache[cache_key] = result.stdout
+            _hardware_cache[cache_key + '_time'] = now
+            return result.stdout
+    except Exception:
+        pass
+    return _hardware_cache[cache_key] or ''
+
+
 def get_proxmox_version():
     """Get Proxmox version if available. Cached for 6 hours."""
     global _system_info_cache
@@ -1237,11 +1381,8 @@ def get_vm_lxc_names():
         # local_node = socket.gethostname()
         local_node = get_proxmox_node_name()
         
-        result = subprocess.run(['pvesh', 'get', '/cluster/resources', '--type', 'vm', '--output-format', 'json'], 
-                              capture_output=True, text=True, timeout=10)
-        
-        if result.returncode == 0:
-            resources = json.loads(result.stdout)
+        resources = get_cached_pvesh_cluster_resources_vm()
+        if resources:
             for resource in resources:
                 node = resource.get('node', '')
                 if node != local_node:
@@ -3247,18 +3388,15 @@ def get_proxmox_vms():
             # local_node = socket.gethostname()
             local_node = get_proxmox_node_name()
 
-            # print(f"[v0] Local node detected: {local_node}")
-            pass
-            
-            result = subprocess.run(['pvesh', 'get', '/cluster/resources', '--type', 'vm', '--output-format', 'json'], 
-                                  capture_output=True, text=True, timeout=10)
-            
-            if result.returncode == 0:
-                resources = json.loads(result.stdout)
-                for resource in resources:
-                    node = resource.get('node', '')
-                    if node != local_node:
-                        # print(f"[v0] Skipping VM {resource.get('vmid')} from remote node: {node}")
+        # print(f"[v0] Local node detected: {local_node}")
+        pass
+        
+        resources = get_cached_pvesh_cluster_resources_vm()
+        if resources:
+            for resource in resources:
+                node = resource.get('node', '')
+                if node != local_node:
+                    # print(f"[v0] Skipping VM {resource.get('vmid')} from remote node: {node}")
                         pass
                         continue
                     
@@ -3696,13 +3834,13 @@ def get_temperature_info():
     power_meter = None
     
     try:
-        result = subprocess.run(['sensors'], capture_output=True, text=True, timeout=5)
-        if result.returncode == 0:
+        sensors_output = get_cached_sensors_output()
+        if sensors_output:
             current_adapter = None
             current_chip = None
             current_sensor = None
             
-            for line in result.stdout.split('\n'):
+            for line in sensors_output.split('\n'):
                 line = line.strip()
                 if not line:
                     continue
@@ -4931,9 +5069,9 @@ def get_gpu_info():
     gpus = []
     
     try:
-        result = subprocess.run(['lspci'], capture_output=True, text=True, timeout=5)
-        if result.returncode == 0:
-            for line in result.stdout.split('\n'):
+        lspci_output = get_cached_lspci()
+        if lspci_output:
+            for line in lspci_output.split('\n'):
                 # Match VGA, 3D, Display controllers
                 if any(keyword in line for keyword in ['VGA compatible controller', '3D controller', 'Display controller']):
 
@@ -4984,11 +5122,11 @@ def get_gpu_info():
         pass
     
     try:
-        result = subprocess.run(['sensors'], capture_output=True, text=True, timeout=5)
-        if result.returncode == 0:
+        sensors_output = get_cached_sensors_output()
+        if sensors_output:
             current_adapter = None
             
-            for line in result.stdout.split('\n'):
+            for line in sensors_output.split('\n'):
                 line = line.strip()
                 if not line:
                     continue
@@ -5399,9 +5537,9 @@ def get_hardware_info():
                             })
             
             # Always check lspci for all GPUs (integrated and discrete)
-            result = subprocess.run(['lspci'], capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                for line in result.stdout.split('\n'):
+            lspci_output = get_cached_lspci()
+            if lspci_output:
+                for line in lspci_output.split('\n'):
                     # Match VGA, 3D, Display controllers
                     if any(keyword in line for keyword in ['VGA compatible controller', '3D controller', 'Display controller']):
                         parts = line.split(':', 2)
@@ -5453,10 +5591,10 @@ def get_hardware_info():
             # print("[v0] Getting PCI devices with driver information...")
             pass
             # First get basic device info with lspci -vmm
-            result = subprocess.run(['lspci', '-vmm'], capture_output=True, text=True, timeout=10)
-            if result.returncode == 0:
+            lspci_vmm_output = get_cached_lspci_vmm()
+            if lspci_vmm_output:
                 current_device = {}
-                for line in result.stdout.split('\n'):
+                for line in lspci_vmm_output.split('\n'):
                     line = line.strip()
                     
                     if not line:
@@ -5523,13 +5661,13 @@ def get_hardware_info():
                         current_device[key.strip()] = value.strip()
             
             # Now get driver information with lspci -k
-            result_k = subprocess.run(['lspci', '-k'], capture_output=True, text=True, timeout=10)
-            if result_k.returncode == 0:
+            lspci_k_output = get_cached_lspci_k()
+            if lspci_k_output:
                 current_slot = None
                 current_driver = None
                 current_module = None
                 
-                for line in result_k.stdout.split('\n'):
+                for line in lspci_k_output.split('\n'):
                     # Match PCI slot line (e.g., "00:1f.2 SATA controller: ...")
                     if line and not line.startswith('\t'):
                         parts = line.split(' ', 1)
@@ -5579,17 +5717,17 @@ def get_hardware_info():
                                 'critical': entry.critical if entry.critical else 0
                             })
                     
-                    # print(f"[v0] Temperature sensors: {len(hardware_data['sensors']['temperatures'])} found")
-                    pass
-            
-            try:
-                result = subprocess.run(['sensors'], capture_output=True, text=True, timeout=5)
-                if result.returncode == 0:
-                    current_adapter = None
-                    current_chip = None  # Add chip name tracking
-                    fans = []
-                    
-                    for line in result.stdout.split('\n'):
+        # print(f"[v0] Temperature sensors: {len(hardware_data['sensors']['temperatures'])} found")
+        pass
+        
+        try:
+            sensors_output = get_cached_sensors_output()
+            if sensors_output:
+                current_adapter = None
+                current_chip = None  # Add chip name tracking
+                fans = []
+                
+                for line in sensors_output.split('\n'):
                         line = line.strip()
                         if not line:
                             continue
@@ -6634,10 +6772,8 @@ def api_create_backup(vmid):
         
         # Try to find VM in cluster resources
         try:
-            result = subprocess.run(['pvesh', 'get', '/cluster/resources', '--type', 'vm', '--output-format', 'json'],
-                                  capture_output=True, text=True, timeout=10)
-            if result.returncode == 0:
-                vms = json.loads(result.stdout)
+            vms = get_cached_pvesh_cluster_resources_vm()
+            if vms:
                 for vm in vms:
                     if vm.get('vmid') == vmid:
                         node = vm.get('node')
@@ -7484,11 +7620,9 @@ def api_vm_logs(vmid):
     """Download real logs for a specific VM/LXC (not task history)"""
     try:
         # Get VM type and node
-        result = subprocess.run(['pvesh', 'get', '/cluster/resources', '--type', 'vm', '--output-format', 'json'], 
-                              capture_output=True, text=True, timeout=10)
+        resources = get_cached_pvesh_cluster_resources_vm()
         
-        if result.returncode == 0:
-            resources = json.loads(result.stdout)
+        if resources:
             vm_info = None
             for resource in resources:
                 if resource.get('vmid') == vmid:
@@ -7536,17 +7670,15 @@ def api_vm_control(vmid):
         data = request.get_json()
         action = data.get('action')  # start, stop, shutdown, reboot
         
-        if action not in ['start', 'stop', 'shutdown', 'reboot']:
-            return jsonify({'error': 'Invalid action'}), 400
-        
-        # Get VM type and node
-        result = subprocess.run(['pvesh', 'get', '/cluster/resources', '--type', 'vm', '--output-format', 'json'], 
-                              capture_output=True, text=True, timeout=10)
-        
-        if result.returncode == 0:
-            resources = json.loads(result.stdout)
-            vm_info = None
-            for resource in resources:
+    if action not in ['start', 'stop', 'shutdown', 'reboot']:
+        return jsonify({'error': 'Invalid action'}), 400
+    
+    # Get VM type and node
+    resources = get_cached_pvesh_cluster_resources_vm()
+    
+    if resources:
+        vm_info = None
+        for resource in resources:
                 if resource.get('vmid') == vmid:
                     vm_info = resource
                     break
@@ -7590,11 +7722,9 @@ def api_vm_config_update(vmid):
         description = data.get('description', '')
         
         # Get VM type and node
-        result = subprocess.run(['pvesh', 'get', '/cluster/resources', '--type', 'vm', '--output-format', 'json'], 
-                              capture_output=True, text=True, timeout=10)
+        resources = get_cached_pvesh_cluster_resources_vm()
         
-        if result.returncode == 0:
-            resources = json.loads(result.stdout)
+        if resources:
             vm_info = None
             for resource in resources:
                 if resource.get('vmid') == vmid:

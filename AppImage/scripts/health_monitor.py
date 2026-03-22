@@ -215,6 +215,14 @@ class HealthMonitor:
         self._unknown_counts = {}  # Track consecutive UNKNOWN cycles per category
         self._last_cleanup_time = 0  # Throttle cleanup_old_errors calls
         
+        # SMART check cache - reduces disk queries from every 5 min to every 30 min
+        self._smart_cache = {}  # {disk_name: {'result': 'PASSED', 'time': timestamp}}
+        self._SMART_CACHE_TTL = 1800  # 30 minutes - disk health changes slowly
+        
+        # Journalctl 24h cache - reduces full log reads from every 5 min to every 1 hour
+        self._journalctl_24h_cache = {'count': 0, 'time': 0}
+        self._JOURNALCTL_24H_CACHE_TTL = 3600  # 1 hour - login attempts aggregate slowly
+        
         # System capabilities - derived from Proxmox storage types at runtime (Priority 1.5)
         # SMART detection still uses filesystem check on init (lightweight)
         has_smart = os.path.exists('/usr/sbin/smartctl') or os.path.exists('/usr/bin/smartctl')
@@ -1758,9 +1766,20 @@ class HealthMonitor:
             return ''
     
     def _quick_smart_health(self, disk_name: str) -> str:
-        """Quick SMART health check for a single disk. Returns 'PASSED', 'FAILED', or 'UNKNOWN'."""
+        """Quick SMART health check for a single disk. Returns 'PASSED', 'FAILED', or 'UNKNOWN'.
+        
+        Results are cached for 30 minutes to reduce disk queries - SMART status rarely changes.
+        """
         if not disk_name or disk_name.startswith('ata') or disk_name.startswith('zram'):
             return 'UNKNOWN'
+        
+        # Check cache first
+        current_time = time.time()
+        cache_key = disk_name
+        cached = self._smart_cache.get(cache_key)
+        if cached and current_time - cached['time'] < self._SMART_CACHE_TTL:
+            return cached['result']
+        
         try:
             dev_path = f'/dev/{disk_name}' if not disk_name.startswith('/') else disk_name
             result = subprocess.run(
@@ -1771,10 +1790,15 @@ class HealthMonitor:
             data = _json.loads(result.stdout)
             passed = data.get('smart_status', {}).get('passed', None)
             if passed is True:
-                return 'PASSED'
+                smart_result = 'PASSED'
             elif passed is False:
-                return 'FAILED'
-            return 'UNKNOWN'
+                smart_result = 'FAILED'
+            else:
+                smart_result = 'UNKNOWN'
+            
+            # Cache the result
+            self._smart_cache[cache_key] = {'result': smart_result, 'time': current_time}
+            return smart_result
         except Exception:
             return 'UNKNOWN'
 
@@ -3960,24 +3984,36 @@ class HealthMonitor:
                     issues.append(cert_reason or 'Certificate issue')
             
             # Sub-check 3: Failed login attempts (brute force detection)
+            # Cached for 1 hour to avoid reading 24h of logs every 5 minutes
             try:
-                result = subprocess.run(
-                    ['journalctl', '--since', '24 hours ago', '--no-pager',
-                     '-g', 'authentication failure|failed password|invalid user',
-                     '--output=cat', '-n', '5000'],
-                    capture_output=True,
-                    text=True,
-                    timeout=20
-                )
+                current_time = time.time()
                 
-                failed_logins = 0
-                if result.returncode == 0:
-                    for line in result.stdout.split('\n'):
-                        line_lower = line.lower()
-                        if 'authentication failure' in line_lower or 'failed password' in line_lower or 'invalid user' in line_lower:
-                            failed_logins += 1
+                # Check if we have a valid cached result
+                if self._journalctl_24h_cache['time'] > 0 and \
+                   current_time - self._journalctl_24h_cache['time'] < self._JOURNALCTL_24H_CACHE_TTL:
+                    failed_logins = self._journalctl_24h_cache['count']
+                else:
+                    # Cache expired or first run - read full 24h logs
+                    result = subprocess.run(
+                        ['journalctl', '--since', '24 hours ago', '--no-pager',
+                         '-g', 'authentication failure|failed password|invalid user',
+                         '--output=cat', '-n', '5000'],
+                        capture_output=True,
+                        text=True,
+                        timeout=20
+                    )
                     
-                    if failed_logins > 50:
+                    failed_logins = 0
+                    if result.returncode == 0:
+                        for line in result.stdout.split('\n'):
+                            line_lower = line.lower()
+                            if 'authentication failure' in line_lower or 'failed password' in line_lower or 'invalid user' in line_lower:
+                                failed_logins += 1
+                    
+                    # Cache the result
+                    self._journalctl_24h_cache = {'count': failed_logins, 'time': current_time}
+                
+                if failed_logins > 50:
                         msg = f'{failed_logins} failed login attempts in 24h'
                         issues.append(msg)
                         checks['login_attempts'] = {'status': 'WARNING', 'detail': msg, 'count': failed_logins, 'dismissable': True}
