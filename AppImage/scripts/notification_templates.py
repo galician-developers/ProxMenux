@@ -1270,10 +1270,11 @@ AI_LANGUAGES = {
 
 # Token limits for different detail levels
 # max_tokens is a LIMIT, not fixed consumption - you only pay for tokens actually generated
+# Note: Some providers (especially Gemini) may have lower default limits, so we use generous values
 AI_DETAIL_TOKENS = {
-    'brief': 300,      # Short messages, 2-3 lines
-    'standard': 1000,  # Standard messages, sufficient for 15-20 VMs
-    'detailed': 2000,  # Complete technical reports with all details
+    'brief': 500,      # Short messages, 2-3 lines
+    'standard': 1500,  # Standard messages, sufficient for 15-20 VMs
+    'detailed': 3000,  # Complete technical reports with all details
 }
 
 # System prompt template - informative, no recommendations

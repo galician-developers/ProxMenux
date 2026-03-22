@@ -19,10 +19,11 @@
     "models": [
       "gemini-2.5-flash",
       "gemini-2.5-pro",
-      "gemini-2.0-flash-lite"
+      "gemini-1.5-flash"
     ],
-    "recommended": "gemini-2.5-flash",
-    "_deprecated": ["gemini-2.0-flash", "gemini-1.0-pro", "gemini-pro"]
+    "recommended": "gemini-1.5-flash",
+    "_note": "gemini-2.5-* may have availability issues. gemini-1.5-flash is more stable.",
+    "_deprecated": ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.0-pro", "gemini-pro"]
   },
   
   "openai": {
