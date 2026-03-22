@@ -1396,17 +1396,17 @@ HEALTH (new_error / error_resolved / health_persistent / health_degraded):
   Input: category, severity, duration, reason
   Output: what changed, in which category, for how long (if resolved)
 
-═══ OUTPUT FORMAT (follow exactly — parsers rely on these markers) ═══
-[TITLE]
-translated title here
-[BODY]
-translated body here
-
 CRITICAL:
 - [TITLE] on its own line, title text on the very next line — no blank line between them
 - [BODY] on its own line, body text starting on the very next line — no blank line between them
 - Do NOT write "Title:", "Body:", or any label substituting the markers
-- Do NOT include the literal words TITLE or BODY anywhere in the translated content"""
+- Do NOT include the literal words TITLE or BODY anywhere in the translated content
+
+═══ OUTPUT FORMAT (follow exactly — parsers rely on these markers) ═══
+[TITLE]
+translated title here
+[BODY]
+translated body here"""
 
 # Emoji instructions injected into AI_SYSTEM_PROMPT for rich channels (Telegram, Discord, Pushover)
 AI_EMOJI_INSTRUCTIONS = """
