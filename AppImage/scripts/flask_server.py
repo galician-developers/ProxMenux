@@ -7941,8 +7941,32 @@ if __name__ == '__main__':
     
     # Use gevent for SSL+WebSocket support, or fallback to Flask dev server
     gevent_available = False
+    ssl_loaded = False
+    
+    if ssl_ctx:
+        # Validate SSL certificates before starting server
+        try:
+            import ssl
+            import os
+            
+            # Check certificate files exist and are readable
+            if not os.path.isfile(ssl_cert):
+                raise FileNotFoundError(f"SSL certificate not found: {ssl_cert}")
+            if not os.path.isfile(ssl_key):
+                raise FileNotFoundError(f"SSL key not found: {ssl_key}")
+            
+            # Try to load the certificate to validate it
+            test_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            test_ctx.load_cert_chain(ssl_cert, ssl_key)
+            ssl_loaded = True
+            print(f"[ProxMenux] SSL certificates validated successfully")
+        except Exception as e:
+            print(f"[ProxMenux] SSL certificate error: {e}")
+            print(f"[ProxMenux] Falling back to HTTP mode (SSL disabled)")
+            ssl_ctx = None
+    
     try:
-        if ssl_ctx:
+        if ssl_ctx and ssl_loaded:
             # Try gevent with SSL for proper WebSocket (WSS) support
             try:
                 from gevent import pywsgi
@@ -7971,6 +7995,7 @@ if __name__ == '__main__':
                 app.run(host='0.0.0.0', port=8008, debug=False, ssl_context=ssl_context)
         else:
             # HTTP mode - use Flask dev server (simpler, works fine without SSL)
+            print("[ProxMenux] Starting Flask server with HTTP...")
             app.run(host='0.0.0.0', port=8008, debug=False)
     except Exception as e:
         if ssl_ctx and not gevent_available:
