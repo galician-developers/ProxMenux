@@ -24,6 +24,13 @@ class GeminiProvider(AIProvider):
         'learnlm', 'imagen', 'veo'
     ]
     
+    # Deprecated models that may still appear in API but return 404
+    DEPRECATED_MODELS = [
+        'gemini-2.0-flash',
+        'gemini-1.0-pro',
+        'gemini-pro',
+    ]
+    
     def list_models(self) -> List[str]:
         """List available Gemini models that support generateContent.
         
@@ -63,6 +70,10 @@ class GeminiProvider(AIProvider):
                 # Exclude experimental, preview, and specialized models
                 model_lower = model_id.lower()
                 if any(pattern in model_lower for pattern in self.EXCLUDED_PATTERNS):
+                    continue
+                
+                # Exclude deprecated models that return 404
+                if model_id in self.DEPRECATED_MODELS:
                     continue
                 
                 models.append(model_id)
@@ -132,11 +143,32 @@ class GeminiProvider(AIProvider):
         try:
             # Gemini returns candidates array with content parts
             candidates = result.get('candidates', [])
-            if candidates:
-                content = candidates[0].get('content', {})
-                parts = content.get('parts', [])
-                if parts:
-                    return parts[0].get('text', '').strip()
-            raise AIProviderError("No content in response")
+            if not candidates:
+                # Check for blocked content or other issues
+                prompt_feedback = result.get('promptFeedback', {})
+                block_reason = prompt_feedback.get('blockReason', '')
+                if block_reason:
+                    raise AIProviderError(f"Content blocked by Gemini: {block_reason}")
+                raise AIProviderError("No candidates in response - model may be overloaded")
+            
+            # Check if response was blocked
+            finish_reason = candidates[0].get('finishReason', '')
+            if finish_reason == 'SAFETY':
+                safety_ratings = candidates[0].get('safetyRatings', [])
+                blocked_categories = [r.get('category', 'UNKNOWN') for r in safety_ratings 
+                                     if r.get('blocked', False)]
+                raise AIProviderError(f"Response blocked by safety filter: {blocked_categories}")
+            
+            content = candidates[0].get('content', {})
+            parts = content.get('parts', [])
+            if parts:
+                text = parts[0].get('text', '').strip()
+                if text:
+                    return text
+            
+            # No text content - provide detailed error
+            raise AIProviderError(f"No text in response (finishReason: {finish_reason})")
+        except AIProviderError:
+            raise
         except (KeyError, IndexError) as e:
             raise AIProviderError(f"Unexpected response format: {e}")
