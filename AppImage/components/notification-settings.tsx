@@ -24,6 +24,7 @@ interface ChannelConfig {
   rich_format?: boolean
   bot_token?: string
   chat_id?: string
+  topic_id?: string  // Telegram topic ID for supergroups with topics
   url?: string
   token?: string
   webhook_url?: string
@@ -1125,6 +1126,16 @@ export function NotificationSettings() {
                           value={config.channels.telegram?.chat_id || ""}
                           onChange={e => updateChannel("telegram", "chat_id", e.target.value)}
                         />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] text-muted-foreground">Topic ID <span className="text-muted-foreground/60">(optional)</span></Label>
+                        <Input
+                          className="h-7 text-xs font-mono"
+                          placeholder="123456"
+                          value={config.channels.telegram?.topic_id || ""}
+                          onChange={e => updateChannel("telegram", "topic_id", e.target.value)}
+                        />
+                        <p className="text-[10px] text-muted-foreground">For supergroups with topics enabled. Leave empty for regular chats.</p>
                       </div>
                       {/* Message format */}
                       <div className="flex items-center justify-between py-1">

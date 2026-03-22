@@ -135,7 +135,7 @@ class TelegramChannel(NotificationChannel):
         'UNKNOWN':  '\u26AA',      # white circle
     }
     
-    def __init__(self, bot_token: str, chat_id: str):
+    def __init__(self, bot_token: str, chat_id: str, topic_id: str = ''):
         super().__init__()
         token = bot_token.strip()
         # Strip 'bot' prefix if user included it (API_BASE already adds it)
@@ -143,6 +143,8 @@ class TelegramChannel(NotificationChannel):
             token = token[3:]
         self.bot_token = token
         self.chat_id = chat_id.strip()
+        # Topic ID for supergroups with topics enabled (message_thread_id)
+        self.topic_id = topic_id.strip() if topic_id else ''
     
     def validate_config(self) -> Tuple[bool, str]:
         if not self.bot_token:
@@ -177,6 +179,12 @@ class TelegramChannel(NotificationChannel):
             'chat_id': self.chat_id,
             'photo': photo_url,
         }
+        # Add topic ID for supergroups with topics enabled
+        if self.topic_id:
+            try:
+                payload['message_thread_id'] = int(self.topic_id)
+            except ValueError:
+                pass
         if caption:
             payload['caption'] = caption[:1024]  # Telegram caption limit
             payload['parse_mode'] = 'HTML'
@@ -204,13 +212,20 @@ class TelegramChannel(NotificationChannel):
     
     def _post_message(self, text: str) -> Tuple[int, str]:
         url = self.API_BASE.format(token=self.bot_token)
-        payload = json.dumps({
+        payload_dict = {
             'chat_id': self.chat_id,
             'text': text,
             'parse_mode': 'HTML',
             'disable_web_page_preview': True,
-        }).encode('utf-8')
+        }
+        # Add topic ID for supergroups with topics enabled
+        if self.topic_id:
+            try:
+                payload_dict['message_thread_id'] = int(self.topic_id)
+            except ValueError:
+                pass  # Invalid topic_id, skip
         
+        payload = json.dumps(payload_dict).encode('utf-8')
         return self._http_request(url, payload, {'Content-Type': 'application/json'})
     
     def _split_message(self, text: str) -> list:
@@ -892,11 +907,12 @@ def create_channel(channel_type: str, config: Dict[str, str]) -> Optional[Notifi
         Channel instance or None if creation fails
     """
     try:
-        if channel_type == 'telegram':
-            return TelegramChannel(
-                bot_token=config.get('bot_token', ''),
-                chat_id=config.get('chat_id', '')
-            )
+    if channel_type == 'telegram':
+        return TelegramChannel(
+            bot_token=config.get('bot_token', ''),
+            chat_id=config.get('chat_id', ''),
+            topic_id=config.get('topic_id', '')
+        )
         elif channel_type == 'gotify':
             return GotifyChannel(
                 server_url=config.get('url', ''),
