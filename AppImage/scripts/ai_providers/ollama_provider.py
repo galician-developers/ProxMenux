@@ -63,8 +63,10 @@ class OllamaProvider(AIProvider):
         
         # Cloud models (e.g., kimi-k2.5:cloud, minimax-m2.7:cloud) need longer timeout
         # because requests go through: ProxMenux -> Ollama -> Cloud Provider -> back
+        # Local models also need generous timeout for slower hardware (e.g., low-end CPUs,
+        # no GPU acceleration, larger models like 8B parameters)
         is_cloud_model = ':cloud' in self.model.lower()
-        timeout = 120 if is_cloud_model else 30  # 2 minutes for cloud, 30s for local
+        timeout = 120 if is_cloud_model else 90  # 2 minutes for cloud, 90s for local
         
         try:
             result = self._make_request(url, payload, headers, timeout=timeout)

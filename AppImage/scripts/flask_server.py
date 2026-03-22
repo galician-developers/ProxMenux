@@ -5644,6 +5644,10 @@ def get_hardware_info():
                                     'device': device_name,
                                     'class': device_class
                                 }
+                                # Add subsystem device name if available (e.g., "HBA 9400-16i" for SAS controllers)
+                                sdevice = current_device.get('SDevice', '')
+                                if sdevice:
+                                    pci_device['sdevice'] = sdevice
                                 if network_subtype:
                                     pci_device['network_subtype'] = network_subtype
                                 hardware_data['pci_devices'].append(pci_device)

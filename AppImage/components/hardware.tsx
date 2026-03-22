@@ -1583,6 +1583,13 @@ export default function Hardware() {
                 <span className="text-sm text-right">{selectedPCIDevice.device}</span>
               </div>
 
+              {selectedPCIDevice.sdevice && (
+                <div className="flex justify-between border-b border-border/50 pb-2">
+                  <span className="text-sm font-medium text-muted-foreground">Product Name</span>
+                  <span className="text-sm text-right text-blue-400">{selectedPCIDevice.sdevice}</span>
+                </div>
+              )}
+
               <div className="flex justify-between border-b border-border/50 pb-2">
                 <span className="text-sm font-medium text-muted-foreground">Vendor</span>
                 <span className="text-sm">{selectedPCIDevice.vendor}</span>
