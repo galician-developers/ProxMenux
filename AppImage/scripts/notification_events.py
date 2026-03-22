@@ -1396,10 +1396,10 @@ class TaskWatcher:
                 # 2. Check active file for newly started tasks (backup start)
                 self._check_active_tasks()
                 
-                except Exception as e:
-                    print(f"[TaskWatcher] Error reading task log: {e}")
-                
-                time.sleep(5)  # Check every 5 seconds (reduced from 2s for efficiency)
+            except Exception as e:
+                print(f"[TaskWatcher] Error reading task log: {e}")
+            
+            time.sleep(5)  # Check every 5 seconds (reduced from 2s for efficiency)
     
     def _check_active_tasks(self):
         """Scan /var/log/pve/tasks/active to track vzdump for VM suppression.
