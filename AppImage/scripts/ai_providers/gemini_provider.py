@@ -166,8 +166,15 @@ class GeminiProvider(AIProvider):
                 if text:
                     return text
             
-            # No text content - provide detailed error
-            raise AIProviderError(f"No text in response (finishReason: {finish_reason})")
+            # No text content - check if it's a known issue
+            if finish_reason == 'MAX_TOKENS':
+                # MAX_TOKENS with no content means the prompt itself was too long
+                raise AIProviderError("Prompt too long - no space for response. Try a shorter system prompt or message.")
+            elif finish_reason == 'STOP':
+                # Normal stop but no content - unusual
+                raise AIProviderError("Model returned empty response")
+            else:
+                raise AIProviderError(f"No text in response (finishReason: {finish_reason})")
         except AIProviderError:
             raise
         except (KeyError, IndexError) as e:

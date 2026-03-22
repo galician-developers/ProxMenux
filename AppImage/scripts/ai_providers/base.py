@@ -65,7 +65,7 @@ class AIProvider(ABC):
             response = self.generate(
                 system_prompt="You are a test assistant. Respond with exactly: CONNECTION_OK",
                 user_message="Test connection",
-                max_tokens=20
+                max_tokens=50  # Some providers (Gemini) need more tokens to return any content
             )
             if response:
                 # Check if response contains our expected text
