@@ -907,12 +907,12 @@ def create_channel(channel_type: str, config: Dict[str, str]) -> Optional[Notifi
         Channel instance or None if creation fails
     """
     try:
-    if channel_type == 'telegram':
-        return TelegramChannel(
-            bot_token=config.get('bot_token', ''),
-            chat_id=config.get('chat_id', ''),
-            topic_id=config.get('topic_id', '')
-        )
+        if channel_type == 'telegram':
+            return TelegramChannel(
+                bot_token=config.get('bot_token', ''),
+                chat_id=config.get('chat_id', ''),
+                topic_id=config.get('topic_id', '')
+            )
         elif channel_type == 'gotify':
             return GotifyChannel(
                 server_url=config.get('url', ''),
