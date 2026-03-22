@@ -5980,7 +5980,7 @@
     "notes": [],
     "port": 7745,
     "website": "https://homebox.software/en/",
-    "documentation": "https://homebox.software/en/quick-start.html",
+    "documentation": "https://homebox.software/en/quick-start/",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/homebox.webp",
     "updateable": true,
     "privileged": false,
@@ -11195,7 +11195,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "pve"
     ],
