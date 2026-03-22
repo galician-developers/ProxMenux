@@ -3387,17 +3387,14 @@ def get_proxmox_vms():
         try:
             # local_node = socket.gethostname()
             local_node = get_proxmox_node_name()
-
-        # print(f"[v0] Local node detected: {local_node}")
-        pass
+            # print(f"[v0] Local node detected: {local_node}")
         
-        resources = get_cached_pvesh_cluster_resources_vm()
-        if resources:
-            for resource in resources:
-                node = resource.get('node', '')
-                if node != local_node:
-                    # print(f"[v0] Skipping VM {resource.get('vmid')} from remote node: {node}")
-                        pass
+            resources = get_cached_pvesh_cluster_resources_vm()
+            if resources:
+                for resource in resources:
+                    node = resource.get('node', '')
+                    if node != local_node:
+                        # print(f"[v0] Skipping VM {resource.get('vmid')} from remote node: {node}")
                         continue
                     
                     vm_data = {
@@ -3418,12 +3415,8 @@ def get_proxmox_vms():
                     }
                     all_vms.append(vm_data)
 
-                
-
                 return all_vms
             else:
-                # print(f"[v0] pvesh command failed: {result.stderr}")
-                pass
                 return {
                     'error': 'pvesh command not available or failed',
                     'vms': []
