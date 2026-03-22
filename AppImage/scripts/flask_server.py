@@ -5709,9 +5709,9 @@ def get_hardware_info():
                                 'high': entry.high if entry.high else 0,
                                 'critical': entry.critical if entry.critical else 0
                             })
-                    
-        # print(f"[v0] Temperature sensors: {len(hardware_data['sensors']['temperatures'])} found")
-        pass
+        except Exception as e:
+            # print(f"[v0] Error getting temperature sensors: {e}")
+            pass
         
         try:
             sensors_output = get_cached_sensors_output()
