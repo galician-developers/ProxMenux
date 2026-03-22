@@ -1478,18 +1478,51 @@ export function NotificationSettings() {
 
             {/* ── Advanced: AI Enhancement ── */}
             <div>
-              <button
-                className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors w-full py-1"
-                onClick={() => setShowAdvanced(!showAdvanced)}
-              >
-                {showAdvanced ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                <span className="font-medium uppercase tracking-wider">Advanced: AI Enhancement</span>
-                {config.ai_enabled && (
-                  <Badge variant="outline" className="text-[9px] border-purple-500/30 text-purple-400 ml-1">
-                    ON
-                  </Badge>
+              <div className="flex items-center justify-between py-1">
+                <button
+                  className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                >
+                  {showAdvanced ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                  <span className="font-medium uppercase tracking-wider">Advanced: AI Enhancement</span>
+                  {config.ai_enabled && (
+                    <Badge variant="outline" className="text-[9px] border-purple-500/30 text-purple-400 ml-1">
+                      ON
+                    </Badge>
+                  )}
+                </button>
+                {showAdvanced && (
+                  <div className="flex items-center gap-2">
+                    {editMode ? (
+                      <>
+                        <button
+                          className="h-6 px-2 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors text-muted-foreground"
+                          onClick={handleCancel}
+                          disabled={saving}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          className="h-6 px-2 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50 flex items-center gap-1"
+                          onClick={handleSave}
+                          disabled={saving || !hasChanges}
+                        >
+                          {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                          Save
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="h-6 px-2 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors flex items-center gap-1"
+                        onClick={() => setEditMode(true)}
+                      >
+                        <Settings2 className="h-3 w-3" />
+                        Edit
+                      </button>
+                    )}
+                  </div>
                 )}
-              </button>
+              </div>
 
 {showAdvanced && (
                   <div className="space-y-4 mt-3 p-4 rounded-lg bg-muted/30 border border-border/50">
@@ -1891,6 +1924,14 @@ export function NotificationSettings() {
                                 <Upload className="h-4 w-4" />
                                 Import
                               </Button>
+                              <a
+                                href="https://github.com/MacRimi/ProxMenux/discussions/categories/share-custom-prompts-for-ai-notifications"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-purple-400 hover:text-purple-300 transition-colors flex items-center gap-1"
+                              >
+                                Community prompts <ExternalLink className="h-3 w-3" />
+                              </a>
                             </div>
                             <div className="flex items-start gap-2 p-3 rounded-md bg-purple-500/10 border border-purple-500/20">
                               <Info className="h-4 w-4 text-purple-400 shrink-0 mt-0.5" />
