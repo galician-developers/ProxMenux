@@ -31,7 +31,7 @@ except ImportError:
 # To analyze: grep "\[PERF\]" /var/log/proxmenux-monitor.log | sort -t'=' -k2 -n
 # Set to False or remove this section after debugging
 # ============================================================================
-DEBUG_PERF = True
+DEBUG_PERF = False
 
 def _perf_log(section: str, elapsed_ms: float):
     """Log performance timing for a section. Only logs if DEBUG_PERF is True."""
