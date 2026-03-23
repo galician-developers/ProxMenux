@@ -38,7 +38,10 @@ class GroqProvider(AIProvider):
         try:
             req = urllib.request.Request(
                 self.MODELS_URL,
-                headers={'Authorization': f'Bearer {self.api_key}'},
+                headers={
+                    'Authorization': f'Bearer {self.api_key}',
+                    'User-Agent': 'ProxMenux/1.0'  # Cloudflare blocks requests without User-Agent
+                },
                 method='GET'
             )
             

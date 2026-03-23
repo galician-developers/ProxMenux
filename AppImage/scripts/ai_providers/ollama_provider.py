@@ -96,7 +96,7 @@ class OllamaProvider(AIProvider):
         # First check if server is running
         try:
             url = f"{self.base_url.rstrip('/')}/api/tags"
-            req = urllib.request.Request(url, method='GET')
+            req = urllib.request.Request(url, method='GET', headers={'User-Agent': 'ProxMenux/1.0'})
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read().decode('utf-8'))
                 

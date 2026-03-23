@@ -48,7 +48,7 @@ class GeminiProvider(AIProvider):
         
         try:
             url = f"{self.API_BASE}?key={self.api_key}"
-            req = urllib.request.Request(url, method='GET')
+            req = urllib.request.Request(url, method='GET', headers={'User-Agent': 'ProxMenux/1.0'})
             
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode('utf-8'))

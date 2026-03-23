@@ -152,6 +152,10 @@ class AIProvider(ABC):
         import urllib.request
         import urllib.error
         
+        # Ensure User-Agent is set (Cloudflare blocks requests without it - error 1010)
+        if 'User-Agent' not in headers:
+            headers['User-Agent'] = 'ProxMenux/1.0'
+        
         data = json.dumps(payload).encode('utf-8')
         req = urllib.request.Request(url, data=data, headers=headers, method='POST')
         
