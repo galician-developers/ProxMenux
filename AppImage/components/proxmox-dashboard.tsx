@@ -80,6 +80,7 @@ export function ProxmoxDashboard() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("overview")
   const [infoCount, setInfoCount] = useState(0)
+  const [updateAvailable, setUpdateAvailable] = useState(false)
   const [showNavigation, setShowNavigation] = useState(true)
   const [lastScrollY, setLastScrollY] = useState(0)
   const [showHealthModal, setShowHealthModal] = useState(false)
@@ -98,6 +99,19 @@ export function ProxmoxDashboard() {
     { key: "updates", category: "updates" },
     { key: "security", category: "security" },
   ]
+
+  // Fetch ProxMenux update status
+  const fetchUpdateStatus = useCallback(async () => {
+    try {
+      const response = await fetchApi("/api/proxmenux/update-status")
+      if (response?.success && response?.update_available) {
+        const { stable, beta } = response.update_available
+        setUpdateAvailable(stable || beta)
+      }
+    } catch (error) {
+      // Silently fail - updateAvailable will remain false
+    }
+  }, [])
 
   // Fetch health info count independently (for initial load and refresh)
   const fetchHealthInfoCount = useCallback(async () => {
@@ -178,9 +192,10 @@ export function ProxmoxDashboard() {
   }, [])
 
   useEffect(() => {
-    // Siempre fetch inicial
-    fetchSystemData()
-    fetchHealthInfoCount() // Fetch info count on initial load
+  // Siempre fetch inicial
+  fetchSystemData()
+  fetchHealthInfoCount() // Fetch info count on initial load
+  fetchUpdateStatus() // Fetch ProxMenux update status on initial load
 
     // En overview: cada 30 segundos para actualización frecuente del estado de salud
     // En otras tabs: cada 60 segundos para reducir carga
@@ -198,7 +213,7 @@ export function ProxmoxDashboard() {
       if (interval) clearInterval(interval)
       if (healthInterval) clearInterval(healthInterval)
     }
-  }, [fetchSystemData, fetchHealthInfoCount, activeTab])
+  }, [fetchSystemData, fetchHealthInfoCount, fetchUpdateStatus, activeTab])
 
   useEffect(() => {
     const handleChangeTab = (event: CustomEvent) => {
@@ -376,14 +391,13 @@ export function ProxmoxDashboard() {
             <div className="flex items-center space-x-2 md:space-x-3 min-w-0">
               <div className="w-16 h-16 md:w-10 md:h-10 relative flex items-center justify-center bg-primary/10 flex-shrink-0">
                 <Image
-                  src="/images/proxmenux-logo.png"
+                  src={updateAvailable ? "/images/proxmenux_update-logo.png" : "/images/proxmenux-logo.png"}
                   alt="ProxMenux Logo"
                   width={64}
                   height={64}
                   className="object-contain md:w-10 md:h-10"
                   priority
                   onError={(e) => {
-                    console.log("[v0] Logo failed to load, using fallback icon")
                     const target = e.target as HTMLImageElement
                     target.style.display = "none"
                     const fallback = target.parentElement?.querySelector(".fallback-icon")

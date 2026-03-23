@@ -2231,12 +2231,42 @@ class PollingCollector:
             except Exception:
                 return (0,)
         
+        def update_config_json(stable: bool = None, stable_version: str = None, 
+                               beta: bool = None, beta_version: str = None):
+            """Update update_available status in config.json."""
+            config_path = Path('/usr/local/share/proxmenux/config.json')
+            try:
+                config = {}
+                if config_path.exists():
+                    with open(config_path, 'r') as f:
+                        config = json.load(f)
+                
+                if 'update_available' not in config:
+                    config['update_available'] = {
+                        'stable': False, 'stable_version': '',
+                        'beta': False, 'beta_version': ''
+                    }
+                
+                if stable is not None:
+                    config['update_available']['stable'] = stable
+                    config['update_available']['stable_version'] = stable_version or ''
+                if beta is not None:
+                    config['update_available']['beta'] = beta
+                    config['update_available']['beta_version'] = beta_version or ''
+                
+                with open(config_path, 'w') as f:
+                    json.dump(config, f, indent=2)
+            except Exception as e:
+                print(f"[PollingCollector] Failed to update config.json: {e}")
+        
         try:
             # Check main version
             local_main = read_local_version(self.PROXMENUX_VERSION_FILE)
             if local_main:
                 remote_main = read_remote_version(self.REPO_MAIN_VERSION_URL)
                 if remote_main and version_tuple(remote_main) > version_tuple(local_main):
+                    # Update config.json with stable update status
+                    update_config_json(stable=True, stable_version=remote_main)
                     # Only notify if we haven't already notified for this version
                     if self._notified_proxmenux_version != remote_main:
                         self._notified_proxmenux_version = remote_main
@@ -2255,6 +2285,8 @@ class PollingCollector:
             if local_beta:
                 remote_beta = read_remote_version(self.REPO_DEVELOP_VERSION_URL)
                 if remote_beta and version_tuple(remote_beta) > version_tuple(local_beta):
+                    # Update config.json with beta update status
+                    update_config_json(beta=True, beta_version=remote_beta)
                     # Only notify if we haven't already notified for this version
                     if self._notified_proxmenux_beta_version != remote_beta:
                         self._notified_proxmenux_beta_version = remote_beta

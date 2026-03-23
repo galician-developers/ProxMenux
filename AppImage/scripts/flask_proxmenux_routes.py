@@ -28,6 +28,45 @@ TOOL_DESCRIPTIONS = {
     'persistent_network': 'Setting persistent network interfaces'
 }
 
+@proxmenux_bp.route('/api/proxmenux/update-status', methods=['GET'])
+def get_update_status():
+    """Get ProxMenux update availability status from config.json"""
+    config_path = '/usr/local/share/proxmenux/config.json'
+    
+    try:
+        if not os.path.exists(config_path):
+            return jsonify({
+                'success': True,
+                'update_available': {
+                    'stable': False,
+                    'stable_version': '',
+                    'beta': False,
+                    'beta_version': ''
+                }
+            })
+        
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        
+        update_status = config.get('update_available', {
+            'stable': False,
+            'stable_version': '',
+            'beta': False,
+            'beta_version': ''
+        })
+        
+        return jsonify({
+            'success': True,
+            'update_available': update_status
+        })
+    
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @proxmenux_bp.route('/api/proxmenux/installed-tools', methods=['GET'])
 def get_installed_tools():
     """Get list of installed ProxMenux tools/optimizations"""
