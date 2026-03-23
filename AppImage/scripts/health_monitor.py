@@ -240,6 +240,10 @@ class HealthMonitor:
         self._journalctl_10min_cache = {'output': '', 'time': 0}
         self._JOURNALCTL_10MIN_CACHE_TTL = 60  # 1 minute - fresh enough for health checks
         
+        # Journalctl 1hour cache - for disk health events (SMART warnings, I/O errors)
+        self._journalctl_1hour_cache = {'output': '', 'time': 0}
+        self._JOURNALCTL_1HOUR_CACHE_TTL = 300  # 5 min cache - disk events don't need real-time
+        
         # System capabilities - derived from Proxmox storage types at runtime (Priority 1.5)
         # SMART detection still uses filesystem check on init (lightweight)
         has_smart = os.path.exists('/usr/sbin/smartctl') or os.path.exists('/usr/bin/smartctl')
@@ -279,6 +283,39 @@ class HealthMonitor:
             print("[HealthMonitor] journalctl 10min cache: timeout")
         except Exception as e:
             print(f"[HealthMonitor] journalctl 10min cache error: {e}")
+        
+        return cache.get('output', '')  # Return stale cache on error
+    
+    def _get_journalctl_1hour_warnings(self) -> str:
+        """Get journalctl warnings from last 1 hour, cached for disk health checks.
+        
+        Used by _check_disk_health_from_events for SMART warnings and I/O errors.
+        Cached for 5 minutes since disk events don't require real-time detection.
+        """
+        current_time = time.time()
+        cache = self._journalctl_1hour_cache
+        
+        # Return cached result if fresh
+        if cache['output'] and (current_time - cache['time']) < self._JOURNALCTL_1HOUR_CACHE_TTL:
+            return cache['output']
+        
+        # Execute journalctl and cache result
+        try:
+            result = subprocess.run(
+                ['journalctl', '--since', '1 hour ago', '--no-pager', '-p', 'warning',
+                 '--output=short-precise'],
+                capture_output=True,
+                text=True,
+                timeout=15
+            )
+            if result.returncode == 0:
+                cache['output'] = result.stdout
+                cache['time'] = current_time
+                return cache['output']
+        except subprocess.TimeoutExpired:
+            print("[HealthMonitor] journalctl 1hour cache: timeout")
+        except Exception as e:
+            print(f"[HealthMonitor] journalctl 1hour cache error: {e}")
         
         return cache.get('output', '')  # Return stale cache on error
     
@@ -4271,24 +4308,17 @@ class HealthMonitor:
         disk_issues: Dict[str, Any] = {}
         
         try:
-            # Check journalctl for warnings/errors related to disks in the last hour
-            # Include smartd (SMART daemon) messages explicitly
-            result = subprocess.run(
-                ['journalctl', '--since', '1 hour ago', '--no-pager', '-p', 'warning',
-                 '--output=short-precise'],
-                capture_output=True,
-                text=True,
-                timeout=15
-            )
+            # Use cached journalctl output to avoid repeated subprocess calls
+            journalctl_output = self._get_journalctl_1hour_warnings()
             
-            if result.returncode != 0:
+            if not journalctl_output:
                 return disk_issues
             
             # Collect all relevant lines per disk
             # disk_lines[disk_name] = {'smart_lines': [], 'io_lines': [], 'severity': 'WARNING'}
             disk_lines: Dict[str, Dict] = {}
             
-            for line in result.stdout.split('\n'):
+            for line in journalctl_output.split('\n'):
                 if not line.strip():
                     continue
                 line_lower = line.lower()
@@ -4449,8 +4479,6 @@ class HealthMonitor:
                 except Exception:
                     pass
         
-        except subprocess.TimeoutExpired:
-            print("[HealthMonitor] journalctl timed out in _check_disk_health_from_events")
         except Exception as e:
             print(f"[HealthMonitor] Error checking disk health from events: {e}")
         
