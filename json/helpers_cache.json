@@ -6665,7 +6665,8 @@
     ],
     "notes": [
       "No web UI; run `iSponsorBlockTV setup` inside the container to configure.",
-      "SSDP auto-discovery requires multicast on your bridge; manual pairing works without it."
+      "SSDP auto-discovery requires multicast on your bridge; manual pairing works without it.",
+      "if your CPU does not support AVX instructions - install is not possible (required by iSponsorBlockTV/PyApp)"
     ],
     "port": 0,
     "website": "https://github.com/dmunozv04/iSponsorBlockTV",
@@ -16696,10 +16697,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00004"
+      "scriptcat00007"
     ],
     "category_names": [
-      "Network & Firewall"
+      "Backup & Recovery"
     ],
     "notes": [
       "You probably want to drastically extend the storage space to fit whatever clients you want to back up",
