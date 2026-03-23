@@ -26,6 +26,18 @@ try:
 except ImportError:
     PROXMOX_STORAGE_AVAILABLE = False
 
+# ============================================================================
+# PERFORMANCE DEBUG FLAG - Set to True to log timing of each health check
+# To analyze: grep "\[PERF\]" /var/log/proxmenux-monitor.log | sort -t'=' -k2 -n
+# Set to False or remove this section after debugging
+# ============================================================================
+DEBUG_PERF = True
+
+def _perf_log(section: str, elapsed_ms: float):
+    """Log performance timing for a section. Only logs if DEBUG_PERF is True."""
+    if DEBUG_PERF:
+        print(f"[PERF] {section} = {elapsed_ms:.1f}ms")
+
 class HealthMonitor:
     """
     Monitors system health across multiple components with minimal impact.
@@ -434,9 +446,12 @@ class HealthMonitor:
         info_issues = []  # Added info_issues to track INFO separately
         
         # --- Priority Order of Checks ---
+        _t_total = time.time()  # [PERF] Total health check timing
         
         # Priority 1: Critical PVE Services
+        _t = time.time()
         services_status = self._check_pve_services()
+        _perf_log("services", (time.time() - _t) * 1000)
         details['services'] = services_status
         if services_status['status'] == 'CRITICAL':
             critical_issues.append(f"PVE Services: {services_status.get('reason', 'Service failure')}")
@@ -444,7 +459,9 @@ class HealthMonitor:
             warning_issues.append(f"PVE Services: {services_status.get('reason', 'Service issue')}")
         
         # Priority 1.5: Proxmox Storage Check (External Module)
+        _t = time.time()
         proxmox_storage_result = self._check_proxmox_storage()
+        _perf_log("proxmox_storage", (time.time() - _t) * 1000)
         if proxmox_storage_result: # Only process if the check ran (module available)
             details['storage'] = proxmox_storage_result
             if proxmox_storage_result.get('status') == 'CRITICAL':
@@ -459,7 +476,9 @@ class HealthMonitor:
             self.capabilities['has_lvm'] = any(t in ('lvm', 'lvmthin') for t in storage_types)
         
         # Priority 2: Disk/Filesystem Health (Internal checks: usage, ZFS, SMART, IO errors)
+        _t = time.time()
         storage_status = self._check_storage_optimized()
+        _perf_log("storage_optimized", (time.time() - _t) * 1000)
         details['disks'] = storage_status # Use 'disks' for filesystem/disk specific issues
         if storage_status.get('status') == 'CRITICAL':
             critical_issues.append(f"Storage/Disks: {storage_status.get('reason', 'Disk/Storage failure')}")
@@ -467,7 +486,9 @@ class HealthMonitor:
             warning_issues.append(f"Storage/Disks: {storage_status.get('reason', 'Disk/Storage issue')}")
         
         # Priority 3: VMs/CTs Status (with persistence)
+        _t = time.time()
         vms_status = self._check_vms_cts_with_persistence()
+        _perf_log("vms_cts", (time.time() - _t) * 1000)
         details['vms'] = vms_status
         if vms_status.get('status') == 'CRITICAL':
             critical_issues.append(f"VMs/CTs: {vms_status.get('reason', 'VM/CT failure')}")
@@ -475,7 +496,9 @@ class HealthMonitor:
             warning_issues.append(f"VMs/CTs: {vms_status.get('reason', 'VM/CT issue')}")
         
         # Priority 4: Network Connectivity
+        _t = time.time()
         network_status = self._check_network_optimized()
+        _perf_log("network", (time.time() - _t) * 1000)
         details['network'] = network_status
         if network_status.get('status') == 'CRITICAL':
             critical_issues.append(f"Network: {network_status.get('reason', 'Network failure')}")
@@ -483,7 +506,9 @@ class HealthMonitor:
             warning_issues.append(f"Network: {network_status.get('reason', 'Network issue')}")
         
         # Priority 5: CPU Usage (with hysteresis)
+        _t = time.time()
         cpu_status = self._check_cpu_with_hysteresis()
+        _perf_log("cpu", (time.time() - _t) * 1000)
         details['cpu'] = cpu_status
         if cpu_status.get('status') == 'CRITICAL':
             critical_issues.append(f"CPU: {cpu_status.get('reason', 'CPU critical')}")
@@ -491,7 +516,9 @@ class HealthMonitor:
             warning_issues.append(f"CPU: {cpu_status.get('reason', 'CPU high')}")
         
         # Priority 6: Memory Usage (RAM and Swap)
+        _t = time.time()
         memory_status = self._check_memory_comprehensive()
+        _perf_log("memory", (time.time() - _t) * 1000)
         details['memory'] = memory_status
         if memory_status.get('status') == 'CRITICAL':
             critical_issues.append(f"Memory: {memory_status.get('reason', 'Memory critical')}")
@@ -499,7 +526,9 @@ class HealthMonitor:
             warning_issues.append(f"Memory: {memory_status.get('reason', 'Memory high')}")
         
         # Priority 7: Log Analysis (with persistence)
+        _t = time.time()
         logs_status = self._check_logs_with_persistence()
+        _perf_log("logs", (time.time() - _t) * 1000)
         details['logs'] = logs_status
         if logs_status.get('status') == 'CRITICAL':
             critical_issues.append(f"Logs: {logs_status.get('reason', 'Critical log errors')}")
@@ -507,7 +536,9 @@ class HealthMonitor:
             warning_issues.append(f"Logs: {logs_status.get('reason', 'Log warnings')}")
         
         # Priority 8: System Updates
+        _t = time.time()
         updates_status = self._check_updates()
+        _perf_log("updates", (time.time() - _t) * 1000)
         details['updates'] = updates_status
         if updates_status.get('status') == 'CRITICAL':
             critical_issues.append(f"Updates: {updates_status.get('reason', 'System not updated')}")
@@ -517,12 +548,17 @@ class HealthMonitor:
             info_issues.append(f"Updates: {updates_status.get('reason', 'Informational update notice')}")
         
         # Priority 9: Security Checks
+        _t = time.time()
         security_status = self._check_security()
+        _perf_log("security", (time.time() - _t) * 1000)
         details['security'] = security_status
         if security_status.get('status') == 'WARNING':
             warning_issues.append(f"Security: {security_status.get('reason', 'Security issue')}")
         elif security_status.get('status') == 'INFO':
             info_issues.append(f"Security: {security_status.get('reason', 'Security information')}")
+        
+        # Log total time for all checks
+        _perf_log("TOTAL_HEALTH_CHECK", (time.time() - _t_total) * 1000)
         
         # --- Track UNKNOWN counts and persist if >= 3 consecutive cycles ---
         unknown_issues = []
