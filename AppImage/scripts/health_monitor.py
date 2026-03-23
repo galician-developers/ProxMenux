@@ -80,7 +80,7 @@ class HealthMonitor:
     LOG_ERRORS_CRITICAL = 10
     LOG_WARNINGS_WARNING = 15
     LOG_WARNINGS_CRITICAL = 30
-    LOG_CHECK_INTERVAL = 300
+    LOG_CHECK_INTERVAL = 3420  # 57 min - offset to avoid sync with other hourly processes
     
     # Updates Thresholds
     UPDATES_WARNING = 365   # Only warn after 1 year without updates (system_age)
@@ -229,11 +229,16 @@ class HealthMonitor:
         
         # SMART check cache - reduces disk queries from every 5 min to every 30 min
         self._smart_cache = {}  # {disk_name: {'result': 'PASSED', 'time': timestamp}}
-        self._SMART_CACHE_TTL = 1800  # 30 minutes - disk health changes slowly
+        self._SMART_CACHE_TTL = 1620  # 27 min - offset to avoid sync with other processes
         
         # Journalctl 24h cache - reduces full log reads from every 5 min to every 1 hour
         self._journalctl_24h_cache = {'count': 0, 'time': 0}
         self._JOURNALCTL_24H_CACHE_TTL = 3600  # 1 hour - login attempts aggregate slowly
+        
+        # Journalctl 10min cache - shared across checks to avoid duplicate calls
+        # Multiple checks (cpu_temp, vms_cts) use the same journalctl query
+        self._journalctl_10min_cache = {'output': '', 'time': 0}
+        self._JOURNALCTL_10MIN_CACHE_TTL = 60  # 1 minute - fresh enough for health checks
         
         # System capabilities - derived from Proxmox storage types at runtime (Priority 1.5)
         # SMART detection still uses filesystem check on init (lightweight)
@@ -244,6 +249,38 @@ class HealthMonitor:
             health_persistence.cleanup_old_errors()
         except Exception as e:
             print(f"[HealthMonitor] Cleanup warning: {e}")
+    
+    def _get_journalctl_10min_warnings(self) -> str:
+        """Get journalctl warnings from last 10 minutes, cached to avoid duplicate calls.
+        
+        Multiple health checks need the same journalctl data (cpu_temp, vms_cts, etc).
+        This method caches the result for 60 seconds to reduce subprocess overhead.
+        """
+        current_time = time.time()
+        cache = self._journalctl_10min_cache
+        
+        # Return cached result if fresh
+        if cache['output'] and (current_time - cache['time']) < self._JOURNALCTL_10MIN_CACHE_TTL:
+            return cache['output']
+        
+        # Execute journalctl and cache result
+        try:
+            result = subprocess.run(
+                ['journalctl', '--since', '10 minutes ago', '--no-pager', '-p', 'warning'],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode == 0:
+                cache['output'] = result.stdout
+                cache['time'] = current_time
+                return cache['output']
+        except subprocess.TimeoutExpired:
+            print("[HealthMonitor] journalctl 10min cache: timeout")
+        except Exception as e:
+            print(f"[HealthMonitor] journalctl 10min cache error: {e}")
+        
+        return cache.get('output', '')  # Return stale cache on error
     
     # ─── Lightweight sampling methods for the dedicated vital-signs thread ───
     # These ONLY append data to state_history without triggering evaluation,
@@ -643,7 +680,7 @@ class HealthMonitor:
     def _check_cpu_with_hysteresis(self) -> Dict[str, Any]:
         """Check CPU with hysteresis to avoid flapping alerts - requires 5min sustained high usage"""
         try:
-            cpu_percent = psutil.cpu_percent(interval=1)
+            cpu_percent = psutil.cpu_percent(interval=0.1)  # 100ms sample - sufficient for health check
             current_time = time.time()
             
             state_key = 'cpu_usage'
@@ -750,16 +787,12 @@ class HealthMonitor:
                 return self.cached_results.get(cache_key)
         
         try:
-            result = subprocess.run(
-                ['journalctl', '--since', '10 minutes ago', '--no-pager', '-p', 'warning'],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
+            # Use shared journalctl cache to avoid duplicate calls
+            journalctl_output = self._get_journalctl_10min_warnings()
             
-            if result.returncode == 0:
+            if journalctl_output:
                 temps = []
-                for line in result.stdout.split('\n'):
+                for line in journalctl_output.split('\n'):
                     if 'temp' in line.lower() and '_input' in line:
                         try:
                             temp = float(line.split(':')[1].strip())
@@ -2526,18 +2559,14 @@ class HealthMonitor:
             issues = []
             vm_details = {}
             
-            result = subprocess.run(
-                ['journalctl', '--since', '10 minutes ago', '--no-pager', '-p', 'warning'],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
+            # Use shared journalctl cache to avoid duplicate calls
+            journalctl_output = self._get_journalctl_10min_warnings()
             
             # Check if vzdump is running -- QMP timeouts during backup are normal
             _vzdump_running = self._is_vzdump_active()
             
-            if result.returncode == 0:
-                for line in result.stdout.split('\n'):
+            if journalctl_output:
+                for line in journalctl_output.split('\n'):
                     line_lower = line.lower()
                     
                     vm_qmp_match = re.search(r'vm\s+(\d+)\s+qmp\s+command.*(?:failed|unable|timeout)', line_lower)
@@ -2697,18 +2726,13 @@ class HealthMonitor:
                     }
             
             # Check for new errors in logs
-            # Using 'warning' priority to catch potential startup issues
-            result = subprocess.run(
-                ['journalctl', '--since', '10 minutes ago', '--no-pager', '-p', 'warning'],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
+            # Using shared journalctl cache to avoid duplicate calls
+            journalctl_output = self._get_journalctl_10min_warnings()
             
             _vzdump_running = self._is_vzdump_active()
             
-            if result.returncode == 0:
-                for line in result.stdout.split('\n'):
+            if journalctl_output:
+                for line in journalctl_output.split('\n'):
                     line_lower = line.lower()
                     
                     # VM QMP errors (skip during active backup -- normal behavior)
