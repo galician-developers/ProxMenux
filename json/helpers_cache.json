@@ -427,38 +427,6 @@
     "os": "debian"
   },
   {
-    "name": "AllStarLink",
-    "slug": "allstarlink-vm",
-    "desc": "AllStarLink is a network of Amateur Radio repeaters, remote base stations and hot spots accessible to each other via Voice over Internet Protocol.",
-    "script": "vm/allstarlink-vm.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/allstarlink-vm.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/allstarlink-vm.sh",
-    "type": "vm",
-    "type_id": "lte524abgx960bd",
-    "categories": [
-      "scriptcat00024"
-    ],
-    "category_names": [
-      "Gaming & Leisure"
-    ],
-    "notes": [
-      "Options to Install Allmon3"
-    ],
-    "port": 0,
-    "website": "https://www.allstarlink.org/",
-    "documentation": "https://allstarlink.github.io/",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/allstar-link.webp",
-    "updateable": false,
-    "privileged": false,
-    "has_arm": false,
-    "is_dev": true,
-    "execute_in": [
-      "pve"
-    ],
-    "config_path": "",
-    "os": "debian"
-  },
-  {
     "name": "AlmaLinux 10",
     "slug": "almalinux-10-vm",
     "desc": "AlmaLinux 10 (Heliotrope Lion) is a community-driven, RHEL-compatible enterprise Linux distribution. It provides a stable, production-ready platform with long-term support, making it ideal for servers, workloads, and cloud deployments.",
@@ -3042,17 +3010,17 @@
   {
     "name": "ddclient",
     "slug": "ddclient",
-    "desc": "ddclient is a Perl client used to update dynamic DNS entries for accounts on a wide range of dynamic DNS service providers. It supports multiple protocols and providers, allowing automatic IP address updates for your domain names.",
+    "desc": "<p>ddclient is a Perl client used to update dynamic DNS entries for accounts on a wide range of dynamic DNS service providers. It supports multiple protocols and providers, allowing automatic IP address updates for your domain names.</p>",
     "script": "ct/ddclient.sh",
     "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/ddclient.sh",
     "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/ddclient.sh",
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00004"
+      "scriptcat00005"
     ],
     "category_names": [
-      "Network & Firewall"
+      "Adblock & DNS"
     ],
     "notes": [
       "After installation, edit `/etc/ddclient.conf` with your dynamic DNS provider credentials",
@@ -3065,10 +3033,8 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
-    "execute_in": [
-      "pve"
-    ],
+    "is_dev": false,
+    "execute_in": [],
     "config_path": "/etc/ddclient.conf",
     "os": "debian"
   },
@@ -16907,11 +16873,11 @@
     "port": 7070,
     "website": "https://www.versity.com/",
     "documentation": "https://github.com/versity/versitygw/wiki",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/versitygw.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/versity.webp",
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
