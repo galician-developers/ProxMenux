@@ -2187,7 +2187,7 @@ class PollingCollector:
     PROXMENUX_VERSION_FILE = '/usr/local/share/proxmenux/version.txt'
     PROXMENUX_BETA_VERSION_FILE = '/usr/local/share/proxmenux/beta_version.txt'
     REPO_MAIN_VERSION_URL = 'https://raw.githubusercontent.com/MacRimi/ProxMenux/main/version.txt'
-    REPO_DEVELOP_VERSION_URL = 'https://raw.githubusercontent.com/MacRimi/ProxMenux/develop/version.txt'
+    REPO_DEVELOP_VERSION_URL = 'https://raw.githubusercontent.com/MacRimi/ProxMenux/develop/beta_version.txt'
     
     def _check_proxmenux_updates(self):
         """Check for ProxMenux updates (main and beta channels).
