@@ -677,7 +677,31 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
                     {isExpanded && (
                       <div className="border-t border-border/50 bg-muted/5 px-1.5 sm:px-2 py-1.5 overflow-hidden">
                         {reason && (
-                          <p className="text-xs text-muted-foreground px-3 py-1.5 mb-1 break-words whitespace-pre-wrap">{reason}</p>
+                          <div className="flex items-center justify-between gap-2 px-3 py-1.5 mb-1">
+                            <p className="text-xs text-muted-foreground break-words whitespace-pre-wrap flex-1">{reason}</p>
+                            {/* Show dismiss button for UNKNOWN status at category level when dismissable */}
+                            {status === "UNKNOWN" && categoryData?.dismissable && !hasChecks && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-5 px-1.5 shrink-0 hover:bg-red-500/10 hover:border-red-500/50 bg-transparent text-[10px]"
+                                disabled={dismissingKey === `category_${key}`}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleAcknowledge(`category_${key}_unknown`, e)
+                                }}
+                              >
+                                {dismissingKey === `category_${key}` ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <>
+                                    <X className="h-3 w-3 sm:mr-0.5" />
+                                    <span className="hidden sm:inline">Dismiss</span>
+                                  </>
+                                )}
+                              </Button>
+                            )}
+                          </div>
                         )}
                         {hasChecks ? (
                           renderChecks(checks, key)

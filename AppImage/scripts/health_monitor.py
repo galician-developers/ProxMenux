@@ -273,7 +273,7 @@ class HealthMonitor:
                 ['journalctl', '--since', '10 minutes ago', '--no-pager', '-p', 'warning'],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=20
             )
             if result.returncode == 0:
                 cache['output'] = result.stdout
@@ -3209,7 +3209,7 @@ class HealthMonitor:
                 ['journalctl', '--since', '3 minutes ago', '--no-pager', '-p', 'warning'],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=20
             )
             
             # Fetch logs from the previous 3-minute interval to detect spikes/cascades
@@ -3217,7 +3217,7 @@ class HealthMonitor:
                 ['journalctl', '--since', '6 minutes ago', '--until', '3 minutes ago', '--no-pager', '-p', 'warning'],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=20
             )
             
             if result_recent.returncode == 0:
