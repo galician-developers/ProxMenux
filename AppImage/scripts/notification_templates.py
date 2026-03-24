@@ -1722,19 +1722,13 @@ class AIEnhancer:
             user_msg += f"\n\nJournal log context:\n{journal_context}"
         
         try:
-            print(f"[v0] AIEnhancer.enhance: calling provider.generate with lang={language_name}")
             result = self._provider.generate(system_prompt, user_msg, max_tokens)
             if result is None:
                 print(f"[AIEnhancer] Provider returned None - possible timeout or connection issue")
                 return None
-            print(f"[v0] AIEnhancer.enhance: got result, parsing...")
-            parsed = self._parse_ai_response(result, title, body)
-            print(f"[v0] AIEnhancer.enhance: parsed title={parsed.get('title', '')[:50]}")
-            return parsed
+            return self._parse_ai_response(result, title, body)
         except Exception as e:
             print(f"[AIEnhancer] Enhancement failed: {e}")
-            import traceback
-            traceback.print_exc()
             return None
     
     def _parse_ai_response(self, response: str, original_title: str, original_body: str) -> Dict[str, str]:
@@ -1869,14 +1863,12 @@ def format_with_ai_full(title: str, body: str, severity: str,
     
     # Create enhancer and process
     enhancer = AIEnhancer(ai_config)
-    print(f"[v0] format_with_ai_full: provider={ai_config.get('ai_provider')}, lang={ai_config.get('ai_language')}, enabled={enhancer.enabled}")
     enhanced = enhancer.enhance(
         title, body, severity,
         detail_level=detail_level,
         journal_context=journal_context,
         use_emojis=use_emojis
     )
-    print(f"[v0] format_with_ai_full: enhanced result={enhanced is not None}")
     
     # Return enhanced result if successful, otherwise original
     if enhanced and isinstance(enhanced, dict):
