@@ -2279,6 +2279,10 @@ class PollingCollector:
                             'proxmenux_update', 'INFO', data,
                             source='polling', entity='node', entity_id='',
                         ))
+                else:
+                    # No update available - reset the flag
+                    update_config_json(stable=False, stable_version='')
+                    self._notified_proxmenux_version = None
             
             # Check beta version (only if user has beta file)
             local_beta = read_local_version(self.PROXMENUX_BETA_VERSION_FILE)
@@ -2300,6 +2304,10 @@ class PollingCollector:
                             'proxmenux_update', 'INFO', data,
                             source='polling', entity='node', entity_id='',
                         ))
+                else:
+                    # No beta update available - reset the flag
+                    update_config_json(beta=False, beta_version='')
+                    self._notified_proxmenux_beta_version = None
         except Exception:
             pass
     
