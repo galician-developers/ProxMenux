@@ -375,12 +375,28 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
         body: JSON.stringify({ error_key: errorKey }),
       })
 
+      const responseData = await response.json().catch(() => ({}))
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || `Failed to dismiss error (${response.status})`)
+        throw new Error(responseData.error || `Failed to dismiss error (${response.status})`)
       }
 
-      await fetchHealthDetails()
+      // Optimistically update local state to avoid slow re-fetch
+      // Add the dismissed item to the local list immediately
+      if (responseData.result || responseData.success) {
+        const dismissedItem = {
+          error_key: errorKey,
+          category: responseData.result?.category || responseData.category || '',
+          severity: responseData.result?.original_severity || 'WARNING',
+          reason: 'Dismissed by user',
+          dismissed: true,
+          acknowledged_at: new Date().toISOString()
+        }
+        setDismissedItems(prev => [...prev, dismissedItem])
+      }
+      
+      // Fetch fresh data in background (non-blocking)
+      fetchHealthDetails().catch(() => {})
     } catch (err) {
       console.error("Error dismissing:", err)
     } finally {
