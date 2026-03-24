@@ -517,7 +517,7 @@ export function HealthStatusModal({ open, onOpenChange, getApiUrl }: HealthStatu
                 )}
               </div>
               <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-                {(checkStatus === "WARNING" || checkStatus === "CRITICAL") && isDismissable && !checkData.dismissed && (
+                {(checkStatus === "WARNING" || checkStatus === "CRITICAL" || checkStatus === "UNKNOWN") && isDismissable && !checkData.dismissed && (
                   <Button
                     size="sm"
                     variant="outline"

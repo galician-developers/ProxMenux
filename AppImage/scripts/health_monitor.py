@@ -806,7 +806,7 @@ class HealthMonitor:
             return result
             
         except Exception as e:
-            return {'status': 'UNKNOWN', 'reason': f'CPU check failed: {str(e)}'}
+            return {'status': 'UNKNOWN', 'reason': f'CPU check failed: {str(e)}', 'dismissable': True}
     
     def _check_cpu_temperature(self) -> Optional[Dict[str, Any]]:
         """
@@ -1006,7 +1006,7 @@ class HealthMonitor:
             return result
             
         except Exception as e:
-            return {'status': 'UNKNOWN', 'reason': f'Memory check failed: {str(e)}'}
+            return {'status': 'UNKNOWN', 'reason': f'Memory check failed: {str(e)}', 'dismissable': True}
     
     def _check_storage_optimized(self) -> Dict[str, Any]:
         """
@@ -2318,7 +2318,7 @@ class HealthMonitor:
         
         except Exception as e:
             print(f"[HealthMonitor] Disk/IO check failed: {e}")
-            return {'status': 'UNKNOWN', 'reason': f'Disk check unavailable: {str(e)}', 'checks': {}}
+            return {'status': 'UNKNOWN', 'reason': f'Disk check unavailable: {str(e)}', 'checks': {}, 'dismissable': True}
     
     def _check_network_optimized(self) -> Dict[str, Any]:
         """
@@ -2447,7 +2447,7 @@ class HealthMonitor:
         
         except Exception as e:
             print(f"[HealthMonitor] Network check failed: {e}")
-            return {'status': 'UNKNOWN', 'reason': f'Network check unavailable: {str(e)}', 'checks': {}}
+            return {'status': 'UNKNOWN', 'reason': f'Network check unavailable: {str(e)}', 'checks': {}, 'dismissable': True}
     
     def _check_network_latency(self) -> Optional[Dict[str, Any]]:
         """Check network latency by reading from the gateway latency monitor database.
@@ -2469,7 +2469,7 @@ class HealthMonitor:
             
             # Check if database exists
             if not os.path.exists(db_path):
-                return {'status': 'UNKNOWN', 'reason': 'Latency monitor database not available'}
+                return {'status': 'UNKNOWN', 'reason': 'Latency monitor database not available', 'dismissable': True}
             
             conn = sqlite3.connect(db_path, timeout=5)
             cursor = conn.execute(
@@ -2546,7 +2546,7 @@ class HealthMonitor:
             return no_data_result
             
         except Exception as e:
-            return {'status': 'UNKNOWN', 'reason': f'Latency check failed: {str(e)}'}
+            return {'status': 'UNKNOWN', 'reason': f'Latency check failed: {str(e)}', 'dismissable': True}
     
     def _is_vzdump_active(self) -> bool:
         """Check if a vzdump (backup) job is currently running."""
@@ -2709,7 +2709,7 @@ class HealthMonitor:
         
         except Exception as e:
             print(f"[HealthMonitor] VMs/CTs check failed: {e}")
-            return {'status': 'UNKNOWN', 'reason': f'VM/CT check unavailable: {str(e)}', 'checks': {}}
+            return {'status': 'UNKNOWN', 'reason': f'VM/CT check unavailable: {str(e)}', 'checks': {}, 'dismissable': True}
     
     # Modified to use persistence
     def _check_vms_cts_with_persistence(self) -> Dict[str, Any]:
@@ -2915,7 +2915,7 @@ class HealthMonitor:
             
         except Exception as e:
             print(f"[HealthMonitor] VMs/CTs persistence check failed: {e}")
-            return {'status': 'UNKNOWN', 'reason': f'VM/CT check unavailable: {str(e)}', 'checks': {}}
+            return {'status': 'UNKNOWN', 'reason': f'VM/CT check unavailable: {str(e)}', 'checks': {}, 'dismissable': True}
     
     def _check_pve_services(self) -> Dict[str, Any]:
         """
@@ -3629,7 +3629,7 @@ class HealthMonitor:
             
         except Exception as e:
             print(f"[HealthMonitor] Log check failed: {e}")
-            return {'status': 'UNKNOWN', 'reason': f'Log check unavailable: {str(e)}', 'checks': {}}
+            return {'status': 'UNKNOWN', 'reason': f'Log check unavailable: {str(e)}', 'checks': {}, 'dismissable': True}
     
     def _normalize_log_pattern(self, line: str) -> str:
         """
@@ -3912,7 +3912,7 @@ class HealthMonitor:
             
         except Exception as e:
             print(f"[HealthMonitor] Updates check failed: {e}")
-            return {'status': 'UNKNOWN', 'reason': f'Updates check unavailable: {str(e)}', 'count': 0, 'checks': {}}
+            return {'status': 'UNKNOWN', 'reason': f'Updates check unavailable: {str(e)}', 'count': 0, 'checks': {}, 'dismissable': True}
     
     def _check_fail2ban_bans(self) -> Dict[str, Any]:
         """
@@ -4209,7 +4209,7 @@ class HealthMonitor:
             
         except Exception as e:
             print(f"[HealthMonitor] Security check failed: {e}")
-            return {'status': 'UNKNOWN', 'reason': f'Security check unavailable: {str(e)}', 'checks': {}}
+            return {'status': 'UNKNOWN', 'reason': f'Security check unavailable: {str(e)}', 'checks': {}, 'dismissable': True}
     
     def _check_certificates(self) -> Optional[Dict[str, Any]]:
         """
