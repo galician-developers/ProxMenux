@@ -9,16 +9,11 @@ body:
         ## Share Your Custom Prompt
         
         Thank you for sharing your custom prompt with the community!
-        Please fill in all the required fields so others can use your prompt effectively.
-
-  - type: input
-    id: prompt-name
-    attributes:
-      label: Prompt Name
-      description: A short descriptive name for your prompt
-      placeholder: "e.g., Concise Technical Alerts"
-    validations:
-      required: true
+        
+        **Title format suggestion:** Include the provider in the title for easy filtering.
+        Example: `[Gemini] Clean Spanish - Structured, no emojis`
+        
+        This helps others find prompts for their specific AI provider.
 
   - type: dropdown
     id: provider
@@ -27,11 +22,12 @@ body:
       description: Which AI provider did you test this prompt with?
       options:
         - OpenAI
-        - Gemini (Google)
-        - Anthropic (Claude)
+        - Gemini
         - Groq
+        - Ollama
+        - Anthropic
         - OpenRouter
-        - Ollama (Local)
+        - DeepSeek
         - Other
     validations:
       required: true
@@ -45,40 +41,18 @@ body:
     validations:
       required: true
 
-  - type: dropdown
-    id: language
-    attributes:
-      label: Output Language
-      description: What language does your prompt output?
-      options:
-        - English
-        - Spanish
-        - German
-        - French
-        - Italian
-        - Portuguese
-        - Dutch
-        - Polish
-        - Russian
-        - Chinese
-        - Japanese
-        - Korean
-        - Other (specify in description)
-    validations:
-      required: true
-
   - type: textarea
     id: description
     attributes:
       label: Description
-      description: Describe what your prompt does and its main features
+      description: Describe what your prompt does, main features, and output language
       placeholder: |
-        This prompt generates concise, technical notifications focused on...
+        This prompt generates concise notifications in Spanish.
         
         Features:
         - Brief format (2-3 lines)
         - Includes severity indicators
-        - etc.
+        - Uses emojis for visual clarity
     validations:
       required: true
 
