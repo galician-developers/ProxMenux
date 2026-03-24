@@ -286,6 +286,18 @@ update_config() {
     [ -f "$tmp_file" ] && rm -f "$tmp_file"
 }
 
+reset_update_flag() {
+    # Reset the update_available flag in config.json after successful update
+    [ ! -f "$CONFIG_FILE" ] && return 0
+    
+    local tmp_file
+    tmp_file=$(mktemp)
+    if jq '.update_available.beta = false | .update_available.beta_version = ""' "$CONFIG_FILE" > "$tmp_file" 2>/dev/null; then
+        mv "$tmp_file" "$CONFIG_FILE"
+    fi
+    [ -f "$tmp_file" ] && rm -f "$tmp_file"
+}
+
 cleanup_corrupted_files() {
     if [ -f "$CONFIG_FILE" ] && ! jq empty "$CONFIG_FILE" >/dev/null 2>&1; then
         rm -f "$CONFIG_FILE"
@@ -540,6 +552,9 @@ install_beta() {
         msg_ok "ProxMenux Monitor beta updated successfully."
     fi
 
+    # Reset the update indicator flag after successful installation
+    reset_update_flag
+    
     msg_ok "Beta installation completed."
 }
 
