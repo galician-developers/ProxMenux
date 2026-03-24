@@ -2400,7 +2400,19 @@ def get_smart_data(disk_name):
                                     normalized_value = attr.get('value', 0)  # Normalized value (0-100)
                                     
                                     if attr_id == 9:  # Power_On_Hours
-                                        smart_data['power_on_hours'] = raw_value
+                                        # Some drives encode extra data in high bytes, causing absurd values
+                                        # Max reasonable value: ~1,000,000 hours = 114 years continuous use
+                                        poh = raw_value
+                                        if poh > 1000000:
+                                            # Try extracting lower 24 bits (common encoding)
+                                            poh = raw_value & 0xFFFFFF
+                                            if poh > 1000000:
+                                                # Still absurd, try lower 16 bits
+                                                poh = raw_value & 0xFFFF
+                                                if poh > 1000000:
+                                                    # Give up, set to 0 (frontend shows N/A)
+                                                    poh = 0
+                                        smart_data['power_on_hours'] = poh
 
                                     elif attr_id == 12:  # Power_Cycle_Count
                                         smart_data['power_cycles'] = raw_value
