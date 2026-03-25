@@ -151,6 +151,9 @@ class ProxmoxStorageMonitor:
                 storage_type = resource.get('plugintype', 'unknown')
                 status = resource.get('status', 'unknown')
                 
+                # Debug: log storage status during startup
+                print(f"[v0] Storage '{name}': status={status}, maxdisk={resource.get('maxdisk', 0)}, node={node}")
+                
                 try:
                     total = int(resource.get('maxdisk', 0))
                     used = int(resource.get('disk', 0))
@@ -183,6 +186,7 @@ class ProxmoxStorageMonitor:
                     storage_info['status'] = 'error'
                     storage_info['status_detail'] = 'unavailable' if total == 0 else status
                     unavailable_storages.append(storage_info)
+                    print(f"[v0] Storage '{name}' marked UNAVAILABLE: total={total}, status={status}")
                 else:
                     storage_info['status'] = 'active'
                     available_storages.append(storage_info)

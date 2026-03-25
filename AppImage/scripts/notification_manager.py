@@ -1841,7 +1841,7 @@ class NotificationManager:
 notification_manager = NotificationManager()
 
 
-# ─── CLI Interface ───────────────────────────────────────���────────
+# ─── CLI Interface ────────────────────────────────────────────────
 
 def _print_result(result: Dict, as_json: bool):
     """Print CLI result in human-readable or JSON format."""
