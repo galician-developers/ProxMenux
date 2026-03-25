@@ -1043,8 +1043,16 @@ class NotificationManager:
             entity_id=entity_id,
         )
         
-        # Process the event through the normal pipeline
-        return self._process_single_event(event)
+        # For urgent events (shutdown/reboot), dispatch directly to ensure
+        # immediate delivery before the system goes down.
+        # For other events, use the normal pipeline with aggregation.
+        _URGENT_EVENTS = {'system_shutdown', 'system_reboot'}
+        if event_type in _URGENT_EVENTS:
+            self._dispatch_event(event)
+            return {'success': True, 'event_type': event_type, 'dispatched': 'direct'}
+        else:
+            self._process_event(event)
+            return {'success': True, 'event_type': event_type, 'dispatched': 'queued'}
     
     def send_notification(self, event_type: str, severity: str,
                           title: str, message: str,

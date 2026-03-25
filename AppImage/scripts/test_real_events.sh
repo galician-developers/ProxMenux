@@ -30,7 +30,7 @@ NC='\033[0m'
 API="http://127.0.0.1:8008"
 LOG_FILE="/tmp/proxmenux_real_test_$(date +%Y%m%d_%H%M%S).log"
 
-# ── Helpers ─────────────────────────────────────────────────────
+# ── Helpers ─────────────────────���───────────────────────────────
 log() { echo -e "$1" | tee -a "$LOG_FILE"; }
 header() {
     echo "" | tee -a "$LOG_FILE"
