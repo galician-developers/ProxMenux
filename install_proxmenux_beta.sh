@@ -7,8 +7,9 @@
 # Subproject   : ProxMenux Monitor Beta
 # Copyright    : (c) 2024-2025 MacRimi
 # License      : GPL-3.0 (https://github.com/MacRimi/ProxMenux/blob/main/LICENSE)
-# Version      : Beta
+# Version      : Beta 1.1
 # Branch       : develop
+# Last Updated : 2026-03-26
 # ==========================================================
 # Description:
 # This script installs the BETA version of ProxMenux Monitor
@@ -365,12 +366,15 @@ install_proxmenux_monitor() {
     chmod +x "$target_path"
     
     # Copy shutdown-notify.sh script for systemd ExecStop
-    local shutdown_script_src="$TEMP_DIR/Scripts/shutdown-notify.sh"
-    mkdir -p "$MONITOR_INSTALL_DIR/scripts"
+    local shutdown_script_src="$TEMP_DIR/scripts/shutdown-notify.sh"
     local shutdown_script_dst="$MONITOR_INSTALL_DIR/scripts/shutdown-notify.sh"
-    cp "$shutdown_script_src" "$shutdown_script_dst"
-    chmod +x "$shutdown_script_dst"
-    msg_ok "Shutdown notification script installed."
+    if [ -f "$shutdown_script_src" ]; then
+        cp "$shutdown_script_src" "$shutdown_script_dst"
+        chmod +x "$shutdown_script_dst"
+        msg_ok "Shutdown notification script installed."
+    else
+        msg_warn "Shutdown script not found at $shutdown_script_src"
+    fi
     msg_ok "ProxMenux Monitor beta v${appimage_version} installed."
 
     if [ "$service_exists" = false ]; then
