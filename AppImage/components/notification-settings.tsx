@@ -1105,10 +1105,11 @@ export function NotificationSettings() {
                         <div className="flex items-center gap-1.5">
                           <Input
                             type={showSecrets["tg_token"] ? "text" : "password"}
-                            className="h-7 text-xs font-mono"
+                            className={`h-7 text-xs font-mono ${!editMode ? "opacity-50" : ""}`}
                             placeholder="7595377878:AAGE6Fb2cy... (with or without 'bot' prefix)"
                             value={config.channels.telegram?.bot_token || ""}
                             onChange={e => updateChannel("telegram", "bot_token", e.target.value)}
+                            disabled={!editMode}
                           />
                           <button
                             className="h-7 w-7 flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors shrink-0"
@@ -1121,19 +1122,21 @@ export function NotificationSettings() {
                       <div className="space-y-1.5">
                         <Label className="text-[11px] text-muted-foreground">Chat ID</Label>
                         <Input
-                          className="h-7 text-xs font-mono"
+                          className={`h-7 text-xs font-mono ${!editMode ? "opacity-50" : ""}`}
                           placeholder="-1001234567890"
                           value={config.channels.telegram?.chat_id || ""}
                           onChange={e => updateChannel("telegram", "chat_id", e.target.value)}
+                          disabled={!editMode}
                         />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-[11px] text-muted-foreground">Topic ID <span className="text-muted-foreground/60">(optional)</span></Label>
                         <Input
-                          className="h-7 text-xs font-mono"
+                          className={`h-7 text-xs font-mono ${!editMode ? "opacity-50" : ""}`}
                           placeholder="123456"
                           value={config.channels.telegram?.topic_id || ""}
                           onChange={e => updateChannel("telegram", "topic_id", e.target.value)}
+                          disabled={!editMode}
                         />
                         <p className="text-[10px] text-muted-foreground">For supergroups with topics enabled. Leave empty for regular chats.</p>
                       </div>
@@ -1197,10 +1200,11 @@ export function NotificationSettings() {
                       <div className="space-y-1.5">
                         <Label className="text-[11px] text-muted-foreground">Server URL</Label>
                         <Input
-                          className="h-7 text-xs font-mono"
+                          className={`h-7 text-xs font-mono ${!editMode ? "opacity-50" : ""}`}
                           placeholder="https://gotify.example.com"
                           value={config.channels.gotify?.url || ""}
                           onChange={e => updateChannel("gotify", "url", e.target.value)}
+                          disabled={!editMode}
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -1208,10 +1212,11 @@ export function NotificationSettings() {
                         <div className="flex items-center gap-1.5">
                           <Input
                             type={showSecrets["gt_token"] ? "text" : "password"}
-                            className="h-7 text-xs font-mono"
+                            className={`h-7 text-xs font-mono ${!editMode ? "opacity-50" : ""}`}
                             placeholder="A_valid_gotify_token"
                             value={config.channels.gotify?.token || ""}
                             onChange={e => updateChannel("gotify", "token", e.target.value)}
+                            disabled={!editMode}
                           />
                           <button
                             className="h-7 w-7 flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors shrink-0"
@@ -1283,10 +1288,11 @@ export function NotificationSettings() {
                         <div className="flex items-center gap-1.5">
                           <Input
                             type={showSecrets["dc_hook"] ? "text" : "password"}
-                            className="h-7 text-xs font-mono"
+                            className={`h-7 text-xs font-mono ${!editMode ? "opacity-50" : ""}`}
                             placeholder="https://discord.com/api/webhooks/..."
                             value={config.channels.discord?.webhook_url || ""}
                             onChange={e => updateChannel("discord", "webhook_url", e.target.value)}
+                            disabled={!editMode}
                           />
                           <button
                             className="h-7 w-7 flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors shrink-0"
@@ -1357,19 +1363,21 @@ export function NotificationSettings() {
                         <div className="space-y-1.5">
                           <Label className="text-[11px] text-muted-foreground">SMTP Host</Label>
                           <Input
-                            className="h-7 text-xs font-mono"
+                            className={`h-7 text-xs font-mono ${!editMode ? "opacity-50" : ""}`}
                             placeholder="smtp.gmail.com"
                             value={config.channels.email?.host || ""}
                             onChange={e => updateChannel("email", "host", e.target.value)}
+                            disabled={!editMode}
                           />
                         </div>
                         <div className="space-y-1.5">
                           <Label className="text-[11px] text-muted-foreground">Port</Label>
                           <Input
-                            className="h-7 text-xs font-mono"
+                            className={`h-7 text-xs font-mono ${!editMode ? "opacity-50" : ""}`}
                             placeholder="587"
                             value={config.channels.email?.port || ""}
                             onChange={e => updateChannel("email", "port", e.target.value)}
+                            disabled={!editMode}
                           />
                         </div>
                       </div>
@@ -1378,8 +1386,9 @@ export function NotificationSettings() {
                         <Select
                           value={config.channels.email?.tls_mode || "starttls"}
                           onValueChange={v => updateChannel("email", "tls_mode", v)}
+                          disabled={!editMode}
                         >
-                          <SelectTrigger className="h-7 text-xs">
+                          <SelectTrigger className={`h-7 text-xs ${!editMode ? "opacity-50" : ""}`}>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -1393,10 +1402,11 @@ export function NotificationSettings() {
                         <div className="space-y-1.5">
                           <Label className="text-[11px] text-muted-foreground">Username</Label>
                           <Input
-                            className="h-7 text-xs font-mono"
+                            className={`h-7 text-xs font-mono ${!editMode ? "opacity-50" : ""}`}
                             placeholder="user@example.com"
                             value={config.channels.email?.username || ""}
                             onChange={e => updateChannel("email", "username", e.target.value)}
+                            disabled={!editMode}
                           />
                         </div>
                         <div className="space-y-1.5">
@@ -1404,10 +1414,11 @@ export function NotificationSettings() {
                           <div className="flex items-center gap-1.5">
                             <Input
                               type={showSecrets["em_pass"] ? "text" : "password"}
-                              className="h-7 text-xs font-mono"
+                              className={`h-7 text-xs font-mono ${!editMode ? "opacity-50" : ""}`}
                               placeholder="App password"
                               value={config.channels.email?.password || ""}
                               onChange={e => updateChannel("email", "password", e.target.value)}
+                              disabled={!editMode}
                             />
                             <button
                               className="h-7 w-7 flex items-center justify-center rounded-md border border-border hover:bg-muted transition-colors shrink-0"
@@ -1421,28 +1432,31 @@ export function NotificationSettings() {
                       <div className="space-y-1.5">
                         <Label className="text-[11px] text-muted-foreground">From Address</Label>
                         <Input
-                          className="h-7 text-xs font-mono"
+                          className={`h-7 text-xs font-mono ${!editMode ? "opacity-50" : ""}`}
                           placeholder="proxmenux@yourdomain.com"
                           value={config.channels.email?.from_address || ""}
                           onChange={e => updateChannel("email", "from_address", e.target.value)}
+                          disabled={!editMode}
                         />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-[11px] text-muted-foreground">To Addresses (comma-separated)</Label>
                         <Input
-                          className="h-7 text-xs font-mono"
+                          className={`h-7 text-xs font-mono ${!editMode ? "opacity-50" : ""}`}
                           placeholder="admin@example.com, ops@example.com"
                           value={config.channels.email?.to_addresses || ""}
                           onChange={e => updateChannel("email", "to_addresses", e.target.value)}
+                          disabled={!editMode}
                         />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-[11px] text-muted-foreground">Subject Prefix</Label>
                         <Input
-                          className="h-7 text-xs font-mono"
+                          className={`h-7 text-xs font-mono ${!editMode ? "opacity-50" : ""}`}
                           placeholder="[ProxMenux]"
                           value={config.channels.email?.subject_prefix || "[ProxMenux]"}
                           onChange={e => updateChannel("email", "subject_prefix", e.target.value)}
+                          disabled={!editMode}
                         />
                       </div>
                       <div className="flex items-start gap-2 p-2 rounded-md bg-amber-500/10 border border-amber-500/20">

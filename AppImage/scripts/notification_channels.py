@@ -874,7 +874,7 @@ class EmailChannel(NotificationChannel):
 CHANNEL_TYPES = {
     'telegram': {
         'name': 'Telegram',
-        'config_keys': ['bot_token', 'chat_id'],
+        'config_keys': ['bot_token', 'chat_id', 'topic_id'],
         'class': TelegramChannel,
     },
     'gotify': {
