@@ -1135,7 +1135,7 @@ class HealthPersistence:
     # This avoids redundant subprocess calls and ensures immediate detection
     # when the user adds new ZFS/LVM storage via Proxmox.
     
-    # ─── User Settings ──────────────────────────────────────────
+    # ─── User Settings ────────────────────────��─────────────────
     
     def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
         """Get a user setting value by key."""

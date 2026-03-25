@@ -876,6 +876,10 @@ def _health_collector_loop():
         'updates': 'System Updates',
         'security': 'Security',
     }
+    # Categories to suppress during startup grace period (transient issues)
+    _STARTUP_GRACE_CATEGORIES = {'storage', 'vms', 'network', 'services'}
+    _STARTUP_GRACE_SECONDS = 300  # 5 minutes
+    _collector_start_time = time.time()
     
     while True:
         try:
@@ -932,6 +936,12 @@ def _health_collector_loop():
                             if not notification_manager.is_event_enabled(event_type):
                                 skip_notification = True
                                 break
+                    
+                    # Startup grace period: skip transient issues from categories
+                    # that typically need time to stabilize after boot
+                    in_grace_period = (time.time() - _collector_start_time) < _STARTUP_GRACE_SECONDS
+                    if in_grace_period and cat_key in _STARTUP_GRACE_CATEGORIES:
+                        skip_notification = True
                     
                     if not skip_notification:
                         degraded.append({

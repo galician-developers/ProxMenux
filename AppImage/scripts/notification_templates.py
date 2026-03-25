@@ -1612,7 +1612,7 @@ A blank line must be completely empty — no emoji, no spaces.
     💥 Disk I/O error on /dev/sda: 1 sector currently unreadable (pending)
 
     🏷️ Container CT 9005: ❌ failed to start
-    🏷️ Container CT 9004: ❌ failed to start
+    ����️ Container CT 9004: ❌ failed to start
     🏷️ Container CT 9002: ❌ failed to start"""
 
 
