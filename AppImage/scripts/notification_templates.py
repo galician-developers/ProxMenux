@@ -644,6 +644,13 @@ TEMPLATES = {
     },
     
     # ── Services events ──
+    'system_startup': {
+        'title': '{hostname}: System startup — {summary}',
+        'body': 'System startup completed.\n{summary}\n\nGuests: {entity_list}',
+        'label': 'System startup',
+        'group': 'services',
+        'default_enabled': True,
+    },
     'system_shutdown': {
         'title': '{hostname}: System shutting down',
         'body': 'The node is shutting down.\n{reason}',
@@ -1120,6 +1127,7 @@ EVENT_EMOJI = {
     'node_disconnect':      '\U0001F50C',
     'node_reconnect':       '\u2705',
     # Services
+    'system_startup':       '\U0001F680',         # rocket (startup)
     'system_shutdown':      '\u23FB\uFE0F',       # power symbol (Unicode)
     'system_reboot':        '\U0001F504',
     'system_problem':       '\u26A0\uFE0F',
