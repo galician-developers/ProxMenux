@@ -15,13 +15,13 @@ jobs:
     
     steps:
     - name: Checkout develop
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
       with:
         ref: develop
         token: ${{ secrets.GITHUB_TOKEN }}
       
     - name: Setup Node.js
-      uses: actions/setup-node@v5
+      uses: actions/setup-node@v6
       with:
         node-version: '22'
         
@@ -59,7 +59,7 @@ jobs:
         cat ProxMenux-Monitor.AppImage.sha256
 
     - name: Upload AppImage artifact
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: ProxMenux-${{ steps.version.outputs.VERSION }}-beta-AppImage
         path: |
