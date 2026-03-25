@@ -689,3 +689,5 @@ echo
 echo -e "${TAB}${DARK_GRAY}Report issues at: https://github.com/MacRimi/ProxMenux/issues${CL}"
 echo
 exit 0
+y
+
