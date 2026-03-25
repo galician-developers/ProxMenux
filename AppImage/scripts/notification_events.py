@@ -37,7 +37,7 @@ class _SharedState:
     
     Two separate grace periods:
     - startup_vm_grace: Time to aggregate VM/CT starts (shorter, 2 min)
-    - startup_health_grace: Time to suppress transient health errors (longer, 3 min)
+    - startup_health_grace: Time to suppress transient health errors (longer, 5 min)
     """
     def __init__(self):
         self._lock = threading.Lock()
@@ -45,7 +45,7 @@ class _SharedState:
         self._shutdown_grace = 120  # suppress VM/CT stops for 2 minutes after shutdown detected
         self._startup_time: float = time.time()  # when module was loaded (service start)
         self._startup_vm_grace = 120  # aggregate VM/CT starts for 2 minutes after startup
-        self._startup_health_grace = 180  # suppress health warnings for 3 minutes after startup
+        self._startup_health_grace = 300  # suppress health warnings for 5 minutes after startup
         self._startup_vms: list = []  # [(vmid, vmname, 'vm'|'ct'), ...]
         self._startup_aggregated = False  # have we already sent the aggregated message?
     
@@ -67,10 +67,10 @@ class _SharedState:
             return (time.time() - self._startup_time) < self._startup_vm_grace
     
     def is_startup_health_grace(self) -> bool:
-        """Check if we're within the startup health grace period (3 min).
+        """Check if we're within the startup health grace period (5 min).
         
         Used by PollingCollector to suppress transient health warnings
-        (QMP timeout, storage not ready, etc.) during system boot.
+        (QMP timeout, storage not ready, high latency, etc.) during system boot.
         """
         with self._lock:
             return (time.time() - self._startup_time) < self._startup_health_grace

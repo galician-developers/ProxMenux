@@ -1064,7 +1064,7 @@ def get_default_enabled_events() -> Dict[str, bool]:
     }
 
 
-# ─── Emoji Enrichment (per-channel opt-in) ──────────────────────
+# ──�� Emoji Enrichment (per-channel opt-in) ──────────────────────
 
 # Category-level header icons
 CATEGORY_EMOJI = {
