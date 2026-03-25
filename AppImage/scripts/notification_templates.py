@@ -314,7 +314,7 @@ def _format_vzdump_body(parsed: Dict[str, Any], is_success: bool) -> str:
     return '\n'.join(parts)
 
 
-# ─── Severity Icons ──────────────────────────────────────────────
+# ──�� Severity Icons ──────────────────────────────────────────────
 
 SEVERITY_ICONS = {
     'CRITICAL': '\U0001F534',

@@ -562,7 +562,7 @@ install_beta() {
 
     msg_ok "Dependencies installed: jq, dialog, curl, git."
 
-    # ── Step 2: Clone develop branch ─────────────────────
+    # ── Step 2: Clone develop branch ───────────────────��─
     ((current_step++))
     show_progress $current_step $total_steps "Cloning ProxMenux develop branch"
 

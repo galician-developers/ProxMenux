@@ -1,13 +1,14 @@
 #!/bin/bash
 # ProxMenux Monitor - Shutdown Notification Script
 # This script is called by systemd ExecStop before the service terminates.
-# It sends a shutdown/reboot notification via the running Flask server.
+# It sends a shutdown/reboot notification ONLY when the system is actually
+# shutting down or rebooting, NOT when the service is manually stopped.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_DIR="/var/lib/proxmenux"
 CONFIG_FILE="$CONFIG_DIR/config.json"
 LOG_FILE="/var/log/proxmenux-shutdown.log"
-PORT="${PORT:-5000}"
+PORT="${PORT:-8008}"
 
 # Logging function
 log() {
@@ -16,17 +17,52 @@ log() {
 
 log "=== Shutdown notification script started ==="
 
-# Determine if this is a reboot or shutdown
-# Check for systemd targets or runlevel
+# Check if this is a real system shutdown/reboot or just a service stop
+# We only want to notify on actual system shutdown/reboot
+is_system_shutdown=false
 is_reboot=false
+
+# Method 1: Check if shutdown/reboot targets are active or activating
+if systemctl is-active --quiet shutdown.target 2>/dev/null || \
+   systemctl is-active --quiet poweroff.target 2>/dev/null || \
+   systemctl is-active --quiet halt.target 2>/dev/null; then
+    is_system_shutdown=true
+    log "Detected: shutdown/poweroff/halt target is active"
+fi
+
 if systemctl is-active --quiet reboot.target 2>/dev/null; then
+    is_system_shutdown=true
     is_reboot=true
     log "Detected: reboot.target is active"
-elif [ -f /run/systemd/shutdown/scheduled ]; then
+fi
+
+# Method 2: Check for scheduled shutdown file
+if [ -f /run/systemd/shutdown/scheduled ]; then
+    is_system_shutdown=true
     if grep -q "reboot" /run/systemd/shutdown/scheduled 2>/dev/null; then
         is_reboot=true
         log "Detected: /run/systemd/shutdown/scheduled contains 'reboot'"
+    else
+        log "Detected: /run/systemd/shutdown/scheduled exists (shutdown)"
     fi
+fi
+
+# Method 3: Check runlevel (0=halt, 6=reboot)
+runlevel_output=$(runlevel 2>/dev/null | awk '{print $2}')
+if [ "$runlevel_output" = "0" ]; then
+    is_system_shutdown=true
+    log "Detected: runlevel 0 (halt)"
+elif [ "$runlevel_output" = "6" ]; then
+    is_system_shutdown=true
+    is_reboot=true
+    log "Detected: runlevel 6 (reboot)"
+fi
+
+# If not a system shutdown, exit without sending notification
+if [ "$is_system_shutdown" = false ]; then
+    log "Service stopped manually (not a system shutdown). No notification sent."
+    log "=== Shutdown notification script completed (no action) ==="
+    exit 0
 fi
 
 # Build the event type and message
@@ -42,7 +78,6 @@ hostname=$(hostname)
 log "Event type: $event_type, Hostname: $hostname"
 
 # Try to send notification via internal API endpoint
-# The Flask server may still be running at this point
 log "Sending notification to http://127.0.0.1:$PORT/api/internal/shutdown-event"
 
 response=$(curl -s -w "\n%{http_code}" -X POST "http://127.0.0.1:$PORT/api/internal/shutdown-event" \
@@ -65,11 +100,6 @@ fi
 # Give the notification a moment to be sent
 log "Waiting 3 seconds for notification delivery..."
 sleep 3
-
-# Now terminate the Flask process
-# Find the main process and send SIGTERM
-log "Terminating Flask process..."
-pkill -TERM -f "flask_server" 2>/dev/null || true
 
 log "=== Shutdown notification script completed ==="
 exit 0
