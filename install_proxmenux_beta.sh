@@ -363,11 +363,58 @@ install_proxmenux_monitor() {
     local target_path="$MONITOR_INSTALL_DIR/ProxMenux-Monitor.AppImage"
     cp "$appimage_source" "$target_path"
     chmod +x "$target_path"
+    
+    # Copy shutdown-notify.sh script for systemd ExecStop
+    local shutdown_script_src="$TEMP_DIR/Scripts/shutdown-notify.sh"
+    mkdir -p "$MONITOR_INSTALL_DIR/scripts"
+    local shutdown_script_dst="$MONITOR_INSTALL_DIR/scripts/shutdown-notify.sh"
+    if [ -f "$shutdown_script_src" ]; then
+        cp "$shutdown_script_src" "$shutdown_script_dst"
+        chmod +x "$shutdown_script_dst"
+        msg_ok "Shutdown notification script installed."
+    else
+        msg_warn "Shutdown script not found, creating default..."
+        cat > "$shutdown_script_dst" << 'SHUTDOWN_EOF'
+#!/bin/bash
+# ProxMenux Monitor - Shutdown Notification Script
+LOG_FILE="/var/log/proxmenux-shutdown.log"
+PORT="${PORT:-8008}"
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE" 2>/dev/null || true; }
+log "=== Shutdown notification script started ==="
+is_reboot=false
+systemctl is-active --quiet reboot.target 2>/dev/null && is_reboot=true
+if [ "$is_reboot" = true ]; then
+    event_type="system_reboot"
+    reason="The system is rebooting."
+else
+    event_type="system_shutdown"
+    reason="The system is shutting down."
+fi
+hostname=$(hostname)
+log "Event: $event_type, Host: $hostname"
+response=$(curl -s -w "\n%{http_code}" -X POST "http://127.0.0.1:$PORT/api/internal/shutdown-event" \
+    -H "Content-Type: application/json" \
+    -d "{\"event_type\": \"$event_type\", \"hostname\": \"$hostname\", \"reason\": \"$reason\"}" \
+    --max-time 10 2>&1)
+log "Response: $response"
+sleep 3
+pkill -TERM -f "flask_server" 2>/dev/null || true
+log "=== Shutdown script completed ==="
+exit 0
+SHUTDOWN_EOF
+        chmod +x "$shutdown_script_dst"
+    fi
     msg_ok "ProxMenux Monitor beta v${appimage_version} installed."
 
     if [ "$service_exists" = false ]; then
         return 0
     else
+        # Check if service needs to be updated (missing ExecStop or outdated config)
+        if ! grep -q "ExecStop=" "$MONITOR_SERVICE_FILE" 2>/dev/null; then
+            msg_info "Updating service configuration (adding shutdown notification)..."
+            update_monitor_service
+        fi
+        
         systemctl start proxmenux-monitor.service
         sleep 2
         if systemctl is-active --quiet proxmenux-monitor.service; then
@@ -379,6 +426,38 @@ install_proxmenux_monitor() {
             return 1
         fi
     fi
+}
+
+# Update existing service file with new configuration
+update_monitor_service() {
+    local exec_path="$MONITOR_INSTALL_DIR/ProxMenux-Monitor.AppImage"
+    
+    cat > "$MONITOR_SERVICE_FILE" << EOF
+[Unit]
+Description=ProxMenux Monitor - Web Dashboard (Beta)
+After=network.target
+Before=shutdown.target reboot.target halt.target
+Conflicts=shutdown.target reboot.target halt.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=$MONITOR_INSTALL_DIR
+ExecStart=$exec_path
+ExecStop=/bin/bash $MONITOR_INSTALL_DIR/scripts/shutdown-notify.sh
+Restart=on-failure
+RestartSec=10
+Environment="PORT=$MONITOR_PORT"
+TimeoutStopSec=45
+KillMode=mixed
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    systemctl daemon-reload
+    msg_ok "Service configuration updated."
 }
 
 create_monitor_service() {
@@ -394,15 +473,21 @@ create_monitor_service() {
 [Unit]
 Description=ProxMenux Monitor - Web Dashboard (Beta)
 After=network.target
+Before=shutdown.target reboot.target halt.target
+Conflicts=shutdown.target reboot.target halt.target
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=$MONITOR_INSTALL_DIR
 ExecStart=$exec_path
+ExecStop=/bin/bash $MONITOR_INSTALL_DIR/scripts/shutdown-notify.sh
 Restart=on-failure
 RestartSec=10
 Environment="PORT=$MONITOR_PORT"
+TimeoutStopSec=45
+KillMode=mixed
+KillSignal=SIGTERM
 
 [Install]
 WantedBy=multi-user.target
