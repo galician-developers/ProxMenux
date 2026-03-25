@@ -1067,7 +1067,7 @@
     "config_path": "/opt/archivebox/data/ArchiveBox.conf",
     "default_credentials": {
       "username": "archivebox",
-      "password": "community-scripts.com"
+      "password": "community-scripts.org"
     },
     "os": "debian"
   },
@@ -1491,6 +1491,40 @@
     "os": "debian"
   },
   {
+    "name": "Baserow",
+    "slug": "baserow",
+    "desc": "Baserow is an open-source no-code database platform for building databases, applications, automations, and AI agents without code.",
+    "script": "ct/baserow.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/baserow.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/baserow.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00008"
+    ],
+    "category_names": [
+      "Databases"
+    ],
+    "notes": [
+      "First visit will prompt you to create an admin account.",
+      "Building from source requires significant resources and may take 10+ minutes.",
+      "Update BASEROW_PUBLIC_URL in /opt/baserow/.env if accessing from a different hostname."
+    ],
+    "port": 3000,
+    "website": "https://baserow.io/",
+    "documentation": "https://baserow.io/docs/index",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/baserow.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "/opt/baserow/.env",
+    "os": "debian"
+  },
+  {
     "name": "Bazarr",
     "slug": "bazarr",
     "desc": "Bazarr is a companion application to Sonarr and Radarr that manages and downloads subtitles based on your requirements.",
@@ -1640,7 +1674,7 @@
     "port": 8080,
     "website": "https://github.com/tphakala/birdnet-go",
     "documentation": "https://github.com/tphakala/birdnet-go/wiki",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/birdnet.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/birdnet-analyzer.webp",
     "updateable": true,
     "privileged": false,
     "has_arm": false,
@@ -2668,7 +2702,7 @@
     "config_path": "/etc/copyparty.conf",
     "default_credentials": {
       "username": "admin",
-      "password": "community-scripts.com"
+      "password": "community-scripts.org"
     },
     "os": "debian"
   },
@@ -4057,7 +4091,7 @@
       "The default site name is `site1.local`. Configure your domain in Frappe settings.",
       "Run `bench update` from `/opt/frappe-bench` to update ERPNext manually."
     ],
-    "port": 8000,
+    "port": 80,
     "website": "https://erpnext.com/",
     "documentation": "https://docs.erpnext.com/",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/frappe-erpnext.webp",
@@ -4294,7 +4328,7 @@
     "config_path": "",
     "default_credentials": {
       "username": "admin",
-      "password": "community-scripts.com"
+      "password": "community-scripts.org"
     },
     "os": "debian"
   },
@@ -4333,7 +4367,7 @@
     "config_path": "",
     "default_credentials": {
       "username": "admin",
-      "password": "community-scripts.com"
+      "password": "community-scripts.org"
     },
     "os": "alpine"
   },
@@ -4370,7 +4404,7 @@
     "config_path": "/usr/local/community-scripts/fq-config.yaml",
     "default_credentials": {
       "username": "admin",
-      "password": "community-scripts.com"
+      "password": "community-scripts.org"
     },
     "os": "debian"
   },
@@ -4407,7 +4441,7 @@
     "config_path": "/usr/local/community-scripts/fq-config.yaml",
     "default_credentials": {
       "username": "admin",
-      "password": "community-scripts.com"
+      "password": "community-scripts.org"
     },
     "os": "alpine"
   },
@@ -5843,7 +5877,7 @@
     ],
     "config_path": "/opt/healthchecks/hc/local_settings.py",
     "default_credentials": {
-      "username": "admin@community-scripts.com",
+      "username": "admin@community-scripts.org",
       "password": ""
     },
     "os": "debian"
@@ -6952,7 +6986,7 @@
     "port": 443,
     "website": "https://jitsi.org/",
     "documentation": "https://jitsi.github.io/handbook/",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/jitsi.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/jitsi-meet.webp",
     "updateable": true,
     "privileged": false,
     "has_arm": false,
@@ -7352,8 +7386,8 @@
     ],
     "config_path": "/opt/kimai/.env",
     "default_credentials": {
-      "username": "admin@community-scripts.com",
-      "password": "community-scripts.com"
+      "username": "admin@community-scripts.org",
+      "password": "community-scripts.org"
     },
     "os": "debian"
   },
@@ -7616,6 +7650,39 @@
       "pve"
     ],
     "config_path": "/opt/kutt/.env",
+    "os": "debian"
+  },
+  {
+    "name": "LabCA",
+    "slug": "labca",
+    "desc": "LabCA is a standalone web GUI for managing ACME certificate authorities like step-ca, providing dashboard, certificate overview, and admin management.",
+    "script": "ct/labca.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/labca.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/labca.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00006"
+    ],
+    "category_names": [
+      "Authentication & Security"
+    ],
+    "notes": [
+      "On first access, you will be prompted to create an admin account and configure the database connection to your step-ca instance.",
+      "LabCA standalone requires a MySQL-backed step-ca instance to connect to."
+    ],
+    "port": 3000,
+    "website": "https://github.com/hakwerk/labca",
+    "documentation": "https://github.com/hakwerk/labca",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/labca.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "/etc/labca/config.json",
     "os": "debian"
   },
   {
@@ -8131,6 +8198,40 @@
       "username": "admin",
       "password": "password"
     },
+    "os": "debian"
+  },
+  {
+    "name": "LobeHub",
+    "slug": "lobehub",
+    "desc": "LobeHub is an open-source AI chat platform supporting multiple AI providers, plugins, and knowledge base with a modern interface.",
+    "script": "ct/lobehub.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/lobehub.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/lobehub.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00020"
+    ],
+    "category_names": [
+      "AI / Coding & Dev-Tools"
+    ],
+    "notes": [
+      "Configure your AI provider API keys in /opt/lobehub/.env (e.g. OPENAI_API_KEY).",
+      "Building from source requires significant resources and may take 10+ minutes.",
+      "Update APP_URL in /opt/lobehub/.env if accessing from a different hostname."
+    ],
+    "port": 3210,
+    "website": "https://lobehub.com/",
+    "documentation": "https://lobehub.com/docs",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/lobechat.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "/opt/lobehub/.env",
     "os": "debian"
   },
   {
@@ -9199,8 +9300,8 @@
     ],
     "config_path": "/opt/monica/.env",
     "default_credentials": {
-      "username": "admin@community-scripts.com",
-      "password": "community-scripts.com"
+      "username": "admin@community-scripts.org",
+      "password": "community-scripts.org"
     },
     "os": "debian"
   },
@@ -10059,7 +10160,7 @@
     ],
     "config_path": "",
     "default_credentials": {
-      "username": "admin@community-scripts.com",
+      "username": "admin@community-scripts.org",
       "password": "community-scripts"
     },
     "os": "ubuntu"
@@ -10159,7 +10260,7 @@
     "config_path": "/opt/compose.yaml",
     "default_credentials": {
       "username": "admin@local.com",
-      "password": "community-scripts.com"
+      "password": "community-scripts.org"
     },
     "os": "alpine"
   },
@@ -14153,7 +14254,7 @@
     ],
     "config_path": "/opt/semaphore/config.json",
     "default_credentials": {
-      "username": "admin@community-scripts.com",
+      "username": "admin@community-scripts.org",
       "password": ""
     },
     "os": "debian"
@@ -14960,7 +15061,7 @@
       "AI / Coding & Dev-Tools"
     ],
     "notes": [
-      "The installer uses an interactive setup wizard. Follow the prompts during installation and dont close the session!",
+      "The installer uses an interactive setup wizard (like fumadocs). Follow the prompts during installation.",
       "Storybook runs in development mode on port 6006."
     ],
     "port": 6006,
@@ -15418,6 +15519,39 @@
       "pve"
     ],
     "config_path": "",
+    "os": "debian"
+  },
+  {
+    "name": "Teable",
+    "slug": "teable",
+    "desc": "Teable is a super-fast, open-source no-code database built on PostgreSQL with a spreadsheet-like interface for building applications.",
+    "script": "ct/teable.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/teable.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/teable.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00008"
+    ],
+    "category_names": [
+      "Databases"
+    ],
+    "notes": [
+      "Minimum 10GB RAM recommended. The build process is very resource-intensive.",
+      "Configuration is stored in `/opt/teable/.env`."
+    ],
+    "port": 3000,
+    "website": "https://teable.io/",
+    "documentation": "https://help.teable.io/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/teable.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "/opt/teable/.env",
     "os": "debian"
   },
   {
