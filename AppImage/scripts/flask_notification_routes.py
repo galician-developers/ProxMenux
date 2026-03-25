@@ -951,3 +951,46 @@ def proxmox_webhook():
     except Exception as e:
         # Still return 200 to avoid PVE flagging the webhook as broken
         return jsonify({'accepted': False, 'error': 'internal_error', 'detail': str(e)}), 200
+
+
+# ─── Internal Shutdown Event Endpoint ─────────────────────────────
+
+@notification_bp.route('/api/internal/shutdown-event', methods=['POST'])
+def internal_shutdown_event():
+    """
+    Internal endpoint called by systemd ExecStop script to emit shutdown/reboot notification.
+    This allows the service to send a notification BEFORE it terminates.
+    
+    Only accepts requests from localhost (127.0.0.1) for security.
+    """
+    # Security: Only allow localhost
+    remote_addr = request.remote_addr
+    if remote_addr not in ('127.0.0.1', '::1', 'localhost'):
+        return jsonify({'error': 'forbidden', 'detail': 'localhost only'}), 403
+    
+    try:
+        data = request.get_json(silent=True) or {}
+        event_type = data.get('event_type', 'system_shutdown')
+        hostname = data.get('hostname', 'unknown')
+        reason = data.get('reason', 'System is shutting down.')
+        
+        # Validate event type
+        if event_type not in ('system_shutdown', 'system_reboot'):
+            return jsonify({'error': 'invalid_event_type'}), 400
+        
+        # Emit the notification directly through notification_manager
+        notification_manager.emit_event(
+            event_type=event_type,
+            severity='INFO',
+            data={
+                'hostname': hostname,
+                'reason': reason,
+            },
+            source='systemd',
+            entity='node',
+            entity_id='',
+        )
+        
+        return jsonify({'success': True, 'event_type': event_type}), 200
+    except Exception as e:
+        return jsonify({'error': 'internal_error', 'detail': str(e)}), 500

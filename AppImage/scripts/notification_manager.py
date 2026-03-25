@@ -1015,6 +1015,37 @@ class NotificationManager:
     
     # ─── Public API (used by Flask routes and CLI) ──────────────
     
+    def emit_event(self, event_type: str, severity: str, data: Dict,
+                   source: str = 'api', entity: str = 'node', entity_id: str = '') -> Dict[str, Any]:
+        """Emit an event through the notification system.
+        
+        This creates a NotificationEvent and processes it through the normal pipeline,
+        including toggle checks, template rendering, and cooldown.
+        
+        Used by internal endpoints like the shutdown notification hook.
+        
+        Args:
+            event_type: Type of event (must match TEMPLATES key)
+            severity: INFO, WARNING, CRITICAL
+            data: Event data for template rendering
+            source: Origin of event
+            entity: Entity type (node, vm, ct, storage, etc.)
+            entity_id: Entity identifier
+        """
+        from notification_events import NotificationEvent
+        
+        event = NotificationEvent(
+            event_type=event_type,
+            severity=severity,
+            data=data,
+            source=source,
+            entity=entity,
+            entity_id=entity_id,
+        )
+        
+        # Process the event through the normal pipeline
+        return self._process_single_event(event)
+    
     def send_notification(self, event_type: str, severity: str,
                           title: str, message: str,
                           data: Optional[Dict] = None,

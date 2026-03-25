@@ -99,6 +99,8 @@ cp "$SCRIPT_DIR/flask_notification_routes.py" "$APP_DIR/usr/bin/" 2>/dev/null ||
 cp "$SCRIPT_DIR/oci_manager.py" "$APP_DIR/usr/bin/" 2>/dev/null || echo "⚠️  oci_manager.py not found"
 cp "$SCRIPT_DIR/flask_oci_routes.py" "$APP_DIR/usr/bin/" 2>/dev/null || echo "⚠️  flask_oci_routes.py not found"
 cp "$SCRIPT_DIR/oci/description_templates.py" "$APP_DIR/usr/bin/" 2>/dev/null || echo "⚠️  description_templates.py not found"
+cp "$SCRIPT_DIR/shutdown-notify.sh" "$APP_DIR/usr/bin/" 2>/dev/null || echo "⚠️  shutdown-notify.sh not found"
+chmod +x "$APP_DIR/usr/bin/shutdown-notify.sh" 2>/dev/null || true
 
 # Copy AI providers module for notification enhancement
 echo "📋 Copying AI providers module..."

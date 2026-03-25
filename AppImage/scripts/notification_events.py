@@ -34,13 +34,18 @@ class _SharedState:
     Used to coordinate behavior when host-level events affect VM/CT events:
     - Suppress vm_stop/ct_stop during host shutdown (they're expected)
     - Aggregate vm_start/ct_start during startup into single message
+    
+    Two separate grace periods:
+    - startup_vm_grace: Time to aggregate VM/CT starts (shorter, 2 min)
+    - startup_health_grace: Time to suppress transient health errors (longer, 3 min)
     """
     def __init__(self):
         self._lock = threading.Lock()
         self._shutdown_time: float = 0  # timestamp when shutdown was detected
         self._shutdown_grace = 120  # suppress VM/CT stops for 2 minutes after shutdown detected
         self._startup_time: float = time.time()  # when module was loaded (service start)
-        self._startup_grace = 300  # aggregate VM/CT starts for 5 minutes after startup
+        self._startup_vm_grace = 120  # aggregate VM/CT starts for 2 minutes after startup
+        self._startup_health_grace = 180  # suppress health warnings for 3 minutes after startup
         self._startup_vms: list = []  # [(vmid, vmname, 'vm'|'ct'), ...]
         self._startup_aggregated = False  # have we already sent the aggregated message?
     
@@ -57,9 +62,18 @@ class _SharedState:
             return (time.time() - self._shutdown_time) < self._shutdown_grace
     
     def is_startup_period(self) -> bool:
-        """Check if we're within the startup aggregation period."""
+        """Check if we're within the startup VM aggregation period (2 min)."""
         with self._lock:
-            return (time.time() - self._startup_time) < self._startup_grace
+            return (time.time() - self._startup_time) < self._startup_vm_grace
+    
+    def is_startup_health_grace(self) -> bool:
+        """Check if we're within the startup health grace period (3 min).
+        
+        Used by PollingCollector to suppress transient health warnings
+        (QMP timeout, storage not ready, etc.) during system boot.
+        """
+        with self._lock:
+            return (time.time() - self._startup_time) < self._startup_health_grace
     
     def add_startup_vm(self, vmid: str, vmname: str, vm_type: str):
         """Record a VM/CT start during startup period for later aggregation."""
@@ -1769,7 +1783,6 @@ class PollingCollector:
         # Dict[error_key, dict(category, severity, reason, first_seen, error_key)]
         self._known_errors: Dict[str, dict] = {}
         self._first_poll_done = False
-        self._startup_time = time.time()  # Track when service started
     
     def start(self):
         if self._running:
@@ -1792,10 +1805,8 @@ class PollingCollector:
     
     # ── Main loop ──────────────────────────────────────────────
     
-    # Startup grace period: ignore transient errors from certain categories
-    # during the first N seconds after service start.  Remote services like
-    # PBS storage, VMs with qemu-guest-agent, etc. may take time to connect.
-    STARTUP_GRACE_PERIOD = 180  # 3 minutes
+    # Categories where transient errors are suppressed during startup grace period.
+    # PBS storage, NFS mounts, VMs with qemu-guest-agent need time after boot.
     STARTUP_GRACE_CATEGORIES = {'storage', 'vms', 'network', 'pve_services'}
     
     def _poll_loop(self):
@@ -1907,8 +1918,8 @@ class PollingCollector:
             # Startup grace period: ignore transient errors from categories that
             # typically need time to stabilize after boot (storage, VMs, network).
             # PBS storage, NFS mounts, VMs with qemu-guest-agent need time to connect.
-            time_since_startup = now - self._startup_time
-            if time_since_startup < self.STARTUP_GRACE_PERIOD:
+            # Uses the shared state so grace period is consistent across all watchers.
+            if _shared_state.is_startup_health_grace():
                 if category in self.STARTUP_GRACE_CATEGORIES:
                     # Still within grace period for this category - skip notification
                     continue
