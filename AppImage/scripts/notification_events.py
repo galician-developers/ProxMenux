@@ -221,7 +221,7 @@ def capture_journal_context(keywords: list, lines: int = 30,
         return ""
 
 
-# ─── Journal Watcher (Real-time) ─────────────────────────────────
+# ─── Journal Watcher (Real-time) ───��─────────────────────────────
 
 class JournalWatcher:
     """Watches journald in real-time for critical system events.
@@ -1640,13 +1640,9 @@ class TaskWatcher:
         # let PollingCollector emit one "System startup: X VMs, Y CTs started".
         _STARTUP_EVENTS = {'vm_start', 'ct_start'}
         if event_type in _STARTUP_EVENTS and not is_error:
-            is_startup = _shared_state.is_startup_period()
-            elapsed = time.time() - _shared_state._startup_time
-            print(f"[TaskWatcher] {event_type} for {vmid}: is_startup_period={is_startup}, elapsed={elapsed:.1f}s")
-            if is_startup:
+            if _shared_state.is_startup_period():
                 vm_type = 'ct' if event_type == 'ct_start' else 'vm'
                 _shared_state.add_startup_vm(vmid, vmname or f'ID {vmid}', vm_type)
-                print(f"[TaskWatcher] Aggregated {event_type} for {vmid}, total pending: {len(_shared_state._startup_vms)}")
                 return
         
         self._queue.put(NotificationEvent(
@@ -2189,15 +2185,10 @@ class PollingCollector:
         if _shared_state.was_startup_aggregated():
             return
         
-        print(f"[PollingCollector] Startup period ended, checking for aggregated VMs...")
-        
         # Get all collected startup VMs/CTs
         startup_items = _shared_state.get_and_clear_startup_vms()
         if not startup_items:
-            print(f"[PollingCollector] No VMs/CTs collected during startup period")
             return
-        
-        print(f"[PollingCollector] Emitting aggregated startup notification for {len(startup_items)} items")
         
         # Count VMs and CTs
         vms = [(vmid, name) for vmid, name, vtype in startup_items if vtype == 'vm']
@@ -2289,7 +2280,7 @@ class PollingCollector:
             if total == 0:
                 return
             
-            # ── Parse every Inst line ────────────────��─────────────
+            # ── Parse every Inst line ──────────────────────────────
             all_pkgs: list[dict] = []   # {name, cur, new}
             security_pkgs: list[dict] = []
             pve_pkgs: list[dict] = []

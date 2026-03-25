@@ -33,6 +33,19 @@ except ImportError:
 # ============================================================================
 DEBUG_PERF = False
 
+# Startup grace period: suppress transient issues during boot
+# This is set when the module loads (service start)
+_MODULE_START_TIME = time.time()
+_STARTUP_HEALTH_GRACE_SECONDS = 300  # 5 minutes
+
+def _is_startup_health_grace() -> bool:
+    """Check if we're within the startup health grace period (5 min).
+    
+    Used to downgrade transient errors (high latency, storage not ready)
+    to INFO level during system boot, preventing false CRITICAL alerts.
+    """
+    return (time.time() - _MODULE_START_TIME) < _STARTUP_HEALTH_GRACE_SECONDS
+
 def _perf_log(section: str, elapsed_ms: float):
     """Log performance timing for a section. Only logs if DEBUG_PERF is True."""
     if DEBUG_PERF:
@@ -2512,12 +2525,24 @@ class HealthMonitor:
                     return loss_result
                 
                 # Evaluate latency thresholds
+                # During startup grace period, downgrade CRITICAL/WARNING to INFO
+                # to avoid false alerts from transient boot-time latency spikes
+                in_grace_period = _is_startup_health_grace()
+                
                 if avg_latency > self.NETWORK_LATENCY_CRITICAL:
-                    status = 'CRITICAL'
-                    reason = f'Latency {avg_latency:.1f}ms to gateway >{self.NETWORK_LATENCY_CRITICAL}ms'
+                    if in_grace_period:
+                        status = 'INFO'
+                        reason = f'Latency {avg_latency:.1f}ms (startup grace, will stabilize)'
+                    else:
+                        status = 'CRITICAL'
+                        reason = f'Latency {avg_latency:.1f}ms to gateway >{self.NETWORK_LATENCY_CRITICAL}ms'
                 elif avg_latency > self.NETWORK_LATENCY_WARNING:
-                    status = 'WARNING'
-                    reason = f'Latency {avg_latency:.1f}ms to gateway >{self.NETWORK_LATENCY_WARNING}ms'
+                    if in_grace_period:
+                        status = 'INFO'
+                        reason = f'Latency {avg_latency:.1f}ms (startup grace, will stabilize)'
+                    else:
+                        status = 'WARNING'
+                        reason = f'Latency {avg_latency:.1f}ms to gateway >{self.NETWORK_LATENCY_WARNING}ms'
                 else:
                     status = 'OK'
                     reason = None
