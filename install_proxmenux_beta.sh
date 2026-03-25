@@ -690,3 +690,4 @@ echo -e "${TAB}${DARK_GRAY}Report issues at: https://github.com/MacRimi/ProxMenu
 echo
 exit 0
 y
+
