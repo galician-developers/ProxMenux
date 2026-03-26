@@ -2,9 +2,10 @@
 # ProxMenux - NVIDIA Driver Installer (PVE 9.x)
 # ============================================
 # Author      : MacRimi
-# License     : MIT
-# Version     : 0.9 (PVE9, fixed download issues)
-# Last Updated: 29/11/2025
+# Copyright   : (c) 2024 MacRimi
+# License     : (GPL-3.0) (https://github.com/MacRimi/ProxMenux/blob/main/LICENSE)
+# Version     : 1.2 (PVE9, fixed download issues)
+# Last Updated: 26/03/2026
 # ============================================
 
 SCRIPT_TITLE="NVIDIA GPU Driver Installer for Proxmox VE"
@@ -114,10 +115,36 @@ ensure_repos_and_headers() {
 
 blacklist_nouveau() {
   msg_info "$(translate 'Blacklisting nouveau driver...')"
+
+  # Write blacklist config files
   if ! grep -q '^blacklist nouveau' /etc/modprobe.d/blacklist.conf 2>/dev/null; then
     echo "blacklist nouveau" >> /etc/modprobe.d/blacklist.conf
   fi
-  msg_ok "$(translate 'nouveau driver has been blacklisted.')" | tee -a "$screen_capture"
+
+  # Also write explicit options file to ensure it's fully disabled
+  cat > /etc/modprobe.d/nouveau-blacklist.conf <<'EOF'
+blacklist nouveau
+options nouveau modeset=0
+EOF
+
+  # Attempt to unload nouveau if currently loaded
+  if lsmod | grep -q "^nouveau "; then
+    msg_info "$(translate 'Nouveau module is loaded, attempting to unload...')"
+    modprobe -r nouveau 2>/dev/null || true
+
+    # Check if unload succeeded
+    if lsmod | grep -q "^nouveau "; then
+      NOUVEAU_STILL_LOADED=true
+      msg_warn "$(translate 'Could not unload nouveau module (may be in use). The blacklist will take effect after reboot. Installation will continue but a reboot will be required.')"
+      echo "WARNING: nouveau module still loaded after unload attempt" >> "$LOG_FILE"
+    else
+      NOUVEAU_STILL_LOADED=false
+      msg_ok "$(translate 'nouveau module unloaded successfully.')" | tee -a "$screen_capture"
+    fi
+  else
+    NOUVEAU_STILL_LOADED=false
+    msg_ok "$(translate 'nouveau driver has been blacklisted.')" | tee -a "$screen_capture"
+  fi
 }
 
 ensure_modules_config() {
@@ -553,10 +580,37 @@ run_nvidia_installer() {
   echo "" >>"$LOG_FILE"
   echo "=== Running NVIDIA installer: $installer ===" >>"$LOG_FILE"
 
+  # If nouveau is still loaded, rebuild initramfs first so the blacklist takes
+  # effect for the installer sanity checks. Without this the .run installer
+  # detects nouveau as active and aborts even when --disable-nouveau is passed.
+  if [[ "${NOUVEAU_STILL_LOADED:-false}" == "true" ]]; then
+    msg_info "$(translate 'Rebuilding initramfs to apply nouveau blacklist before installation...')"
+    update-initramfs -u -k all >>"$LOG_FILE" 2>&1 || true
+    # Try one more time to unload nouveau after initramfs rebuild
+    modprobe -r nouveau 2>/dev/null || true
+    if lsmod | grep -q "^nouveau "; then
+      echo "WARNING: nouveau still loaded after initramfs rebuild, proceeding with --no-nouveau-check" >> "$LOG_FILE"
+      msg_warn "$(translate 'nouveau still active. Proceeding with installation. A reboot will be required for the driver to work.')"
+    else
+      NOUVEAU_STILL_LOADED=false
+      msg_ok "$(translate 'nouveau module unloaded after initramfs rebuild.')" | tee -a "$screen_capture"
+    fi
+  fi
+
   local tmp_extract_dir="$NVIDIA_WORKDIR/tmp_extract"
   mkdir -p "$tmp_extract_dir"
-  
-  sh "$installer" --tmpdir="$tmp_extract_dir" --no-questions --ui=none --disable-nouveau --dkms 2>&1 | tee -a "$LOG_FILE"
+
+  # --no-nouveau-check: prevents the installer from aborting when nouveau is
+  # still loaded. The blacklist files are already in place; nouveau will be
+  # gone after the reboot that the script offers at the end.
+  sh "$installer" \
+    --tmpdir="$tmp_extract_dir" \
+    --no-questions \
+    --ui=none \
+    --disable-nouveau \
+    --no-nouveau-check \
+    --dkms \
+    2>&1 | tee -a "$LOG_FILE"
   local rc=${PIPESTATUS[0]}
   echo "" >>"$LOG_FILE"
   
@@ -783,6 +837,8 @@ show_version_menu() {
 main() {
   : >"$LOG_FILE"
   : >"$screen_capture"
+
+  NOUVEAU_STILL_LOADED=false
 
   detect_nvidia_gpus
   detect_driver_status
