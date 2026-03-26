@@ -35,13 +35,13 @@ initialize_cache
 
         case $OPTION in
             1)
-                bash "$LOCAL_SCRIPTS/configure_igpu_lxc.sh"
+                bash "$LOCAL_SCRIPTS/gpu_tpu/configure_igpu_lxc.sh"
                 if [ $? -ne 0 ]; then
                     return
                 fi
                 ;;
             2)
-                bash "$LOCAL_SCRIPTS/install_coral_lxc.sh"
+                bash "$LOCAL_SCRIPTS/gpu_tpu/install_coral_lxc.sh"
                 if [ $? -ne 0 ]; then
                     return
                 fi
