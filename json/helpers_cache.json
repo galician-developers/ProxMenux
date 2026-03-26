@@ -2744,7 +2744,7 @@
       "pve"
     ],
     "config_path": "",
-    "os": "debian"
+    "os": ""
   },
   {
     "name": "Cronicle Primary",
@@ -5057,7 +5057,7 @@
       "Monitoring & Analytics"
     ],
     "notes": [
-      "To create an admin account: `echo 'GEOPULSE_ADMIN_EMAIL=you@example.com' >> /etc/geopulse/geopulse.env && systemctl restart geopulse-backend` — then register with that email in the UI."
+      "To create an admin account, run `/usr/local/bin/create-geopulse-admin` inside the container, then register with that email in the GeoPulse UI."
     ],
     "port": 80,
     "website": "https://github.com/tess1o/geopulse",
@@ -13649,10 +13649,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00021"
+      "scriptcat00024"
     ],
     "category_names": [
-      "Webservers & Proxies"
+      "Gaming & Leisure"
     ],
     "notes": [
       "Photon Geocoder running at http://127.0.0.1:2322. Photon is fully setup, but without sample data. (filesize is big) -> checkout our guide: `https://github.com/community-scripts/ProxmoxVE/discussions/8737`."
