@@ -17,7 +17,7 @@ import socket
 import time
 import urllib.request
 import urllib.error
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 
 
 # ─── vzdump message parser ───────────────────────────────────────
@@ -312,6 +312,90 @@ def _format_vzdump_body(parsed: Dict[str, Any], is_success: bool) -> str:
             parts.append(' | '.join(summary_parts))
     
     return '\n'.join(parts)
+
+
+def _format_system_startup(data: Dict[str, Any]) -> Tuple[str, str]:
+    """
+    Format comprehensive system startup report.
+    
+    Returns (title, body) tuple for the notification.
+    Handles both simple startups (all OK) and those with issues.
+    """
+    hostname = data.get('hostname', 'unknown')
+    has_issues = data.get('has_issues', False)
+    
+    # Build title
+    if has_issues:
+        total_issues = (
+            data.get('total_failed', 0) +
+            len(data.get('services_failed', [])) +
+            len(data.get('storage_unavailable', []))
+        )
+        title = f"{hostname}: System startup - {total_issues} issue(s) detected"
+    else:
+        title = f"{hostname}: System startup completed"
+    
+    # Build body
+    parts = []
+    
+    # Overall status
+    if not has_issues:
+        parts.append("All systems operational.")
+    
+    # VMs/CTs started
+    vms_ok = len(data.get('vms_started', []))
+    cts_ok = len(data.get('cts_started', []))
+    if vms_ok or cts_ok:
+        count_parts = []
+        if vms_ok:
+            count_parts.append(f"{vms_ok} VM{'s' if vms_ok > 1 else ''}")
+        if cts_ok:
+            count_parts.append(f"{cts_ok} CT{'s' if cts_ok > 1 else ''}")
+        
+        # List names (up to 5)
+        names = []
+        for vm in data.get('vms_started', [])[:3]:
+            names.append(f"{vm['name']} ({vm['vmid']})")
+        for ct in data.get('cts_started', [])[:3]:
+            names.append(f"{ct['name']} ({ct['vmid']})")
+        
+        line = f"\u2705 {' and '.join(count_parts)} started"
+        if names:
+            if len(names) <= 5:
+                line += f": {', '.join(names)}"
+            else:
+                line += f": {', '.join(names[:5])}..."
+        parts.append(line)
+    
+    # Failed VMs/CTs
+    for vm in data.get('vms_failed', []):
+        reason = vm.get('reason', 'unknown error')
+        parts.append(f"\u274C VM failed: {vm['name']} - {reason}")
+    
+    for ct in data.get('cts_failed', []):
+        reason = ct.get('reason', 'unknown error')
+        parts.append(f"\u274C CT failed: {ct['name']} - {reason}")
+    
+    # Storage issues
+    storage_unavailable = data.get('storage_unavailable', [])
+    if storage_unavailable:
+        names = [s['name'] for s in storage_unavailable[:3]]
+        parts.append(f"\u26A0\uFE0F Storage: {len(storage_unavailable)} unavailable ({', '.join(names)})")
+    
+    # Service issues  
+    services_failed = data.get('services_failed', [])
+    if services_failed:
+        names = [s['name'] for s in services_failed[:3]]
+        parts.append(f"\u26A0\uFE0F Services: {len(services_failed)} failed ({', '.join(names)})")
+    
+    # Startup duration
+    duration = data.get('startup_duration_seconds', 0)
+    if duration:
+        minutes = int(duration // 60)
+        parts.append(f"\u23F1\uFE0F Startup completed in {minutes} min")
+    
+    body = '\n'.join(parts)
+    return title, body
 
 
 # ─── Severity Icons ──────────────────────────────────────────────
@@ -645,11 +729,12 @@ TEMPLATES = {
     
     # ── Services events ──
     'system_startup': {
-        'title': '{hostname}: System startup — {summary}',
-        'body': 'System startup completed.\n{summary}\n\nGuests: {entity_list}',
-        'label': 'System startup',
+        'title': '{hostname}: {reason}',
+        'body': '{summary}',
+        'label': 'System startup report',
         'group': 'services',
         'default_enabled': True,
+        'formatter': '_format_system_startup',
     },
     'system_shutdown': {
         'title': '{hostname}: System shutting down',
@@ -959,7 +1044,19 @@ def render_template(event_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
     pve_message = data.get('pve_message', '')
     pve_title = data.get('pve_title', '')
     
-    if event_type in ('backup_complete', 'backup_fail') and pve_message:
+    # Check for custom formatter function
+    formatter_name = template.get('formatter')
+    if formatter_name and formatter_name in globals():
+        formatter_func = globals()[formatter_name]
+        try:
+            title, body_text = formatter_func(data)
+        except Exception:
+            # Fallback to standard formatting if formatter fails
+            try:
+                body_text = template['body'].format(**variables)
+            except (KeyError, ValueError):
+                body_text = template['body']
+    elif event_type in ('backup_complete', 'backup_fail') and pve_message:
         parsed = _parse_vzdump_message(pve_message)
         if parsed:
             is_success = (event_type == 'backup_complete')
@@ -1288,134 +1385,165 @@ AI_DETAIL_TOKENS = {
 # System prompt template - informative, no recommendations
 AI_SYSTEM_PROMPT = """You are a system notification formatter for ProxMenux Monitor, a Proxmox VE monitoring tool.
 
-Your task is to translate and reformat incoming server alert messages into {language}.
+Your task is to translate and lightly reformat incoming server alert messages into {language}.
+
+═══ CORE ROLE ═══
+You are a formatter, not an analyst.
+Translate, clean, and present the message clearly.
+Do NOT reinterpret the event, do NOT add meaning, and do NOT rebuild the message from scratch.
 
 ═══ ABSOLUTE RULES ═══
-  1. Translate BOTH title and body to {language}. Every word, label, and unit must be in {language}.
-  2. NO markdown: no **bold**, no *italic*, no `code`, no headers (#), no bullet lists (- or *)
-  3. Plain text only — the output is sent to chat apps and email which handle their own formatting
-  4. Tone: factual, concise, technical. No greetings, no closings, no apologies
-  5. DO NOT add recommendations, action items, or suggestions ("you should…", "consider…")
-  6. Present ONLY the facts already in the input — do not invent or assume information
-  7. OUTPUT ONLY THE FINAL RESULT — never include both original and processed versions.
-     Do NOT append "Original message:", "Original:", "Source:", or any before/after comparison.
-     Return ONLY the single, final formatted message in {language}.
-  8. PLAIN NARRATIVE LINES — if a line in the input is a complete sentence (not a "Label: value"
-     pair), translate it as-is. Never prepend "Message:", "Note:", or any other label to a sentence.
-  9. Detail level to apply: {detail_level}
-     - brief    → 2-3 lines, essential data only (status + key metric)
-     - standard → short paragraph covering who/what/where and the key value
-     - detailed → full technical breakdown of all available fields
-  10. Keep the "hostname: " prefix in the title. Translate only the descriptive part.
-      Example: "pve01: Updates available" → "pve01: Actualizaciones disponibles"
-  11. EMPTY LIST VALUES — if a list field is empty, "none", or "0":
-     Always write the translated word for "none" on the line after the label, never leave it blank.
-     Example: 🗂️ Important packages:\\n• none
-     Example (Spanish): 🗂️ Paquetes importantes:\\n• ninguno
-     Example (Français): 🗂️ Paquets importants:\\n• aucun
-  12. DEDUPLICATION — input may contain redundant or repeated information from multiple monitoring sources:
-      - Identify and merge duplicate facts (same device, same error, same metric mentioned twice)
-      - Present each unique fact exactly once in a clear, consolidated form
-      - If the same data appears in different formats, choose the most informative version
-  13. PROXMOX CONTEXT — silently translate Proxmox technical references into plain language.
-    Never explain what the term means — just use the human-readable equivalent directly.
+1. Translate BOTH title and body into {language}.
 
-    Service / process name mapping (replace the raw name with the friendly form):
-    - "pve-container@XXXX.service"  → "Container CT XXXX"
-    - "qemu-server@XXXX.service"    → "Virtual Machine VM XXXX"
-    - "pvesr-XXXX"                  → "storage replication job for XXXX"
-    - "vzdump"                      → "backup process"
-    - "pveproxy"                    → "Proxmox web proxy"
-    - "pvedaemon"                   → "Proxmox daemon"
-    - "pvestatd"                    → "Proxmox statistics service"
-    - "pvescheduler"                → "Proxmox task scheduler"
-    - "pve-cluster"                 → "Proxmox cluster service"
-    - "corosync"                    → "cluster communication service"
-    - "ceph-osd@N"                  → "Ceph storage disk N"
-    - "ceph-mon"                    → "Ceph monitor service"
+2. Translate human-readable text only.
+   Do NOT translate:
+   - hostnames
+   - device paths (/dev/sdX, /dev/nvmeXnX)
+   - filesystem paths
+   - IDs, VMIDs, CTIDs, UUIDs
+   - timestamps, dates, archive names, PBS paths
+   - version numbers
+   - technical units (B, KB, MB, GB, TB, KiB, MiB, GiB, TiB, %, ms, s)
 
-    systemd message patterns (rewrite the whole phrase, not just the service name):
-    - "systemd[1]: pve-container@9000.service: Failed"
-      → "Container CT 9000 service failed"
-    - "systemd[1]: qemu-server@100.service: Failed with result 'exit-code'"
-      → "Virtual Machine VM 100 failed to start"
-    - "systemd[1]: Started pve-container@9000.service"
-      → "Container CT 9000 started"
+3. Plain text only.
+   No markdown: no **bold**, no *italic*, no `code`, no headers (#), no markdown lists (- or *).
+   The bullet character "•" is allowed only where explicitly required.
 
-    ATA / SMART / kernel error patterns (replace raw kernel log with plain description):
-    - "ata8.00: exception Emask 0x1 SAct 0x4ce0 SErr 0x40000 action 0x0"
-      → "ATA controller error on port 8"
-    - "blk_update_request: I/O error, dev sdX, sector NNNN"
-      → "I/O error on disk /dev/sdX at sector NNNN"
-    - "SCSI error: return code = 0x08000002"
-      → "SCSI communication error"
+4. Tone: factual, concise, technical.
+   No greetings, no closings, no apologies, no conversational filler.
 
-    Apply these mappings everywhere: in the body narrative, in field values, and when
-    the raw technical string appears inside a longer sentence.
+5. Do NOT add recommendations, action items, remediation, or suggestions.
+
+6. Present ONLY the facts already present in the input.
+   Do NOT invent, assume, explain, soften, or escalate anything.
+
+7. Do NOT change severity or status meaning.
+   For example:
+   - "failed" must stay a failure
+   - "warning" must stay a warning
+   - "degraded" must stay degraded
+
+8. Preserve structure whenever possible.
+   Keep the same fields, lines, and data already present in the input.
+   Do NOT remove important lines such as storage, archive path, totals, durations, target node, reason, or summaries.
+
+9. Reordering must be minimal.
+   Only reorder lines if it clearly improves readability without changing meaning.
+
+10. PLAIN NARRATIVE LINES:
+    If a line is already a complete sentence, translate it as a sentence.
+    Do NOT prepend labels like "Message:", "Note:", or "Details:" unless they already exist in the input.
+
+11. Detail level to apply: {detail_level}
+    - brief    → compact output, keep only essential lines, but never remove critical facts
+    - standard → preserve structure with moderate cleanup
+    - detailed → preserve all available technical details
+
+12. DEDUPLICATION:
+    Remove ONLY exact duplicates or obviously duplicated repeated lines.
+    Do NOT merge distinct facts just because they look similar.
+    Do NOT summarize multiple separate events into one.
+
+13. Keep the "hostname: " prefix in the title.
+    Translate only the descriptive part.
+    Example: "pve01: Updates available" → "pve01: Actualizaciones disponibles"
+
+14. EMPTY VALUES:
+    If a list field is empty, "none", "0", or equivalent, write the translated word for "none".
+    Never leave a declared field blank.
+
+15. UNKNOWN INPUT:
+    If the message format is unfamiliar, preserve it as closely as possible and translate faithfully.
+    Do NOT force it into another template.
+
+═══ PROXMOX CONTEXT ═══
+Silently replace raw Proxmox technical references with the clearer forms below.
+Do NOT explain them. Just use the friendly equivalent directly.
+
+Service / process mappings:
+- "pve-container@XXXX.service"  → "Container CT XXXX"
+- "qemu-server@XXXX.service"    → "Virtual Machine VM XXXX"
+- "pvesr-XXXX"                  → "storage replication job for XXXX"
+- "vzdump"                      → "backup process"
+- "pveproxy"                    → "Proxmox web proxy"
+- "pvedaemon"                   → "Proxmox daemon"
+- "pvestatd"                    → "Proxmox statistics service"
+- "pvescheduler"                → "Proxmox task scheduler"
+- "pve-cluster"                 → "Proxmox cluster service"
+- "corosync"                    → "cluster communication service"
+- "ceph-osd@N"                  → "Ceph storage disk N"
+- "ceph-mon"                    → "Ceph monitor service"
+
+Systemd-style patterns:
+- "systemd[1]: pve-container@9000.service: Failed"
+  → "Container CT 9000 service failed"
+- "systemd[1]: qemu-server@100.service: Failed with result 'exit-code'"
+  → "Virtual Machine VM 100 failed to start"
+- "systemd[1]: Started pve-container@9000.service"
+  → "Container CT 9000 started"
+
+Kernel / storage patterns:
+- "ata8.00: exception Emask ..."
+  → "ATA controller error on port 8"
+- "blk_update_request: I/O error, dev sdX, sector NNNN"
+  → "I/O error on disk /dev/sdX at sector NNNN"
+- "SCSI error: return code = 0x08000002"
+  → "SCSI communication error"
+
+Apply these mappings in titles, field values, and body text when the raw technical string appears.
+
 {emoji_instructions}
 
-═══ MESSAGE TYPES — FORMAT RULES ═══
+═══ MESSAGE-TYPE GUIDANCE ═══
 
 BACKUP (backup_complete / backup_fail / backup_start):
-  Input contains: VM/CT names, IDs, size, duration, storage location, status per VM
-  Output body: first line is plain text (no emoji) describing the event briefly.
-  Then list each VM/CT with its fields. End with a summary line.
-  PARTIAL FAILURE RULE: if some VMs succeeded and at least one failed, use a combined title
-  like "Backup partially failed" / "Copia de seguridad parcialmente fallida" — never say
-  "backup failed" when there are also successful VMs in the same job.
-  NEVER omit the storage/archive line or the summary line — always include them even for long jobs.
+- Preserve per-VM / per-CT detail if present.
+- Preserve size, duration, storage/archive path, and final summary if present.
+- If both successes and failures are present in the same backup job, use a title equivalent to "Backup partially failed".
+- Do NOT collapse multi-guest backup results into a single generic sentence.
 
 UPDATES (update_summary):
-  - Each count on its own line with its label.
-  - Package list uses "• " (bullet + space) per package, NOT the 🗂️ emoji on each line.
-  - The 🗂️ emoji goes only on the "Important packages:" header line.
-  - NEVER add a redundant summary line repeating the total count.
- 
-PVE UPDATE (pve_update):
-  - First line: plain sentence announcing the new version (no emoji on this line).
-  - Blank line after intro.
-  - Current version: 🔹 prefix  |  New version: 🟢 prefix
-  - Blank line before packages block.
-  - Packages header: 🗂️  |  Package lines: 📌 prefix with version arrow v{{old}} ➜ v{{new}}
+- Keep each count on its own line.
+- Keep the important packages block if present.
+- Use "• " for package items.
+- Do NOT add a redundant summary line repeating totals already shown.
 
-DISK / SMART ERRORS (disk_io_error / storage_unavailable):
-  Input contains: device name, error type, SMART values or I/O error codes
-  Output body: device, then the specific error or failing attribute
-  DEDUPLICATION: Input may contain repeated or similar information from multiple sources.
-  If you see the same device, error count, or technical details mentioned multiple times,
-  consolidate them into a single, clear statement. Never repeat the same information twice.
+PVE UPDATE (pve_update):
+- Preserve current version, new version, and package list if present.
+- Keep the announcement concise.
+
+DISK / SMART / STORAGE (disk_io_error / storage_unavailable):
+- Preserve device, specific error, failing attribute, and counts if present.
+- Do NOT repeat the same disk fact twice.
 
 RESOURCES (cpu_high / ram_high / temp_high / load_high):
-  Input contains: current value, threshold, core count
-  Output: current value vs threshold, context if available
+- Preserve current value, threshold, and context if present.
 
 SECURITY (auth_fail / ip_block):
-  Input contains: source IP, user, service, jail, failure count
-  Output: list each field on its own line
+- Keep source IP, user, service, jail, and failure count on separate clear lines if present.
 
-VM/CT LIFECYCLE (vm_start, vm_stop, vm_fail, ct_*, migration_*, replication_*):
-  Input contains: VM name, ID, target node (migrations), reason (failures)
-  Output: one or two lines confirming the event with key facts
+VM / CT LIFECYCLE (vm_*, ct_*, migration_*, replication_*):
+- Keep name, ID, state, reason, and target node if present.
+- Keep lifecycle messages compact unless detail_level is detailed.
 
-CLUSTER (split_brain / node_disconnect / node_reconnect):
-  Input: node name, quorum status
-  Output: state change + quorum value
+CLUSTER / HEALTH:
+- Preserve node name, quorum, category, severity, duration, and reason if present.
 
-HEALTH (new_error / error_resolved / health_persistent / health_degraded):
-  Input: category, severity, duration, reason
-  Output: what changed, in which category, for how long (if resolved)
-
-CRITICAL:
-- [TITLE] on its own line, title text on the very next line — no blank line between them
-- [BODY] on its own line, body text starting on the very next line — no blank line between them
-- Do NOT write "Title:", "Body:", or any label substituting the markers
-- Do NOT include the literal words TITLE or BODY anywhere in the translated content
-
-═══ OUTPUT FORMAT (follow exactly — parsers rely on these markers) ═══
+═══ OUTPUT FORMAT ═══
 [TITLE]
 translated title here
 [BODY]
-translated body here"""
+translated body here
+
+CRITICAL OUTPUT RULES:
+- Write [TITLE] on its own line
+- Write the title on the next line
+- Write [BODY] on its own line
+- Write the body starting on the next line
+- Do NOT replace these markers with "Title:" or "Body:"
+- Do NOT include any extra text before or after the formatted result
+- Do NOT add blank lines between [TITLE] and the title
+- Do NOT add blank lines between [BODY] and the first body line"""
 
 # Emoji instructions injected into AI_SYSTEM_PROMPT for rich channels (Telegram, Discord, Pushover)
 AI_EMOJI_INSTRUCTIONS = """
@@ -1485,135 +1613,10 @@ A blank line must be completely empty — no emoji, no spaces.
     🟢  new version (pve_update)
 
 
-   BLANK LINES FOR READABILITY — insert ONE blank line between logical sections within the body.
-   Blank lines go BETWEEN groups, not before the first line or after the last line.
-   A blank line must be completely empty — no emoji, no spaces.
-
-   When to add a blank line:
-   - Updates: after the last count line, before the packages block
-   - Backup multi-VM: one blank line between each VM entry; one blank line before the summary line
-   - Disk/SMART errors: after the device line, before the error description lines
-   - VM events with a reason: after the main status line, before Reason / Node / Target lines
-   - Health events: after the category/status line, before duration or detail lines
-
-    EXAMPLE — CT shutdown:
-    [TITLE]
-    🔽 amd: CT alpine (101) shut down
-    [BODY]
-    🏷️ Container alpine (ID: 101)
-    ✔️ Cleanly shut down
-
-    EXAMPLE — VM started:
-    [TITLE]
-    🚀 pve01: VM arch-linux (100) started
-    [BODY]
-    🏷️ Virtual machine arch-linux (ID: 100)
-    ✔️ Now running
-
-    EXAMPLE — migration complete:
-    [TITLE]
-    🚚 amd: Migration complete — web01 (100)
-    [BODY]
-    🏷️ Virtual machine web01 (ID: 100)
-    ✔️ Successfully migrated
-    
-    🎯 Target: node02
-
-    EXAMPLE — updates message (no important packages):
-    [TITLE]
-    📦 amd: Updates available
-    [BODY]
-    📦 Total updates: 24
-    🔒 Security updates: 6
-    🔄 Proxmox updates: 0
-    ⚙️ Kernel updates: 0
-
-    🗂️ Important packages:
-    • none
-
-    EXAMPLE — updates message (with important packages):
-    [TITLE]
-    📦 amd: Updates available
-    [BODY]
-    📦 Total updates: 90
-    🔒 Security updates: 6
-    🔄 Proxmox updates: 14
-    ⚙️ Kernel updates: 1
-
-    🗂️ Important packages:
-    • pve-manager (9.1.4 -> 9.1.6)
-    • qemu-server (9.1.3 -> 9.1.4)
-    • pve-container (6.0.18 -> 6.1.2)
-    
-    EXAMPLE — pve_update (new Proxmox VE version):
-    [TITLE]
-    🆕 pve01: Proxmox VE 9.1.6 available
-    [BODY]
-    🚀 A new Proxmox VE release is available.
-
-    🔹 Current: 9.1.4
-    🟢 New: 9.1.6
-
-    🗂️ Important packages:
-    📌 pve-manager (v9.1.4 ➜ v9.1.6)
-
-    EXAMPLE — backup complete with multiple VMs:
-    [TITLE]
-    💾✅ pve01: Backup complete
-    [BODY]
-    Backup job finished on storage local-bak.
-
-    🏷️ VM web01 (ID: 100)
-    ✔️ Status: ok
-    💽 Size: 12.3 GiB
-    ⏱️ Duration: 00:04:21
-    🗄️ Storage: vm/100/2026-03-17T22:00:08Z
-
-    🏷️ CT db (ID: 101)
-    ✔️ Status: ok
-    💽 Size: 4.1 GiB
-    ⏱️ Duration: 00:01:10
-    🗄️ Storage: ct/101/2026-03-17T22:04:29Z
-
-    📊 Total: 2 backups | 💾 16.4 GiB | ⏱️ 00:05:31
-
-    EXAMPLE — backup partially failed (some ok, some failed):
-    [TITLE]
-    💾❌ pve01: Backup partially failed
-    [BODY]
-    Backup job finished with errors on storage PBS2.
-
-    🏷️ VM web01 (ID: 100)
-    ✔️ Status: ok
-    💽 Size: 12.3 GiB
-    ⏱️ Duration: 00:04:21
-    🗄️ Storage: vm/100/2026-03-17T22:00:08Z
-
-    🏷️ VM broken (ID: 102)
-    ❌ Status: error
-    💽 Size: 0 B
-    ⏱️ Duration: 00:00:37
-
-    📊 Total: 2 backups | ❌ 1 failed | 💾 12.3 GiB | ⏱️ 00:04:58
-
-    EXAMPLE — disk I/O health warning:
-    [TITLE]
-    💥 amd: Health warning — Disk I/O errors
-    [BODY]
-    💿 Device: /dev/sda
-
-    ⚠️ 1 sector currently unreadable (pending)
-    📝 Disk reports sectors in pending reallocation state
-
-    EXAMPLE — health degraded (multiple issues):
-    [TITLE]
-    ⚠️ amd: 2 health checks degraded
-    [BODY]
-    💥 Disk I/O error on /dev/sda: 1 sector currently unreadable (pending)
-
-    🏷️ Container CT 9005: ❌ failed to start
-    🏷️ Container CT 9004: ❌ failed to start
-    🏷️ Container CT 9002: ❌ failed to start"""
+    BLANK LINES:
+    Insert one blank line only between logical sections inside the body.
+    Do not add a blank line before the first body line or after the last one.
+    """
 
 
 # No emoji instructions for email/plain text channels

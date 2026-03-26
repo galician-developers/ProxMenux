@@ -120,7 +120,7 @@ class _StartupGraceState:
         with self._lock:
             return time.time() - self._startup_time
     
-    # ─── Shutdown Tracking ───────────────────────────────────────────────────
+    # ─── Shutdown Tracking ────────────────────────────────────────��──────────
     
     def mark_shutdown(self):
         """
@@ -229,6 +229,219 @@ def has_startup_vms() -> bool:
 def was_startup_aggregated() -> bool:
     """Check if startup aggregation has already been processed."""
     return _state.was_startup_aggregated()
+
+
+# ─── Startup Report Collection ───────────────────────────────────────────────
+
+def collect_startup_report() -> dict:
+    """
+    Collect comprehensive startup report data.
+    
+    Called at the end of the grace period to generate a complete
+    startup report including:
+    - VMs/CTs that started successfully
+    - VMs/CTs that failed to start
+    - Service status
+    - Storage status
+    - Journal errors during boot (for AI enrichment)
+    
+    Returns:
+        Dictionary with startup report data
+    """
+    import subprocess
+    
+    report = {
+        # VMs/CTs
+        'vms_started': [],
+        'cts_started': [],
+        'vms_failed': [],
+        'cts_failed': [],
+        
+        # System status
+        'services_ok': True,
+        'services_failed': [],
+        'storage_ok': True,
+        'storage_unavailable': [],
+        
+        # Health summary
+        'health_status': 'OK',
+        'health_issues': [],
+        
+        # For AI enrichment
+        '_journal_context': '',
+        '_startup_errors': [],
+        
+        # Metadata
+        'startup_duration_seconds': get_startup_elapsed(),
+        'timestamp': int(time.time()),
+    }
+    
+    # Get VMs/CTs that started during boot
+    startup_vms = get_and_clear_startup_vms()
+    for vmid, vmname, vm_type in startup_vms:
+        if vm_type == 'vm':
+            report['vms_started'].append({'vmid': vmid, 'name': vmname})
+        else:
+            report['cts_started'].append({'vmid': vmid, 'name': vmname})
+    
+    # Try to get health status from health_monitor
+    try:
+        import health_monitor
+        health_data = health_monitor.get_detailed_status()
+        
+        if health_data:
+            report['health_status'] = health_data.get('overall_status', 'UNKNOWN')
+            
+            # Check storage
+            storage_cat = health_data.get('categories', {}).get('storage', {})
+            if storage_cat.get('status') in ['CRITICAL', 'WARNING']:
+                report['storage_ok'] = False
+                for check in storage_cat.get('checks', []):
+                    if check.get('status') in ['CRITICAL', 'WARNING', 'error']:
+                        report['storage_unavailable'].append({
+                            'name': check.get('name', 'unknown'),
+                            'reason': check.get('reason', check.get('message', ''))
+                        })
+            
+            # Check services
+            services_cat = health_data.get('categories', {}).get('services', {})
+            if services_cat.get('status') in ['CRITICAL', 'WARNING']:
+                report['services_ok'] = False
+                for check in services_cat.get('checks', []):
+                    if check.get('status') in ['CRITICAL', 'WARNING', 'error']:
+                        report['services_failed'].append({
+                            'name': check.get('name', 'unknown'),
+                            'reason': check.get('reason', check.get('message', ''))
+                        })
+            
+            # Check VMs category for failed VMs
+            vms_cat = health_data.get('categories', {}).get('vms', {})
+            for check in vms_cat.get('checks', []):
+                if check.get('status') in ['CRITICAL', 'WARNING', 'error']:
+                    # Determine if VM or CT based on name/type
+                    check_name = check.get('name', '')
+                    check_reason = check.get('reason', check.get('message', ''))
+                    if 'error al iniciar' in check_reason.lower() or 'failed to start' in check_reason.lower():
+                        if 'CT' in check_name or 'Container' in check_name:
+                            report['cts_failed'].append({
+                                'name': check_name,
+                                'reason': check_reason
+                            })
+                        else:
+                            report['vms_failed'].append({
+                                'name': check_name,
+                                'reason': check_reason
+                            })
+            
+            # Collect all health issues for summary
+            for cat_name, cat_data in health_data.get('categories', {}).items():
+                if cat_data.get('status') in ['CRITICAL', 'WARNING']:
+                    report['health_issues'].append({
+                        'category': cat_name,
+                        'status': cat_data.get('status'),
+                        'reason': cat_data.get('reason', '')
+                    })
+    except Exception as e:
+        report['_startup_errors'].append(f"Error getting health data: {e}")
+    
+    # Get journal errors during startup (for AI enrichment)
+    try:
+        boot_time = int(_state._startup_time)
+        result = subprocess.run(
+            ['journalctl', '-p', 'err', '--since', f'@{boot_time}', '--no-pager', '-n', '50'],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            report['_journal_context'] = result.stdout.strip()
+    except Exception as e:
+        report['_startup_errors'].append(f"Error getting journal: {e}")
+    
+    return report
+
+
+def format_startup_summary(report: dict) -> str:
+    """
+    Format a human-readable startup summary from report data.
+    
+    Args:
+        report: Dictionary from collect_startup_report()
+    
+    Returns:
+        Formatted summary string
+    """
+    lines = []
+    
+    # Count totals
+    vms_ok = len(report.get('vms_started', []))
+    cts_ok = len(report.get('cts_started', []))
+    vms_fail = len(report.get('vms_failed', []))
+    cts_fail = len(report.get('cts_failed', []))
+    
+    total_ok = vms_ok + cts_ok
+    total_fail = vms_fail + cts_fail
+    
+    # Determine overall status
+    has_issues = (
+        total_fail > 0 or
+        not report.get('services_ok', True) or
+        not report.get('storage_ok', True) or
+        report.get('health_status') in ['CRITICAL', 'WARNING']
+    )
+    
+    # Header
+    if has_issues:
+        issue_count = total_fail + len(report.get('services_failed', [])) + len(report.get('storage_unavailable', []))
+        lines.append(f"System startup - {issue_count} issue(s) detected")
+    else:
+        lines.append("System startup completed")
+        lines.append("All systems operational.")
+    
+    # VMs/CTs started
+    if total_ok > 0:
+        parts = []
+        if vms_ok > 0:
+            parts.append(f"{vms_ok} VM{'s' if vms_ok > 1 else ''}")
+        if cts_ok > 0:
+            parts.append(f"{cts_ok} CT{'s' if cts_ok > 1 else ''}")
+        
+        # List names
+        names = []
+        for vm in report.get('vms_started', []):
+            names.append(f"{vm['name']} ({vm['vmid']})")
+        for ct in report.get('cts_started', []):
+            names.append(f"{ct['name']} ({ct['vmid']})")
+        
+        line = f"{' and '.join(parts)} started"
+        if names and len(names) <= 5:
+            line += f": {', '.join(names)}"
+        elif names:
+            line += f": {', '.join(names[:3])}... (+{len(names)-3} more)"
+        lines.append(line)
+    
+    # Failed VMs/CTs
+    if total_fail > 0:
+        for vm in report.get('vms_failed', []):
+            lines.append(f"VM failed: {vm['name']} - {vm.get('reason', 'unknown error')}")
+        for ct in report.get('cts_failed', []):
+            lines.append(f"CT failed: {ct['name']} - {ct.get('reason', 'unknown error')}")
+    
+    # Storage issues
+    if not report.get('storage_ok', True):
+        unavailable = report.get('storage_unavailable', [])
+        if unavailable:
+            names = [s['name'] for s in unavailable]
+            lines.append(f"Storage: {len(unavailable)} unavailable ({', '.join(names[:3])})")
+    
+    # Service issues
+    if not report.get('services_ok', True):
+        failed = report.get('services_failed', [])
+        if failed:
+            names = [s['name'] for s in failed]
+            lines.append(f"Services: {len(failed)} failed ({', '.join(names[:3])})")
+    
+    return '\n'.join(lines)
 
 
 # ─── For backwards compatibility ─────────────────────────────────────────────

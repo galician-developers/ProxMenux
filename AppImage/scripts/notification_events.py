@@ -2144,60 +2144,98 @@ class PollingCollector:
         self._first_poll_done = True
     
     def _check_startup_aggregation(self):
-        """Check if startup period ended and emit aggregated VM/CT start message.
+        """Check if startup period ended and emit comprehensive startup report.
         
-        During the startup grace period, TaskWatcher collects VM/CT starts instead
-        of emitting individual notifications. Once the period ends, this method
-        emits a single aggregated "System startup" notification.
+        At the end of the health grace period, collects:
+        - VMs/CTs that started successfully
+        - VMs/CTs that failed to start
+        - Service status
+        - Storage status
+        - Journal errors (for AI enrichment)
+        
+        Emits a single "system_startup" notification with full report data.
         """
-        # Only check once startup period is over
-        if _shared_state.is_startup_period():
+        # Wait until health grace period is over (5 min) for complete picture
+        if startup_grace.is_startup_health_grace():
             return
         
         # Only emit once
-        if _shared_state.was_startup_aggregated():
+        if startup_grace.was_startup_aggregated():
             return
         
-        # Get all collected startup VMs/CTs
-        startup_items = _shared_state.get_and_clear_startup_vms()
-        if not startup_items:
-            return
+        # Collect comprehensive startup report
+        report = startup_grace.collect_startup_report()
         
-        # Count VMs and CTs
-        vms = [(vmid, name) for vmid, name, vtype in startup_items if vtype == 'vm']
-        cts = [(vmid, name) for vmid, name, vtype in startup_items if vtype == 'ct']
+        # Generate human-readable summary
+        summary = startup_grace.format_startup_summary(report)
         
-        vm_count = len(vms)
-        ct_count = len(cts)
-        total = vm_count + ct_count
+        # Count totals
+        vms_ok = len(report.get('vms_started', []))
+        cts_ok = len(report.get('cts_started', []))
+        vms_fail = len(report.get('vms_failed', []))
+        cts_fail = len(report.get('cts_failed', []))
+        total_ok = vms_ok + cts_ok
+        total_fail = vms_fail + cts_fail
         
-        # Build entity list (max 10 items for readability)
+        # Build entity list for backwards compatibility
         entity_names = []
-        for vmid, name in (vms + cts)[:10]:
-            entity_names.append(f'{name} ({vmid})')
-        if total > 10:
-            entity_names.append(f'...and {total - 10} more')
+        for vm in report.get('vms_started', [])[:5]:
+            entity_names.append(f"{vm['name']} ({vm['vmid']})")
+        for ct in report.get('cts_started', [])[:5]:
+            entity_names.append(f"{ct['name']} ({ct['vmid']})")
+        if total_ok > 10:
+            entity_names.append(f"...and {total_ok - 10} more")
         
-        # Build summary text
-        parts = []
-        if vm_count:
-            parts.append(f'{vm_count} VM{"s" if vm_count != 1 else ""}')
-        if ct_count:
-            parts.append(f'{ct_count} CT{"s" if ct_count != 1 else ""}')
-        summary = ' and '.join(parts) + ' started'
+        # Determine severity based on issues
+        has_issues = (
+            total_fail > 0 or
+            not report.get('services_ok', True) or
+            not report.get('storage_ok', True) or
+            report.get('health_status') in ['CRITICAL', 'WARNING']
+        )
+        severity = 'WARNING' if has_issues else 'INFO'
         
+        # Build notification data
         data = {
             'hostname': self._hostname,
             'summary': summary,
-            'vm_count': vm_count,
-            'ct_count': ct_count,
-            'total_count': total,
+            
+            # VM/CT counts (backwards compatible)
+            'vm_count': vms_ok,
+            'ct_count': cts_ok,
+            'total_count': total_ok,
             'entity_list': ', '.join(entity_names),
-            'reason': f'System startup completed: {summary}',
+            
+            # New: failure counts
+            'vms_failed_count': vms_fail,
+            'cts_failed_count': cts_fail,
+            'total_failed': total_fail,
+            
+            # New: detailed lists
+            'vms_started': report.get('vms_started', []),
+            'cts_started': report.get('cts_started', []),
+            'vms_failed': report.get('vms_failed', []),
+            'cts_failed': report.get('cts_failed', []),
+            
+            # New: system status
+            'services_ok': report.get('services_ok', True),
+            'services_failed': report.get('services_failed', []),
+            'storage_ok': report.get('storage_ok', True),
+            'storage_unavailable': report.get('storage_unavailable', []),
+            'health_status': report.get('health_status', 'UNKNOWN'),
+            'health_issues': report.get('health_issues', []),
+            
+            # For AI enrichment
+            '_journal_context': report.get('_journal_context', ''),
+            
+            # Metadata
+            'startup_duration_seconds': report.get('startup_duration_seconds', 0),
+            'has_issues': has_issues,
+            'reason': summary.split('\n')[0],  # First line as reason
         }
         
         self._queue.put(NotificationEvent(
-            'system_startup', 'INFO', data, source='polling',
+            'system_startup', severity, data, source='polling',
             entity='node', entity_id='',
         ))
     
@@ -2500,7 +2538,7 @@ class PollingCollector:
         except Exception as e:
             print(f"[PollingCollector] AI model check failed: {e}")
     
-    # ── Persistence helpers ────────────────────────────────────
+    # ── Persistence helpers ──────────────────────────────��─────
     
     def _load_last_notified(self):
         """Load per-error notification timestamps from DB on startup."""
