@@ -649,70 +649,6 @@
     "os": "debian"
   },
   {
-    "name": "Alpine-Tinyauth",
-    "slug": "alpine-tinyauth",
-    "desc": "Tinyauth is a simple authentication middleware that adds simple username/password login or OAuth with Google, Github and any generic provider to all of your docker apps.",
-    "script": "ct/alpine-tinyauth.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/alpine-tinyauth.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/alpine-tinyauth.sh",
-    "type": "lxc",
-    "type_id": "nm9bra8mzye2scg",
-    "categories": [
-      "scriptcat00006"
-    ],
-    "category_names": [
-      "Authentication & Security"
-    ],
-    "notes": [
-      "The default credentials are located in `/opt/tinyauth/credentials.txt`."
-    ],
-    "port": 3000,
-    "website": "https://tinyauth.app",
-    "documentation": "https://tinyauth.app",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/tinyauth.webp",
-    "updateable": true,
-    "privileged": false,
-    "has_arm": false,
-    "is_dev": false,
-    "execute_in": [
-      "pve"
-    ],
-    "config_path": "/opt/tinyauth/.env",
-    "os": "debian"
-  },
-  {
-    "name": "Alpine-Tinyauth",
-    "slug": "alpine-tinyauth",
-    "desc": "Tinyauth is a simple authentication middleware that adds simple username/password login or OAuth with Google, Github and any generic provider to all of your docker apps.",
-    "script": "ct/alpine-tinyauth.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/alpine-tinyauth.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/alpine-tinyauth.sh",
-    "type": "lxc",
-    "type_id": "nm9bra8mzye2scg",
-    "categories": [
-      "scriptcat00006"
-    ],
-    "category_names": [
-      "Authentication & Security"
-    ],
-    "notes": [
-      "The default credentials are located in `/opt/tinyauth/credentials.txt`."
-    ],
-    "port": 3000,
-    "website": "https://tinyauth.app",
-    "documentation": "https://tinyauth.app",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/tinyauth.webp",
-    "updateable": true,
-    "privileged": false,
-    "has_arm": false,
-    "is_dev": false,
-    "execute_in": [
-      "pve"
-    ],
-    "config_path": "/opt/tinyauth/.env",
-    "os": "alpine"
-  },
-  {
     "name": "Alpine-Wakapi",
     "slug": "alpine-wakapi",
     "desc": "Wakapi is an open-source tool that helps you keep track of the time you have spent coding on different projects in different programming languages and more. Ideal for statistics freaks and anyone else.",
@@ -4667,6 +4603,36 @@
     "os": "debian"
   },
   {
+    "name": "Foldergram",
+    "slug": "foldergram",
+    "desc": "Foldergram is a self-hosted web application that turns your local folders into a beautiful, instagram-style feed and profile. It turns your local folder to app folders (profiles), and serves a lightning-fast Progressive Web App (PWA).",
+    "script": "ct/foldergram.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/foldergram.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/foldergram.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00021"
+    ],
+    "category_names": [
+      "Webservers & Proxies"
+    ],
+    "notes": [],
+    "port": 4141,
+    "website": "https://foldergram.github.io/",
+    "documentation": "https://foldergram.github.io/quick-start",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/foldergram.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "/opt/foldergram/foldergram.env",
+    "os": "debian"
+  },
+  {
     "name": "Forgejo",
     "slug": "forgejo",
     "desc": "Forgejo is an open-source, self-hosted Git service that allows individuals and teams to manage their code repositories.",
@@ -5074,6 +5040,38 @@
     ],
     "config_path": "/opt/gatus/config/config.yaml",
     "os": "alpine"
+  },
+  {
+    "name": "GeoPulse",
+    "slug": "geopulse",
+    "desc": "Self-hosted location tracking and visualization platform with GPS history, trip detection, and AI-powered insights, backed by PostgreSQL with PostGIS.",
+    "script": "ct/geopulse.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/geopulse.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/geopulse.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00009"
+    ],
+    "category_names": [
+      "Monitoring & Analytics"
+    ],
+    "notes": [
+      "To create an admin account: `echo 'GEOPULSE_ADMIN_EMAIL=you@example.com' >> /etc/geopulse/geopulse.env && systemctl restart geopulse-backend` — then register with that email in the UI."
+    ],
+    "port": 80,
+    "website": "https://github.com/tess1o/geopulse",
+    "documentation": "https://tess1o.github.io/geopulse/docs/getting-started/introduction",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/geopulse.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "/etc/geopulse/geopulse.env",
+    "os": "debian"
   },
   {
     "name": "Ghost",
@@ -15909,6 +15907,70 @@
       "password": "admin"
     },
     "os": "debian"
+  },
+  {
+    "name": "Tinyauth",
+    "slug": "tinyauth",
+    "desc": "Tinyauth is a simple authentication middleware that adds simple username/password login or OAuth with Google, Github and any generic provider to all of your docker apps.",
+    "script": "ct/tinyauth.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/tinyauth.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/tinyauth.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00006"
+    ],
+    "category_names": [
+      "Authentication & Security"
+    ],
+    "notes": [
+      "The default credentials are located in `/opt/tinyauth/credentials.txt`."
+    ],
+    "port": 3000,
+    "website": "https://tinyauth.app",
+    "documentation": "https://tinyauth.app",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/tinyauth.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": false,
+    "execute_in": [
+      "pve"
+    ],
+    "config_path": "/opt/tinyauth/.env",
+    "os": "debian"
+  },
+  {
+    "name": "Tinyauth",
+    "slug": "tinyauth",
+    "desc": "Tinyauth is a simple authentication middleware that adds simple username/password login or OAuth with Google, Github and any generic provider to all of your docker apps.",
+    "script": "ct/tinyauth.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/tinyauth.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/tinyauth.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00006"
+    ],
+    "category_names": [
+      "Authentication & Security"
+    ],
+    "notes": [
+      "The default credentials are located in `/opt/tinyauth/credentials.txt`."
+    ],
+    "port": 3000,
+    "website": "https://tinyauth.app",
+    "documentation": "https://tinyauth.app",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/tinyauth.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": false,
+    "execute_in": [
+      "pve"
+    ],
+    "config_path": "/opt/tinyauth/.env",
+    "os": "alpine"
   },
   {
     "name": "Tor Snowflake",
