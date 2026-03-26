@@ -33,18 +33,16 @@ except ImportError:
 # ============================================================================
 DEBUG_PERF = False
 
-# Startup grace period: suppress transient issues during boot
-# This is set when the module loads (service start)
-_MODULE_START_TIME = time.time()
-_STARTUP_HEALTH_GRACE_SECONDS = 300  # 5 minutes
+# ─── Startup Grace Period ────────────────────────────────────────────────────
+# Import centralized startup grace management for consistent behavior
+import startup_grace
 
 def _is_startup_health_grace() -> bool:
     """Check if we're within the startup health grace period (5 min).
     
-    Used to downgrade transient errors (high latency, storage not ready)
-    to INFO level during system boot, preventing false CRITICAL alerts.
+    Uses centralized startup_grace module for consistency across all components.
     """
-    return (time.time() - _MODULE_START_TIME) < _STARTUP_HEALTH_GRACE_SECONDS
+    return startup_grace.is_startup_health_grace()
 
 def _perf_log(section: str, elapsed_ms: float):
     """Log performance timing for a section. Only logs if DEBUG_PERF is True."""

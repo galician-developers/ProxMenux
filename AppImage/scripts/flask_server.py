@@ -876,10 +876,8 @@ def _health_collector_loop():
         'updates': 'System Updates',
         'security': 'Security',
     }
-    # Categories to suppress during startup grace period (transient issues)
-    _STARTUP_GRACE_CATEGORIES = {'storage', 'vms', 'network', 'services'}
-    _STARTUP_GRACE_SECONDS = 300  # 5 minutes
-    _collector_start_time = time.time()
+    # Import centralized startup grace management
+    import startup_grace
     
     while True:
         try:
@@ -939,8 +937,7 @@ def _health_collector_loop():
                     
                     # Startup grace period: skip transient issues from categories
                     # that typically need time to stabilize after boot
-                    in_grace_period = (time.time() - _collector_start_time) < _STARTUP_GRACE_SECONDS
-                    if in_grace_period and cat_key in _STARTUP_GRACE_CATEGORIES:
+                    if startup_grace.should_suppress_category(cat_key):
                         skip_notification = True
                     
                     if not skip_notification:

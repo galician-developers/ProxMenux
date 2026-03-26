@@ -28,75 +28,51 @@ from pathlib import Path
 
 # ─── Shared State for Cross-Watcher Coordination ──────────────────
 
+# ─── Startup Grace Period ────────────────────────────────────────────────────
+# Import centralized startup grace management
+# This provides a single source of truth for all grace period logic
+import startup_grace
+
 class _SharedState:
-    """Module-level state shared between all watchers.
+    """Wrapper around centralized startup_grace module for backwards compatibility.
     
-    Used to coordinate behavior when host-level events affect VM/CT events:
-    - Suppress vm_stop/ct_stop during host shutdown (they're expected)
-    - Aggregate vm_start/ct_start during startup into single message
-    
-    Two separate grace periods:
-    - startup_vm_grace: Time to aggregate VM/CT starts (3 min)
-    - startup_health_grace: Time to suppress transient health errors (5 min)
+    All grace period logic is now in startup_grace.py for consistency across:
+    - notification_events.py (this file)
+    - health_monitor.py
+    - flask_server.py
     """
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._shutdown_time: float = 0  # timestamp when shutdown was detected
-        self._shutdown_grace = 120  # suppress VM/CT stops for 2 minutes after shutdown detected
-        self._startup_time: float = time.time()  # when module was loaded (service start)
-        self._startup_vm_grace = 180  # aggregate VM/CT starts for 3 minutes after startup
-        self._startup_health_grace = 300  # suppress health warnings for 5 minutes after startup
-        self._startup_vms: list = []  # [(vmid, vmname, 'vm'|'ct'), ...]
-        self._startup_aggregated = False  # have we already sent the aggregated message?
     
     def mark_shutdown(self):
         """Called when system_shutdown or system_reboot is detected."""
-        with self._lock:
-            self._shutdown_time = time.time()
+        startup_grace.mark_shutdown()
     
     def is_host_shutting_down(self) -> bool:
         """Check if we're within the shutdown grace period."""
-        with self._lock:
-            if self._shutdown_time == 0:
-                return False
-            return (time.time() - self._shutdown_time) < self._shutdown_grace
+        return startup_grace.is_host_shutting_down()
     
     def is_startup_period(self) -> bool:
         """Check if we're within the startup VM aggregation period (3 min)."""
-        with self._lock:
-            return (time.time() - self._startup_time) < self._startup_vm_grace
+        return startup_grace.is_startup_vm_period()
     
     def is_startup_health_grace(self) -> bool:
-        """Check if we're within the startup health grace period (5 min).
-        
-        Used by PollingCollector to suppress transient health warnings
-        (QMP timeout, storage not ready, high latency, etc.) during system boot.
-        """
-        with self._lock:
-            return (time.time() - self._startup_time) < self._startup_health_grace
+        """Check if we're within the startup health grace period (5 min)."""
+        return startup_grace.is_startup_health_grace()
     
     def add_startup_vm(self, vmid: str, vmname: str, vm_type: str):
         """Record a VM/CT start during startup period for later aggregation."""
-        with self._lock:
-            self._startup_vms.append((vmid, vmname, vm_type))
+        startup_grace.add_startup_vm(vmid, vmname, vm_type)
     
     def get_and_clear_startup_vms(self) -> list:
         """Get all recorded startup VMs and clear the list."""
-        with self._lock:
-            vms = self._startup_vms.copy()
-            self._startup_vms = []
-            self._startup_aggregated = True
-            return vms
+        return startup_grace.get_and_clear_startup_vms()
     
     def has_startup_vms(self) -> bool:
         """Check if there are any startup VMs recorded."""
-        with self._lock:
-            return len(self._startup_vms) > 0
+        return startup_grace.has_startup_vms()
     
     def was_startup_aggregated(self) -> bool:
         """Check if startup aggregation already happened."""
-        with self._lock:
-            return self._startup_aggregated
+        return startup_grace.was_startup_aggregated()
 
 
 # Global shared state instance
@@ -1806,8 +1782,7 @@ class PollingCollector:
     # ── Main loop ──────────────────────────────────────────────
     
     # Categories where transient errors are suppressed during startup grace period.
-    # PBS storage, NFS mounts, VMs with qemu-guest-agent need time after boot.
-    STARTUP_GRACE_CATEGORIES = {'storage', 'vms', 'network', 'pve_services'}
+    # Now using centralized startup_grace module for consistency.
     
     def _poll_loop(self):
         """Main polling loop."""
@@ -1918,11 +1893,9 @@ class PollingCollector:
             # Startup grace period: ignore transient errors from categories that
             # typically need time to stabilize after boot (storage, VMs, network).
             # PBS storage, NFS mounts, VMs with qemu-guest-agent need time to connect.
-            # Uses the shared state so grace period is consistent across all watchers.
-            if _shared_state.is_startup_health_grace():
-                if category in self.STARTUP_GRACE_CATEGORIES:
-                    # Still within grace period for this category - skip notification
-                    continue
+            # Uses centralized startup_grace module for consistency.
+            if startup_grace.should_suppress_category(category):
+                continue
             
             # On first poll, seed _last_notified for all existing errors so we
             # don't re-notify old persistent errors that were already sent before
