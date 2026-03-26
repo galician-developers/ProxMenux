@@ -22,7 +22,26 @@ log "=== Shutdown notification script started ==="
 is_system_shutdown=false
 is_reboot=false
 
-# Method 1: Check if shutdown/reboot targets are active or activating
+# Method 1: Check systemd system state (most reliable)
+# "stopping" means the system is shutting down
+system_state=$(systemctl is-system-running 2>/dev/null)
+if [ "$system_state" = "stopping" ]; then
+    is_system_shutdown=true
+    log "Detected: systemctl is-system-running = stopping"
+fi
+
+# Method 2: Check systemd jobs queue for shutdown/reboot jobs
+jobs_output=$(systemctl list-jobs 2>/dev/null)
+if echo "$jobs_output" | grep -qE "reboot\.target.*(start|waiting)"; then
+    is_system_shutdown=true
+    is_reboot=true
+    log "Detected: reboot.target job in queue"
+elif echo "$jobs_output" | grep -qE "(shutdown|poweroff|halt)\.target.*(start|waiting)"; then
+    is_system_shutdown=true
+    log "Detected: shutdown/poweroff/halt target job in queue"
+fi
+
+# Method 3: Check if shutdown/reboot targets are active or activating
 if systemctl is-active --quiet shutdown.target 2>/dev/null || \
    systemctl is-active --quiet poweroff.target 2>/dev/null || \
    systemctl is-active --quiet halt.target 2>/dev/null; then
@@ -36,7 +55,7 @@ if systemctl is-active --quiet reboot.target 2>/dev/null; then
     log "Detected: reboot.target is active"
 fi
 
-# Method 2: Check for scheduled shutdown file
+# Method 4: Check for scheduled shutdown file
 if [ -f /run/systemd/shutdown/scheduled ]; then
     is_system_shutdown=true
     if grep -q "reboot" /run/systemd/shutdown/scheduled 2>/dev/null; then
@@ -47,7 +66,7 @@ if [ -f /run/systemd/shutdown/scheduled ]; then
     fi
 fi
 
-# Method 3: Check runlevel (0=halt, 6=reboot)
+# Method 5: Check runlevel (0=halt, 6=reboot)
 runlevel_output=$(runlevel 2>/dev/null | awk '{print $2}')
 if [ "$runlevel_output" = "0" ]; then
     is_system_shutdown=true
@@ -56,6 +75,12 @@ elif [ "$runlevel_output" = "6" ]; then
     is_system_shutdown=true
     is_reboot=true
     log "Detected: runlevel 6 (reboot)"
+fi
+
+# Method 6: Check /run/nologin (created during shutdown)
+if [ -f /run/nologin ]; then
+    is_system_shutdown=true
+    log "Detected: /run/nologin exists (system shutting down)"
 fi
 
 # If not a system shutdown, exit without sending notification
