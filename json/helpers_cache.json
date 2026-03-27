@@ -907,6 +907,39 @@
     "os": "debian"
   },
   {
+    "name": "Apprise API",
+    "slug": "apprise-api",
+    "desc": "The Apprise API is a web-based gateway to the Apprise library.",
+    "script": "ct/apprise-api.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/apprise-api.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/apprise-api.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00019"
+    ],
+    "category_names": [
+      "Automation & Scheduling"
+    ],
+    "notes": [
+      "Persistent storage is used for config, attach, plugin and tmp. These are all at root level.",
+      "Logs would typically be output to stdout and stderr, these have been updated to output to /opt/apprise/logs for ease of access."
+    ],
+    "port": 8000,
+    "website": "https://appriseit.com/api/",
+    "documentation": "https://appriseit.com/api/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/apprise.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "/config",
+    "os": "debian"
+  },
+  {
     "name": "Apt-Cacher-NG",
     "slug": "apt-cacher-ng",
     "desc": "Apt-Cacher-NG is a caching proxy. Specialized for package files from Linux distributors, primarily for Debian (and Debian based) distributions.",
@@ -1397,6 +1430,36 @@
     "os": "debian"
   },
   {
+    "name": "Bambuddy",
+    "slug": "bambuddy",
+    "desc": "Bambuddy is a web-based print management tool for Bambu Lab 3D printers, providing monitoring, control, and management of your print jobs.",
+    "script": "ct/bambuddy.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/bambuddy.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/bambuddy.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00024"
+    ],
+    "category_names": [
+      "Gaming & Leisure"
+    ],
+    "notes": [],
+    "port": 8000,
+    "website": "https://github.com/maziggy/bambuddy",
+    "documentation": "https://github.com/maziggy/bambuddy",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/bambuddy.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "/opt/bambuddy/.env",
+    "os": "debian"
+  },
+  {
     "name": "Bar-Assistant",
     "slug": "bar-assistant",
     "desc": "Bar Assistant is all-in-one solution for managing your home bar. Compared to other recipe management software that usually tries to be more for general use, Bar Assistant is made specifically for managing cocktail recipes. This means that there are a lot of cocktail-oriented features, like ingredient substitutes, first-class ingredients, ABV calculations, unit switching and more..",
@@ -1619,6 +1682,39 @@
       "lxc"
     ],
     "config_path": "/opt/birdnet/data",
+    "os": "debian"
+  },
+  {
+    "name": "Bitfocus Companion",
+    "slug": "bitfocus-companion",
+    "desc": "Bitfocus Companion enables the Elgato Stream Deck and other controllers to trigger actions in broadcast software. Installs headless with systemd service, fetching the latest release via the Bitfocus API.",
+    "script": "ct/bitfocus-companion.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/bitfocus-companion.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/bitfocus-companion.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00019"
+    ],
+    "category_names": [
+      "Automation & Scheduling"
+    ],
+    "notes": [
+      "Companion v4.x downloads are served through the Bitfocus API, not GitHub Releases.",
+      "Requires libusb for USB device (Stream Deck) bindings."
+    ],
+    "port": 8000,
+    "website": "https://bitfocus.io/companion",
+    "documentation": "https://user.bitfocus.io/docs",
+    "logo": "https://raw.githubusercontent.com/bitfocus/companion/main/assets/icon.png",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
     "os": "debian"
   },
   {
@@ -2270,6 +2366,39 @@
     "os": "debian"
   },
   {
+    "name": "CLIProxyAPI",
+    "slug": "cliproxyapi",
+    "desc": "CLIProxyAPI is a proxy server that provides OpenAI-compatible API endpoints for multiple AI CLI tools including Claude Code, Gemini CLI, OpenAI Codex, and more. It enables leveraging free-tier AI subscriptions through a unified API with features like credential routing, quota management, and request retrying.",
+    "script": "ct/cliproxyapi.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/cliproxyapi.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/cliproxyapi.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00020"
+    ],
+    "category_names": [
+      "AI / Coding & Dev-Tools"
+    ],
+    "notes": [
+      "Generated credentials (API Key, Management Password) are stored in `/opt/cliproxyapi/config.yaml` inside the LXC.",
+      "After setup, authenticate your AI providers via the built-in management panel at port 8317."
+    ],
+    "port": 8317,
+    "website": "https://github.com/router-for-me/CLIProxyAPI",
+    "documentation": "https://help.router-for.me/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/openai.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "/opt/cliproxyapi/config.yaml",
+    "os": "debian"
+  },
+  {
     "name": "Cloudflare-DDNS",
     "slug": "cloudflare-ddns",
     "desc": "A feature-rich and robust Cloudflare DDNS updater with a small footprint. The program will detect your machine’s public IP addresses and update DNS records using the Cloudflare API",
@@ -2675,6 +2804,38 @@
     "os": "debian"
   },
   {
+    "name": "CoreDNS",
+    "slug": "coredns",
+    "desc": "CoreDNS is a modern, lightweight, and highly extensible DNS server with a plugin-driven architecture. It is the default DNS engine for Kubernetes and ideal as a local authoritative DNS server for homelabs.",
+    "script": "ct/coredns.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/coredns.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/coredns.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00005"
+    ],
+    "category_names": [
+      "Adblock & DNS"
+    ],
+    "notes": [
+      "Configuration file is located at /etc/coredns/Corefile"
+    ],
+    "port": 0,
+    "website": "https://coredns.io/",
+    "documentation": "https://coredns.io/manual/toc/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/coredns.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "/etc/coredns/Corefile",
+    "os": "alpine"
+  },
+  {
     "name": "Cosmos",
     "slug": "cosmos",
     "desc": "Cosmos Cloud is a self-hosting platform that automates maintenance and security. It offers an app marketplace, reverse proxy management, container control, VPN integration, real-time monitoring, and disk management. Security features include SSO, anti-DDoS, and encryption. It simplifies self-hosting for all users.",
@@ -2761,8 +2922,9 @@
       "Proxmox & Virtualization"
     ],
     "notes": [
-      "Execute within the Proxmox shell",
-      "To exclude LXCs from updating, edit the crontab using `crontab -e` and add CTID as shown in the example below:\n\n\n\n`0 0 * * 0 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/pve/update-lxcs-cron.sh)\" -s 103 111 >>/var/log/update-lxcs-cron.log 2>/dev/null`"
+      "Downloads and installs the update script locally to `/usr/local/bin/update-lxcs.sh`. Cron runs the local copy — no remote code execution at runtime.",
+      "To exclude containers from updating, edit `/etc/update-lxcs.conf` and add their CTIDs: `EXCLUDE=100,101,102`",
+      "Logs are written to `/var/log/update-lxcs-cron.log`."
     ],
     "port": 0,
     "website": "",
@@ -4021,9 +4183,9 @@
       "Files & Downloads"
     ],
     "notes": [
-      "Please use `journalctl -u ente-museum.service -n 10` to read logs for the signup verification code",
-      "If you want to use the Ente CLI to add/whitelist admins, please follow the instructions at https://ente.io/help/self-hosting/administration/cli",
-      "To see Museium config:  `cat /opt/ente/server/museum.yaml`"
+      "First-Start: Run `ente-setup` — it guides you through account creation, verification, and admin configuration",
+      "For CLI admin docs see https://ente.io/help/self-hosting/administration/cli",
+      "Museum config: `cat /opt/ente/server/museum.yaml`"
     ],
     "port": 3000,
     "website": "https://ente.io/",
@@ -4034,7 +4196,7 @@
     "has_arm": false,
     "is_dev": true,
     "execute_in": [
-      "pve"
+      "lxc"
     ],
     "config_path": "/opt",
     "os": "debian"
@@ -4749,7 +4911,7 @@
     "has_arm": false,
     "is_dev": true,
     "execute_in": [
-      "pve"
+      "lxc"
     ],
     "config_path": "/root/.runner",
     "os": "debian"
@@ -5098,7 +5260,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -11318,6 +11480,38 @@
     "os": "debian"
   },
   {
+    "name": "OxiCloud",
+    "slug": "oxicloud",
+    "desc": "Ultra-fast, secure & lightweight self-hosted cloud storage — your files, photos, calendars & contacts, all in one place. Built in Rust.",
+    "script": "ct/oxicloud.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/oxicloud.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/oxicloud.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00011",
+      "scriptcat00012"
+    ],
+    "category_names": [
+      "Files & Downloads",
+      "Documents & Notes"
+    ],
+    "notes": [],
+    "port": 8086,
+    "website": "https://github.com/DioCrafts/OxiCloud",
+    "documentation": "https://github.com/DioCrafts/OxiCloud/tree/main/doc",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/oxicloud.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "/etc/oxicloud/.env",
+    "os": "debian"
+  },
+  {
     "name": "PairDrop",
     "slug": "pairdrop",
     "desc": "PairDrop: Local file sharing in your browser.",
@@ -12083,7 +12277,7 @@
     ],
     "notes": [
       "Create admin account with: cd /opt/pixelfed && sudo -u pixelfed php artisan user:create",
-      "Credentials saved in /root/pixelfed.creds",
+      "Credentials are stored in /opt/pixelfed/.env",
       "ActivityPub federation is enabled by default",
       "Uses PostgreSQL, Redis (socket), and PHP-FPM"
     ],
@@ -12096,7 +12290,7 @@
     "has_arm": false,
     "is_dev": true,
     "execute_in": [
-      "pve"
+      "lxc"
     ],
     "config_path": "/opt/pixelfed/.env",
     "os": "debian"
@@ -15336,6 +15530,43 @@
       "pve"
     ],
     "config_path": "/etc/sure/.env",
+    "os": "debian"
+  },
+  {
+    "name": "SurrealDB",
+    "slug": "surrealdb",
+    "desc": "SurrealDB is a multi-model database that combines the power of document, graph, and relational databases into a single platform, offering real-time queries, built-in permissions, and a simplified backend stack.",
+    "script": "ct/surrealdb.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/surrealdb.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/surrealdb.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00008"
+    ],
+    "category_names": [
+      "Databases"
+    ],
+    "notes": [
+      "SurrealDB web interface is available on port 8000.",
+      "Default credentials are saved in ~/surrealdb.creds."
+    ],
+    "port": 8000,
+    "website": "https://surrealdb.com/",
+    "documentation": "https://surrealdb.com/docs",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/surrealdb.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "/opt/surrealdb/.env",
+    "default_credentials": {
+      "username": "root",
+      "password": ""
+    },
     "os": "debian"
   },
   {
