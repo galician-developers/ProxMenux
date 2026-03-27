@@ -9,7 +9,6 @@ import { Label } from "./ui/label"
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
-import { Switch } from "./ui/switch"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog"
 import { fetchApi } from "../lib/api-config"
 import {
@@ -324,10 +323,10 @@ export function NotificationSettings() {
             openai: "",
             openrouter: "",
           },
-                ai_prompt_mode: data.config.ai_prompt_mode || "default",
-                ai_custom_prompt: data.config.ai_custom_prompt || "",
-                ai_allow_suggestions: data.config.ai_allow_suggestions || "false",
-              }
+          ai_prompt_mode: data.config.ai_prompt_mode || "default",
+          ai_custom_prompt: data.config.ai_custom_prompt || "",
+          ai_allow_suggestions: data.config.ai_allow_suggestions || "false",
+        }
         // If ai_model exists but ai_models doesn't have it, save it
         if (configWithDefaults.ai_model && !configWithDefaults.ai_models[configWithDefaults.ai_provider]) {
           configWithDefaults.ai_models[configWithDefaults.ai_provider] = configWithDefaults.ai_model
@@ -1853,23 +1852,41 @@ export function NotificationSettings() {
                           </div>
                           
                           {/* Experimental: AI Suggestions toggle */}
-                          <div className="space-y-2 pt-3 border-t border-border/50">
+                          <div className="mt-3 p-4 rounded-lg bg-muted/30 border border-border/50">
                             <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <Lightbulb className="h-4 w-4 text-yellow-400" />
-                                <Label className="text-xs sm:text-sm text-foreground/80">AI Suggestions</Label>
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400 font-medium">BETA</span>
+                              <div className="flex items-start gap-3">
+                                <Lightbulb className="h-5 w-5 text-yellow-400 mt-0.5 shrink-0" />
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium">AI Suggestions</span>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400 font-medium">BETA</span>
+                                  </div>
+                                  <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                                    Allow AI to add brief troubleshooting tips based on log context
+                                  </p>
+                                </div>
                               </div>
-                              <Switch
-                                checked={config.ai_allow_suggestions === "true" || config.ai_allow_suggestions === true}
-                                onCheckedChange={v => updateConfig(p => ({ ...p, ai_allow_suggestions: v ? "true" : "false" }))}
+                              <button
+                                className={`relative w-9 h-[18px] rounded-full transition-colors ${
+                                  config.ai_allow_suggestions === "true" || config.ai_allow_suggestions === true
+                                    ? "bg-blue-500"
+                                    : "bg-muted-foreground/30"
+                                } ${!editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                                onClick={() => {
+                                  if (editMode) {
+                                    const newValue = config.ai_allow_suggestions === "true" || config.ai_allow_suggestions === true ? "false" : "true"
+                                    updateConfig(p => ({ ...p, ai_allow_suggestions: newValue }))
+                                  }
+                                }}
                                 disabled={!editMode}
-                              />
+                              >
+                                <span
+                                  className={`absolute top-0.5 left-0.5 h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                                    config.ai_allow_suggestions === "true" || config.ai_allow_suggestions === true ? "translate-x-[18px]" : ""
+                                  }`}
+                                />
+                              </button>
                             </div>
-                            <p className="text-xs text-muted-foreground leading-relaxed">
-                              When enabled, AI may add brief troubleshooting tips based on journal log context.
-                              Tips are factual and based only on what the logs show.
-                            </p>
                           </div>
                         </div>
                       )}
