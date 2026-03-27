@@ -2643,6 +2643,38 @@
     "os": "debian"
   },
   {
+    "name": "CoreDNS",
+    "slug": "coredns",
+    "desc": "CoreDNS is a modern, lightweight, and highly extensible DNS server with a plugin-driven architecture. It is the default DNS engine for Kubernetes and ideal as a local authoritative DNS server for homelabs.",
+    "script": "ct/coredns.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/coredns.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/coredns.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00005"
+    ],
+    "category_names": [
+      "Adblock & DNS"
+    ],
+    "notes": [
+      "Configuration file is located at /etc/coredns/Corefile"
+    ],
+    "port": 0,
+    "website": "https://coredns.io/",
+    "documentation": "https://coredns.io/manual/toc/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/coredns.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "/etc/coredns/Corefile",
+    "os": "debian"
+  },
+  {
     "name": "Cosmos",
     "slug": "cosmos",
     "desc": "Cosmos Cloud is a self-hosting platform that automates maintenance and security. It offers an app marketplace, reverse proxy management, container control, VPN integration, real-time monitoring, and disk management. Security features include SSO, anti-DDoS, and encryption. It simplifies self-hosting for all users.",
@@ -4806,7 +4838,7 @@
     "port": 5000,
     "website": "https://frigate.video/",
     "documentation": "https://docs.frigate.video/",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/frigate-light.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/frigate-dark.webp",
     "updateable": false,
     "privileged": false,
     "has_arm": false,
@@ -6727,6 +6759,72 @@
     "os": "debian"
   },
   {
+    "name": "IronClaw",
+    "slug": "ironclaw",
+    "desc": "IronClaw is a secure, self-hosted AI agent with a web browser interface, multi-LLM support, hybrid memory search, and WASM-sandboxed tool execution — all data stays on your server.",
+    "script": "ct/ironclaw.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/ironclaw.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/ironclaw.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00020"
+    ],
+    "category_names": [
+      "AI / Coding & Dev-Tools"
+    ],
+    "notes": [
+      "The gateway auth token is auto-generated and stored in /root/.ironclaw/.env.",
+      "Configure your LLM provider after installation by running: ironclaw onboard"
+    ],
+    "port": 3000,
+    "website": "https://github.com/nearai/ironclaw",
+    "documentation": "https://github.com/nearai/ironclaw/tree/staging/docs",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/ironclaw.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "/root/.ironclaw/.env",
+    "os": "debian"
+  },
+  {
+    "name": "IronClaw",
+    "slug": "ironclaw",
+    "desc": "IronClaw is a secure, self-hosted AI agent with a web browser interface, multi-LLM support, hybrid memory search, and WASM-sandboxed tool execution — all data stays on your server.",
+    "script": "ct/ironclaw.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/ironclaw.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/ironclaw.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00020"
+    ],
+    "category_names": [
+      "AI / Coding & Dev-Tools"
+    ],
+    "notes": [
+      "The gateway auth token is auto-generated and stored in /root/.ironclaw/.env.",
+      "Configure your LLM provider after installation by running: ironclaw onboard"
+    ],
+    "port": 3000,
+    "website": "https://github.com/nearai/ironclaw",
+    "documentation": "https://github.com/nearai/ironclaw/tree/staging/docs",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/ironclaw.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "/root/.ironclaw/.env",
+    "os": "alpine"
+  },
+  {
     "name": "iSponsorBlockTV",
     "slug": "isponsorblocktv",
     "desc": "iSponsorBlockTV connects to YouTube TV clients and automatically skips SponsorBlock segments, mutes ads, and presses the Skip Ad button when available.",
@@ -8221,7 +8319,7 @@
     "port": 3210,
     "website": "https://lobehub.com/",
     "documentation": "https://lobehub.com/docs",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/lobechat.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/lobehub.webp",
     "updateable": true,
     "privileged": false,
     "has_arm": false,
@@ -16264,10 +16362,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00021"
+      "scriptcat00024"
     ],
     "category_names": [
-      "Webservers & Proxies"
+      "Gaming & Leisure"
     ],
     "notes": [],
     "port": 8000,
