@@ -217,6 +217,11 @@ class _StartupGraceState:
         """Check if startup aggregation has already been processed."""
         with self._lock:
             return self._startup_aggregated
+    
+    def mark_startup_aggregated(self) -> None:
+        """Mark startup aggregation as completed without returning VMs."""
+        with self._lock:
+            self._startup_aggregated = True
 
 
 # ─── Module-level convenience functions ──────────────────────────────────────
@@ -263,6 +268,14 @@ def has_startup_vms() -> bool:
 def was_startup_aggregated() -> bool:
     """Check if startup aggregation has already been processed."""
     return _state.was_startup_aggregated()
+
+def mark_startup_aggregated() -> None:
+    """Mark startup aggregation as completed without processing VMs.
+    
+    Use this when skipping startup notification (e.g., service restart
+    instead of real system boot) to prevent future checks.
+    """
+    _state.mark_startup_aggregated()
 
 def is_real_system_boot() -> bool:
     """
