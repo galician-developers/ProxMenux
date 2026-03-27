@@ -28,6 +28,22 @@ STARTUP_VM_GRACE_SECONDS = 180      # 3 minutes for VM/CT start aggregation
 STARTUP_HEALTH_GRACE_SECONDS = 300  # 5 minutes for health warning suppression
 SHUTDOWN_GRACE_SECONDS = 120        # 2 minutes for VM/CT stop suppression
 
+# Maximum system uptime to consider this a real server boot (not just service restart)
+# If system uptime > this value when service starts, skip startup notification
+MAX_BOOT_UPTIME_SECONDS = 600       # 10 minutes - if system was up longer, it's a service restart
+
+
+def _get_system_uptime() -> float:
+    """
+    Get actual system uptime in seconds from /proc/uptime.
+    Returns 0 if unable to read (will default to treating as new boot).
+    """
+    try:
+        with open('/proc/uptime', 'r') as f:
+            return float(f.readline().split()[0])
+    except Exception:
+        return 0
+
 # Categories to suppress during startup grace period
 # These categories typically have transient issues during boot
 STARTUP_GRACE_CATEGORIES: Set[str] = {
@@ -67,6 +83,11 @@ class _StartupGraceState:
         
         # Startup time = when service started (module load time)
         self._startup_time: float = time.time()
+        
+        # Check if this is a REAL system boot or just a service restart
+        # by comparing system uptime to our threshold
+        system_uptime = _get_system_uptime()
+        self._is_real_boot: bool = system_uptime < MAX_BOOT_UPTIME_SECONDS
         
         # Shutdown tracking
         self._shutdown_time: float = 0
@@ -114,6 +135,19 @@ class _StartupGraceState:
         if category.lower() in STARTUP_GRACE_CATEGORIES:
             return self.is_startup_health_grace()
         return False
+    
+    def is_real_system_boot(self) -> bool:
+        """
+        Check if the service started during a real system boot.
+        
+        Returns False if the system was already running for more than 10 minutes
+        when the service started (indicates a service restart, not a system boot).
+        
+        This prevents sending "System startup completed" notifications when
+        just restarting the ProxMenux Monitor service.
+        """
+        with self._lock:
+            return self._is_real_boot
     
     def get_startup_elapsed(self) -> float:
         """Get seconds elapsed since service startup."""
@@ -229,6 +263,19 @@ def has_startup_vms() -> bool:
 def was_startup_aggregated() -> bool:
     """Check if startup aggregation has already been processed."""
     return _state.was_startup_aggregated()
+
+def is_real_system_boot() -> bool:
+    """
+    Check if this is a real system boot (not just a service restart).
+    
+    Returns True if the system uptime was less than 10 minutes when the
+    service started. Returns False if the system was already running
+    longer (indicates the service was restarted, not the whole system).
+    
+    Use this to prevent sending "System startup completed" notifications
+    when just restarting the ProxMenux Monitor service.
+    """
+    return _state.is_real_system_boot()
 
 
 # ─── Startup Report Collection ───────────────────────────────────────────────

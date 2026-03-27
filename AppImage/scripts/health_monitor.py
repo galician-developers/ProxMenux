@@ -175,7 +175,7 @@ class HealthMonitor:
         r'proxmenux-monitor.*failed at step exec',
         r'proxmenux-monitor\.appimage',
         
-        # ─��� PVE scheduler operational noise ──
+        # ── PVE scheduler operational noise ──
         # pvescheduler emits "could not update job state" every minute
         # when a scheduled job reference is stale.  This is cosmetic,
         # not a system problem.
@@ -2118,7 +2118,7 @@ class HealthMonitor:
                             except Exception:
                                 pass
                         
-                        # ── Record disk observation (always, even if transient) ���─
+                        # ── Record disk observation (always, even if transient) ──
                         # Signature must be stable across cycles: strip volatile
                         # data (hex values, counts, timestamps) to dedup properly.
                         # e.g. "ata8.00: exception Emask 0x1 SAct 0xc1000000"

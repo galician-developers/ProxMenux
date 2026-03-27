@@ -79,7 +79,7 @@ class _SharedState:
 _shared_state = _SharedState()
 
 
-# ─── Event Object ──────────────��──────────────────────────────────
+# ─── Event Object ─────────────────────────────────────────────────
 
 class NotificationEvent:
     """Represents a detected event ready for notification dispatch.
@@ -2154,6 +2154,9 @@ class PollingCollector:
         - Journal errors (for AI enrichment)
         
         Emits a single "system_startup" notification with full report data.
+        
+        IMPORTANT: Only emits if this is a REAL system boot, not a service restart.
+        Checks system uptime to distinguish between the two cases.
         """
         # Wait until health grace period is over (5 min) for complete picture
         if startup_grace.is_startup_health_grace():
@@ -2161,6 +2164,14 @@ class PollingCollector:
         
         # Only emit once
         if startup_grace.was_startup_aggregated():
+            return
+        
+        # CRITICAL: Check if this is a real system boot
+        # If the system was already running for > 10 min when service started,
+        # this is just a service restart, not a system boot - skip notification
+        if not startup_grace.is_real_system_boot():
+            # Mark as aggregated to prevent future checks, but don't send notification
+            startup_grace.mark_startup_aggregated()
             return
         
         # Collect comprehensive startup report
@@ -2332,7 +2343,7 @@ class PollingCollector:
             for pkg in all_pkgs:
                 if pkg['name'] in self._IMPORTANT_PKGS and pkg['cur']:
                     important_lines.append(
-                        f"{pkg['name']} ({pkg['cur']} -> {pkg['new']})"
+                        f"{pkg['name']} ({pkg['cur']} → {pkg['new']})"
                     )
             
             # ── Emit structured update_summary ─────────────────────
@@ -2358,7 +2369,7 @@ class PollingCollector:
                     'current_version': pve_manager_info['cur'],
                     'new_version': pve_manager_info['new'],
                     'version': pve_manager_info['new'],
-                    'details': f"pve-manager {pve_manager_info['cur']} -> {pve_manager_info['new']}",
+                    'details': f"pve-manager {pve_manager_info['cur']} → {pve_manager_info['new']}",
                 }
                 self._queue.put(NotificationEvent(
                     'pve_update', 'INFO', pve_data,

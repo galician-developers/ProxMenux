@@ -9,6 +9,7 @@ import { Label } from "./ui/label"
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
+import { Switch } from "./ui/switch"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog"
 import { fetchApi } from "../lib/api-config"
 import {
