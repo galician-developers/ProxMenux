@@ -848,6 +848,91 @@ def get_current_latency(target='gateway'):
         return {'target': target, 'latency_avg': None, 'status': 'error'}
 
 
+def _capture_health_journal_context(categories: list, reason: str = '') -> str:
+    """Capture journal context relevant to health issues.
+    
+    Maps health categories to specific journal keywords so the AI
+    receives relevant system logs for diagnosis.
+    
+    Args:
+        categories: List of health category keys (e.g., ['storage', 'network'])
+        reason: The reason string from health check (used to extract more keywords)
+    
+    Returns:
+        Filtered journal output as string
+    """
+    import subprocess
+    import re
+    
+    # Map health categories to relevant journal keywords
+    CATEGORY_KEYWORDS = {
+        'storage': ['mount', 'nfs', 'cifs', 'smb', 'zfs', 'lvm', 'disk', 'nvme', 
+                    'sata', 'ata', 'I/O error', 'read error', 'write error',
+                    'filesystem', 'ext4', 'xfs', 'btrfs', 'pbs', 'datastore'],
+        'disks': ['smartd', 'smart', 'ata', 'sata', 'nvme', 'disk', 'I/O error',
+                  'bad sector', 'reallocated', 'pending sector', 'uncorrectable'],
+        'network': ['bond', 'bridge', 'vmbr', 'eth', 'network', 'link down',
+                    'carrier', 'no route', 'unreachable', 'timeout', 'connection'],
+        'services': ['pveproxy', 'pvedaemon', 'pvestatd', 'corosync', 'ceph',
+                     'systemd', 'failed', 'service', 'unit', 'start', 'stop'],
+        'vms': ['qemu', 'kvm', 'lxc', 'vzdump', 'qm', 'pct', 'guest agent',
+                'qemu-ga', 'migration', 'snapshot'],
+        'memory': ['oom', 'out of memory', 'killed process', 'swap', 'memory'],
+        'cpu': ['thermal', 'temperature', 'throttl', 'mce', 'machine check'],
+        'updates': ['apt', 'dpkg', 'upgrade', 'update', 'package'],
+        'certificates': ['ssl', 'certificate', 'cert', 'expired', 'pve-ssl'],
+        'logs': ['rsyslog', 'journal', 'log rotation'],
+        'latency': ['ping', 'latency', 'timeout', 'unreachable', 'network'],
+    }
+    
+    # Collect keywords for all degraded categories
+    keywords = set()
+    for cat in categories:
+        cat_lower = cat.lower()
+        if cat_lower in CATEGORY_KEYWORDS:
+            keywords.update(CATEGORY_KEYWORDS[cat_lower])
+    
+    # Extract additional keywords from reason (IPs, hostnames, storage names)
+    if reason:
+        # Find IP addresses
+        ips = re.findall(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b', reason)
+        keywords.update(ips)
+        
+        # Find storage/service names (words in quotes or after colon)
+        quoted = re.findall(r"'([^']+)'|\"([^\"]+)\"", reason)
+        for match in quoted:
+            keywords.update(w for w in match if w)
+    
+    if not keywords:
+        return ""
+    
+    try:
+        # Build grep pattern
+        pattern = "|".join(re.escape(k) for k in keywords if k)
+        if not pattern:
+            return ""
+        
+        # Capture recent journal entries matching keywords
+        cmd = (
+            f"journalctl --since='10 minutes ago' --no-pager -n 500 2>/dev/null | "
+            f"grep -iE '{pattern}' | tail -n 30"
+        )
+        
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+        return ""
+    except Exception:
+        return ""
+
+
 def _health_collector_loop():
     """Background thread: run full health checks every 5 minutes.
     Keeps the health cache always fresh and records events/errors in the DB.
@@ -942,6 +1027,7 @@ def _health_collector_loop():
                     
                     if not skip_notification:
                         degraded.append({
+                            'cat_key': cat_key,  # Original key for journal capture
                             'category': cat_name,
                             'status': cur_status,
                             'reason': reason,
@@ -955,6 +1041,12 @@ def _health_collector_loop():
                 if not hostname:
                     import socket as _sock
                     hostname = _sock.gethostname()
+                
+                # Capture journal context for AI enrichment
+                # Extract category keys and reasons for keyword matching
+                cat_keys = [d.get('cat_key', d.get('category', '').lower()) for d in degraded]
+                all_reasons = ' '.join(d.get('reason', '') for d in degraded)
+                journal_context = _capture_health_journal_context(cat_keys, all_reasons)
                 
                 if len(degraded) == 1:
                     d = degraded[0]
@@ -977,7 +1069,11 @@ def _health_collector_loop():
                         severity=severity,
                         title=title,
                         message=body,
-                        data={'hostname': hostname, 'count': str(len(degraded))},
+                        data={
+                            'hostname': hostname,
+                            'count': str(len(degraded)),
+                            '_journal_context': journal_context,  # For AI enrichment
+                        },
                         source='health_monitor',
                     )
                 except Exception as e:

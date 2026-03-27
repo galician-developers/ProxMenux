@@ -763,8 +763,10 @@ class NotificationManager:
                 ch_title, ch_body = title, body
                 
                 # ── Per-channel settings ──
+                # Email defaults to 'detailed' (technical report), others to 'standard'
                 detail_level_key = f'{ch_name}.ai_detail_level'
-                detail_level = self._config.get(detail_level_key, 'standard')
+                default_detail = 'detailed' if ch_name == 'email' else 'standard'
+                detail_level = self._config.get(detail_level_key, default_detail)
                 
                 rich_key = f'{ch_name}.rich_format'
                 use_rich_format = self._config.get(rich_key, 'false') == 'true'

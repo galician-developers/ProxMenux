@@ -79,7 +79,7 @@ class _SharedState:
 _shared_state = _SharedState()
 
 
-# ─── Event Object ─────────────────────────────────────────────────
+# ─── Event Object ──────────────��──────────────────────────────────
 
 class NotificationEvent:
     """Represents a detected event ready for notification dispatch.
@@ -2538,7 +2538,7 @@ class PollingCollector:
         except Exception as e:
             print(f"[PollingCollector] AI model check failed: {e}")
     
-    # ── Persistence helpers ──────────────────────────────��─────
+    # ── Persistence helpers ────────────────────────────────────
     
     def _load_last_notified(self):
         """Load per-error notification timestamps from DB on startup."""

@@ -175,7 +175,7 @@ class HealthMonitor:
         r'proxmenux-monitor.*failed at step exec',
         r'proxmenux-monitor\.appimage',
         
-        # ── PVE scheduler operational noise ──
+        # ─��� PVE scheduler operational noise ──
         # pvescheduler emits "could not update job state" every minute
         # when a scheduled job reference is stale.  This is cosmetic,
         # not a system problem.
@@ -2118,7 +2118,7 @@ class HealthMonitor:
                             except Exception:
                                 pass
                         
-                        # ── Record disk observation (always, even if transient) ──
+                        # ── Record disk observation (always, even if transient) ���─
                         # Signature must be stable across cycles: strip volatile
                         # data (hex values, counts, timestamps) to dedup properly.
                         # e.g. "ata8.00: exception Emask 0x1 SAct 0xc1000000"
@@ -4580,9 +4580,17 @@ class HealthMonitor:
         Returns None if the module is not available.
         
         Respects storage exclusions: excluded storages are reported as INFO, not CRITICAL.
+        
+        During startup grace period (first 5 minutes after boot):
+        - Storage errors are reported as INFO instead of CRITICAL
+        - No persistent errors are recorded
+        This prevents false positives when NFS/PBS/remote storage is still mounting.
         """
         if not PROXMOX_STORAGE_AVAILABLE:
             return None
+        
+        # Check if we're in startup grace period
+        in_grace_period = _is_startup_health_grace()
         
         try:
             # Reload configuration to ensure we have the latest storage definitions
@@ -4649,19 +4657,21 @@ class HealthMonitor:
                 else:
                     reason = f"Storage '{storage_name}' has status: {status_detail}."
                 
-                # Record a persistent CRITICAL error for each unavailable storage
-                health_persistence.record_error(
-                    error_key=error_key,
-                    category='storage',
-                    severity='CRITICAL',
-                    reason=reason,
-                    details={
-                        'storage_name': storage_name,
-                        'storage_type': storage.get('type', 'unknown'),
-                        'status_detail': status_detail,
-                        'dismissable': False
-                    }
-                )
+                # During grace period, don't record persistent errors (storage may still be mounting)
+                # After grace period, record as CRITICAL
+                if not in_grace_period:
+                    health_persistence.record_error(
+                        error_key=error_key,
+                        category='storage',
+                        severity='CRITICAL',
+                        reason=reason,
+                        details={
+                            'storage_name': storage_name,
+                            'storage_type': storage.get('type', 'unknown'),
+                            'status_detail': status_detail,
+                            'dismissable': False
+                        }
+                    )
                 
                 # Add to details dict with dismissable false for frontend
                 storage_details[storage_name] = {
@@ -4672,13 +4682,22 @@ class HealthMonitor:
                 }
             
             # Build checks from storage_details
+            # During grace period, report as INFO instead of CRITICAL
             checks = {}
             for st_name, st_info in storage_details.items():
-                checks[st_name] = {
-                    'status': 'CRITICAL',
-                    'detail': st_info.get('reason', 'Unavailable'),
-                    'dismissable': False
-                }
+                if in_grace_period:
+                    checks[st_name] = {
+                        'status': 'INFO',
+                        'detail': f"[Startup] {st_info.get('reason', 'Unavailable')} (checking...)",
+                        'dismissable': False,
+                        'grace_period': True
+                    }
+                else:
+                    checks[st_name] = {
+                        'status': 'CRITICAL',
+                        'detail': st_info.get('reason', 'Unavailable'),
+                        'dismissable': False
+                    }
             
             # Add excluded unavailable storages as INFO (not as errors)
             for st in excluded_unavailable:
@@ -4702,12 +4721,22 @@ class HealthMonitor:
             
             # Determine overall status based on non-excluded issues only
             if real_unavailable:
-                return {
-                    'status': 'CRITICAL',
-                    'reason': f'{len(real_unavailable)} Proxmox storage(s) unavailable',
-                    'details': storage_details,
-                    'checks': checks
-                }
+                # During grace period, return INFO instead of CRITICAL
+                if in_grace_period:
+                    return {
+                        'status': 'INFO',
+                        'reason': f'{len(real_unavailable)} storage(s) not yet available (startup)',
+                        'details': storage_details,
+                        'checks': checks,
+                        'grace_period': True
+                    }
+                else:
+                    return {
+                        'status': 'CRITICAL',
+                        'reason': f'{len(real_unavailable)} Proxmox storage(s) unavailable',
+                        'details': storage_details,
+                        'checks': checks
+                    }
             else:
                 # Only excluded storages are unavailable - this is OK
                 return {

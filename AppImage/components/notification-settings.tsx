@@ -16,7 +16,7 @@ import {
   AlertTriangle, Info, Settings2, Zap, Eye, EyeOff,
   Trash2, ChevronDown, ChevronUp, ChevronRight, TestTube2, Mail, Webhook,
   Copy, Server, Shield, ExternalLink, RefreshCw, Download, Upload,
-  Cloud, Brain, Globe, MessageSquareText, Sparkles, Pencil, Save, RotateCcw
+  Cloud, Brain, Globe, MessageSquareText, Sparkles, Pencil, Save, RotateCcw, Lightbulb
 } from "lucide-react"
 
 interface ChannelConfig {
@@ -67,6 +67,7 @@ interface NotificationConfig {
   ai_openai_base_url: string
   ai_prompt_mode: string  // 'default' or 'custom'
   ai_custom_prompt: string  // User's custom prompt
+  ai_allow_suggestions: string | boolean  // Enable AI suggestions (experimental)
   channel_ai_detail: Record<string, string>
   hostname: string
   webhook_secret: string
@@ -252,6 +253,7 @@ const DEFAULT_CONFIG: NotificationConfig = {
   ai_openai_base_url: "",
   ai_prompt_mode: "default",
   ai_custom_prompt: "",
+  ai_allow_suggestions: "false",
   channel_ai_detail: {
     telegram: "brief",
     gotify: "brief",
@@ -321,9 +323,10 @@ export function NotificationSettings() {
             openai: "",
             openrouter: "",
           },
-          ai_prompt_mode: data.config.ai_prompt_mode || "default",
-          ai_custom_prompt: data.config.ai_custom_prompt || "",
-        }
+                ai_prompt_mode: data.config.ai_prompt_mode || "default",
+                ai_custom_prompt: data.config.ai_custom_prompt || "",
+                ai_allow_suggestions: data.config.ai_allow_suggestions || "false",
+              }
         // If ai_model exists but ai_models doesn't have it, save it
         if (configWithDefaults.ai_model && !configWithDefaults.ai_models[configWithDefaults.ai_provider]) {
           configWithDefaults.ai_models[configWithDefaults.ai_provider] = configWithDefaults.ai_model
@@ -545,8 +548,9 @@ export function NotificationSettings() {
     ai_language: cfg.ai_language,
     ai_ollama_url: cfg.ai_ollama_url,
     ai_openai_base_url: cfg.ai_openai_base_url,
-    ai_prompt_mode: cfg.ai_prompt_mode || "default",
-    ai_custom_prompt: cfg.ai_custom_prompt || "",
+      ai_prompt_mode: cfg.ai_prompt_mode || "default",
+      ai_custom_prompt: cfg.ai_custom_prompt || "",
+      ai_allow_suggestions: cfg.ai_allow_suggestions || "false",
     hostname: cfg.hostname,
     webhook_secret: cfg.webhook_secret,
     webhook_allowed_ips: cfg.webhook_allowed_ips,
@@ -1845,6 +1849,26 @@ export function NotificationSettings() {
                                 AI translates and formats notifications to your selected language. Each channel can have different detail levels.
                               </p>
                             </div>
+                          </div>
+                          
+                          {/* Experimental: AI Suggestions toggle */}
+                          <div className="space-y-2 pt-3 border-t border-border/50">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Lightbulb className="h-4 w-4 text-yellow-400" />
+                                <Label className="text-xs sm:text-sm text-foreground/80">AI Suggestions</Label>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400 font-medium">BETA</span>
+                              </div>
+                              <Switch
+                                checked={config.ai_allow_suggestions === "true" || config.ai_allow_suggestions === true}
+                                onCheckedChange={v => updateConfig(p => ({ ...p, ai_allow_suggestions: v ? "true" : "false" }))}
+                                disabled={!editMode}
+                              />
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed">
+                              When enabled, AI may add brief troubleshooting tips based on journal log context.
+                              Tips are factual and based only on what the logs show.
+                            </p>
                           </div>
                         </div>
                       )}

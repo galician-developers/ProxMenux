@@ -120,7 +120,7 @@ class _StartupGraceState:
         with self._lock:
             return time.time() - self._startup_time
     
-    # ─── Shutdown Tracking ────────────────────────────────────────��──────────
+    # ─── Shutdown Tracking ───────────────────────────────────────────────────
     
     def mark_shutdown(self):
         """

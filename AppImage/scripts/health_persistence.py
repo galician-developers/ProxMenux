@@ -1093,7 +1093,7 @@ class HealthPersistence:
         conn.commit()
         conn.close()
     
-    # ─── System Capabilities Cache ────────────────────��──────────
+    # ─── System Capabilities Cache ───────────────────────────────
     
     def get_capability(self, cap_key: str) -> Optional[str]:
         """
