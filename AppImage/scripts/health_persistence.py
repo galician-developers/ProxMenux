@@ -1325,9 +1325,9 @@ class HealthPersistence:
             print(f"[HealthPersistence] Error recording UNKNOWN persistent: {e}")
 
 
-    # ──────��─────────────────────────────────────────────────────────
-    #  Disk Observations API
     # ────────────────────────────────────────────────────────────────
+    #  Disk Observations API
+    # ──────────────────────���─────────────────────────────────────────
 
     def register_disk(self, device_name: str, serial: Optional[str] = None,
                       model: Optional[str] = None, size_bytes: Optional[int] = None):

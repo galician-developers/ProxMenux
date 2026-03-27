@@ -548,9 +548,9 @@ export function NotificationSettings() {
     ai_language: cfg.ai_language,
     ai_ollama_url: cfg.ai_ollama_url,
     ai_openai_base_url: cfg.ai_openai_base_url,
-      ai_prompt_mode: cfg.ai_prompt_mode || "default",
-      ai_custom_prompt: cfg.ai_custom_prompt || "",
-      ai_allow_suggestions: cfg.ai_allow_suggestions || "false",
+  ai_prompt_mode: cfg.ai_prompt_mode || "default",
+  ai_custom_prompt: cfg.ai_custom_prompt || "",
+  ai_allow_suggestions: String(cfg.ai_allow_suggestions === "true" || cfg.ai_allow_suggestions === true),
     hostname: cfg.hostname,
     webhook_secret: cfg.webhook_secret,
     webhook_allowed_ips: cfg.webhook_allowed_ips,
@@ -1852,41 +1852,39 @@ export function NotificationSettings() {
                           </div>
                           
                           {/* Experimental: AI Suggestions toggle */}
-                          <div className="mt-3 p-4 rounded-lg bg-muted/30 border border-border/50">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-start gap-3">
-                                <Lightbulb className="h-5 w-5 text-yellow-400 mt-0.5 shrink-0" />
-                                <div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-sm font-medium">AI Suggestions</span>
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400 font-medium">BETA</span>
-                                  </div>
-                                  <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                                    Allow AI to add brief troubleshooting tips based on log context
-                                  </p>
+                          <div className="flex items-center justify-between pt-3 border-t border-border/50">
+                            <div className="flex items-start gap-3">
+                              <Lightbulb className="h-5 w-5 text-purple-400 mt-0.5 shrink-0" />
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium">AI Suggestions</span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 font-medium">BETA</span>
                                 </div>
+                                <p className="text-xs sm:text-sm text-muted-foreground">
+                                  Allow AI to add brief troubleshooting tips based on log context
+                                </p>
                               </div>
-                              <button
-                                className={`relative w-9 h-[18px] rounded-full transition-colors ${
-                                  config.ai_allow_suggestions === "true" || config.ai_allow_suggestions === true
-                                    ? "bg-blue-500"
-                                    : "bg-muted-foreground/30"
-                                } ${!editMode ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                                onClick={() => {
-                                  if (editMode) {
-                                    const newValue = config.ai_allow_suggestions === "true" || config.ai_allow_suggestions === true ? "false" : "true"
-                                    updateConfig(p => ({ ...p, ai_allow_suggestions: newValue }))
-                                  }
-                                }}
-                                disabled={!editMode}
-                              >
-                                <span
-                                  className={`absolute top-0.5 left-0.5 h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                                    config.ai_allow_suggestions === "true" || config.ai_allow_suggestions === true ? "translate-x-[18px]" : ""
-                                  }`}
-                                />
-                              </button>
                             </div>
+                            <button
+                              className={`relative w-9 h-[18px] rounded-full transition-colors ${
+                                config.ai_allow_suggestions === "true" || config.ai_allow_suggestions === true
+                                  ? "bg-purple-600"
+                                  : "bg-muted-foreground/20 border border-muted-foreground/40"
+                              } ${!editMode ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+                              onClick={() => {
+                                if (editMode) {
+                                  const newValue = config.ai_allow_suggestions === "true" || config.ai_allow_suggestions === true ? "false" : "true"
+                                  updateConfig(p => ({ ...p, ai_allow_suggestions: newValue }))
+                                }
+                              }}
+                              disabled={!editMode}
+                              role="switch"
+                              aria-checked={config.ai_allow_suggestions === "true" || config.ai_allow_suggestions === true}
+                            >
+                              <span className={`absolute top-[1px] left-[1px] h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                                config.ai_allow_suggestions === "true" || config.ai_allow_suggestions === true ? "translate-x-[18px]" : "translate-x-0"
+                              }`} />
+                            </button>
                           </div>
                         </div>
                       )}
