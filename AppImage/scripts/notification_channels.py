@@ -251,7 +251,7 @@ class TelegramChannel(NotificationChannel):
                 .replace('>', '&gt;'))
 
 
-# ─── Gotify ──────────────────────────────────────────────────────
+# ─── Gotify ───────────────────────────────────��──────────────────
 
 class GotifyChannel(NotificationChannel):
     """Gotify push notification channel with priority mapping."""

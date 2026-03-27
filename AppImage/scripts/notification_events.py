@@ -197,7 +197,7 @@ def capture_journal_context(keywords: list, lines: int = 30,
         return ""
 
 
-# ─── Journal Watcher (Real-time) ─────────────────────────────────
+# ─── Journal Watcher (Real-time) ───────────────��─────────────────
 
 class JournalWatcher:
     """Watches journald in real-time for critical system events.

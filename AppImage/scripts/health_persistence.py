@@ -55,9 +55,9 @@ class HealthPersistence:
     
     def _get_conn(self) -> sqlite3.Connection:
         """Get a SQLite connection with timeout and WAL mode for safe concurrency."""
-        conn = sqlite3.connect(str(self.db_path), timeout=10)
+        conn = sqlite3.connect(str(self.db_path), timeout=30)
         conn.execute('PRAGMA journal_mode=WAL')
-        conn.execute('PRAGMA busy_timeout=5000')
+        conn.execute('PRAGMA busy_timeout=10000')
         return conn
     
     @contextmanager
@@ -1327,7 +1327,7 @@ class HealthPersistence:
 
     # ────────────────────────────────────────────────────────────────
     #  Disk Observations API
-    # ──────────────────────���─────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
 
     def register_disk(self, device_name: str, serial: Optional[str] = None,
                       model: Optional[str] = None, size_bytes: Optional[int] = None):
@@ -1340,56 +1340,57 @@ class HealthPersistence:
         under 'ata8' and we now know the real block device is 'sdh' with
         serial 'WX72...', update the old entry so observations are linked.
         """
-        now = datetime.now().isoformat()
-        try:
-            conn = self._get_conn()
-            cursor = conn.cursor()
-            
-            # Consolidate: if serial is known and an old entry exists with
-            # a different device_name (e.g. 'ata8' instead of 'sdh'),
-            # update that entry's device_name so observations carry over.
-            if serial:
+        with self._db_lock:
+            now = datetime.now().isoformat()
+            try:
+                conn = self._get_conn()
+                cursor = conn.cursor()
+                
+                # Consolidate: if serial is known and an old entry exists with
+                # a different device_name (e.g. 'ata8' instead of 'sdh'),
+                # update that entry's device_name so observations carry over.
+                if serial:
+                    cursor.execute('''
+                        SELECT id, device_name FROM disk_registry
+                        WHERE serial = ? AND serial != '' AND device_name != ?
+                    ''', (serial, device_name))
+                    old_rows = cursor.fetchall()
+                    for old_id, old_dev in old_rows:
+                        # Only consolidate ATA names -> block device names
+                        if old_dev.startswith('ata') and not device_name.startswith('ata'):
+                            # Check if target (device_name, serial) already exists
+                            cursor.execute(
+                                'SELECT id FROM disk_registry WHERE device_name = ? AND serial = ?',
+                                (device_name, serial))
+                            existing = cursor.fetchone()
+                            if existing:
+                                # Merge: move observations from old -> existing, then delete old
+                                cursor.execute(
+                                    'UPDATE disk_observations SET disk_registry_id = ? WHERE disk_registry_id = ?',
+                                    (existing[0], old_id))
+                                cursor.execute('DELETE FROM disk_registry WHERE id = ?', (old_id,))
+                            else:
+                                # Rename the old entry to the real block device name
+                                cursor.execute(
+                                    'UPDATE disk_registry SET device_name = ?, model = COALESCE(?, model), '
+                                    'size_bytes = COALESCE(?, size_bytes), last_seen = ?, removed = 0 '
+                                    'WHERE id = ?',
+                                    (device_name, model, size_bytes, now, old_id))
+                
                 cursor.execute('''
-                    SELECT id, device_name FROM disk_registry
-                    WHERE serial = ? AND serial != '' AND device_name != ?
-                ''', (serial, device_name))
-                old_rows = cursor.fetchall()
-                for old_id, old_dev in old_rows:
-                    # Only consolidate ATA names -> block device names
-                    if old_dev.startswith('ata') and not device_name.startswith('ata'):
-                        # Check if target (device_name, serial) already exists
-                        cursor.execute(
-                            'SELECT id FROM disk_registry WHERE device_name = ? AND serial = ?',
-                            (device_name, serial))
-                        existing = cursor.fetchone()
-                        if existing:
-                            # Merge: move observations from old -> existing, then delete old
-                            cursor.execute(
-                                'UPDATE disk_observations SET disk_registry_id = ? WHERE disk_registry_id = ?',
-                                (existing[0], old_id))
-                            cursor.execute('DELETE FROM disk_registry WHERE id = ?', (old_id,))
-                        else:
-                            # Rename the old entry to the real block device name
-                            cursor.execute(
-                                'UPDATE disk_registry SET device_name = ?, model = COALESCE(?, model), '
-                                'size_bytes = COALESCE(?, size_bytes), last_seen = ?, removed = 0 '
-                                'WHERE id = ?',
-                                (device_name, model, size_bytes, now, old_id))
-            
-            cursor.execute('''
-                INSERT INTO disk_registry (device_name, serial, model, size_bytes, first_seen, last_seen, removed)
-                VALUES (?, ?, ?, ?, ?, ?, 0)
-                ON CONFLICT(device_name, serial) DO UPDATE SET
-                    model = COALESCE(excluded.model, model),
-                    size_bytes = COALESCE(excluded.size_bytes, size_bytes),
-                    last_seen = excluded.last_seen,
-                    removed = 0
-            ''', (device_name, serial or '', model, size_bytes, now, now))
-            
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            print(f"[HealthPersistence] Error registering disk {device_name}: {e}")
+                    INSERT INTO disk_registry (device_name, serial, model, size_bytes, first_seen, last_seen, removed)
+                    VALUES (?, ?, ?, ?, ?, ?, 0)
+                    ON CONFLICT(device_name, serial) DO UPDATE SET
+                        model = COALESCE(excluded.model, model),
+                        size_bytes = COALESCE(excluded.size_bytes, size_bytes),
+                        last_seen = excluded.last_seen,
+                        removed = 0
+                ''', (device_name, serial or '', model, size_bytes, now, now))
+                
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                print(f"[HealthPersistence] Error registering disk {device_name}: {e}")
 
     def _get_disk_registry_id(self, cursor, device_name: str,
                                serial: Optional[str] = None,

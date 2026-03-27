@@ -1615,6 +1615,7 @@ class NotificationManager:
             'ai_openai_base_url': self._config.get('ai_openai_base_url', ''),
             'ai_prompt_mode': self._config.get('ai_prompt_mode', 'default'),
             'ai_custom_prompt': self._config.get('ai_custom_prompt', ''),
+            'ai_allow_suggestions': self._config.get('ai_allow_suggestions', 'false') == 'true',
             'ai_detail_levels': ai_detail_levels,
             'hostname': self._config.get('hostname', ''),
             'webhook_secret': self._config.get('webhook_secret', ''),
