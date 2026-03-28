@@ -1302,7 +1302,13 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
                             <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                               {/* CPU Usage */}
                               <div>
-                                <div className="text-xs text-muted-foreground mb-2">CPU Usage</div>
+                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
+                                  <Cpu className="h-3.5 w-3.5" />
+                                  <span>CPU Usage</span>
+                                  {vmDetails?.config?.cores && (
+                                    <span className="text-muted-foreground/60">({vmDetails.config.cores} cores)</span>
+                                  )}
+                                </div>
                                 <div className={`text-base font-semibold mb-2 ${getUsageColor(selectedVM.cpu * 100)}`}>
                                   {(selectedVM.cpu * 100).toFixed(1)}%
                                 </div>
@@ -1314,7 +1320,10 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
 
                               {/* Memory */}
                               <div>
-                                <div className="text-xs text-muted-foreground mb-2">Memory</div>
+                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
+                                  <MemoryStick className="h-3.5 w-3.5" />
+                                  <span>Memory</span>
+                                </div>
                                 <div
                                   className={`text-base font-semibold mb-2 ${getUsageColor((selectedVM.mem / selectedVM.maxmem) * 100)}`}
                                 >
@@ -1329,7 +1338,10 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
 
                               {/* Disk */}
                               <div>
-                                <div className="text-xs text-muted-foreground mb-2">Disk</div>
+                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
+                                  <HardDrive className="h-3.5 w-3.5" />
+                                  <span>Disk</span>
+                                </div>
                                 <div
                                   className={`text-base font-semibold mb-2 ${getUsageColor((selectedVM.disk / selectedVM.maxdisk) * 100)}`}
                                 >
@@ -1344,7 +1356,10 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
 
                               {/* Disk I/O */}
                               <div>
-                                <div className="text-xs text-muted-foreground mb-2">Disk I/O</div>
+                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
+                                  <HardDrive className="h-3.5 w-3.5" />
+                                  <span>Disk I/O</span>
+                                </div>
                                 <div className="space-y-1">
                                   <div className="text-sm text-green-500 flex items-center gap-1">
                                     <span>↓</span>
@@ -1359,7 +1374,10 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
 
                               {/* Network I/O */}
                               <div>
-                                <div className="text-xs text-muted-foreground mb-2">Network I/O</div>
+                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
+                                  <Network className="h-3.5 w-3.5" />
+                                  <span>Network I/O</span>
+                                </div>
                                 <div className="space-y-1">
                                   <div className="text-sm text-green-500 flex items-center gap-1">
                                     <span>↓</span>
@@ -1508,19 +1526,28 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
                               <div className="grid grid-cols-3 lg:grid-cols-4 gap-3 lg:gap-4">
                                 {vmDetails.config.cores && (
                                   <div>
-                                    <div className="text-xs text-muted-foreground mb-1">CPU Cores</div>
+                                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
+                                      <Cpu className="h-3.5 w-3.5" />
+                                      <span>CPU Cores</span>
+                                    </div>
                                     <div className="font-semibold text-blue-500">{vmDetails.config.cores}</div>
                                   </div>
                                 )}
                                 {vmDetails.config.memory && (
                                   <div>
-                                    <div className="text-xs text-muted-foreground mb-1">Memory</div>
+                                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
+                                      <MemoryStick className="h-3.5 w-3.5" />
+                                      <span>Memory</span>
+                                    </div>
                                     <div className="font-semibold text-blue-500">{vmDetails.config.memory} MB</div>
                                   </div>
                                 )}
-                                {vmDetails.config.swap && (
+                                {vmDetails.config.swap !== undefined && (
                                   <div>
-                                    <div className="text-xs text-muted-foreground mb-1">Swap</div>
+                                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
+                                      <RotateCcw className="h-3.5 w-3.5" />
+                                      <span>Swap</span>
+                                    </div>
                                     <div className="font-semibold text-foreground">{vmDetails.config.swap} MB</div>
                                   </div>
                                 )}
@@ -1529,7 +1556,8 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
                               {/* IP Addresses with proper keys */}
                               {selectedVM?.type === "lxc" && vmDetails?.lxc_ip_info && (
                                 <div className="mt-4 lg:mt-6 pt-4 lg:pt-6 border-t border-border">
-                                  <h4 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+                                  <h4 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+                                    <Network className="h-4 w-4" />
                                     IP Addresses
                                   </h4>
                                   <div className="flex flex-wrap gap-2">
@@ -1632,7 +1660,8 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
                                 <div className="mt-6 pt-6 border-t border-border space-y-6">
                                   {selectedVM?.type === "lxc" && vmDetails?.hardware_info && (
                                     <div>
-                                      <h4 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+                                      <h4 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+                                        <Container className="h-4 w-4" />
                                         Container Configuration
                                       </h4>
                                       <div className="space-y-4">
@@ -1640,7 +1669,10 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
                                         {vmDetails.hardware_info.privileged !== null &&
                                           vmDetails.hardware_info.privileged !== undefined && (
                                             <div>
-                                              <div className="text-xs text-muted-foreground mb-2">Privilege Level</div>
+                                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
+                                                <Shield className="h-3.5 w-3.5" />
+                                                <span>Privilege Level</span>
+                                              </div>
                                               <Badge
                                                 variant="outline"
                                                 className={
@@ -1658,7 +1690,10 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
                                         {vmDetails.hardware_info.gpu_passthrough &&
                                           vmDetails.hardware_info.gpu_passthrough.length > 0 && (
                                             <div>
-                                              <div className="text-xs text-muted-foreground mb-2">GPU Passthrough</div>
+                                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
+                                                <Cpu className="h-3.5 w-3.5" />
+                                                <span>GPU Passthrough</span>
+                                              </div>
                                               <div className="flex flex-wrap gap-2">
                                                 {vmDetails.hardware_info.gpu_passthrough.map((gpu, index) => (
                                                   <Badge
@@ -1681,7 +1716,10 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
                                         {vmDetails.hardware_info.devices &&
                                           vmDetails.hardware_info.devices.length > 0 && (
                                             <div>
-                                              <div className="text-xs text-muted-foreground mb-2">Hardware Devices</div>
+                                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
+                                                <Server className="h-3.5 w-3.5" />
+                                                <span>Hardware Devices</span>
+                                              </div>
                                               <div className="flex flex-wrap gap-2">
                                                 {vmDetails.hardware_info.devices.map((device, index) => (
                                                   <Badge
@@ -1701,7 +1739,8 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
 
                                   {/* Hardware Section */}
                                   <div>
-                                    <h4 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+                                    <h4 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+                                      <Settings2 className="h-4 w-4" />
                                       Hardware
                                     </h4>
                                     <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1802,7 +1841,8 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
 
                                   {/* Storage Section */}
                                   <div>
-                                    <h4 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+                                    <h4 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+                                      <HardDrive className="h-4 w-4" />
                                       Storage
                                     </h4>
                                     <div className="space-y-3">
@@ -1867,7 +1907,8 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
 
                                   {/* Network Section */}
                                   <div>
-                                    <h4 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+                                    <h4 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+                                      <Network className="h-4 w-4" />
                                       Network
                                     </h4>
                                     <div className="space-y-3">
@@ -1916,7 +1957,8 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
                                   {/* PCI Devices with proper keys */}
                                   {Object.keys(vmDetails.config).some((key) => key.match(/^hostpci\d+$/)) && (
                                     <div>
-                                      <h4 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+                                      <h4 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+                                        <Cpu className="h-4 w-4" />
                                         PCI Passthrough
                                       </h4>
                                       <div className="space-y-3">
@@ -1939,7 +1981,8 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
                                   {/* USB Devices with proper keys */}
                                   {Object.keys(vmDetails.config).some((key) => key.match(/^usb\d+$/)) && (
                                     <div>
-                                      <h4 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+                                      <h4 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+                                        <Server className="h-4 w-4" />
                                         USB Devices
                                       </h4>
                                       <div className="space-y-3">
@@ -1962,7 +2005,8 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
                                   {/* Serial Ports with proper keys */}
                                   {Object.keys(vmDetails.config).some((key) => key.match(/^serial\d+$/)) && (
                                     <div>
-                                      <h4 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+                                      <h4 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+                                        <Terminal className="h-4 w-4" />
                                         Serial Ports
                                       </h4>
                                       <div className="space-y-3">

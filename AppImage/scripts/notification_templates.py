@@ -1454,7 +1454,7 @@ TITLE: ✅success ❌failed 💥crash 🆘critical 📦updates 🆕pve-update �
        🚀 = something STARTS (VM/CT start, backup start, server boot, task begin)
        Combine: 💾🚀backup-start  🖥️🚀system-boot  🚀VM/CT-start
 
-BODY:  🏷️VM/CT name ✔️ok ❌error 💽size 💾total ⏱️duration 🗄️storage 📊summary
+BODY:  🏷️VM/CT name ✔️ok ❌error 💽size ����total ⏱️duration 🗄️storage 📊summary
        📦updates 🔒security 🔄proxmox ⚙️kernel 🗂️packages 💿disk 📝reason
        🌐IP 👤user 🌡️temp 🔥CPU 💧RAM 🎯target 🔹current 🟢new 📌item
 
