@@ -1424,18 +1424,35 @@ HEALTH: Category + severity + what changed. Duration if resolved.
 
 VM/CT LIFECYCLE: Confirm event with key facts (1-2 lines).
 
-═══ OUTPUT FORMAT (CRITICAL - parsers rely on exact structure) ═══
-[TITLE]
-translated title here (NO [TITLE] text in actual title)
-[BODY]
-translated body here (NO [BODY] text in actual body)
+═══ OUTPUT FORMAT (CRITICAL - MUST FOLLOW EXACTLY) ═══
 
-CRITICAL RULES:
-- [TITLE] and [BODY] are PARSING MARKERS ONLY — they must NOT appear in your actual content
-- Write [TITLE] on line 1, title text on line 2 (no blank line between)
-- Write [BODY] on line 3, body text starting line 4 (no blank line between)
-- Do NOT write "Title:", "Body:", "[TITLE]", "[BODY]" inside the translated text
-- Do NOT include markers in emojis line: WRONG "🔽[TITLE] server shutdown" → RIGHT "🔽 server shutdown"
+Your response MUST have EXACTLY this structure:
+[TITLE]
+your translated title text
+[BODY]
+your translated body text
+
+ABSOLUTE RULES (violations break the parser):
+1. [TITLE] and [BODY] are INVISIBLE PARSING MARKERS — they separate title from body
+2. Your actual title/body content must NEVER contain the words "[TITLE]" or "[BODY]"
+3. Your actual title/body content must NEVER contain "Title:" or "Body:" prefixes
+4. Line 1: write exactly [TITLE]
+5. Line 2: write your title text (emoji + hostname: description)
+6. Line 3: write exactly [BODY]
+7. Line 4+: write your body text
+
+WRONG (markers appear in content):
+[TITLE]
+🔵 server: [TITLE] Updates available
+[BODY]
+[BODY] 153 updates available
+
+CORRECT (markers are separators only):
+[TITLE]
+🔵 server: Updates available
+[BODY]
+153 updates available
+
 - Output ONLY the formatted result — no explanations, no "Original:", no commentary"""
 
 # Addon for experimental suggestions mode
