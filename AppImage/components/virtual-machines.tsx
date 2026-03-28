@@ -8,7 +8,7 @@ import { Badge } from "./ui/badge"
 import { Progress } from "./ui/progress"
 import { Button } from "./ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "./ui/dialog"
-import { Server, Play, Square, Cpu, MemoryStick, HardDrive, Network, Power, RotateCcw, StopCircle, Container, ChevronDown, ChevronUp, Terminal, Archive, Plus, Loader2, Clock, Database, Shield, Bell, FileText, Settings2 } from 'lucide-react'
+import { Server, Play, Square, Cpu, MemoryStick, HardDrive, Network, Power, RotateCcw, StopCircle, Container, ChevronDown, ChevronUp, Terminal, Archive, Plus, Loader2, Clock, Database, Shield, Bell, FileText, Settings2, Activity } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
 import { Checkbox } from "./ui/checkbox"
 import { Textarea } from "./ui/textarea"
@@ -335,6 +335,25 @@ export function VirtualMachines() {
   const [backupNotification, setBackupNotification] = useState<string>("auto")
   const [backupNotes, setBackupNotes] = useState<string>("{{guestname}}")
   const [backupPbsChangeMode, setBackupPbsChangeMode] = useState<string>("default")
+  
+  // Tab state for modal
+  const [activeModalTab, setActiveModalTab] = useState<"status" | "backups">("status")
+  
+  // Detect standalone mode (webapp vs browser)
+  const [isStandalone, setIsStandalone] = useState(false)
+  
+  useEffect(() => {
+    const checkStandalone = () => {
+      const standalone = window.matchMedia('(display-mode: standalone)').matches ||
+                        (window.navigator as Navigator & { standalone?: boolean }).standalone === true
+      setIsStandalone(standalone)
+    }
+    checkStandalone()
+    
+    const mediaQuery = window.matchMedia('(display-mode: standalone)')
+    mediaQuery.addEventListener('change', checkStandalone)
+    return () => mediaQuery.removeEventListener('change', checkStandalone)
+  }, [])
 
   useEffect(() => {
     const fetchLXCIPs = async () => {
@@ -1226,10 +1245,15 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
           setShowNotes(false)
           setIsEditingNotes(false)
           setEditedNotes("")
+          setActiveModalTab("status")
         }}
       >
         <DialogContent
-          className="max-w-4xl h-[95vh] sm:h-[90vh] flex flex-col p-0 overflow-hidden"
+          className={`max-w-4xl flex flex-col p-0 overflow-hidden ${
+            isStandalone 
+              ? "h-[95vh] sm:h-[90vh]" 
+              : "h-[85vh] sm:h-[85vh] max-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-40px)]"
+          }`}
           key={selectedVM?.vmid || "no-vm"}
         >
           {currentView === "main" ? (
@@ -1289,7 +1313,38 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
                 </DialogTitle>
               </DialogHeader>
 
-              <div className="flex-1 overflow-y-auto px-6 py-4" style={{ maxHeight: 'calc(100vh - 280px)' }}>
+              {/* Tab Navigation */}
+              <div className="flex border-b border-border px-6 shrink-0">
+                <button
+                  onClick={() => setActiveModalTab("status")}
+                  className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                    activeModalTab === "status"
+                      ? "border-cyan-500 text-cyan-500"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Activity className="h-4 w-4" />
+                  Status
+                </button>
+                <button
+                  onClick={() => setActiveModalTab("backups")}
+                  className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                    activeModalTab === "backups"
+                      ? "border-amber-500 text-amber-500"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Archive className="h-4 w-4" />
+                  Backups
+                  {vmBackups.length > 0 && (
+                    <Badge variant="secondary" className="text-xs h-5 ml-1">{vmBackups.length}</Badge>
+                  )}
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+                {/* Status Tab */}
+                {activeModalTab === "status" && (
                 <div className="space-y-4">
                   {selectedVM && (
                     <>
@@ -1397,78 +1452,6 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
                           </CardContent>
                         </Card>
                       </div>
-
-                      {/* Backups Section */}
-                      <Card className="border border-border bg-card/50">
-                        <CardContent className="p-4">
-                          <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-2">
-                              <div className="p-1.5 rounded-md bg-amber-500/10">
-                                <Archive className="h-4 w-4 text-amber-500" />
-                              </div>
-                              <h3 className="text-sm font-semibold text-foreground">Backups</h3>
-                            </div>
-                            <Button 
-                              size="sm"
-                              className="h-7 text-xs bg-amber-600/20 border border-amber-600/50 text-amber-400 hover:bg-amber-600/30 gap-1"
-                              onClick={openBackupModal}
-                              disabled={creatingBackup}
-                            >
-                              {creatingBackup ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <Plus className="h-3 w-3" />
-                              )}
-                              <span>Create Backup</span>
-                            </Button>
-                          </div>
-                          
-                          {/* Divider */}
-                          <div className="border-t border-border/50 mb-4" />
-                          
-                          {/* Backup List */}
-                          <div className="flex items-center justify-between mb-3">
-                            <span className="text-xs text-muted-foreground">Available backups</span>
-                            <Badge variant="secondary" className="text-xs h-5">{vmBackups.length}</Badge>
-                          </div>
-                          
-                          {loadingBackups ? (
-                            <div className="flex items-center justify-center py-6 text-muted-foreground">
-                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                              <span className="text-sm">Loading backups...</span>
-                            </div>
-                          ) : vmBackups.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-6 text-muted-foreground">
-                              <Archive className="h-8 w-8 mb-2 opacity-30" />
-                              <span className="text-sm">No backups found</span>
-                            </div>
-                          ) : (
-                            <div className="space-y-1.5 max-h-[216px] overflow-y-auto">
-                              {vmBackups.map((backup, index) => (
-                                <div 
-                                  key={`backup-${backup.volid}-${index}`}
-                                  className="flex items-center justify-between p-2.5 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
-                                >
-                                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" />
-                                    <Clock className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                                    <span className="text-sm text-foreground">{backup.date}</span>
-                                    <Badge 
-                                      variant="outline" 
-                                      className={`text-xs ml-auto flex-shrink-0 ${getStorageColor(backup.storage).bg} ${getStorageColor(backup.storage).text} ${getStorageColor(backup.storage).border}`}
-                                    >
-                                      {backup.storage}
-                                    </Badge>
-                                  </div>
-                                  <Badge variant="outline" className="text-xs font-mono ml-2 flex-shrink-0">
-                                    {backup.size_human}
-                                  </Badge>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
 
                       {detailsLoading ? (
                         <div className="text-center py-8 text-muted-foreground">Loading configuration...</div>
@@ -2034,9 +2017,87 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
                     </>
                   )}
                 </div>
+                )}
+
+                {/* Backups Tab */}
+                {activeModalTab === "backups" && (
+                  <div className="space-y-4">
+                    <Card className="border border-border bg-card/50">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-2">
+                            <div className="p-1.5 rounded-md bg-amber-500/10">
+                              <Archive className="h-4 w-4 text-amber-500" />
+                            </div>
+                            <h3 className="text-sm font-semibold text-foreground">Backups</h3>
+                          </div>
+                          <Button 
+                            size="sm"
+                            className="h-7 text-xs bg-amber-600/20 border border-amber-600/50 text-amber-400 hover:bg-amber-600/30 gap-1"
+                            onClick={openBackupModal}
+                            disabled={creatingBackup}
+                          >
+                            {creatingBackup ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Plus className="h-3 w-3" />
+                            )}
+                            <span>Create Backup</span>
+                          </Button>
+                        </div>
+                        
+                        {/* Divider */}
+                        <div className="border-t border-border/50 mb-4" />
+                        
+                        {/* Backup List */}
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-xs text-muted-foreground">Available backups</span>
+                          <Badge variant="secondary" className="text-xs h-5">{vmBackups.length}</Badge>
+                        </div>
+                        
+                        {loadingBackups ? (
+                          <div className="flex items-center justify-center py-6 text-muted-foreground">
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            <span className="text-sm">Loading backups...</span>
+                          </div>
+                        ) : vmBackups.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                            <Archive className="h-12 w-12 mb-3 opacity-30" />
+                            <span className="text-sm">No backups found</span>
+                            <span className="text-xs mt-1">Create your first backup using the button above</span>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {vmBackups.map((backup, index) => (
+                              <div 
+                                key={`backup-${backup.volid}-${index}`}
+                                className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                              >
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                  <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
+                                  <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                  <span className="text-sm text-foreground">{backup.date}</span>
+                                  <Badge 
+                                    variant="outline" 
+                                    className={`text-xs ml-auto flex-shrink-0 ${getStorageColor(backup.storage).bg} ${getStorageColor(backup.storage).text} ${getStorageColor(backup.storage).border}`}
+                                  >
+                                    {backup.storage}
+                                  </Badge>
+                                </div>
+                                <Badge variant="outline" className="text-xs font-mono ml-2 flex-shrink-0">
+                                  {backup.size_human}
+                                </Badge>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
               </div>
 
-              <div className="border-t border-border bg-background px-6 py-4 mt-auto">
+              <div className="border-t border-border bg-background px-6 py-4 mt-auto shrink-0">
                 {/* Terminal button for LXC containers - only when running */}
                 {selectedVM?.type === "lxc" && selectedVM?.status === "running" && (
                   <div className="mb-3">
