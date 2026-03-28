@@ -1989,6 +1989,7 @@
     ],
     "notes": [
       "xcaddy needs to be updated manually after a caddy update!",
+      "if you want ton use xcaddy, modify RAM to 2048MB, before or during installation.",
       "if you need an internal module run: `caddy add-package PACKAGENAME`",
       "if you need an external module run: `xcaddy build --with github.com/caddy-dns/cloudflare`"
     ],
@@ -2023,6 +2024,7 @@
     ],
     "notes": [
       "xcaddy needs to be updated manually after a caddy update!",
+      "if you want ton use xcaddy, modify RAM to 2048MB, before or during installation.",
       "if you need an internal module run: `caddy add-package PACKAGENAME`",
       "if you need an external module run: `xcaddy build --with github.com/caddy-dns/cloudflare`"
     ],
@@ -15711,7 +15713,9 @@
     "category_names": [
       "Gaming & Leisure"
     ],
-    "notes": [],
+    "notes": [
+      "If you want to use Tandoor Recipes behind a reverse proxy, make sure to add the address to ALLOWED_HOSTS in '/opt/tandoor/.env'"
+    ],
     "port": 8002,
     "website": "https://tandoor.dev/",
     "documentation": "https://docs.tandoor.dev/",
