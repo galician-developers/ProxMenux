@@ -228,6 +228,24 @@ export function ProxmoxDashboard() {
       window.removeEventListener("changeTab", handleChangeTab as EventListener)
     }
   }, [])
+  
+  // Auto-refresh terminal on mobile devices
+  // This fixes the issue where terminal doesn't connect properly on mobile/VPN
+  useEffect(() => {
+    if (activeTab === "terminal") {
+      const isMobileDevice = window.innerWidth < 768 || 
+        ('ontouchstart' in window && navigator.maxTouchPoints > 0)
+      
+      if (isMobileDevice) {
+        // Delay to allow initial connection attempt, then refresh to ensure proper connection
+        const timeoutId = setTimeout(() => {
+          setComponentKey(prev => prev + 1)
+        }, 1500)
+        
+        return () => clearTimeout(timeoutId)
+      }
+    }
+  }, [activeTab])
 
   useEffect(() => {
     const handleHealthStatusUpdate = (event: CustomEvent) => {
