@@ -3020,18 +3020,18 @@ ${(report.sections && report.sections.length > 0) ? `
                   </Button>
                 )}
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
                   onClick={() => setShowFail2banUninstallConfirm(true)}
                   disabled={uninstallingFail2ban}
-                  className="h-7 px-2 text-xs text-muted-foreground hover:text-red-500"
-                  title="Uninstall Fail2Ban"
+                  className="h-8 px-3 text-xs border-red-500/30 text-red-500 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/50"
                 >
                   {uninstallingFail2ban ? (
-                    <div className="animate-spin h-3 w-3 border-2 border-current border-t-transparent rounded-full" />
+                    <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-2" />
                   ) : (
-                    <Trash2 className="h-3 w-3" />
+                    <Trash2 className="h-4 w-4 mr-2" />
                   )}
+                  Uninstall
                 </Button>
               </div>
             )}
@@ -3048,20 +3048,15 @@ ${(report.sections && report.sections.length > 0) ? `
           ) : !fail2banInfo?.installed ? (
             /* --- NOT INSTALLED --- */
             <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gray-500/10 flex items-center justify-center">
-                    <Bug className="h-5 w-5 text-gray-500" />
-                  </div>
-                  <div>
-                    <p className="font-medium">Fail2Ban Not Installed</p>
-                    <p className="text-sm text-muted-foreground">Protect SSH, Proxmox web interface, and ProxMenux Monitor from brute force attacks</p>
-                  </div>
-                </div>
-                <div className="px-3 py-1 rounded-full text-sm font-medium bg-gray-500/10 text-gray-500">
-                  Not Installed
-                </div>
-              </div>
+  <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
+  <div className="w-10 h-10 rounded-full bg-gray-500/10 flex items-center justify-center shrink-0">
+  <Bug className="h-5 w-5 text-gray-500" />
+  </div>
+  <div>
+  <p className="font-medium">Fail2Ban Not Installed</p>
+  <p className="text-sm text-muted-foreground">Protect SSH, Proxmox web interface, and ProxMenux Monitor from brute force attacks</p>
+  </div>
+  </div>
 
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
                 <div className="flex items-start gap-3">
@@ -3492,18 +3487,18 @@ ${(report.sections && report.sections.length > 0) ? `
             </div>
             {lynisInfo?.installed && (
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 onClick={() => setShowLynisUninstallConfirm(true)}
                 disabled={uninstallingLynis}
-                className="h-7 px-2 text-xs text-muted-foreground hover:text-red-500"
-                title="Uninstall Lynis"
+                className="h-8 px-3 text-xs border-red-500/30 text-red-500 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/50"
               >
                 {uninstallingLynis ? (
-                  <div className="animate-spin h-3 w-3 border-2 border-current border-t-transparent rounded-full" />
+                  <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-2" />
                 ) : (
-                  <Trash2 className="h-3 w-3" />
+                  <Trash2 className="h-4 w-4 mr-2" />
                 )}
+                Uninstall
               </Button>
             )}
           </div>
@@ -3518,20 +3513,15 @@ ${(report.sections && report.sections.length > 0) ? `
             </div>
           ) : !lynisInfo?.installed ? (
             <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gray-500/10 flex items-center justify-center">
-                    <Search className="h-5 w-5 text-gray-500" />
-                  </div>
-                  <div>
-                    <p className="font-medium">Lynis Not Installed</p>
-                    <p className="text-sm text-muted-foreground">Comprehensive security auditing and hardening tool</p>
-                  </div>
-                </div>
-                <div className="px-3 py-1 rounded-full text-sm font-medium bg-gray-500/10 text-gray-500">
-                  Not Installed
-                </div>
-              </div>
+  <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
+  <div className="w-10 h-10 rounded-full bg-gray-500/10 flex items-center justify-center shrink-0">
+  <Search className="h-5 w-5 text-gray-500" />
+  </div>
+  <div>
+  <p className="font-medium">Lynis Not Installed</p>
+  <p className="text-sm text-muted-foreground">Comprehensive security auditing and hardening tool</p>
+  </div>
+  </div>
 
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
                 <div className="flex items-start gap-3">

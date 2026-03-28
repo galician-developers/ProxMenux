@@ -998,7 +998,7 @@ export function NotificationSettings() {
       </CardHeader>
 
       <CardContent className="space-y-5">
-        {/* ─�� Service Status ── */}
+        {/* ── Service Status ── */}
         {status && (
           <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border border-border">
             <div className={`h-2.5 w-2.5 rounded-full ${status.running ? "bg-green-500" : "bg-red-500"}`} />

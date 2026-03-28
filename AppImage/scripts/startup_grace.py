@@ -21,7 +21,7 @@ import time
 import threading
 from typing import Set, List, Tuple, Optional
 
-# ─── Configuration ───────────────────────────────────────────────────────────
+# ─── Configuration ──────────────────────────────────��────────────────────────
 
 # Grace period durations (seconds)
 STARTUP_VM_GRACE_SECONDS = 180      # 3 minutes for VM/CT start aggregation

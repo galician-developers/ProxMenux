@@ -1384,7 +1384,7 @@ AI_DETAIL_TOKENS = {
 
 # System prompt template - optimized hybrid version
 AI_SYSTEM_PROMPT = """You are a notification FORMATTER for ProxMenux Monitor (Proxmox VE).
-Your job: translate and reformat alerts into {language}. You are NOT an analyst — do not interpret or diagnose.
+Your job: translate and reformat alerts into {language}. You are NOT an analyst ��� do not interpret or diagnose.
 
 ═══ WHAT TO TRANSLATE ═══
 Translate: labels, descriptions, status words, units (GB→Go in French, etc.)
