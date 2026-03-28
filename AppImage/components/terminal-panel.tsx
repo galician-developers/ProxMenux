@@ -16,7 +16,6 @@ import {
   Grid2X2,
   GripHorizontal,
   ChevronDown,
-  Clipboard,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -493,6 +492,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ websocketUrl, onCl
       customGlyphs: true,
       fontWeight: "500",
       fontWeightBold: "700",
+      rightClickSelectsWord: true,
+      allowProposedApi: true,
       theme: {
         background: "#000000",
         foreground: "#ffffff",
@@ -523,6 +524,20 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ websocketUrl, onCl
     term.open(container)
 
     fitAddon.fit()
+    
+    // Enable native paste on mobile - handle paste event from clipboard
+    const handlePaste = (e: ClipboardEvent) => {
+      e.preventDefault()
+      const text = e.clipboardData?.getData('text')
+      if (text) {
+        // Will be sent through WebSocket once connected
+        const currentTerminal = terminals.find(t => t.id === terminal.id)
+        if (currentTerminal?.ws && currentTerminal.ws.readyState === WebSocket.OPEN) {
+          currentTerminal.ws.send(text)
+        }
+      }
+    }
+    container.addEventListener('paste', handlePaste)
 
     const wsUrl = websocketUrl || getWebSocketUrl()
     
@@ -580,17 +595,14 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ websocketUrl, onCl
       )
       syncSizeWithBackend()
       
-      // Auto-refresh for mobile/VPN: send a newline after 1 second to ensure connection is active
-      // This fixes the issue where mobile connections sometimes don't fully initialize
+      // Mobile fix: additional fit after short delay to ensure proper rendering
+      // This helps with VPN/slow connections where initial render may not complete
       const isMobileDevice = window.innerWidth < 768 || 
         ('ontouchstart' in window && navigator.maxTouchPoints > 0)
       if (isMobileDevice) {
         setTimeout(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            // Send empty string to trigger a refresh without executing any command
-            ws.send('\n')
-          }
-        }, 1000)
+          syncSizeWithBackend()
+        }, 500)
       }
     }
 
@@ -742,32 +754,6 @@ const handleClose = () => {
     const activeTerminal = terminals.find((t) => t.id === activeTerminalId)
     if (activeTerminal?.ws && activeTerminal.ws.readyState === WebSocket.OPEN) {
       activeTerminal.ws.send(seq)
-    }
-  }
-  
-  // Paste from clipboard - essential for mobile devices
-  const handlePaste = async (e?: React.MouseEvent | React.TouchEvent) => {
-    if (e) {
-      e.preventDefault()
-      e.stopPropagation()
-    }
-    
-    try {
-      const text = await navigator.clipboard.readText()
-      if (text) {
-        const activeTerminal = terminals.find((t) => t.id === activeTerminalId)
-        if (activeTerminal?.ws && activeTerminal.ws.readyState === WebSocket.OPEN) {
-          // Send text character by character to handle special characters properly
-          activeTerminal.ws.send(text)
-        }
-      }
-    } catch (err) {
-      console.warn('[Terminal] Clipboard access denied:', err)
-      // Fallback: show a message in terminal
-      const activeTerminal = terminals.find((t) => t.id === activeTerminalId)
-      if (activeTerminal?.term) {
-        activeTerminal.term.writeln('\r\n\x1b[33m[INFO] Clipboard access denied. Please allow clipboard permissions.\x1b[0m')
-      }
     }
   }
   
@@ -1072,16 +1058,6 @@ const handleClose = () => {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button
-            onPointerDown={(e) => handlePaste(e)}
-            variant="outline"
-            size="sm"
-            className="h-8 px-2 text-xs gap-1 bg-green-600/20 hover:bg-green-600/30 border-green-600/50 text-green-400"
-            title="Paste from clipboard"
-          >
-            <Clipboard className="h-3.5 w-3.5" />
-            Paste
-          </Button>
         </div>
       )}
 
