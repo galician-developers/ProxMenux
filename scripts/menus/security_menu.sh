@@ -35,7 +35,6 @@ security_menu() {
       --menu "$menu_text" 18 70 4 \
       "1" "$(translate 'Fail2Ban - Intrusion Prevention')" \
       "2" "$(translate 'Lynis - Security Audit')" \
-      "0" "$(translate 'Return to Main Menu')" \
       3>&1 1>&2 2>&3) || OPTION="0"
 
     case "$OPTION" in
@@ -55,7 +54,7 @@ security_menu() {
           sleep 2
         fi
         ;;
-      0|*)
+      *) exec bash "$LOCAL_SCRIPTS/menus/main_menu.sh" ;;
         break
         ;;
     esac
