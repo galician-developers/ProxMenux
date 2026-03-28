@@ -291,7 +291,7 @@ def is_real_system_boot() -> bool:
     return _state.is_real_system_boot()
 
 
-# ─── Startup Report Collection ───────────────────────────────────────────────
+# ─── Startup Report Collection ─────────────────────────────────────────────��─
 
 def collect_startup_report() -> dict:
     """
