@@ -309,6 +309,34 @@ def lynis_report_delete():
 
 
 # -------------------------------------------------------------------
+# Security Tools Uninstall
+# -------------------------------------------------------------------
+
+@security_bp.route('/api/security/fail2ban/uninstall', methods=['POST'])
+def fail2ban_uninstall():
+    """Uninstall Fail2Ban and clean up configuration"""
+    if not security_manager:
+        return jsonify({"success": False, "message": "Security manager not available"}), 500
+    try:
+        success, message = security_manager.uninstall_fail2ban()
+        return jsonify({"success": success, "message": message})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@security_bp.route('/api/security/lynis/uninstall', methods=['POST'])
+def lynis_uninstall():
+    """Uninstall Lynis and clean up files"""
+    if not security_manager:
+        return jsonify({"success": False, "message": "Security manager not available"}), 500
+    try:
+        success, message = security_manager.uninstall_lynis()
+        return jsonify({"success": success, "message": message})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+# -------------------------------------------------------------------
 # Security Tools Detection
 # -------------------------------------------------------------------
 

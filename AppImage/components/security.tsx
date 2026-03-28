@@ -109,6 +109,10 @@ export function Security() {
   } | null>(null)
   const [showFail2banInstaller, setShowFail2banInstaller] = useState(false)
   const [showLynisInstaller, setShowLynisInstaller] = useState(false)
+  const [uninstallingFail2ban, setUninstallingFail2ban] = useState(false)
+  const [uninstallingLynis, setUninstallingLynis] = useState(false)
+  const [showFail2banUninstallConfirm, setShowFail2banUninstallConfirm] = useState(false)
+  const [showLynisUninstallConfirm, setShowLynisUninstallConfirm] = useState(false)
 
   // Lynis audit state
   interface LynisWarning { test_id: string; severity: string; description: string; solution: string; proxmox_context?: string; proxmox_expected?: boolean; proxmox_severity?: string }
@@ -248,6 +252,52 @@ export function Security() {
       // Silently fail
     } finally {
       setToolsLoading(false)
+    }
+  }
+
+  const handleUninstallFail2ban = async () => {
+    setUninstallingFail2ban(true)
+    setError("")
+    setSuccess("")
+    setShowFail2banUninstallConfirm(false)
+    try {
+      const data = await fetchApi("/api/security/fail2ban/uninstall", {
+        method: "POST",
+      })
+      if (data.success) {
+        setSuccess(data.message || "Fail2Ban has been uninstalled")
+        loadSecurityTools()
+        setF2bDetails(null)
+      } else {
+        setError(data.message || "Failed to uninstall Fail2Ban")
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to uninstall Fail2Ban")
+    } finally {
+      setUninstallingFail2ban(false)
+    }
+  }
+
+  const handleUninstallLynis = async () => {
+    setUninstallingLynis(true)
+    setError("")
+    setSuccess("")
+    setShowLynisUninstallConfirm(false)
+    try {
+      const data = await fetchApi("/api/security/lynis/uninstall", {
+        method: "POST",
+      })
+      if (data.success) {
+        setSuccess(data.message || "Lynis has been uninstalled")
+        loadSecurityTools()
+        setLynisReport(null)
+      } else {
+        setError(data.message || "Failed to uninstall Lynis")
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to uninstall Lynis")
+    } finally {
+      setUninstallingLynis(false)
     }
   }
 
@@ -2956,16 +3006,34 @@ ${(report.sections && report.sections.length > 0) ? `
               <Bug className="h-5 w-5 text-red-500" />
               <CardTitle>Fail2Ban</CardTitle>
             </div>
-            {fail2banInfo?.installed && fail2banInfo?.active && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => { loadFail2banDetails(); loadSecurityTools(); }}
-                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-              >
-                <RefreshCw className="h-3 w-3 mr-1" />
-                Refresh
-              </Button>
+            {fail2banInfo?.installed && (
+              <div className="flex items-center gap-1">
+                {fail2banInfo?.active && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => { loadFail2banDetails(); loadSecurityTools(); }}
+                    className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    <RefreshCw className="h-3 w-3 mr-1" />
+                    Refresh
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowFail2banUninstallConfirm(true)}
+                  disabled={uninstallingFail2ban}
+                  className="h-7 px-2 text-xs text-muted-foreground hover:text-red-500"
+                  title="Uninstall Fail2Ban"
+                >
+                  {uninstallingFail2ban ? (
+                    <div className="animate-spin h-3 w-3 border-2 border-current border-t-transparent rounded-full" />
+                  ) : (
+                    <Trash2 className="h-3 w-3" />
+                  )}
+                </Button>
+              </div>
             )}
           </div>
           <CardDescription>
@@ -3417,9 +3485,27 @@ ${(report.sections && report.sections.length > 0) ? `
       {/* Lynis */}
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <Search className="h-5 w-5 text-cyan-500" />
-            <CardTitle>Lynis Security Audit</CardTitle>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Search className="h-5 w-5 text-cyan-500" />
+              <CardTitle>Lynis Security Audit</CardTitle>
+            </div>
+            {lynisInfo?.installed && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowLynisUninstallConfirm(true)}
+                disabled={uninstallingLynis}
+                className="h-7 px-2 text-xs text-muted-foreground hover:text-red-500"
+                title="Uninstall Lynis"
+              >
+                {uninstallingLynis ? (
+                  <div className="animate-spin h-3 w-3 border-2 border-current border-t-transparent rounded-full" />
+                ) : (
+                  <Trash2 className="h-3 w-3" />
+                )}
+              </Button>
+            )}
           </div>
           <CardDescription>
             System security auditing tool that performs comprehensive security scans
@@ -4018,6 +4104,107 @@ ${(report.sections && report.sections.length > 0) ? `
         title="Lynis Installation"
         description="Installing Lynis security auditing tool from GitHub..."
       />
+
+      {/* Uninstall Confirmation Dialogs */}
+      {showFail2banUninstallConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-background border border-border rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
+                <AlertTriangle className="h-5 w-5 text-red-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-lg">Uninstall Fail2Ban?</h3>
+                <p className="text-sm text-muted-foreground">This action cannot be undone</p>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground mb-6">
+              This will completely remove Fail2Ban and all its configuration, including:
+            </p>
+            <ul className="text-sm text-muted-foreground mb-6 list-disc list-inside space-y-1">
+              <li>SSH protection jail</li>
+              <li>Proxmox web interface protection</li>
+              <li>ProxMenux Monitor protection</li>
+              <li>All custom jail configurations</li>
+              <li>Auth logger services</li>
+            </ul>
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setShowFail2banUninstallConfirm(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleUninstallFail2ban}
+                disabled={uninstallingFail2ban}
+              >
+                {uninstallingFail2ban ? (
+                  <>
+                    <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2" />
+                    Uninstalling...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Uninstall
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showLynisUninstallConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-background border border-border rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
+                <AlertTriangle className="h-5 w-5 text-red-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-lg">Uninstall Lynis?</h3>
+                <p className="text-sm text-muted-foreground">This action cannot be undone</p>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground mb-6">
+              This will completely remove Lynis and all audit data, including:
+            </p>
+            <ul className="text-sm text-muted-foreground mb-6 list-disc list-inside space-y-1">
+              <li>Lynis installation (/opt/lynis)</li>
+              <li>Wrapper script (/usr/local/bin/lynis)</li>
+              <li>All audit reports and logs</li>
+            </ul>
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setShowLynisUninstallConfirm(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleUninstallLynis}
+                disabled={uninstallingLynis}
+              >
+                {uninstallingLynis ? (
+                  <>
+                    <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2" />
+                    Uninstalling...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Uninstall
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <TwoFactorSetup
         open={show2FASetup}

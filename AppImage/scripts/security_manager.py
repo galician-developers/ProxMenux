@@ -1984,3 +1984,149 @@ def parse_lynis_report():
     report["proxmox_context_applied"] = True
 
     return report
+
+
+# -------------------------------------------------------------------
+# Uninstall Functions
+# -------------------------------------------------------------------
+
+def uninstall_fail2ban():
+    """
+    Uninstall Fail2Ban and clean up all configuration.
+    Returns (success, message).
+    """
+    try:
+        # Stop fail2ban service
+        _run_cmd(["systemctl", "stop", "fail2ban"], timeout=30)
+        _run_cmd(["systemctl", "disable", "fail2ban"], timeout=10)
+        
+        # Stop and remove auth logger services
+        _run_cmd(["systemctl", "stop", "proxmox-auth-logger.service"], timeout=10)
+        _run_cmd(["systemctl", "disable", "proxmox-auth-logger.service"], timeout=10)
+        _run_cmd(["systemctl", "stop", "ssh-auth-logger.service"], timeout=10)
+        _run_cmd(["systemctl", "disable", "ssh-auth-logger.service"], timeout=10)
+        
+        # Remove systemd service files
+        for svc_file in [
+            "/etc/systemd/system/proxmox-auth-logger.service",
+            "/etc/systemd/system/ssh-auth-logger.service",
+        ]:
+            if os.path.exists(svc_file):
+                os.remove(svc_file)
+        
+        _run_cmd(["systemctl", "daemon-reload"], timeout=10)
+        
+        # Remove log files created by auth loggers
+        for log_file in ["/var/log/proxmox-auth.log", "/var/log/ssh-auth.log"]:
+            if os.path.exists(log_file):
+                os.remove(log_file)
+        
+        # Purge fail2ban package
+        _run_cmd(["apt-get", "purge", "-y", "fail2ban"], timeout=120)
+        
+        # Remove configuration files
+        for cfg_file in [
+            "/etc/fail2ban/jail.d/proxmox.conf",
+            "/etc/fail2ban/jail.d/proxmenux.conf",
+            "/etc/fail2ban/filter.d/proxmox.conf",
+            "/etc/fail2ban/filter.d/proxmenux.conf",
+            "/etc/fail2ban/jail.local",
+        ]:
+            if os.path.exists(cfg_file):
+                os.remove(cfg_file)
+        
+        # Restore SSH MaxAuthTries if backup exists
+        base_dir = "/usr/local/share/proxmenux"
+        backup_file = os.path.join(base_dir, "sshd_maxauthtries_backup")
+        sshd_config = "/etc/ssh/sshd_config"
+        if os.path.exists(backup_file) and os.path.exists(sshd_config):
+            try:
+                with open(backup_file, 'r') as f:
+                    original_val = f.read().strip()
+                if original_val:
+                    with open(sshd_config, 'r') as f:
+                        content = f.read()
+                    import re
+                    content = re.sub(
+                        r'^MaxAuthTries.*$',
+                        f'MaxAuthTries {original_val}',
+                        content,
+                        flags=re.MULTILINE
+                    )
+                    with open(sshd_config, 'w') as f:
+                        f.write(content)
+                    _run_cmd(["systemctl", "reload", "sshd"], timeout=10)
+                os.remove(backup_file)
+            except Exception:
+                pass
+        
+        # Remove journald drop-in
+        journald_dropin = "/etc/systemd/journald.conf.d/proxmenux-loglevel.conf"
+        if os.path.exists(journald_dropin):
+            os.remove(journald_dropin)
+            _run_cmd(["systemctl", "restart", "systemd-journald"], timeout=30)
+        
+        # Update component status
+        components_file = os.path.join(base_dir, "components_status.json")
+        if os.path.exists(components_file):
+            try:
+                import json
+                with open(components_file, 'r') as f:
+                    components = json.load(f)
+                if "fail2ban" in components:
+                    components["fail2ban"]["status"] = "removed"
+                    components["fail2ban"]["version"] = ""
+                    with open(components_file, 'w') as f:
+                        json.dump(components, f, indent=2)
+            except Exception:
+                pass
+        
+        return True, "Fail2Ban has been uninstalled successfully"
+    except Exception as e:
+        return False, f"Error uninstalling Fail2Ban: {str(e)}"
+
+
+def uninstall_lynis():
+    """
+    Uninstall Lynis and clean up all files.
+    Returns (success, message).
+    """
+    try:
+        import shutil
+        
+        # Remove installation directory
+        if os.path.exists("/opt/lynis"):
+            shutil.rmtree("/opt/lynis")
+        
+        # Remove wrapper script
+        if os.path.exists("/usr/local/bin/lynis"):
+            os.remove("/usr/local/bin/lynis")
+        
+        # Remove report files
+        for report_file in [
+            "/var/log/lynis-report.dat",
+            "/var/log/lynis.log",
+            "/var/log/lynis-output.log",
+        ]:
+            if os.path.exists(report_file):
+                os.remove(report_file)
+        
+        # Update component status
+        base_dir = "/usr/local/share/proxmenux"
+        components_file = os.path.join(base_dir, "components_status.json")
+        if os.path.exists(components_file):
+            try:
+                import json
+                with open(components_file, 'r') as f:
+                    components = json.load(f)
+                if "lynis" in components:
+                    components["lynis"]["status"] = "removed"
+                    components["lynis"]["version"] = ""
+                    with open(components_file, 'w') as f:
+                        json.dump(components, f, indent=2)
+            except Exception:
+                pass
+        
+        return True, "Lynis has been uninstalled successfully"
+    except Exception as e:
+        return False, f"Error uninstalling Lynis: {str(e)}"
