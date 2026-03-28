@@ -54,7 +54,7 @@ STARTUP_GRACE_CATEGORIES: Set[str] = {
 }
 
 
-# ─── Singleton State ───────────────────────────────────────��─────────────────
+# ─── Singleton State ────────────────────────────────────────────────────────
 
 class _StartupGraceState:
     """

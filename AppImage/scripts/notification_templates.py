@@ -658,7 +658,7 @@ TEMPLATES = {
         'default_enabled': True,
     },
     
-    # ── Network events ─��
+    # ── Network events ─-
     'network_down': {
         'title': '{hostname}: Network connectivity lost',
         'body': 'The node has lost network connectivity.\nReason: {reason}',
