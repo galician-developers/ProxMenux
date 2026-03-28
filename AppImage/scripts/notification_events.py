@@ -403,13 +403,30 @@ class JournalWatcher:
     
     def _check_fail2ban(self, msg: str, syslog_id: str):
         """Detect Fail2Ban IP bans."""
-        if 'fail2ban' not in msg.lower() and syslog_id != 'fail2ban-server':
-            return
+        # Only process actual fail2ban action messages, not systemd service events
+        if syslog_id not in ('fail2ban-server', 'fail2ban.actions', 'fail2ban'):
+            if 'fail2ban' not in msg.lower():
+                return
+            # Skip systemd service lifecycle messages (start/stop/restart/reload)
+            msg_lower = msg.lower()
+            if any(x in msg_lower for x in ['service', 'started', 'stopped', 'starting', 
+                                             'stopping', 'reloading', 'reloaded', 'unit',
+                                             'deactivated', 'activated']):
+                return
         
-        # Ban detected
-        ban_match = re.search(r'Ban\s+(\S+)', msg)
+        # Ban detected - match only valid IPv4 or IPv6 addresses
+        # IPv4: 192.168.1.100, IPv6: 2001:db8::1 or ::ffff:192.168.1.1
+        ban_match = re.search(r'Ban\s+((?:\d{1,3}\.){3}\d{1,3}|[0-9a-fA-F:]{2,})', msg)
         if ban_match:
             ip = ban_match.group(1)
+            # Validate it's a real IP address format
+            # IPv4: must have 4 octets separated by dots
+            # IPv6: must contain at least one colon
+            is_ipv4 = re.match(r'^(\d{1,3}\.){3}\d{1,3}$', ip)
+            is_ipv6 = ':' in ip and re.match(r'^[0-9a-fA-F:]+$', ip)
+            if not is_ipv4 and not is_ipv6:
+                return  # Not a valid IP (e.g., "Service.", "Ban", etc.)
+            
             jail_match = re.search(r'\[(\w+)\]', msg)
             jail = jail_match.group(1) if jail_match else 'unknown'
             

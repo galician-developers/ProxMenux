@@ -3754,6 +3754,9 @@ ${(report.sections && report.sections.length > 0) ? `
                           <Printer className="h-3.5 w-3.5" />
                           <span className="hidden sm:inline">PDF</span>
                         </Button>
+                        <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${lynisShowReport ? "rotate-180" : ""}`} />
+                        {/* Delete button separated with divider to prevent accidental clicks */}
+                        <div className="hidden sm:block w-px h-5 bg-border mx-1" />
                         <Button
                           variant="ghost"
                           size="sm"
@@ -3770,12 +3773,11 @@ ${(report.sections && report.sections.length > 0) ? `
                                 .catch(() => setError("Failed to delete report"))
                             }
                           }}
-                          className="h-7 px-2 text-xs text-red-500 hover:text-red-400 hover:bg-red-500/10"
+                          className="h-7 px-2 text-xs text-red-500 hover:text-red-400 hover:bg-red-500/10 ml-2 sm:ml-0"
                           title="Delete report"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
-                        <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${lynisShowReport ? "rotate-180" : ""}`} />
                       </div>
                     </button>
 
@@ -3802,26 +3804,34 @@ ${(report.sections && report.sections.length > 0) ? `
                           </div>
                         </div>
 
-                        {/* Report tabs */}
-                        <div className="flex gap-0 border-t border-border">
+                        {/* Report tabs - responsive with shorter labels on mobile */}
+                        <div className="flex gap-0 border-t border-border overflow-x-auto">
                           {(["overview", "checks", "warnings", "suggestions"] as const).map((tab) => (
                             <button
                               key={tab}
                               onClick={() => setLynisActiveTab(tab)}
-                              className={`flex-1 px-3 py-2 text-xs font-medium transition-all flex items-center justify-center gap-1.5 border-r last:border-r-0 border-border ${
+                              className={`flex-1 min-w-0 px-2 sm:px-3 py-2 text-xs font-medium transition-all flex items-center justify-center gap-1 sm:gap-1.5 border-r last:border-r-0 border-border ${
                                 lynisActiveTab === tab
                                   ? "bg-cyan-500 text-white"
                                   : "bg-muted/20 text-muted-foreground hover:text-foreground hover:bg-muted/40"
                               }`}
                             >
-                              {tab === "overview" && <BarChart3 className="h-3 w-3" />}
-                              {tab === "checks" && <Search className="h-3 w-3" />}
-                              {tab === "warnings" && <TriangleAlert className="h-3 w-3" />}
-                              {tab === "suggestions" && <Info className="h-3 w-3" />}
-                              {tab === "overview" ? "Overview"
-                                : tab === "checks" ? `Checks (${lynisReport.sections?.length || 0})`
-                                : tab === "warnings" ? `Warnings (${lynisReport.warnings.length})`
-                                : `Suggestions (${lynisReport.suggestions.length})`}
+                              {tab === "overview" && <BarChart3 className="h-3 w-3 shrink-0" />}
+                              {tab === "checks" && <Search className="h-3 w-3 shrink-0" />}
+                              {tab === "warnings" && <TriangleAlert className="h-3 w-3 shrink-0" />}
+                              {tab === "suggestions" && <Info className="h-3 w-3 shrink-0" />}
+                              <span className="hidden sm:inline">
+                                {tab === "overview" ? "Overview"
+                                  : tab === "checks" ? `Checks (${lynisReport.sections?.length || 0})`
+                                  : tab === "warnings" ? `Warnings (${lynisReport.warnings.length})`
+                                  : `Suggestions (${lynisReport.suggestions.length})`}
+                              </span>
+                              <span className="sm:hidden">
+                                {tab === "overview" ? ""
+                                  : tab === "checks" ? `(${lynisReport.sections?.length || 0})`
+                                  : tab === "warnings" ? `(${lynisReport.warnings.length})`
+                                  : `(${lynisReport.suggestions.length})`}
+                              </span>
                             </button>
                           ))}
                         </div>

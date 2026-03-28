@@ -1204,41 +1204,47 @@ export function SecureGatewaySetup() {
           }
         }
       }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-cyan-500" />
-              Secure Gateway Setup
-            </DialogTitle>
-          </DialogHeader>
+        <DialogContent className="max-w-lg max-h-[90vh] sm:max-h-[85vh] flex flex-col p-0 gap-0">
+          {/* Fixed Header */}
+          <div className="shrink-0 px-6 pt-6 pb-4 border-b border-border">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-cyan-500" />
+                Secure Gateway Setup
+              </DialogTitle>
+            </DialogHeader>
 
-          {/* Progress indicator - filter out "options" step if using Proxmox Only */}
-          <div className="flex items-center gap-1 mb-4">
-            {wizardSteps
-              .filter((step) => !(config.access_mode === "host_only" && step.id === "options"))
-              .map((step, idx) => {
-                // Recalculate the actual step index accounting for skipped steps
-                const actualIdx = wizardSteps.findIndex((s) => s.id === step.id)
-                const adjustedCurrentStep = config.access_mode === "host_only" 
-                  ? (currentStep > wizardSteps.findIndex((s) => s.id === "options") ? currentStep - 1 : currentStep)
-                  : currentStep
-                return (
-                  <div
-                    key={step.id}
-                    className={`flex-1 h-1 rounded-full transition-colors ${
-                      idx < adjustedCurrentStep ? "bg-cyan-500" :
-                      idx === adjustedCurrentStep ? "bg-cyan-500" :
-                      "bg-muted"
-                    }`}
-                  />
-                )
-              })}
+            {/* Progress indicator - filter out "options" step if using Proxmox Only */}
+            <div className="flex items-center gap-1 mt-4">
+              {wizardSteps
+                .filter((step) => !(config.access_mode === "host_only" && step.id === "options"))
+                .map((step, idx) => {
+                  // Recalculate the actual step index accounting for skipped steps
+                  const actualIdx = wizardSteps.findIndex((s) => s.id === step.id)
+                  const adjustedCurrentStep = config.access_mode === "host_only" 
+                    ? (currentStep > wizardSteps.findIndex((s) => s.id === "options") ? currentStep - 1 : currentStep)
+                    : currentStep
+                  return (
+                    <div
+                      key={step.id}
+                      className={`flex-1 h-1 rounded-full transition-colors ${
+                        idx < adjustedCurrentStep ? "bg-cyan-500" :
+                        idx === adjustedCurrentStep ? "bg-cyan-500" :
+                        "bg-muted"
+                      }`}
+                    />
+                  )
+                })}
+            </div>
           </div>
 
-          {renderWizardContent()}
+          {/* Scrollable Content */}
+          <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+            {renderWizardContent()}
+          </div>
 
-          {/* Navigation */}
-          <div className="flex justify-between pt-4 border-t border-border">
+          {/* Fixed Footer with Navigation */}
+          <div className="shrink-0 flex justify-between px-6 py-4 border-t border-border bg-background">
             <Button
               variant="outline"
               onClick={() => {
