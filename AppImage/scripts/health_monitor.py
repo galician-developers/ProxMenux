@@ -2682,21 +2682,28 @@ class HealthMonitor:
                         ctid = vzstart_match.group(1)
                         key = f'ct_{ctid}'
                         if key not in vm_details:
-                            # Extraer mensaje de error
+                            # Resolve CT name for better context
+                            ct_name = self._resolve_vm_name(ctid)
+                            ct_display = f"CT {ctid} ({ct_name})" if ct_name else f"CT {ctid}"
+                            
+                            # Extract specific error reason
                             if 'device' in line_lower and 'does not exist' in line_lower:
                                 device_match = re.search(r'device\s+([/\w\d]+)\s+does not exist', line_lower)
                                 if device_match:
-                                    reason = f'Device {device_match.group(1)} missing'
+                                    error_detail = f'Device {device_match.group(1)} missing'
                                 else:
-                                    reason = 'Device error'
+                                    error_detail = 'Device error'
                             else:
-                                reason = 'Startup error'
+                                error_detail = 'Startup error'
                             
-                            issues.append(f'CT {ctid}: {reason}')
+                            # Include CT ID in reason for clarity in notifications
+                            reason = f'{ct_display}: {error_detail}'
+                            issues.append(reason)
                             vm_details[key] = {
                                 'status': 'WARNING',
                                 'reason': reason,
                                 'id': ctid,
+                                'vmname': ct_name,
                                 'type': 'CT'
                             }
                         continue
@@ -2830,14 +2837,21 @@ class HealthMonitor:
                         error_key = f'ct_{ctid}'
                         
                         if error_key not in vm_details:
+                            # Resolve CT name for better context
+                            ct_name = self._resolve_vm_name(ctid)
+                            ct_display = f"CT {ctid} ({ct_name})" if ct_name else f"CT {ctid}"
+                            
                             if 'device' in line_lower and 'does not exist' in line_lower:
                                 device_match = re.search(r'device\s+([/\w\d]+)\s+does not exist', line_lower)
                                 if device_match:
-                                    reason = f'Device {device_match.group(1)} missing'
+                                    error_detail = f'Device {device_match.group(1)} missing'
                                 else:
-                                    reason = 'Device error'
+                                    error_detail = 'Device error'
                             else:
-                                reason = 'Startup error'
+                                error_detail = 'Startup error'
+                            
+                            # Include CT ID in reason for clarity
+                            reason = f'{ct_display}: {error_detail}'
                             
                             # Record persistent error
                             rec_result = health_persistence.record_error(
@@ -2845,14 +2859,15 @@ class HealthMonitor:
                                 category='vms',
                                 severity='WARNING',
                                 reason=reason,
-                                details={'id': ctid, 'type': 'CT'}
+                                details={'id': ctid, 'vmname': ct_name, 'type': 'CT'}
                             )
                             if not rec_result or rec_result.get('type') != 'skipped_acknowledged':
-                                issues.append(f'CT {ctid}: {reason}')
+                                issues.append(reason)
                                 vm_details[error_key] = {
                                     'status': 'WARNING',
                                     'reason': reason,
                                     'id': ctid,
+                                    'vmname': ct_name,
                                     'type': 'CT'
                                 }
                     
