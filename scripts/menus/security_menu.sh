@@ -55,8 +55,6 @@ security_menu() {
         fi
         ;;
       *) exec bash "$LOCAL_SCRIPTS/menus/main_menu.sh" ;;
-        break
-        ;;
     esac
   done
 }
