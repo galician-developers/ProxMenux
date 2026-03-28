@@ -492,8 +492,6 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ websocketUrl, onCl
       customGlyphs: true,
       fontWeight: "500",
       fontWeightBold: "700",
-      rightClickSelectsWord: true,
-      allowProposedApi: true,
       theme: {
         background: "#000000",
         foreground: "#ffffff",
@@ -524,20 +522,6 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ websocketUrl, onCl
     term.open(container)
 
     fitAddon.fit()
-    
-    // Enable native paste on mobile - handle paste event from clipboard
-    const handlePaste = (e: ClipboardEvent) => {
-      e.preventDefault()
-      const text = e.clipboardData?.getData('text')
-      if (text) {
-        // Will be sent through WebSocket once connected
-        const currentTerminal = terminals.find(t => t.id === terminal.id)
-        if (currentTerminal?.ws && currentTerminal.ws.readyState === WebSocket.OPEN) {
-          currentTerminal.ws.send(text)
-        }
-      }
-    }
-    container.addEventListener('paste', handlePaste)
 
     const wsUrl = websocketUrl || getWebSocketUrl()
     
@@ -594,16 +578,6 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({ websocketUrl, onCl
         prev.map((t) => (t.id === terminal.id ? { ...t, isConnected: true, term, ws, fitAddon, pingInterval } : t)),
       )
       syncSizeWithBackend()
-      
-      // Mobile fix: additional fit after short delay to ensure proper rendering
-      // This helps with VPN/slow connections where initial render may not complete
-      const isMobileDevice = window.innerWidth < 768 || 
-        ('ontouchstart' in window && navigator.maxTouchPoints > 0)
-      if (isMobileDevice) {
-        setTimeout(() => {
-          syncSizeWithBackend()
-        }, 500)
-      }
     }
 
     ws.onmessage = (event) => {
