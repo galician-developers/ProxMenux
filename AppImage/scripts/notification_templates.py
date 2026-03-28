@@ -1439,8 +1439,19 @@ CRITICAL RULES:
 - Output ONLY the formatted result — no explanations, no "Original:", no commentary"""
 
 # Addon for experimental suggestions mode
-AI_SUGGESTIONS_ADDON = """   When journal context shows a clear problem, you MAY add ONE brief tip at the end,
-   prefixed with "Tip:" (translated). Keep tips factual, based only on what logs show.
+AI_SUGGESTIONS_ADDON = """
+   EXCEPTION TO RULE 8 (Suggestions enabled): When journal context shows a clear, actionable problem,
+   you MAY add ONE brief suggestion at the END of the body (after all facts), using this format:
+   
+   💡 Tip: [your suggestion here]
+   
+   Guidelines for suggestions:
+   - Only suggest when the problem AND solution are clear from the logs
+   - Keep it to ONE line, max 100 characters
+   - Be specific: "Check disk /dev/sdb SMART status" not "Check your disks"
+   - Use commands when helpful: "Run 'systemctl restart pvedaemon'"
+   - Never speculate - only suggest based on evidence in the logs
+   - Skip the tip entirely if the problem is unclear or already resolved
 """
 
 # Emoji instructions injected into AI_SYSTEM_PROMPT for rich channels (Telegram, Discord, Pushover)
