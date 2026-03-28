@@ -7,8 +7,8 @@
 # Revision    : @Blaspt (USB passthrough via udev rule with persistent /dev/coral)
 # Copyright   : (c) 2024 MacRimi
 # License     : (GPL-3.0) (https://github.com/MacRimi/ProxMenux/blob/main/LICENSE)
-# Version     : 1.2
-# Last Updated: 20/01/2025
+# Version     : 1.3
+# Last Updated: 28/03/2025
 # ==========================================================
 # Description:
 # This script automates the configuration and installation of
@@ -20,6 +20,12 @@
 #
 # Supports Coral USB and Coral M.2 (PCIe) devices.
 # Includes USB passthrough enhancement using persistent udev alias (/dev/coral).
+#
+# Changelog v1.3:
+# - Fixed Coral USB passthrough: mount /dev/bus/usb instead of /dev/coral symlink
+#   The udev symlink /dev/coral is not passthrough-safe in LXC; mounting the full
+#   USB bus tree ensures the real device node is accessible inside the container
+#   regardless of which port the Coral USB is connected to.
 #
 # Changelog v1.2:
 # - Fixed symlink detection for /dev/coral (create=dir for symlinks)
@@ -250,8 +256,13 @@ configure_lxc_hardware() {
     if ! grep -Pq "^lxc.cgroup2.devices.allow: c 189:\\\* rwm" "$CONFIG_FILE"; then
         echo "lxc.cgroup2.devices.allow: c 189:* rwm # Coral USB" >> "$CONFIG_FILE"
     fi
-    
-    add_mount_if_needed "/dev/coral" "dev/coral" "$CONFIG_FILE"
+
+    # FIX v1.3: Mount /dev/bus/usb instead of the /dev/coral symlink.
+    # The udev symlink /dev/coral cannot be safely passed through to LXC because
+    # it points to a dynamic path (e.g. /dev/bus/usb/001/005) that changes on
+    # reconnect. Mounting the full USB bus tree makes the real device node
+    # available inside the container regardless of port or reconnection.
+    add_mount_if_needed "/dev/bus/usb" "dev/bus/usb" "$CONFIG_FILE"
     
     if [ -L "/dev/coral" ]; then
         msg_ok "$(translate 'Coral USB configuration added - device detected')"
