@@ -5118,11 +5118,11 @@
     "name": "garmin-grafana",
     "slug": "garmin-grafana",
     "desc": "A self-hosted solution to fetch data from Garmin servers and store it in a local InfluxDB database for visualization with Grafana.",
-    "script": "ct/garmin-grafana.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/garmin-grafana.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/garmin-grafana.sh",
-    "type": "lxc",
-    "type_id": "nm9bra8mzye2scg",
+    "script": "tools/addon/garmin-grafana.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/garmin-grafana.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/tools/addon/garmin-grafana.sh",
+    "type": "addon",
+    "type_id": "88xtxy57q80v38v",
     "categories": [
       "scriptcat00009"
     ],
@@ -5142,10 +5142,11 @@
     "has_arm": false,
     "is_dev": true,
     "execute_in": [
-      "pve"
+      "lxc",
+      "vm"
     ],
     "config_path": "/opt/garmin-grafana/.env",
-    "os": "debian"
+    "os": ""
   },
   {
     "name": "gatus",
