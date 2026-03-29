@@ -554,36 +554,6 @@
       "pve"
     ],
     "config_path": "",
-    "os": "debian"
-  },
-  {
-    "name": "Alpine-IT-Tools",
-    "slug": "alpine-it-tools",
-    "desc": "IT-Tools is a web-based suite of utilities designed to streamline and simplify various IT tasks, providing tools for developers and system administrators to manage their workflows efficiently.",
-    "script": "ct/alpine-it-tools.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/alpine-it-tools.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/alpine-it-tools.sh",
-    "type": "lxc",
-    "type_id": "nm9bra8mzye2scg",
-    "categories": [
-      "scriptcat00020"
-    ],
-    "category_names": [
-      "AI / Coding & Dev-Tools"
-    ],
-    "notes": [],
-    "port": 80,
-    "website": "https://sharevb-it-tools.vercel.app/",
-    "documentation": "",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/it-tools.webp",
-    "updateable": true,
-    "privileged": false,
-    "has_arm": false,
-    "is_dev": false,
-    "execute_in": [
-      "pve"
-    ],
-    "config_path": "",
     "os": "alpine"
   },
   {
@@ -11706,7 +11676,7 @@
     "execute_in": [
       "pve"
     ],
-    "config_path": "/opt/papra/.env",
+    "config_path": "/opt/papra/apps/papra-server/.env",
     "os": "debian"
   },
   {
