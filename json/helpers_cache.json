@@ -15006,6 +15006,37 @@
     "os": "debian"
   },
   {
+    "name": "SparkyFitness Garmin Microservice",
+    "slug": "sparkyfitness-garmin",
+    "desc": "Microservice that acts as a bridge between the Garmin API and the main SparkyFitness application. It's required if users want to sync their Garmin data with SparkyFitness.",
+    "script": "tools/addon/sparkyfitness-garmin.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/sparkyfitness-garmin.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/tools/addon/sparkyfitness-garmin.sh",
+    "type": "addon",
+    "type_id": "88xtxy57q80v38v",
+    "categories": [
+      "scriptcat00009"
+    ],
+    "category_names": [
+      "Monitoring & Analytics"
+    ],
+    "notes": [],
+    "port": 8000,
+    "website": "https://github.com/CodeWithCJ/SparkyFitness",
+    "documentation": "https://codewithcj.github.io/SparkyFitness",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/sparkyfitness.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": false,
+    "execute_in": [
+      "lxc",
+      "vm"
+    ],
+    "config_path": "/etc/sparkyfitness-garmin/.env",
+    "os": ""
+  },
+  {
     "name": "Speedtest-Tracker",
     "slug": "speedtest-tracker",
     "desc": "Speedtest Tracker is a self-hosted application that runs scheduled speed tests using the Ookla Speedtest CLI and saves the results to a database for historical tracking and visualization.",
@@ -18478,7 +18509,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
