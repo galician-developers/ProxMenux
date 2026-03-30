@@ -28,7 +28,7 @@ from pathlib import Path
 
 # ─── Shared State for Cross-Watcher Coordination ──────────────────
 
-# ─── Startup Grace Period ─────────────────���──────────────────────────────────
+# ─── Startup Grace Period ────────────────────────────────────────────────────
 # Import centralized startup grace management
 # This provides a single source of truth for all grace period logic
 import startup_grace
@@ -2610,7 +2610,7 @@ class PollingCollector:
             pass
 
 
-# ─── Proxmox Webhook Receiver ───────────────────────────────────
+# ─── Proxmox Webhook Receiver ─────────────���─────────────────────
 
 class ProxmoxHookWatcher:
     """Receives native Proxmox VE notifications via local webhook endpoint.

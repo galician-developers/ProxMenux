@@ -44,6 +44,13 @@ from notification_events import (
     ProxmoxHookWatcher,
 )
 
+# AI context enrichment (uptime, frequency, SMART data, known errors)
+try:
+    from ai_context_enrichment import enrich_context_for_ai
+except ImportError:
+    def enrich_context_for_ai(title, body, event_type, data, journal_context='', detail_level='standard'):
+        return journal_context
+
 
 # ─── Constants ────────────────────────────────────────────────────
 
@@ -743,10 +750,10 @@ class NotificationManager:
             'ai_custom_prompt': self._config.get('ai_custom_prompt', ''),
         }
         
-        # Get journal context if available
-        journal_context = data.get('_journal_context', '')
-        
-        for ch_name, channel in channels.items():
+    # Get journal context if available (will be enriched per-channel based on detail_level)
+    raw_journal_context = data.get('_journal_context', '')
+    
+    for ch_name, channel in channels.items():
             # ── Per-channel category check ──
             # Default: category enabled (true) unless explicitly disabled.
             ch_group_key = f'{ch_name}.events.{event_group}'
@@ -771,17 +778,28 @@ class NotificationManager:
                 rich_key = f'{ch_name}.rich_format'
                 use_rich_format = self._config.get(rich_key, 'false') == 'true'
                 
-                # ── Per-channel AI enhancement ──
-                # Apply AI with channel-specific detail level and emoji setting
-                # If AI is enabled AND rich_format is on, AI will include emojis directly
-                # Pass channel_type so AI knows whether to append original (email only)
-                channel_ai_config = {**ai_config, 'channel_type': ch_name}
-                ai_result = format_with_ai_full(
-                    ch_title, ch_body, severity, channel_ai_config,
-                    detail_level=detail_level,
-                    journal_context=journal_context,
-                    use_emojis=use_rich_format
-                )
+        # ── Per-channel AI enhancement ──
+        # Apply AI with channel-specific detail level and emoji setting
+        # If AI is enabled AND rich_format is on, AI will include emojis directly
+        # Pass channel_type so AI knows whether to append original (email only)
+        channel_ai_config = {**ai_config, 'channel_type': ch_name}
+        
+        # Enrich context with uptime, frequency, SMART data, and known errors
+        enriched_context = enrich_context_for_ai(
+            title=ch_title,
+            body=ch_body,
+            event_type=event_type,
+            data=data,
+            journal_context=raw_journal_context,
+            detail_level=detail_level
+        )
+        
+        ai_result = format_with_ai_full(
+        ch_title, ch_body, severity, channel_ai_config,
+        detail_level=detail_level,
+        journal_context=enriched_context,
+        use_emojis=use_rich_format
+        )
                 ch_title = ai_result.get('title', ch_title)
                 ch_body = ai_result.get('body', ch_body)
                 

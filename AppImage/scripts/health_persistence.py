@@ -862,6 +862,307 @@ class HealthPersistence:
         
         conn.commit()
         conn.close()
+        
+        # Clean up errors for resources that no longer exist (VMs/CTs deleted, disks removed)
+        self._cleanup_stale_resources()
+    
+    def _cleanup_stale_resources(self):
+        """Resolve errors for resources that no longer exist.
+        
+        Comprehensive cleanup for ALL error categories:
+        - VMs/CTs: deleted resources (not just stopped)
+        - Disks: physically removed devices, ZFS pools, storage
+        - Network: removed interfaces, bonds, bridges
+        - Services/pve_services: services on deleted CTs, stopped services
+        - Logs: persistent/spike/cascade errors older than 48h
+        - Cluster: errors when node is no longer in cluster
+        - Temperature: sensors that no longer exist
+        - Memory/Storage: mount points that no longer exist
+        - Updates/Security: acknowledged errors older than 7 days
+        - General fallback: any error older than 7 days with no recent activity
+        """
+        import subprocess
+        import re
+        
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        now = datetime.now()
+        now_iso = now.isoformat()
+        
+        # Get all active (unresolved) errors with first_seen and last_seen for age checks
+        cursor.execute('''
+            SELECT id, error_key, category, message, first_seen, last_seen, severity FROM errors 
+            WHERE resolved_at IS NULL
+        ''')
+        active_errors = cursor.fetchall()
+        
+        resolved_count = 0
+        
+        # Cache for expensive checks (avoid repeated subprocess calls)
+        _vm_ct_exists_cache = {}
+        _cluster_status_cache = None
+        _network_interfaces_cache = None
+        _zfs_pools_cache = None
+        _mount_points_cache = None
+        _pve_services_cache = None
+        
+        def check_vm_ct_cached(vmid):
+            if vmid not in _vm_ct_exists_cache:
+                _vm_ct_exists_cache[vmid] = self._check_vm_ct_exists(vmid)
+            return _vm_ct_exists_cache[vmid]
+        
+        def get_cluster_status():
+            nonlocal _cluster_status_cache
+            if _cluster_status_cache is None:
+                try:
+                    result = subprocess.run(
+                        ['pvecm', 'status'],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    _cluster_status_cache = {
+                        'is_cluster': result.returncode == 0 and 'Cluster information' in result.stdout,
+                        'nodes': result.stdout if result.returncode == 0 else ''
+                    }
+                except Exception:
+                    _cluster_status_cache = {'is_cluster': True, 'nodes': ''}  # Assume cluster on error
+            return _cluster_status_cache
+        
+        def get_network_interfaces():
+            nonlocal _network_interfaces_cache
+            if _network_interfaces_cache is None:
+                try:
+                    import psutil
+                    _network_interfaces_cache = set(psutil.net_if_stats().keys())
+                except Exception:
+                    _network_interfaces_cache = set()
+            return _network_interfaces_cache
+        
+        def get_zfs_pools():
+            nonlocal _zfs_pools_cache
+            if _zfs_pools_cache is None:
+                try:
+                    result = subprocess.run(
+                        ['zpool', 'list', '-H', '-o', 'name'],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    if result.returncode == 0:
+                        _zfs_pools_cache = set(result.stdout.strip().split('\n'))
+                    else:
+                        _zfs_pools_cache = set()
+                except Exception:
+                    _zfs_pools_cache = set()
+            return _zfs_pools_cache
+        
+        def get_mount_points():
+            nonlocal _mount_points_cache
+            if _mount_points_cache is None:
+                try:
+                    import psutil
+                    _mount_points_cache = set(p.mountpoint for p in psutil.disk_partitions(all=True))
+                except Exception:
+                    _mount_points_cache = set()
+            return _mount_points_cache
+        
+        def get_pve_services_status():
+            nonlocal _pve_services_cache
+            if _pve_services_cache is None:
+                _pve_services_cache = {}
+                try:
+                    result = subprocess.run(
+                        ['systemctl', 'list-units', '--type=service', '--all', '--no-legend'],
+                        capture_output=True, text=True, timeout=10
+                    )
+                    if result.returncode == 0:
+                        for line in result.stdout.strip().split('\n'):
+                            parts = line.split()
+                            if parts:
+                                service_name = parts[0].replace('.service', '')
+                                _pve_services_cache[service_name] = 'active' in line
+                except Exception:
+                    pass
+            return _pve_services_cache
+        
+        def extract_vmid_from_text(text):
+            """Extract VM/CT ID from error message or key."""
+            if not text:
+                return None
+            # Patterns: "VM 100", "CT 100", "vm_100_", "ct_100_", "VMID 100", etc.
+            match = re.search(r'(?:VM|CT|VMID|CTID|vm_|ct_)[\s_]?(\d{3,})', text, re.IGNORECASE)
+            return match.group(1) if match else None
+        
+        def get_age_hours(timestamp_str):
+            """Get age in hours from ISO timestamp string."""
+            if not timestamp_str:
+                return 0
+            try:
+                dt = datetime.fromisoformat(timestamp_str)
+                return (now - dt).total_seconds() / 3600
+            except (ValueError, TypeError):
+                return 0
+        
+        for error_row in active_errors:
+            err_id, error_key, category, message, first_seen, last_seen, severity = error_row
+            should_resolve = False
+            resolution_reason = None
+            age_hours = get_age_hours(first_seen)
+            last_seen_hours = get_age_hours(last_seen)
+            
+            # === VM/CT ERRORS ===
+            # Check if VM/CT still exists (covers: vms category, vm_*, ct_* error keys)
+            if category == 'vms' or (error_key and (error_key.startswith('vm_') or error_key.startswith('ct_'))):
+                vmid = extract_vmid_from_text(error_key) or extract_vmid_from_text(message)
+                if vmid and not check_vm_ct_cached(vmid):
+                    should_resolve = True
+                    resolution_reason = 'VM/CT deleted'
+            
+            # === DISK ERRORS ===
+            # Check if disk device or ZFS pool still exists
+            elif category == 'disks' or category == 'storage':
+                if error_key:
+                    # Check for ZFS pool errors (e.g., "zfs_pool_rpool_degraded")
+                    zfs_match = re.search(r'zfs_(?:pool_)?([a-zA-Z0-9_-]+)', error_key)
+                    if zfs_match:
+                        pool_name = zfs_match.group(1)
+                        pools = get_zfs_pools()
+                        if pools and pool_name not in pools:
+                            should_resolve = True
+                            resolution_reason = 'ZFS pool removed'
+                    
+                    # Check for disk device errors (e.g., "disk_sdh_io_error", "smart_sda_failing")
+                    if not should_resolve:
+                        disk_match = re.search(r'(?:disk_|smart_|io_error_)([a-z]{2,4}\d*)', error_key)
+                        if disk_match:
+                            disk_name = disk_match.group(1)
+                            disk_path = f'/dev/{disk_name}'
+                            if not os.path.exists(disk_path):
+                                should_resolve = True
+                                resolution_reason = 'Disk device removed'
+                    
+                    # Check for mount point errors (e.g., "disk_fs_/mnt/data")
+                    if not should_resolve and 'disk_fs_' in error_key:
+                        mount = error_key.replace('disk_fs_', '').split('_')[0]
+                        if mount.startswith('/'):
+                            mounts = get_mount_points()
+                            if mounts and mount not in mounts:
+                                should_resolve = True
+                                resolution_reason = 'Mount point removed'
+            
+            # === NETWORK ERRORS ===
+            # Check if network interface still exists
+            elif category == 'network':
+                if error_key:
+                    # Extract interface name (e.g., "net_vmbr1_down" -> "vmbr1", "bond0_slave_error" -> "bond0")
+                    iface_match = re.search(r'(?:net_|bond_|vmbr|eth|eno|ens|enp)([a-zA-Z0-9_]+)?', error_key)
+                    if iface_match:
+                        # Reconstruct full interface name
+                        full_match = re.search(r'((?:vmbr|bond|eth|eno|ens|enp)[a-zA-Z0-9]+)', error_key)
+                        if full_match:
+                            iface = full_match.group(1)
+                            interfaces = get_network_interfaces()
+                            if interfaces and iface not in interfaces:
+                                should_resolve = True
+                                resolution_reason = 'Network interface removed'
+            
+            # === SERVICE ERRORS ===
+            # Check if service exists or if it references a deleted CT
+            elif category in ('services', 'pve_services'):
+                # First check if it references a CT that no longer exists
+                vmid = extract_vmid_from_text(message) or extract_vmid_from_text(error_key)
+                if vmid and not check_vm_ct_cached(vmid):
+                    should_resolve = True
+                    resolution_reason = 'Container deleted'
+                
+                # For pve_services, check if the service unit exists
+                if not should_resolve and category == 'pve_services' and error_key:
+                    service_match = re.search(r'service_([a-zA-Z0-9_-]+)', error_key)
+                    if service_match:
+                        service_name = service_match.group(1)
+                        services = get_pve_services_status()
+                        if services and service_name not in services:
+                            should_resolve = True
+                            resolution_reason = 'Service no longer exists'
+            
+            # === LOG ERRORS ===
+            # Auto-resolve log errors after 48h (they represent point-in-time issues)
+            elif category == 'logs' or (error_key and error_key.startswith(('log_persistent_', 'log_spike_', 'log_cascade_', 'log_critical_'))):
+                if age_hours > 48:
+                    should_resolve = True
+                    resolution_reason = 'Log error aged out (>48h)'
+            
+            # === CLUSTER ERRORS ===
+            # Resolve cluster/corosync/qdevice errors if node is no longer in a cluster
+            elif error_key and any(x in error_key.lower() for x in ('cluster', 'corosync', 'qdevice', 'quorum')):
+                cluster_info = get_cluster_status()
+                if not cluster_info['is_cluster']:
+                    should_resolve = True
+                    resolution_reason = 'No longer in cluster'
+            
+            # === TEMPERATURE ERRORS ===
+            # Temperature errors - check if sensor still exists (unlikely to change, resolve after 24h of no activity)
+            elif category == 'temperature':
+                if last_seen_hours > 24:
+                    should_resolve = True
+                    resolution_reason = 'Temperature error stale (>24h no activity)'
+            
+            # === UPDATES/SECURITY ERRORS ===
+            # These are informational - auto-resolve after 7 days if acknowledged or stale
+            elif category in ('updates', 'security'):
+                if age_hours > 168:  # 7 days
+                    should_resolve = True
+                    resolution_reason = 'Update/security notice aged out (>7d)'
+            
+            # === FALLBACK: ANY STALE ERROR ===
+            # Any error that hasn't been seen in 7 days and is older than 7 days
+            if not should_resolve and age_hours > 168 and last_seen_hours > 168:
+                should_resolve = True
+                resolution_reason = 'Stale error (no activity >7d)'
+            
+            if should_resolve:
+                cursor.execute('''
+                    UPDATE errors SET resolved_at = ?, resolution_type = 'auto'
+                    WHERE id = ?
+                ''', (now_iso, err_id))
+                resolved_count += 1
+        
+        if resolved_count > 0:
+            conn.commit()
+            print(f"[HealthPersistence] Auto-resolved {resolved_count} errors for stale/deleted resources")
+        
+        conn.close()
+    
+    def _check_vm_ct_exists(self, vmid: str) -> bool:
+        """Check if a VM or CT exists (not just running, but exists at all).
+        
+        Uses 'qm config' and 'pct config' which return success even for stopped VMs/CTs,
+        but fail if the VM/CT doesn't exist.
+        """
+        import subprocess
+        
+        try:
+            # Try VM first
+            result = subprocess.run(
+                ['qm', 'config', vmid],
+                capture_output=True,
+                text=True,
+                timeout=3
+            )
+            if result.returncode == 0:
+                return True
+            
+            # Try CT
+            result = subprocess.run(
+                ['pct', 'config', vmid],
+                capture_output=True,
+                text=True,
+                timeout=3
+            )
+            if result.returncode == 0:
+                return True
+            
+            return False
+        except Exception:
+            # On error, assume it exists to avoid false positives
+            return True
     
     def check_vm_running(self, vm_id: str) -> bool:
         """
