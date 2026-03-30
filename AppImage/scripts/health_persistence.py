@@ -884,6 +884,9 @@ class HealthPersistence:
         
         # Clean up errors for resources that no longer exist (VMs/CTs deleted, disks removed)
         self._cleanup_stale_resources()
+        
+        # Clean up disk observations for devices that no longer exist
+        self.cleanup_orphan_observations()
     
     def _cleanup_stale_resources(self):
         """Resolve errors for resources that no longer exist.

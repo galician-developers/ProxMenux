@@ -398,7 +398,7 @@ def _format_system_startup(data: Dict[str, Any]) -> Tuple[str, str]:
     return title, body
 
 
-# ─── Severity Icons ──────────────────────────────────────────────
+# ─── Severity Icons ────���─────────────────────────────────────────
 
 SEVERITY_ICONS = {
     'CRITICAL': '\U0001F534',
@@ -1165,12 +1165,12 @@ def get_default_enabled_events() -> Dict[str, bool]:
 
 # Category-level header icons
 CATEGORY_EMOJI = {
-    'vm_ct':     '\U0001F5A5\uFE0F',   # desktop computer
+    'vm_ct':     '\U0001F5A5\uFE0F',     # desktop computer
     'backup':    '\U0001F4BE',           # floppy disk (backup)
     'resources': '\U0001F4CA',           # bar chart
     'storage':   '\U0001F4BD',           # minidisc / hard disk
     'network':   '\U0001F310',           # globe with meridians
-    'security':  '\U0001F6E1\uFE0F',    # shield
+    'security':  '\U0001F6E1\uFE0F',     # shield
     'cluster':   '\U0001F517',           # chain link
     'services':  '\u2699\uFE0F',         # gear
     'health':    '\U0001FA7A',           # stethoscope
@@ -1181,9 +1181,9 @@ CATEGORY_EMOJI = {
 # Event-specific title icons  (override category default when present)
 EVENT_EMOJI = {
     # VM / CT
-    'vm_start':             '\u25B6\uFE0F',    # play button
-    'vm_stop':              '\u23F9\uFE0F',     # stop button
-    'vm_shutdown':          '\u23CF\uFE0F',     # eject
+    'vm_start':             '\u25B6\uFE0F',      # play button
+    'vm_stop':              '\u23F9\uFE0F',      # stop button
+    'vm_shutdown':          '\u23CF\uFE0F',      # eject
     'vm_fail':              '\U0001F4A5',        # collision (crash)
     'vm_restart':           '\U0001F504',        # cycle
     'ct_start':             '\u25B6\uFE0F',
@@ -1197,7 +1197,7 @@ EVENT_EMOJI = {
     'replication_fail':     '\u274C',
     'replication_complete': '\u2705',
     # Backups
-    'backup_start':         '\U0001F4BE\U0001F680',  # 💾🚀 floppy + rocket
+    'backup_start':         '\U0001F4BE\U0001F680',   # 💾🚀 floppy + rocket
     'backup_complete':      '\U0001F4BE\u2705',       # 💾✅ floppy + check
     'backup_fail':          '\U0001F4BE\u274C',       # 💾❌ floppy + cross
     'snapshot_complete':    '\U0001F4F8',         # camera with flash
@@ -1284,6 +1284,8 @@ def enrich_with_emojis(event_type: str, title: str, body: str,
     The function is idempotent: if the title already starts with an emoji,
     it is returned unchanged.
     """
+    import re
+    
     # Pick the best title icon: event-specific > category > severity circle
     template = TEMPLATES.get(event_type, {})
     group = template.get('group', 'other')
@@ -1304,14 +1306,68 @@ def enrich_with_emojis(event_type: str, title: str, body: str,
                 enriched_title = title.replace(sev_icon, icon, 1)
                 break
     
+    # ── Preprocess body: add line breaks before known patterns ──
+    # This helps when everything comes concatenated
+    preprocessed = body
+    
+    # Patterns that should start on a new line (with emoji prefix)
+    line_break_patterns = [
+        (r';\s*/dev/', '\n/dev/'),                    # ;/dev/sdb -> newline + /dev/sdb
+        (r'Device:', '\nDevice:'),                    # Device: on new line
+        (r'Error:', '\nError:'),                      # Error: on new line
+        (r'Action:', '\nAction:'),                    # Action: on new line
+        (r'Affected:', '\nAffected:'),                # Affected: on new line
+        (r'Device not currently', '\nDevice not currently'),  # Note about missing device
+        (r'SMART:', '\nSMART:'),                      # SMART status
+    ]
+    
+    for pattern, replacement in line_break_patterns:
+        preprocessed = re.sub(pattern, replacement, preprocessed)
+    
+    # Clean up multiple newlines
+    preprocessed = re.sub(r'\n{3,}', '\n\n', preprocessed)
+    preprocessed = preprocessed.strip()
+    
+    # ── Extended emoji mappings for health/disk messages ──
+    HEALTH_EMOJI_MAP = {
+        # Disk patterns
+        '/dev/': '\U0001F4BF',      # DVD disk
+        'Device:': '\U0001F4BF',    # DVD disk
+        'Error:': '\u274C',         # Red X
+        'Action:': '\U0001F4A1',    # Light bulb (tip)
+        'Affected:': '\U0001F3AF',  # Target
+        'SMART:': '\U0001F4CA',     # Chart
+        'Device not currently': '\U0001F4CC',  # Pushpin (note)
+        # Status patterns
+        'unreadable': '\u26A0\uFE0F',  # Warning
+        'pending': '\u26A0\uFE0F',     # Warning
+        'FAILED': '\u274C',            # Red X
+        'PASSED': '\u2705',            # Green check
+    }
+    
     # Build enriched body: prepend field emojis to recognizable lines
-    lines = body.split('\n')
+    lines = preprocessed.split('\n')
     enriched_lines = []
     
     for line in lines:
         stripped = line.strip()
         if not stripped:
             enriched_lines.append(line)
+            continue
+        
+        # First, check health-specific patterns
+        health_enriched = False
+        for pattern, emoji in HEALTH_EMOJI_MAP.items():
+            if stripped.startswith(pattern):
+                # Don't double-add emoji if already present
+                if not stripped.startswith(emoji):
+                    enriched_lines.append(f'{emoji} {stripped}')
+                else:
+                    enriched_lines.append(stripped)
+                health_enriched = True
+                break
+        
+        if health_enriched:
             continue
         
         # Try to match "FieldName: value" patterns
@@ -1524,15 +1580,21 @@ BODY EMOJIS:
 
 BLANK LINES: Insert between logical sections (VM entries, before summary, before packages block).
 
-FORMAT EXAMPLES (follow this multi-line structure):
+═══ EXAMPLES (follow these formats) ═══
 
 BACKUP START:
+[TITLE]
+💾🚀 pve01: Backup started
+[BODY]
 Backup job starting on storage PBS.
 🏷️ VMs: web01 (100)
 
 🗄️ Storage: PBS  |  ⚙️ Mode: stop
 
 BACKUP COMPLETE:
+[TITLE]
+💾✅ pve01: Backup complete
+[BODY]
 Backup job finished on storage local-bak.
 
 🏷️ VM web01 (ID: 100)
@@ -1544,6 +1606,9 @@ Backup job finished on storage local-bak.
 📊 Total: 1 backup | 💾 12.3 GiB | ⏱️ 00:04:21
 
 BACKUP PARTIAL FAIL:
+[TITLE]
+💾❌ pve01: Backup partially failed
+[BODY]
 Backup job finished with errors.
 
 🏷️ VM web01 (ID: 100)
@@ -1555,15 +1620,30 @@ Backup job finished with errors.
 
 📊 Total: 2 backups | ❌ 1 failed
 
+UPDATES:
+[TITLE]
+📦 amd: Updates available
+[BODY]
+📦 Total updates: 24
+🔒 Security updates: 6
+🔄 Proxmox updates: 0
+
+🗂️ Important packages:
+• none
+
 VM/CT START:
+[TITLE]
+🚀 pve01: VM arch-linux (100) started
+[BODY]
 🏷️ Virtual machine arch-linux (ID: 100)
 ✔️ Now running
 
 HEALTH DEGRADED:
+[TITLE]
+⚠️ amd: Health warning — Disk I/O
+[BODY]
 💿 Device: /dev/sda
 ⚠️ 1 sector unreadable (pending)
-
-ENRICHED CONTEXT (add when provided):
 📝 Log: process crashed (exit-code 255)
 ⚠️ Recurring: 5 times in 24h
 💡 Tip: Run 'systemctl status pvedaemon'"""
