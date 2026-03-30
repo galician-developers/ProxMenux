@@ -2154,10 +2154,12 @@ class HealthPersistence:
             conn = self._get_conn()
             cursor = conn.cursor()
             
-            # Get all active (non-dismissed) observations
+            # Get all active (non-dismissed) observations with device info from disk_registry
             cursor.execute('''
-                SELECT id, device_name, serial FROM disk_observations 
-                WHERE dismissed = 0
+                SELECT do.id, dr.device_name, dr.serial 
+                FROM disk_observations do
+                JOIN disk_registry dr ON do.disk_registry_id = dr.id
+                WHERE do.dismissed = 0
             ''')
             observations = cursor.fetchall()
             
@@ -2171,14 +2173,15 @@ class HealthPersistence:
                 
                 if not os.path.exists(dev_path) and not os.path.exists(base_path):
                     cursor.execute('''
-                        UPDATE disk_observations SET dismissed = 1 
+                        UPDATE disk_observations SET dismissed = 1
                         WHERE id = ?
                     ''', (obs_id,))
                     dismissed_count += 1
             
             conn.commit()
             conn.close()
-            print(f"[HealthPersistence] Cleaned up {dismissed_count} orphan observations")
+            if dismissed_count > 0:
+                print(f"[HealthPersistence] Cleaned up {dismissed_count} orphan observations")
             return dismissed_count
         except Exception as e:
             print(f"[HealthPersistence] Error cleaning orphan observations: {e}")

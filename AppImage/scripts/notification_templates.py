@@ -398,7 +398,7 @@ def _format_system_startup(data: Dict[str, Any]) -> Tuple[str, str]:
     return title, body
 
 
-# ─── Severity Icons ────���─────────────────────────────────────────
+# ─── Severity Icons ──────────────────────────────────────────────
 
 SEVERITY_ICONS = {
     'CRITICAL': '\U0001F534',
@@ -1165,12 +1165,12 @@ def get_default_enabled_events() -> Dict[str, bool]:
 
 # Category-level header icons
 CATEGORY_EMOJI = {
-    'vm_ct':     '\U0001F5A5\uFE0F',     # desktop computer
+    'vm_ct':     '\U0001F5A5\uFE0F',   # desktop computer
     'backup':    '\U0001F4BE',           # floppy disk (backup)
     'resources': '\U0001F4CA',           # bar chart
     'storage':   '\U0001F4BD',           # minidisc / hard disk
     'network':   '\U0001F310',           # globe with meridians
-    'security':  '\U0001F6E1\uFE0F',     # shield
+    'security':  '\U0001F6E1\uFE0F',    # shield
     'cluster':   '\U0001F517',           # chain link
     'services':  '\u2699\uFE0F',         # gear
     'health':    '\U0001FA7A',           # stethoscope
@@ -1181,9 +1181,9 @@ CATEGORY_EMOJI = {
 # Event-specific title icons  (override category default when present)
 EVENT_EMOJI = {
     # VM / CT
-    'vm_start':             '\u25B6\uFE0F',      # play button
-    'vm_stop':              '\u23F9\uFE0F',      # stop button
-    'vm_shutdown':          '\u23CF\uFE0F',      # eject
+    'vm_start':             '\u25B6\uFE0F',    # play button
+    'vm_stop':              '\u23F9\uFE0F',     # stop button
+    'vm_shutdown':          '\u23CF\uFE0F',     # eject
     'vm_fail':              '\U0001F4A5',        # collision (crash)
     'vm_restart':           '\U0001F504',        # cycle
     'ct_start':             '\u25B6\uFE0F',
@@ -1197,7 +1197,7 @@ EVENT_EMOJI = {
     'replication_fail':     '\u274C',
     'replication_complete': '\u2705',
     # Backups
-    'backup_start':         '\U0001F4BE\U0001F680',   # 💾🚀 floppy + rocket
+    'backup_start':         '\U0001F4BE\U0001F680',  # 💾🚀 floppy + rocket
     'backup_complete':      '\U0001F4BE\u2705',       # 💾✅ floppy + check
     'backup_fail':          '\U0001F4BE\u274C',       # 💾❌ floppy + cross
     'snapshot_complete':    '\U0001F4F8',         # camera with flash
@@ -1310,22 +1310,30 @@ def enrich_with_emojis(event_type: str, title: str, body: str,
     # This helps when everything comes concatenated
     preprocessed = body
     
-    # Patterns that should start on a new line (with emoji prefix)
+    # First, clean up duplicated device references like "/dev/sda: /dev/sda: /dev/sda [SAT]"
+    # Convert to just "/dev/sda [SAT]" or "/dev/sda:"
+    preprocessed = re.sub(r'(/dev/\w+):\s*\1:\s*\1', r'\1', preprocessed)
+    preprocessed = re.sub(r'(/dev/\w+):\s*\1', r'\1', preprocessed)
+    
+    # Patterns that should start on a new line
     line_break_patterns = [
         (r';\s*/dev/', '\n/dev/'),                    # ;/dev/sdb -> newline + /dev/sdb
-        (r'Device:', '\nDevice:'),                    # Device: on new line
-        (r'Error:', '\nError:'),                      # Error: on new line
-        (r'Action:', '\nAction:'),                    # Action: on new line
-        (r'Affected:', '\nAffected:'),                # Affected: on new line
+        (r'(?<=[a-z])\s+/dev/', '\n/dev/'),           # "sectors /dev/sdb" -> newline before /dev/
+        (r'(?<=\))\s*/dev/', '\n/dev/'),              # ") /dev/sdb" -> newline before /dev/
+        (r'\bDevice:', '\nDevice:'),                  # Device: on new line
+        (r'\bError:', '\nError:'),                    # Error: on new line
+        (r'\bAction:', '\nAction:'),                  # Action: on new line
+        (r'\bAffected:', '\nAffected:'),              # Affected: on new line
         (r'Device not currently', '\nDevice not currently'),  # Note about missing device
-        (r'SMART:', '\nSMART:'),                      # SMART status
+        (r'\bSMART:', '\nSMART:'),                    # SMART status
     ]
     
     for pattern, replacement in line_break_patterns:
         preprocessed = re.sub(pattern, replacement, preprocessed)
     
-    # Clean up multiple newlines
+    # Clean up multiple newlines and leading newlines
     preprocessed = re.sub(r'\n{3,}', '\n\n', preprocessed)
+    preprocessed = re.sub(r'^\n+', '', preprocessed)
     preprocessed = preprocessed.strip()
     
     # ── Extended emoji mappings for health/disk messages ──

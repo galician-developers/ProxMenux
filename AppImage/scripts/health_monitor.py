@@ -3148,7 +3148,7 @@ class HealthMonitor:
             if inode:
                 inode_hint = 'root directory' if inode == '2' else f'inode #{inode}'
                 reason += f'\nAffected: {inode_hint}'
-            reason += f'\nAction: Run "fsck /dev/{device}" (unmount first)'
+            # Note: Action/recommendations are provided by AI when AI Suggestions is enabled
             return reason
         
         # Out of memory

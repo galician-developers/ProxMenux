@@ -775,6 +775,7 @@ class NotificationManager:
                 default_detail = 'detailed' if ch_name == 'email' else 'standard'
                 detail_level = self._config.get(detail_level_key, default_detail)
                 
+                # Rich format (emojis) is a user preference per channel
                 rich_key = f'{ch_name}.rich_format'
                 use_rich_format = self._config.get(rich_key, 'false') == 'true'
                 
@@ -1857,7 +1858,7 @@ class NotificationManager:
             return {'checked': False, 'migrated': False, 'message': str(e)}
 
 
-# ─── Singleton (for server mode) ─────────────────────────────────
+# ─── Singleton (for server mode) ────────────��────────────────────
 
 notification_manager = NotificationManager()
 

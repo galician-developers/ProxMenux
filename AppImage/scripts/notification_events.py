@@ -609,12 +609,10 @@ class JournalWatcher:
                     if inode:
                         inode_hint = 'root directory' if inode == '2' else f'inode #{inode}'
                         parts.append(f'Affected: {inode_hint}')
-                    if smart_health == 'FAILED':
-                        parts.append(f'Action: Disk is failing. Run "fsck /dev/{device}" (unmount first) and plan replacement')
-                    elif smart_health == 'PASSED':
+                    # Note: Specific recommendations are provided by AI when AI Suggestions is enabled
+                    # Only include SMART status note (not an action)
+                    if smart_health == 'PASSED':
                         parts.append(f'Note: SMART reports disk is healthy. This may be a transient error.')
-                    else:
-                        parts.append(f'Action: Run "fsck /dev/{device}" (unmount first) and check "smartctl -a /dev/{base_dev}"')
                     enriched = '\n'.join(parts)
                 
                 else:
