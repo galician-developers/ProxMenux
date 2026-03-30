@@ -727,7 +727,7 @@ TEMPLATES = {
         'default_enabled': True,
     },
     
-    # ── Services events ──
+    # ── Services events ─��
     'system_startup': {
         'title': '{hostname}: {reason}',
         'body': '{summary}',
@@ -1524,11 +1524,49 @@ BODY EMOJIS:
 
 BLANK LINES: Insert between logical sections (VM entries, before summary, before packages block).
 
-NEW CONTEXT formatting (use when adding journal/SMART/enriched data):
-📝 Logs indicate process crashed (exit-code 255)
-💿 Device /dev/sdb: SMART Health FAILED
-⚠️ Recurring issue: 5 occurrences in last 24h
-💡 Tip: Run 'systemctl status pvedaemon' to verify"""
+FORMAT EXAMPLES (follow this multi-line structure):
+
+BACKUP START:
+Backup job starting on storage PBS.
+🏷️ VMs: web01 (100)
+
+🗄️ Storage: PBS  |  ⚙️ Mode: stop
+
+BACKUP COMPLETE:
+Backup job finished on storage local-bak.
+
+🏷️ VM web01 (ID: 100)
+✔️ Status: ok
+💽 Size: 12.3 GiB
+⏱️ Duration: 00:04:21
+🗄️ Storage: vm/100/2026-03-17T22:00:08Z
+
+📊 Total: 1 backup | 💾 12.3 GiB | ⏱️ 00:04:21
+
+BACKUP PARTIAL FAIL:
+Backup job finished with errors.
+
+🏷️ VM web01 (ID: 100)
+✔️ Status: ok
+💽 Size: 12.3 GiB
+
+🏷️ VM broken (ID: 102)
+❌ Status: error
+
+📊 Total: 2 backups | ❌ 1 failed
+
+VM/CT START:
+🏷️ Virtual machine arch-linux (ID: 100)
+✔️ Now running
+
+HEALTH DEGRADED:
+💿 Device: /dev/sda
+⚠️ 1 sector unreadable (pending)
+
+ENRICHED CONTEXT (add when provided):
+📝 Log: process crashed (exit-code 255)
+⚠️ Recurring: 5 times in 24h
+💡 Tip: Run 'systemctl status pvedaemon'"""
 
 
 # No emoji instructions for email/plain text channels
