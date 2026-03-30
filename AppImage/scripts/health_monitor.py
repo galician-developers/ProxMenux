@@ -2335,6 +2335,7 @@ class HealthMonitor:
         """
         Optimized network check - only alerts for interfaces that are actually in use.
         Avoids false positives for unused physical interfaces.
+        Respects interface exclusions configured by the user.
         """
         try:
             issues = []
@@ -2352,10 +2353,23 @@ class HealthMonitor:
             except Exception:
                 net_if_addrs = {}
             
+            # Get excluded interfaces (for health checks)
+            excluded_interfaces = health_persistence.get_excluded_interface_names('health')
+            
             active_interfaces = set()
             
             for interface, stats in net_if_stats.items():
                 if interface == 'lo':
+                    continue
+                
+                # Skip excluded interfaces
+                if interface in excluded_interfaces:
+                    interface_details[interface] = {
+                        'status': 'EXCLUDED',
+                        'reason': 'Excluded from monitoring',
+                        'is_up': stats.isup,
+                        'dismissable': True
+                    }
                     continue
                 
                 # Check if important interface is down
@@ -3870,7 +3884,7 @@ class HealthMonitor:
                 status = 'WARNING'
                 reason = 'Failed to check for updates (apt-get error)'
 
-            # ── Build checks dict ─────────────────────────────────
+            # ── Build checks dict ────────��────────────────────────
             age_dismissed = bool(age_result and age_result.get('type') == 'skipped_acknowledged')
             update_age_status = 'CRITICAL' if (last_update_days and last_update_days >= 548) else (
                 'INFO' if age_dismissed else ('WARNING' if (last_update_days and last_update_days >= 365) else 'OK'))

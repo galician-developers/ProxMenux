@@ -62,6 +62,18 @@ interface RemoteStorage {
   reason?: string
 }
 
+interface NetworkInterface {
+  name: string
+  type: string
+  is_up: boolean
+  speed: number
+  ip_address: string | null
+  exclude_health: boolean
+  exclude_notifications: boolean
+  excluded_at?: string
+  reason?: string
+}
+
 export function Settings() {
   const [proxmenuxTools, setProxmenuxTools] = useState<ProxMenuxTool[]>([])
   const [loadingTools, setLoadingTools] = useState(true)
@@ -81,12 +93,18 @@ export function Settings() {
   const [remoteStorages, setRemoteStorages] = useState<RemoteStorage[]>([])
   const [loadingStorages, setLoadingStorages] = useState(true)
   const [savingStorage, setSavingStorage] = useState<string | null>(null)
+  
+  // Network Interface Exclusions
+  const [networkInterfaces, setNetworkInterfaces] = useState<NetworkInterface[]>([])
+  const [loadingInterfaces, setLoadingInterfaces] = useState(true)
+  const [savingInterface, setSavingInterface] = useState<string | null>(null)
 
   useEffect(() => {
-    loadProxmenuxTools()
-    getUnitsSettings()
-    loadHealthSettings()
-    loadRemoteStorages()
+  loadProxmenuxTools()
+  getUnitsSettings()
+  loadHealthSettings()
+  loadRemoteStorages()
+  loadNetworkInterfaces()
   }, [])
 
   const loadProxmenuxTools = async () => {
@@ -177,11 +195,53 @@ export function Settings() {
       ))
     } catch (err) {
       console.error("Failed to update storage exclusion:", err)
-    } finally {
-      setSavingStorage(null)
-    }
+  } finally {
+  setSavingStorage(null)
   }
-
+  }
+  
+  const loadNetworkInterfaces = async () => {
+  try {
+  const data = await fetchApi("/api/health/interfaces")
+  if (data.interfaces) {
+  setNetworkInterfaces(data.interfaces)
+  }
+  } catch (err) {
+  console.error("Failed to load network interfaces:", err)
+  } finally {
+  setLoadingInterfaces(false)
+  }
+  }
+  
+  const handleInterfaceExclusionChange = async (interfaceName: string, interfaceType: string, excludeHealth: boolean, excludeNotifications: boolean) => {
+  setSavingInterface(interfaceName)
+  try {
+  // If both are false, remove the exclusion
+  if (!excludeHealth && !excludeNotifications) {
+  await fetchApi(`/api/health/interface-exclusions/${encodeURIComponent(interfaceName)}`, {
+  method: "DELETE"
+  })
+  } else {
+  await fetchApi("/api/health/interface-exclusions", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+  interface_name: interfaceName,
+  interface_type: interfaceType,
+  exclude_health: excludeHealth,
+  exclude_notifications: excludeNotifications
+  })
+  })
+  }
+  // Reload interfaces to get updated state
+  await loadNetworkInterfaces()
+  } catch (err) {
+  console.error("Failed to update interface exclusion:", err)
+  } finally {
+  setSavingInterface(null)
+  }
+  }
+  
   const getSelectValue = (hours: number, key: string): string => {
     if (hours === -1) return "-1"
     const preset = SUPPRESSION_OPTIONS.find(o => o.value === String(hours))
@@ -614,6 +674,131 @@ export function Settings() {
                   <strong>Health:</strong> When OFF, the storage won't trigger warnings/critical alerts in the Health Monitor.
                   <br />
                   <strong>Alerts:</strong> When OFF, no notifications will be sent for this storage.
+                </p>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Network Interface Exclusions */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Network className="h-5 w-5 text-blue-500" />
+            <CardTitle>Network Interface Exclusions</CardTitle>
+          </div>
+          <CardDescription>
+            Exclude network interfaces (bridges, bonds, physical NICs) from health monitoring and notifications.
+            Use this for interfaces that are intentionally disabled or unused.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loadingInterfaces ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full" />
+            </div>
+          ) : networkInterfaces.length === 0 ? (
+            <div className="text-center py-8">
+              <Network className="h-12 w-12 text-muted-foreground mx-auto mb-3 opacity-50" />
+              <p className="text-muted-foreground">No network interfaces detected</p>
+            </div>
+          ) : (
+            <div className="space-y-0">
+              {/* Header */}
+              <div className="grid grid-cols-[1fr_auto_auto] gap-4 pb-2 mb-1 border-b border-border">
+                <span className="text-xs font-medium text-muted-foreground">Interface</span>
+                <span className="text-xs font-medium text-muted-foreground text-center w-20">Health</span>
+                <span className="text-xs font-medium text-muted-foreground text-center w-20">Alerts</span>
+              </div>
+              
+              {/* Interface rows */}
+              <div className="divide-y divide-border/50">
+                {networkInterfaces.map((iface) => {
+                  const isExcluded = iface.exclude_health || iface.exclude_notifications
+                  const isSaving = savingInterface === iface.name
+                  const isDown = !iface.is_up
+                  
+                  return (
+                    <div key={iface.name} className="grid grid-cols-[1fr_auto_auto] gap-4 py-3 items-center">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-2 h-2 rounded-full shrink-0 ${
+                          isDown ? 'bg-red-500' : 'bg-green-500'
+                        }`} />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={`font-medium truncate ${isExcluded ? 'text-muted-foreground' : ''}`}>
+                              {iface.name}
+                            </span>
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                              {iface.type}
+                            </Badge>
+                            {isDown && !isExcluded && (
+                              <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                                DOWN
+                              </Badge>
+                            )}
+                            {isExcluded && (
+                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-500/10 text-blue-400">
+                                Excluded
+                              </Badge>
+                            )}
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {iface.ip_address || 'No IP'} {iface.speed > 0 ? `- ${iface.speed} Mbps` : ''}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {/* Health toggle */}
+                      <div className="flex justify-center w-20">
+                        {isSaving ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        ) : (
+                          <Switch
+                            checked={!iface.exclude_health}
+                            onCheckedChange={(checked) => {
+                              handleInterfaceExclusionChange(
+                                iface.name,
+                                iface.type,
+                                !checked,
+                                iface.exclude_notifications
+                              )
+                            }}
+                          />
+                        )}
+                      </div>
+                      
+                      {/* Notifications toggle */}
+                      <div className="flex justify-center w-20">
+                        {isSaving ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        ) : (
+                          <Switch
+                            checked={!iface.exclude_notifications}
+                            onCheckedChange={(checked) => {
+                              handleInterfaceExclusionChange(
+                                iface.name,
+                                iface.type,
+                                iface.exclude_health,
+                                !checked
+                              )
+                            }}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              
+              {/* Info footer */}
+              <div className="flex items-start gap-2 mt-3 pt-3 border-t border-border">
+                <Info className="h-3.5 w-3.5 text-blue-400 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  <strong>Health:</strong> When OFF, the interface won't trigger warnings/critical alerts in the Health Monitor.
+                  <br />
+                  <strong>Alerts:</strong> When OFF, no notifications will be sent for this interface.
                 </p>
               </div>
             </div>

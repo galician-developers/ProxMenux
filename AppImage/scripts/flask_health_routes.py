@@ -456,3 +456,145 @@ def delete_storage_exclusion(storage_name):
             return jsonify({'error': 'Storage not found in exclusions'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# NETWORK INTERFACE EXCLUSION ROUTES
+# ═══════════════════════════════════════════════════════════════════════════
+
+@health_bp.route('/api/health/interfaces', methods=['GET'])
+def get_network_interfaces():
+    """Get all network interfaces with their exclusion status."""
+    try:
+        import psutil
+        
+        # Get all interfaces
+        net_if_stats = psutil.net_if_stats()
+        net_if_addrs = psutil.net_if_addrs()
+        
+        # Get current exclusions
+        exclusions = {e['interface_name']: e for e in health_persistence.get_excluded_interfaces()}
+        
+        result = []
+        for iface, stats in net_if_stats.items():
+            if iface == 'lo':
+                continue
+            
+            # Determine interface type
+            if iface.startswith('vmbr'):
+                iface_type = 'bridge'
+            elif iface.startswith('bond'):
+                iface_type = 'bond'
+            elif iface.startswith(('vlan', 'veth')):
+                iface_type = 'vlan'
+            elif iface.startswith(('eth', 'ens', 'enp', 'eno')):
+                iface_type = 'physical'
+            else:
+                iface_type = 'other'
+            
+            # Get IP address if any
+            ip_addr = None
+            if iface in net_if_addrs:
+                for addr in net_if_addrs[iface]:
+                    if addr.family == 2:  # IPv4
+                        ip_addr = addr.address
+                        break
+            
+            exclusion = exclusions.get(iface, {})
+            result.append({
+                'name': iface,
+                'type': iface_type,
+                'is_up': stats.isup,
+                'speed': stats.speed,
+                'ip_address': ip_addr,
+                'exclude_health': exclusion.get('exclude_health', 0) == 1,
+                'exclude_notifications': exclusion.get('exclude_notifications', 0) == 1,
+                'excluded_at': exclusion.get('excluded_at'),
+                'reason': exclusion.get('reason')
+            })
+        
+        # Sort: bridges first, then physical, then others
+        type_order = {'bridge': 0, 'bond': 1, 'physical': 2, 'vlan': 3, 'other': 4}
+        result.sort(key=lambda x: (type_order.get(x['type'], 5), x['name']))
+        
+        return jsonify({'interfaces': result})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@health_bp.route('/api/health/interface-exclusions', methods=['GET'])
+def get_interface_exclusions():
+    """Get all interface exclusions."""
+    try:
+        exclusions = health_persistence.get_excluded_interfaces()
+        return jsonify({'exclusions': exclusions})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@health_bp.route('/api/health/interface-exclusions', methods=['POST'])
+def save_interface_exclusion():
+    """
+    Add or update an interface exclusion.
+    
+    Request body:
+    {
+        "interface_name": "vmbr0",
+        "interface_type": "bridge",
+        "exclude_health": true,
+        "exclude_notifications": true,
+        "reason": "Intentionally disabled bridge"
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data or 'interface_name' not in data:
+            return jsonify({'error': 'interface_name is required'}), 400
+        
+        interface_name = data['interface_name']
+        interface_type = data.get('interface_type', 'unknown')
+        exclude_health = data.get('exclude_health', True)
+        exclude_notifications = data.get('exclude_notifications', True)
+        reason = data.get('reason')
+        
+        # Check if already excluded
+        existing = health_persistence.get_excluded_interfaces()
+        exists = any(e['interface_name'] == interface_name for e in existing)
+        
+        if exists:
+            # Update existing
+            success = health_persistence.update_interface_exclusion(
+                interface_name, exclude_health, exclude_notifications
+            )
+        else:
+            # Add new
+            success = health_persistence.exclude_interface(
+                interface_name, interface_type, exclude_health, exclude_notifications, reason
+            )
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': f'Interface {interface_name} exclusion saved',
+                'interface_name': interface_name
+            })
+        else:
+            return jsonify({'error': 'Failed to save exclusion'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@health_bp.route('/api/health/interface-exclusions/<interface_name>', methods=['DELETE'])
+def delete_interface_exclusion(interface_name):
+    """Remove an interface from the exclusion list."""
+    try:
+        success = health_persistence.remove_interface_exclusion(interface_name)
+        if success:
+            return jsonify({
+                'success': True,
+                'message': f'Interface {interface_name} removed from exclusions'
+            })
+        else:
+            return jsonify({'error': 'Interface not found in exclusions'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

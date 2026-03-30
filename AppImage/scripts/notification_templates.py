@@ -1500,83 +1500,35 @@ Rules for the tip:
 
 # Emoji instructions injected into AI_SYSTEM_PROMPT for rich channels (Telegram, Discord, Pushover)
 AI_EMOJI_INSTRUCTIONS = """
-═══ EMOJI RULES ═══
-Use 1-2 emojis at START of lines where they add clarity. Combine when meaningful (💾✅ backup ok).
-Not every line needs emoji — use them to highlight, not as filler. Blank lines = completely empty.
+═══ EMOJI ENRICHMENT (VISUAL CLARITY) ═══
+Your goal is to maintain the original structure of the message while using emojis to add visual clarity,
+ESPECIALLY when adding new context, formatting technical data, or writing tips.
 
-TITLE: ✅success ❌failed 💥crash 🆘critical 📦updates 🆕pve-update 🚚migration ⏹️stop 
-       🔽shutdown ⚠️warning 💢split-brain 🔌disconnect 🚨auth-fail 🚷banned 📋digest
-       🚀 = something STARTS (VM/CT start, backup start, server boot, task begin)
-       Combine: 💾🚀backup-start  🖥️🚀system-boot  🚀VM/CT-start
+RULES:
+1. PRESERVE BASE STRUCTURE: Respect the original fields and layout provided in the input message.
+2. ENHANCE WITH ICONS: Place emojis at the START of a line to identify the data type.
+3. NEW CONTEXT: When adding journal info, SMART data, or known errors, use appropriate icons to make it readable.
+4. NO SPAM: Do not put emojis in the middle or end of sentences. Use 1-3 emojis at START of lines where they add clarity. Combine when meaningful (💾✅ backup ok).
+5. HIGHLIGHT ONLY: Not every line needs emoji — use them to highlight, not as filler. Blank lines = completely empty.
 
-BODY:  🏷️VM/CT name ✔️ok ❌error 💽size 💾total ⏱️duration 🗄️storage 📊summary
-       📦updates 🔒security 🔄proxmox ⚙️kernel 🗂️packages 💿disk 📝reason
-       🌐IP 👤user 🌡️temp 🔥CPU 💧RAM 🎯target 🔹current 🟢new 📌item
+TITLE EMOJIS:
+✅ success  ❌ failed  💥 crash  🆘 critical  📦 updates  🆕 pve-update  🚚 migration
+⏹️ stop  🔽 shutdown  ⚠️ warning  💢 split-brain  🔌 disconnect  🚨 auth-fail  🚷 banned  📋 digest
+🚀 = something STARTS (VM/CT start, backup start, server boot, task begin)
+Combine: 💾🚀 backup-start  🖥️🚀 system-boot  🚀 VM/CT-start
+
+BODY EMOJIS:
+🏷️ VM/CT name  ✔️ ok  ❌ error  💽 size  💾 total  ⏱️ duration  🗄️ storage  📊 summary
+📦 updates  🔒 security  🔄 proxmox  ⚙️ kernel  🗂️ packages  💿 disk  📝 reason/log
+🌐 IP  👤 user  🌡️ temp  🔥 CPU  💧 RAM  🎯 target  🔹 current  🟢 new  📌 item
 
 BLANK LINES: Insert between logical sections (VM entries, before summary, before packages block).
 
-═══ EXAMPLES (follow these formats) ═══
-
-BACKUP START:
-[TITLE]
-💾🚀 pve01: Backup started
-[BODY]
-Backup job starting on storage PBS.
-🏷️ VMs: web01 (100), db (101)
-
-BACKUP COMPLETE:
-[TITLE]
-💾✅ pve01: Backup complete
-[BODY]
-Backup job finished on storage local-bak.
-
-🏷️ VM web01 (ID: 100)
-✔️ Status: ok
-💽 Size: 12.3 GiB
-⏱️ Duration: 00:04:21
-🗄️ Storage: vm/100/2026-03-17T22:00:08Z
-
-📊 Total: 1 backup | 💾 12.3 GiB | ⏱️ 00:04:21
-
-BACKUP PARTIAL FAIL:
-[TITLE]
-💾❌ pve01: Backup partially failed
-[BODY]
-Backup job finished with errors.
-
-🏷️ VM web01 (ID: 100)
-✔️ Status: ok
-💽 Size: 12.3 GiB
-
-🏷️ VM broken (ID: 102)
-❌ Status: error
-
-📊 Total: 2 backups | ❌ 1 failed
-
-UPDATES:
-[TITLE]
-📦 amd: Updates available
-[BODY]
-📦 Total updates: 24
-🔒 Security updates: 6
-🔄 Proxmox updates: 0
-
-🗂️ Important packages:
-• none
-
-VM/CT START:
-[TITLE]
-🚀 pve01: VM arch-linux (100) started
-[BODY]
-🏷️ Virtual machine arch-linux (ID: 100)
-✔️ Now running
-
-HEALTH DEGRADED:
-[TITLE]
-⚠️ amd: Health warning — Disk I/O
-[BODY]
-💿 Device: /dev/sda
-⚠️ 1 sector unreadable (pending)"""
+NEW CONTEXT formatting (use when adding journal/SMART/enriched data):
+📝 Logs indicate process crashed (exit-code 255)
+💿 Device /dev/sdb: SMART Health FAILED
+⚠️ Recurring issue: 5 occurrences in last 24h
+💡 Tip: Run 'systemctl status pvedaemon' to verify"""
 
 
 # No emoji instructions for email/plain text channels

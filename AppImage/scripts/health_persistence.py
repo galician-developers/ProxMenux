@@ -251,6 +251,21 @@ class HealthPersistence:
         ''')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_excluded_storage ON excluded_storages(storage_name)')
         
+        # Table for excluded network interfaces - allows users to exclude interfaces 
+        # (like intentionally disabled bridges) from health monitoring and notifications
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS excluded_interfaces (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                interface_name TEXT UNIQUE NOT NULL,
+                interface_type TEXT NOT NULL,
+                excluded_at TEXT NOT NULL,
+                exclude_health INTEGER DEFAULT 1,
+                exclude_notifications INTEGER DEFAULT 1,
+                reason TEXT
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_excluded_interface ON excluded_interfaces(interface_name)')
+        
         conn.commit()
         conn.close()
     
@@ -2323,6 +2338,140 @@ class HealthPersistence:
                 column = 'exclude_health' if check_type == 'health' else 'exclude_notifications'
                 cursor.execute(f'''
                     SELECT storage_name FROM excluded_storages 
+                    WHERE {column} = 1
+                ''')
+                return {row[0] for row in cursor.fetchall()}
+        except Exception:
+            return set()
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # NETWORK INTERFACE EXCLUSION MANAGEMENT
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    def get_excluded_interfaces(self) -> List[Dict[str, Any]]:
+        """Get list of all excluded network interfaces."""
+        try:
+            with self._db_connection(row_factory=True) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT interface_name, interface_type, excluded_at,
+                           exclude_health, exclude_notifications, reason
+                    FROM excluded_interfaces
+                ''')
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"[HealthPersistence] Error getting excluded interfaces: {e}")
+            return []
+    
+    def is_interface_excluded(self, interface_name: str, check_type: str = 'health') -> bool:
+        """
+        Check if a network interface is excluded from monitoring.
+        
+        Args:
+            interface_name: Name of the interface (e.g., 'vmbr0', 'eth0')
+            check_type: 'health' or 'notifications'
+            
+        Returns:
+            True if the interface is excluded for the given check type
+        """
+        try:
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                column = 'exclude_health' if check_type == 'health' else 'exclude_notifications'
+                cursor.execute(f'''
+                    SELECT 1 FROM excluded_interfaces 
+                    WHERE interface_name = ? AND {column} = 1
+                ''', (interface_name,))
+                return cursor.fetchone() is not None
+        except Exception:
+            return False
+    
+    def exclude_interface(self, interface_name: str, interface_type: str,
+                         exclude_health: bool = True, exclude_notifications: bool = True,
+                         reason: str = None) -> bool:
+        """
+        Add a network interface to the exclusion list.
+        
+        Args:
+            interface_name: Name of the interface (e.g., 'vmbr0')
+            interface_type: Type of interface ('bridge', 'physical', 'bond', 'vlan')
+            exclude_health: Whether to exclude from health monitoring
+            exclude_notifications: Whether to exclude from notifications
+            reason: Optional reason for exclusion
+            
+        Returns:
+            True if successful
+        """
+        try:
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT OR REPLACE INTO excluded_interfaces 
+                    (interface_name, interface_type, excluded_at, exclude_health, exclude_notifications, reason)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (
+                    interface_name,
+                    interface_type,
+                    datetime.now().isoformat(),
+                    1 if exclude_health else 0,
+                    1 if exclude_notifications else 0,
+                    reason
+                ))
+                conn.commit()
+                print(f"[HealthPersistence] Interface {interface_name} added to exclusions")
+                return True
+        except Exception as e:
+            print(f"[HealthPersistence] Error excluding interface: {e}")
+            return False
+    
+    def update_interface_exclusion(self, interface_name: str, 
+                                   exclude_health: bool, exclude_notifications: bool) -> bool:
+        """Update exclusion settings for an interface."""
+        try:
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE excluded_interfaces 
+                    SET exclude_health = ?, exclude_notifications = ?
+                    WHERE interface_name = ?
+                ''', (1 if exclude_health else 0, 1 if exclude_notifications else 0, interface_name))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            print(f"[HealthPersistence] Error updating interface exclusion: {e}")
+            return False
+    
+    def remove_interface_exclusion(self, interface_name: str) -> bool:
+        """Remove an interface from the exclusion list."""
+        try:
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM excluded_interfaces WHERE interface_name = ?', (interface_name,))
+                conn.commit()
+                removed = cursor.rowcount > 0
+                if removed:
+                    print(f"[HealthPersistence] Interface {interface_name} removed from exclusions")
+                return removed
+        except Exception as e:
+            print(f"[HealthPersistence] Error removing interface exclusion: {e}")
+            return False
+    
+    def get_excluded_interface_names(self, check_type: str = 'health') -> set:
+        """
+        Get set of interface names excluded for a specific check type.
+        
+        Args:
+            check_type: 'health' or 'notifications'
+            
+        Returns:
+            Set of excluded interface names
+        """
+        try:
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                column = 'exclude_health' if check_type == 'health' else 'exclude_notifications'
+                cursor.execute(f'''
+                    SELECT interface_name FROM excluded_interfaces 
                     WHERE {column} = 1
                 ''')
                 return {row[0] for row in cursor.fetchall()}

@@ -385,7 +385,7 @@ class BurstAggregator:
         return etype
 
 
-# ─── Notification Manager ───────────────────��─────────────────────
+# ─── Notification Manager ─────────────────────────────────────────
 
 class NotificationManager:
     """Central notification orchestrator.
