@@ -385,7 +385,7 @@ class BurstAggregator:
         return etype
 
 
-# ─── Notification Manager ─────────────────────────────────────────
+# ─── Notification Manager ───────────────────��─────────────────────
 
 class NotificationManager:
     """Central notification orchestrator.
@@ -750,10 +750,10 @@ class NotificationManager:
             'ai_custom_prompt': self._config.get('ai_custom_prompt', ''),
         }
         
-    # Get journal context if available (will be enriched per-channel based on detail_level)
-    raw_journal_context = data.get('_journal_context', '')
-    
-    for ch_name, channel in channels.items():
+        # Get journal context if available (will be enriched per-channel based on detail_level)
+        raw_journal_context = data.get('_journal_context', '')
+        
+        for ch_name, channel in channels.items():
             # ── Per-channel category check ──
             # Default: category enabled (true) unless explicitly disabled.
             ch_group_key = f'{ch_name}.events.{event_group}'
