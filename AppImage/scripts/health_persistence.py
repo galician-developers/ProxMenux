@@ -906,7 +906,7 @@ class HealthPersistence:
         
         # Get all active (unresolved) errors with first_seen and last_seen for age checks
         cursor.execute('''
-            SELECT id, error_key, category, message, first_seen, last_seen, severity FROM errors 
+            SELECT id, error_key, category, reason, first_seen, last_seen, severity FROM errors 
             WHERE resolved_at IS NULL
         ''')
         active_errors = cursor.fetchall()
@@ -1016,7 +1016,7 @@ class HealthPersistence:
                 return 0
         
         for error_row in active_errors:
-            err_id, error_key, category, message, first_seen, last_seen, severity = error_row
+            err_id, error_key, category, reason, first_seen, last_seen, severity = error_row
             should_resolve = False
             resolution_reason = None
             age_hours = get_age_hours(first_seen)
@@ -1025,7 +1025,7 @@ class HealthPersistence:
             # === VM/CT ERRORS ===
             # Check if VM/CT still exists (covers: vms category, vm_*, ct_* error keys)
             if category == 'vms' or (error_key and (error_key.startswith('vm_') or error_key.startswith('ct_'))):
-                vmid = extract_vmid_from_text(error_key) or extract_vmid_from_text(message)
+                vmid = extract_vmid_from_text(error_key) or extract_vmid_from_text(reason)
                 if vmid and not check_vm_ct_cached(vmid):
                     should_resolve = True
                     resolution_reason = 'VM/CT deleted'
@@ -1082,7 +1082,7 @@ class HealthPersistence:
             # Check if service exists or if it references a deleted CT
             elif category in ('services', 'pve_services'):
                 # First check if it references a CT that no longer exists
-                vmid = extract_vmid_from_text(message) or extract_vmid_from_text(error_key)
+                vmid = extract_vmid_from_text(reason) or extract_vmid_from_text(error_key)
                 if vmid and not check_vm_ct_cached(vmid):
                     should_resolve = True
                     resolution_reason = 'Container deleted'

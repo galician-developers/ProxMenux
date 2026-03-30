@@ -3884,7 +3884,7 @@ class HealthMonitor:
                 status = 'WARNING'
                 reason = 'Failed to check for updates (apt-get error)'
 
-            # ── Build checks dict ────────��────────────────────────
+            # ── Build checks dict ─────────────────────────────────
             age_dismissed = bool(age_result and age_result.get('type') == 'skipped_acknowledged')
             update_age_status = 'CRITICAL' if (last_update_days and last_update_days >= 548) else (
                 'INFO' if age_dismissed else ('WARNING' if (last_update_days and last_update_days >= 365) else 'OK'))
