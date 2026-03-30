@@ -601,8 +601,8 @@ export function Settings() {
                 <span className="text-xs font-medium text-muted-foreground text-center w-20">Alerts</span>
               </div>
               
-              {/* Storage rows */}
-              <div className="divide-y divide-border/50">
+              {/* Storage rows - scrollable container */}
+              <div className="max-h-[320px] overflow-y-auto divide-y divide-border/50">
                 {remoteStorages.map((storage) => {
                   const isExcluded = storage.exclude_health || storage.exclude_notifications
                   const isSaving = savingStorage === storage.name
@@ -641,6 +641,7 @@ export function Settings() {
                                 storage.exclude_notifications
                               )
                             }}
+                            className="data-[state=checked]:bg-blue-600 data-[state=unchecked]:bg-input border border-border"
                           />
                         )}
                       </div>
@@ -659,6 +660,7 @@ export function Settings() {
                                 !checked
                               )
                             }}
+                            className="data-[state=checked]:bg-blue-600 data-[state=unchecked]:bg-input border border-border"
                           />
                         )}
                       </div>
@@ -712,8 +714,8 @@ export function Settings() {
                 <span className="text-xs font-medium text-muted-foreground text-center w-20">Alerts</span>
               </div>
               
-              {/* Interface rows */}
-              <div className="divide-y divide-border/50">
+              {/* Interface rows - scrollable container */}
+              <div className="max-h-[320px] overflow-y-auto divide-y divide-border/50">
                 {networkInterfaces.map((iface) => {
                   const isExcluded = iface.exclude_health || iface.exclude_notifications
                   const isSaving = savingInterface === iface.name
@@ -765,6 +767,7 @@ export function Settings() {
                                 iface.exclude_notifications
                               )
                             }}
+                            className="data-[state=checked]:bg-blue-600 data-[state=unchecked]:bg-input border border-border"
                           />
                         )}
                       </div>
@@ -784,6 +787,7 @@ export function Settings() {
                                 !checked
                               )
                             }}
+                            className="data-[state=checked]:bg-blue-600 data-[state=unchecked]:bg-input border border-border"
                           />
                         )}
                       </div>
