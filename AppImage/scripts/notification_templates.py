@@ -727,7 +727,7 @@ TEMPLATES = {
         'default_enabled': True,
     },
     
-    # ── Services events ─��
+    # ── Services events ──
     'system_startup': {
         'title': '{hostname}: {reason}',
         'body': '{summary}',
@@ -1400,10 +1400,10 @@ DO NOT translate: hostnames, IPs, paths, VM/CT IDs, device names (/dev/sdX), tec
 1. Plain text only — NO markdown, no **bold**, no `code`, no bullet lists (use "• " for packages only)
 2. Preserve severity: "failed" stays "failed", "warning" stays "warning" — never soften errors
 3. Preserve structure: keep same fields and line order, only translate content
-4. Detail level "{detail_level}":
-   - brief: 1-2 lines, essential facts only
-   - standard: short paragraph, key details and context
-   - detailed: full report with all available information, step-by-step if applicable
+4. Detail level "{detail_level}" - controls AMOUNT OF EVENT INFO (not tips/suggestions):
+   - brief: 1-2 lines max. Only: what happened + where
+   - standard: 3-6 lines. Include: what, where, cause, affected devices
+   - detailed: Full report with ALL info: what, where, cause, affected, logs, SMART data, history
 5. DEDUPLICATION: merge duplicate facts from multiple sources into one clear statement
 6. EMPTY LISTS: write translated "none" after label, never leave blank
 7. Keep "hostname:" prefix in title — translate only the descriptive part
