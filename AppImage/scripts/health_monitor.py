@@ -2611,6 +2611,28 @@ class HealthMonitor:
                 continue
         return ''
     
+    def _vm_ct_exists(self, vmid: str) -> bool:
+        """Check if a VM or CT exists by verifying its config file."""
+        import os
+        # Check VM config
+        vm_conf = f'/etc/pve/qemu-server/{vmid}.conf'
+        if os.path.exists(vm_conf):
+            return True
+        # Check CT config (local node and cluster nodes)
+        for base in ['/etc/pve/lxc', '/etc/pve/nodes']:
+            if base == '/etc/pve/lxc':
+                ct_conf = f'{base}/{vmid}.conf'
+                if os.path.exists(ct_conf):
+                    return True
+            else:
+                # Check all cluster nodes
+                if os.path.isdir(base):
+                    for node in os.listdir(base):
+                        ct_conf = f'{base}/{node}/lxc/{vmid}.conf'
+                        if os.path.exists(ct_conf):
+                            return True
+        return False
+    
     def _check_vms_cts_optimized(self) -> Dict[str, Any]:
         """
         Optimized VM/CT check - detects qmp failures and startup errors from logs.
@@ -2648,6 +2670,9 @@ class HealthMonitor:
                         if _vzdump_running:
                             continue  # Normal during backup
                         vmid = vm_qmp_match.group(1)
+                        # Skip if VM no longer exists (stale journal entry)
+                        if not self._vm_ct_exists(vmid):
+                            continue
                         vm_name = self._resolve_vm_name(vmid)
                         display = f"VM {vmid} ({vm_name})" if vm_name else f"VM {vmid}"
                         key = f'vm_{vmid}'
@@ -2665,6 +2690,9 @@ class HealthMonitor:
                     ct_error_match = re.search(r'(?:ct|container|lxc)\s+(\d+)', line_lower)
                     if ct_error_match and ('error' in line_lower or 'fail' in line_lower or 'device' in line_lower):
                         ctid = ct_error_match.group(1)
+                        # Skip if CT no longer exists (stale journal entry)
+                        if not self._vm_ct_exists(ctid):
+                            continue
                         key = f'ct_{ctid}'
                         if key not in vm_details:
                             if 'device' in line_lower and 'does not exist' in line_lower:
@@ -2694,6 +2722,9 @@ class HealthMonitor:
                     vzstart_match = re.search(r'vzstart:(\d+):', line)
                     if vzstart_match and ('error' in line_lower or 'fail' in line_lower or 'does not exist' in line_lower):
                         ctid = vzstart_match.group(1)
+                        # Skip if CT no longer exists (stale journal entry)
+                        if not self._vm_ct_exists(ctid):
+                            continue
                         key = f'ct_{ctid}'
                         if key not in vm_details:
                             # Resolve CT name for better context
@@ -2726,6 +2757,9 @@ class HealthMonitor:
                         id_match = re.search(r'\b(\d{3,4})\b', line)
                         if id_match:
                             vmid = id_match.group(1)
+                            # Skip if VM/CT no longer exists (stale journal entry)
+                            if not self._vm_ct_exists(vmid):
+                                continue
                             key = f'vmct_{vmid}'
                             if key not in vm_details:
                                 vm_name = self._resolve_vm_name(vmid)

@@ -80,8 +80,14 @@ class HealthPersistence:
     
     def _init_database(self):
         """Initialize SQLite database with required tables"""
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        try:
+            conn = self._get_conn()
+            cursor = conn.cursor()
+        except Exception as e:
+            print(f"[HealthPersistence] CRITICAL: Failed to connect to database: {e}")
+            return
+        
+        print(f"[HealthPersistence] Initializing database at {self.db_path}")
         
         # Errors table
         cursor.execute('''
@@ -271,6 +277,20 @@ class HealthPersistence:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_excluded_interface ON excluded_interfaces(interface_name)')
         
         conn.commit()
+        
+        # Verify all required tables exist
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = {row[0] for row in cursor.fetchall()}
+        required_tables = {'errors', 'events', 'system_capabilities', 'user_settings', 
+                          'notification_history', 'notification_last_sent', 
+                          'disk_registry', 'disk_observations', 
+                          'excluded_storages', 'excluded_interfaces'}
+        missing = required_tables - tables
+        if missing:
+            print(f"[HealthPersistence] WARNING: Missing tables after init: {missing}")
+        else:
+            print(f"[HealthPersistence] Database initialized with {len(tables)} tables")
+        
         conn.close()
     
     def record_error(self, error_key: str, category: str, severity: str, 
@@ -283,6 +303,32 @@ class HealthPersistence:
             return self._record_error_impl(error_key, category, severity, reason, details)
     
     def _record_error_impl(self, error_key, category, severity, reason, details):
+        # === RESOURCE EXISTENCE CHECK ===
+        # Skip recording errors for resources that no longer exist
+        # This prevents "ghost" errors from stale journal entries
+        
+        # Check VM/CT existence
+        if error_key and (error_key.startswith(('vm_', 'ct_', 'vmct_'))):
+            import re
+            vmid_match = re.search(r'(?:vm_|ct_|vmct_)(\d+)', error_key)
+            if vmid_match:
+                vmid = vmid_match.group(1)
+                if not self._check_vm_ct_exists(vmid):
+                    return {'type': 'skipped', 'needs_notification': False, 
+                            'reason': f'VM/CT {vmid} no longer exists'}
+        
+        # Check disk existence
+        if error_key and any(error_key.startswith(p) for p in ('smart_', 'disk_', 'io_error_')):
+            import re
+            import os
+            disk_match = re.search(r'(?:smart_|disk_fs_|disk_|io_error_)(?:/dev/)?([a-z]{2,4}[a-z0-9]*)', error_key)
+            if disk_match:
+                disk_name = disk_match.group(1)
+                base_disk = re.sub(r'\d+$', '', disk_name) if disk_name[-1].isdigit() else disk_name
+                if not os.path.exists(f'/dev/{disk_name}') and not os.path.exists(f'/dev/{base_disk}'):
+                    return {'type': 'skipped', 'needs_notification': False,
+                            'reason': f'Disk /dev/{disk_name} no longer exists'}
+        
         conn = self._get_conn()
         cursor = conn.cursor()
         
@@ -1030,8 +1076,8 @@ class HealthPersistence:
             last_seen_hours = get_age_hours(last_seen)
             
             # === VM/CT ERRORS ===
-            # Check if VM/CT still exists (covers: vms category, vm_*, ct_* error keys)
-            if category == 'vms' or (error_key and (error_key.startswith('vm_') or error_key.startswith('ct_'))):
+            # Check if VM/CT still exists (covers: vms/vmct categories, vm_*, ct_*, vmct_* error keys)
+            if category in ('vms', 'vmct') or (error_key and (error_key.startswith('vm_') or error_key.startswith('ct_') or error_key.startswith('vmct_'))):
                 vmid = extract_vmid_from_text(error_key) or extract_vmid_from_text(reason)
                 if vmid and not check_vm_ct_cached(vmid):
                     should_resolve = True
@@ -1050,13 +1096,17 @@ class HealthPersistence:
                             should_resolve = True
                             resolution_reason = 'ZFS pool removed'
                     
-                    # Check for disk device errors (e.g., "disk_sdh_io_error", "smart_sda_failing")
+                    # Check for disk device errors (e.g., "disk_sdh_io_error", "smart_sda_failing", "disk_fs_sdb1")
                     if not should_resolve:
-                        disk_match = re.search(r'(?:disk_|smart_|io_error_)([a-z]{2,4}\d*)', error_key)
+                        # Match patterns like: smart_sda, disk_sdb, io_error_nvme0n1, disk_fs_sdb1
+                        disk_match = re.search(r'(?:disk_fs_|disk_|smart_|io_error_)(?:/dev/)?([a-z]{2,4}[a-z0-9]*)', error_key)
                         if disk_match:
                             disk_name = disk_match.group(1)
+                            # Remove partition number for base device check
+                            base_disk = re.sub(r'\d+$', '', disk_name) if disk_name[-1].isdigit() else disk_name
                             disk_path = f'/dev/{disk_name}'
-                            if not os.path.exists(disk_path):
+                            base_path = f'/dev/{base_disk}'
+                            if not os.path.exists(disk_path) and not os.path.exists(base_path):
                                 should_resolve = True
                                 resolution_reason = 'Disk device removed'
                     
@@ -1113,7 +1163,13 @@ class HealthPersistence:
             
             # === CLUSTER ERRORS ===
             # Resolve cluster/corosync/qdevice errors if node is no longer in a cluster
-            elif error_key and any(x in error_key.lower() for x in ('cluster', 'corosync', 'qdevice', 'quorum')):
+            # Check both error_key and reason for cluster-related keywords
+            cluster_keywords = ('cluster', 'corosync', 'qdevice', 'quorum', 'cman', 'pacemaker')
+            is_cluster_error = (
+                (error_key and any(x in error_key.lower() for x in cluster_keywords)) or
+                (reason and any(x in reason.lower() for x in cluster_keywords))
+            )
+            if is_cluster_error:
                 cluster_info = get_cluster_status()
                 if not cluster_info['is_cluster']:
                     should_resolve = True
