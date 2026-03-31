@@ -794,8 +794,8 @@ export function SystemLogs() {
                 </Button>
               </div>
 
-              <ScrollArea className="h-[600px] w-full max-w-full rounded-md border border-border">
-                <div className="space-y-2 p-4 w-full max-w-full">
+              <ScrollArea className="h-[600px] w-full rounded-md border border-border [&>div]:!max-w-full [&>div>div]:!max-w-full">
+                <div className="space-y-2 p-4 w-full min-w-0">
                   {displayedLogs.map((log, index) => {
                     // Generate a more stable unique key
                     const timestampMs = new Date(log.timestamp).getTime()
@@ -806,7 +806,7 @@ export function SystemLogs() {
                     return (
                       <div
                         key={uniqueKey}
-                        className="flex flex-col md:flex-row md:items-start space-y-2 md:space-y-0 md:space-x-4 p-3 rounded-lg border border-white/10 sm:border-border bg-white/5 sm:bg-card sm:hover:bg-white/5 transition-colors cursor-pointer overflow-hidden w-full max-w-full"
+                        className="flex flex-col md:flex-row md:items-start space-y-2 md:space-y-0 md:space-x-4 p-3 rounded-lg border border-white/10 sm:border-border bg-white/5 sm:bg-card sm:hover:bg-white/5 transition-colors cursor-pointer overflow-hidden w-full min-w-0"
                         onClick={() => {
                           if (log.eventData) {
                             setSelectedEvent(log.eventData)
