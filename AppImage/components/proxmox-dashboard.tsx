@@ -240,7 +240,7 @@ export function ProxmoxDashboard() {
         // Delay to allow initial connection attempt, then refresh to ensure proper connection
         const timeoutId = setTimeout(() => {
           setComponentKey(prev => prev + 1)
-        }, 1500)
+        }, 500)
         
         return () => clearTimeout(timeoutId)
       }
