@@ -228,6 +228,7 @@ class HealthMonitor:
     
     def __init__(self):
         """Initialize health monitor with state tracking"""
+        print("[HealthMonitor] Version 2026-03-31-v2 - Stale resource cleanup enabled")
         self.state_history = defaultdict(list)
         self.last_check_times = {}
         self.cached_results = {}
