@@ -34,7 +34,7 @@ LOG_FILE="/tmp/proxmenux_real_test_$(date +%Y%m%d_%H%M%S).log"
 log() { echo -e "$1" | tee -a "$LOG_FILE"; }
 header() {
     echo "" | tee -a "$LOG_FILE"
-    echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━��━━━━━━━━━━━━━${NC}" | tee -a "$LOG_FILE"
+    echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}" | tee -a "$LOG_FILE"
     echo -e "${BOLD}  $1${NC}" | tee -a "$LOG_FILE"
     echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}" | tee -a "$LOG_FILE"
 }
@@ -91,7 +91,7 @@ for h in data.get('history', [])[:$diff]:
     fi
 }
 
-# ── Pre-flight checks ──────────────────────────────────────────
+# ── Pre-flight checks ──────────────────────���───────────────────
 preflight() {
     header "Pre-flight Checks"
     
@@ -684,7 +684,7 @@ show_menu() {
     echo -ne "  Select: "
 }
 
-# ── Main ────────────────────────────────────────���───────────────
+# ── Main ────────────────────────────────────────────────────────
 main() {
     local mode="${1:-menu}"
     
