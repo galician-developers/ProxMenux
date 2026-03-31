@@ -855,7 +855,7 @@ def proxmox_webhook():
         resp.headers['Retry-After'] = '60'
         return resp, 429
     
-    # ── Layers 2-5: Remote-only checks ──
+    # ��─ Layers 2-5: Remote-only checks ──
     if not is_localhost:
         # Layer 2: Shared secret
         try:

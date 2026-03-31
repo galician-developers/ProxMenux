@@ -553,7 +553,7 @@ export function SystemLogs() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full max-w-full overflow-hidden">
       {loading && (logs.length > 0 || events.length > 0) && (
         <div className="fixed inset-0 bg-background/60 backdrop-blur-sm z-50 flex items-center justify-center">
           <div className="flex flex-col items-center gap-3 p-6 rounded-xl bg-card border border-border shadow-xl">
@@ -616,7 +616,7 @@ export function SystemLogs() {
       </div>
 
       {/* Main Content with Tabs */}
-      <Card className="bg-card border-border">
+      <Card className="bg-card border-border w-full max-w-full overflow-hidden">
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-foreground flex items-center">
@@ -630,7 +630,7 @@ export function SystemLogs() {
           </div>
         </CardHeader>
         <CardContent className="max-w-full overflow-hidden">
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full max-w-full">
             <TabsList className="hidden md:grid w-full grid-cols-3">
               <TabsTrigger value="logs" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white">
                 <Terminal className="h-4 w-4 mr-2" />
