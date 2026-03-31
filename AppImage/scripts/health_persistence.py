@@ -1182,41 +1182,62 @@ class HealthPersistence:
                 return True
             
             return False
-        except Exception:
-            # On error, assume it exists to avoid false positives
+        except subprocess.TimeoutExpired:
+            # On timeout, assume it exists to avoid false positives
             return True
+        except Exception as e:
+            # On other errors (command not found, etc.), check if it's a "not found" error
+            # If we can't determine, assume it doesn't exist to allow cleanup
+            return False
     
     def check_vm_running(self, vm_id: str) -> bool:
         """
         Check if a VM/CT is running and resolve error if so.
-        Returns True if running and error was resolved.
+        Also resolves error if VM/CT no longer exists.
+        Returns True if running/resolved, False otherwise.
         """
         import subprocess
         
         try:
+            vm_exists = False
+            ct_exists = False
+            
             # Check qm status for VMs
-            result = subprocess.run(
+            result_vm = subprocess.run(
                 ['qm', 'status', vm_id],
                 capture_output=True,
                 text=True,
                 timeout=2
             )
             
-            if result.returncode == 0 and 'running' in result.stdout.lower():
-                self.resolve_error(f'vm_{vm_id}', 'VM started')
-                return True
+            if result_vm.returncode == 0:
+                vm_exists = True
+                if 'running' in result_vm.stdout.lower():
+                    self.resolve_error(f'vm_{vm_id}', 'VM started')
+                    self.resolve_error(f'vmct_{vm_id}', 'VM started')
+                    return True
             
             # Check pct status for containers
-            result = subprocess.run(
+            result_ct = subprocess.run(
                 ['pct', 'status', vm_id],
                 capture_output=True,
                 text=True,
                 timeout=2
             )
             
-            if result.returncode == 0 and 'running' in result.stdout.lower():
-                self.resolve_error(f'ct_{vm_id}', 'Container started')
-                return True
+            if result_ct.returncode == 0:
+                ct_exists = True
+                if 'running' in result_ct.stdout.lower():
+                    self.resolve_error(f'ct_{vm_id}', 'Container started')
+                    self.resolve_error(f'vmct_{vm_id}', 'Container started')
+                    return True
+            
+            # If neither VM nor CT exists, resolve all related errors
+            if not vm_exists and not ct_exists:
+                self.resolve_error(f'vm_{vm_id}', 'VM/CT deleted')
+                self.resolve_error(f'ct_{vm_id}', 'VM/CT deleted')
+                self.resolve_error(f'vmct_{vm_id}', 'VM/CT deleted')
+                return True  # Error resolved because resource doesn't exist
             
             return False
             

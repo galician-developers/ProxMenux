@@ -91,7 +91,7 @@ for h in data.get('history', [])[:$diff]:
     fi
 }
 
-# ── Pre-flight checks ──────────────────────���───────────────────
+# ── Pre-flight checks ──────────────────────────────────────────
 preflight() {
     header "Pre-flight Checks"
     
