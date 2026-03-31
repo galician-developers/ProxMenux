@@ -1858,7 +1858,7 @@ class NotificationManager:
             return {'checked': False, 'migrated': False, 'message': str(e)}
 
 
-# ─── Singleton (for server mode) ─────────────────────────────────
+# ─── Singleton (for server mode) ─────────────────────────────��───
 
 notification_manager = NotificationManager()
 

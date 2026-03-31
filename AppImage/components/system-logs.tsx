@@ -794,8 +794,8 @@ export function SystemLogs() {
                 </Button>
               </div>
 
-              <ScrollArea className="h-[600px] w-full rounded-md border border-border overflow-x-hidden">
-                <div className="space-y-2 p-4 w-full box-border">
+              <ScrollArea className="h-[600px] w-full max-w-full rounded-md border border-border">
+                <div className="space-y-2 p-4 w-full max-w-full">
                   {displayedLogs.map((log, index) => {
                     // Generate a more stable unique key
                     const timestampMs = new Date(log.timestamp).getTime()
@@ -806,7 +806,7 @@ export function SystemLogs() {
                     return (
                       <div
                         key={uniqueKey}
-                        className="flex flex-col md:flex-row md:items-start space-y-2 md:space-y-0 md:space-x-4 p-3 rounded-lg border border-white/10 sm:border-border bg-white/5 sm:bg-card sm:hover:bg-white/5 transition-colors cursor-pointer overflow-hidden box-border"
+                        className="flex flex-col md:flex-row md:items-start space-y-2 md:space-y-0 md:space-x-4 p-3 rounded-lg border border-white/10 sm:border-border bg-white/5 sm:bg-card sm:hover:bg-white/5 transition-colors cursor-pointer overflow-hidden w-full max-w-full"
                         onClick={() => {
                           if (log.eventData) {
                             setSelectedEvent(log.eventData)
@@ -830,17 +830,17 @@ export function SystemLogs() {
                           )}
                         </div>
 
-                        <div className="flex-1 min-w-0 overflow-hidden box-border">
+                        <div className="flex-1 min-w-0 overflow-hidden">
                           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-1 gap-1">
                             <div className="text-sm font-medium text-foreground truncate min-w-0">{log.service}</div>
                             <div className="text-xs text-muted-foreground font-mono truncate sm:ml-2 sm:flex-shrink-0">
                               {log.timestamp}
                             </div>
                           </div>
-                          <div className="text-sm text-foreground mb-1 line-clamp-2 break-all overflow-hidden">
+                          <div className="text-sm text-foreground mb-1 line-clamp-2 break-words overflow-hidden">
                             {log.message}
                           </div>
-                          <div className="text-xs text-muted-foreground truncate break-all overflow-hidden">
+                          <div className="text-xs text-muted-foreground truncate overflow-hidden">
                             {log.source}
                             {log.unit && log.unit !== log.service && ` • Unit: ${log.unit}`}
                             {log.pid && ` • PID: ${log.pid}`}
