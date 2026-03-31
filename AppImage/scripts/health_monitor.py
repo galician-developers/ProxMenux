@@ -4464,6 +4464,14 @@ class HealthMonitor:
                 if not smart_lines and not io_lines:
                     continue
                 
+                # Skip if disk no longer exists (stale journal entries)
+                if not os.path.exists(dev_path):
+                    # Also check base device for partitions (e.g., /dev/sda1 -> /dev/sda)
+                    base_disk = re.sub(r'\d+$', '', disk_name)
+                    base_path = f'/dev/{base_disk}'
+                    if not os.path.exists(base_path):
+                        continue  # Disk was removed, skip this error
+                
                 # Build a descriptive reason from the actual log entries
                 # Deduplicate similar messages (keep unique ones)
                 seen_msgs = set()
