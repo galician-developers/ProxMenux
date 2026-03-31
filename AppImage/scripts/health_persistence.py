@@ -868,6 +868,7 @@ class HealthPersistence:
             return self._cleanup_old_errors_impl()
     
     def _cleanup_old_errors_impl(self):
+        print("[HealthPersistence] Running cleanup_old_errors...")
         conn = self._get_conn()
         cursor = conn.cursor()
         
@@ -967,6 +968,8 @@ class HealthPersistence:
             WHERE resolved_at IS NULL
         ''')
         active_errors = cursor.fetchall()
+        
+        print(f"[HealthPersistence] _cleanup_stale_resources: Found {len(active_errors)} active errors to check")
         
         resolved_count = 0
         
@@ -1083,9 +1086,13 @@ class HealthPersistence:
             # Check if VM/CT still exists (covers: vms/vmct categories, vm_*, ct_*, vmct_* error keys)
             if category in ('vms', 'vmct') or (error_key and (error_key.startswith('vm_') or error_key.startswith('ct_') or error_key.startswith('vmct_'))):
                 vmid = extract_vmid_from_text(error_key) or extract_vmid_from_text(reason)
-                if vmid and not check_vm_ct_cached(vmid):
-                    should_resolve = True
-                    resolution_reason = 'VM/CT deleted'
+                print(f"[HealthPersistence] Checking VM/CT error: key={error_key}, category={category}, vmid={vmid}")
+                if vmid:
+                    exists = check_vm_ct_cached(vmid)
+                    print(f"[HealthPersistence] VM/CT {vmid} exists: {exists}")
+                    if not exists:
+                        should_resolve = True
+                        resolution_reason = 'VM/CT deleted'
             
             # === DISK ERRORS ===
             # Check if disk device or ZFS pool still exists
@@ -1200,10 +1207,11 @@ class HealthPersistence:
                 resolution_reason = 'Stale error (no activity >7d)'
             
             if should_resolve:
+                print(f"[HealthPersistence] Resolving error: {error_key} - {resolution_reason}")
                 cursor.execute('''
-                    UPDATE errors SET resolved_at = ?, resolution_type = 'auto'
+                    UPDATE errors SET resolved_at = ?, resolution_type = 'auto', resolution_reason = ?
                     WHERE id = ?
-                ''', (now_iso, err_id))
+                ''', (now_iso, resolution_reason, err_id))
                 resolved_count += 1
         
         if resolved_count > 0:
