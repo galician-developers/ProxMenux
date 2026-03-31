@@ -460,7 +460,7 @@ def delete_storage_exclusion(storage_name):
 
 # ═══════════════════════════════════════════════════════════════════════════
 # NETWORK INTERFACE EXCLUSION ROUTES
-# ══════════════════���════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════
 
 @health_bp.route('/api/health/interfaces', methods=['GET'])
 def get_network_interfaces():

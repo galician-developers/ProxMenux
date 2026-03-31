@@ -523,14 +523,14 @@ export function ProxmoxDashboard() {
 
       <div
         className={`sticky z-40 bg-background
-          top-[120px] md:top-[76px]
+          top-[120px] lg:top-[76px]
           transition-all duration-700 ease-in-out
           ${showNavigation ? "translate-y-0 opacity-100" : "-translate-y-[120%] opacity-0 pointer-events-none"}
         `}
       >
-        <div className="container mx-auto px-4 md:px-6 pt-4 md:pt-6">
+        <div className="container mx-auto px-4 lg:px-6 pt-4 lg:pt-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-0">
-            <TabsList className="hidden md:grid w-full grid-cols-9 bg-card border border-border">
+            <TabsList className="hidden lg:grid w-full grid-cols-9 bg-card border border-border">
               <TabsTrigger
                 value="overview"
                 className="data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:rounded-md"
@@ -588,7 +588,7 @@ export function ProxmoxDashboard() {
             </TabsList>
 
             <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-              <div className="md:hidden">
+              <div className="lg:hidden">
                 <SheetTrigger asChild>
                   <Button
                     variant="outline"
