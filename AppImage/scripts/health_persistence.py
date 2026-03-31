@@ -102,6 +102,7 @@ class HealthPersistence:
                 last_seen TEXT NOT NULL,
                 resolved_at TEXT,
                 resolution_type TEXT,
+                resolution_reason TEXT,
                 acknowledged INTEGER DEFAULT 0,
                 acknowledged_at TEXT,
                 notification_sent INTEGER DEFAULT 0,
@@ -179,6 +180,9 @@ class HealthPersistence:
         
         if 'resolution_type' not in columns:
             cursor.execute('ALTER TABLE errors ADD COLUMN resolution_type TEXT')
+        
+        if 'resolution_reason' not in columns:
+            cursor.execute('ALTER TABLE errors ADD COLUMN resolution_reason TEXT')
         
         # Indexes for performance
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_error_key ON errors(error_key)')
