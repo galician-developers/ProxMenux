@@ -197,7 +197,7 @@ def capture_journal_context(keywords: list, lines: int = 30,
         return ""
 
 
-# ─── Journal Watcher (Real-time) ─────────────────────────────────
+# ─── Journal Watcher (Real-time) ────────────────────────────────
 
 class JournalWatcher:
     """Watches journald in real-time for critical system events.
@@ -964,10 +964,7 @@ class JournalWatcher:
                 raw_message=raw_msg,
                 severity='warning',
             )
-            
-            # Update worst_health for permanent tracking (record_disk_observation 
-            # already does this, but we ensure it here for safety)
-            health_persistence.update_disk_worst_health(base_dev, serial, 'warning')
+            # Observation recorded - worst_health no longer used (badge shows current SMART status)
             
         except Exception as e:
             print(f"[DiskIOEventProcessor] Error recording smartd observation: {e}")

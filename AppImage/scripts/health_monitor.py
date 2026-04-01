@@ -228,7 +228,6 @@ class HealthMonitor:
     
     def __init__(self):
         """Initialize health monitor with state tracking"""
-        print("[HealthMonitor] Version 2026-03-31-v2 - Stale resource cleanup enabled")
         self.state_history = defaultdict(list)
         self.last_check_times = {}
         self.cached_results = {}
@@ -1218,10 +1217,7 @@ class HealthMonitor:
                                 'dismissable': True,
                             }
                         )
-                    # Update worst_health for the disk (persists even if current error clears)
-                    # Use serial for proper USB disk tracking
-                    health_persistence.update_disk_worst_health(device, disk_serial if disk_serial else None, severity.lower())
-                    # Also register the disk for observation tracking
+                    # Register the disk for observation tracking (worst_health no longer used)
                     if disk_serial:
                         health_persistence.register_disk(device, disk_serial, disk_model, 0)
                 except Exception:
@@ -1242,7 +1238,7 @@ class HealthMonitor:
                 if disk_path not in storage_details or storage_details[disk_path].get('status') == 'OK':
                     issues.append(f'{disk_path}: {disk_info.get("reason", "I/O errors")}')
                     storage_details[disk_path] = disk_info
-                # Update worst_health for I/O errors
+                
                 device = disk_path.replace('/dev/', '')
                 io_severity = disk_info.get('status', 'WARNING').lower()
                 
@@ -1262,8 +1258,8 @@ class HealthMonitor:
                 except Exception:
                     pass
                 
+                # Register the disk for observation tracking (worst_health no longer used)
                 try:
-                    health_persistence.update_disk_worst_health(device, io_serial if io_serial else None, io_severity)
                     if io_serial:
                         health_persistence.register_disk(device, io_serial, io_model, 0)
                 except Exception:
@@ -1459,24 +1455,10 @@ class HealthMonitor:
             serial = disk_info.get('serial', '')
             model = disk_info.get('model', '')
             
-            # Get worst_health from persistence
+            # Use current status directly from Proxmox/SMART - no persistent worst_health
+            # Historical observations are preserved separately in disk_observations table
             current_status = error_info.get('status', 'WARNING')
-            try:
-                health_status = health_persistence.get_disk_health_status(device_name, serial if serial else None)
-                worst_health = health_status.get('worst_health', 'healthy')
-                
-                # Final health = max(current, worst)
-                health_order = {'healthy': 0, 'ok': 0, 'warning': 1, 'critical': 2}
-                current_level = health_order.get(current_status.lower(), 1)
-                worst_level = health_order.get(worst_health.lower(), 0)
-                
-                if worst_level > current_level:
-                    # worst_health is worse, use it
-                    final_status = worst_health.upper()
-                else:
-                    final_status = current_status
-            except Exception:
-                final_status = current_status
+            final_status = current_status
             
             # Build detail string with serial/model if available
             detail = error_info.get('detail', error_info.get('reason', 'Unknown error'))

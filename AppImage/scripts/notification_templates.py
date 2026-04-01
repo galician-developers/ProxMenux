@@ -883,7 +883,7 @@ TEMPLATES = {
         'default_enabled': True,
     },
     
-    # ── ProxMenux updates ��─
+    # ── ProxMenux updates ──
     'proxmenux_update': {
         'title': '{hostname}: ProxMenux {new_version} available',
         'body': (

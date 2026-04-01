@@ -868,7 +868,6 @@ class HealthPersistence:
             return self._cleanup_old_errors_impl()
     
     def _cleanup_old_errors_impl(self):
-        print("[HealthPersistence] Running cleanup_old_errors...")
         conn = self._get_conn()
         cursor = conn.cursor()
         
@@ -963,14 +962,13 @@ class HealthPersistence:
         now_iso = now.isoformat()
         
         # Get all active (unresolved) errors with first_seen and last_seen for age checks
+        # An error is considered unresolved if resolution_type is NULL or empty
+        # (resolved_at alone is not sufficient - it may be in an inconsistent state)
         cursor.execute('''
             SELECT id, error_key, category, reason, first_seen, last_seen, severity FROM errors 
-            WHERE resolved_at IS NULL
+            WHERE resolution_type IS NULL OR resolution_type = ''
         ''')
         active_errors = cursor.fetchall()
-        
-        print(f"[HealthPersistence] _cleanup_stale_resources: Found {len(active_errors)} active errors to check")
-        
         resolved_count = 0
         
         # Cache for expensive checks (avoid repeated subprocess calls)
@@ -1086,13 +1084,9 @@ class HealthPersistence:
             # Check if VM/CT still exists (covers: vms/vmct categories, vm_*, ct_*, vmct_* error keys)
             if category in ('vms', 'vmct') or (error_key and (error_key.startswith('vm_') or error_key.startswith('ct_') or error_key.startswith('vmct_'))):
                 vmid = extract_vmid_from_text(error_key) or extract_vmid_from_text(reason)
-                print(f"[HealthPersistence] Checking VM/CT error: key={error_key}, category={category}, vmid={vmid}")
-                if vmid:
-                    exists = check_vm_ct_cached(vmid)
-                    print(f"[HealthPersistence] VM/CT {vmid} exists: {exists}")
-                    if not exists:
-                        should_resolve = True
-                        resolution_reason = 'VM/CT deleted'
+                if vmid and not check_vm_ct_cached(vmid):
+                    should_resolve = True
+                    resolution_reason = 'VM/CT deleted'
             
             # === DISK ERRORS ===
             # Check if disk device or ZFS pool still exists
@@ -1207,7 +1201,6 @@ class HealthPersistence:
                 resolution_reason = 'Stale error (no activity >7d)'
             
             if should_resolve:
-                print(f"[HealthPersistence] Resolving error: {error_key} - {resolution_reason}")
                 cursor.execute('''
                     UPDATE errors SET resolved_at = ?, resolution_type = 'auto', resolution_reason = ?
                     WHERE id = ?
@@ -1862,130 +1855,10 @@ class HealthPersistence:
             pass
         return None
 
-    def update_disk_worst_health(self, device_name: str, serial: Optional[str],
-                                   new_health: str) -> bool:
-        """Update worst_health if new_health is worse than current.
-        
-        Health hierarchy: healthy < warning < critical
-        Only escalates, never downgrades automatically.
-        
-        Returns True if worst_health was updated.
-        """
-        health_order = {'healthy': 0, 'warning': 1, 'critical': 2}
-        new_level = health_order.get(new_health.lower(), 0)
-        
-        if new_level == 0:  # healthy never updates worst_health
-            return False
-        
-        now = datetime.now().isoformat()
-        try:
-            conn = self._get_conn()
-            cursor = conn.cursor()
-            
-            disk_id = self._get_disk_registry_id(cursor, device_name, serial)
-            if not disk_id:
-                # Register disk first
-                self.register_disk(device_name.replace('/dev/', ''), serial)
-                disk_id = self._get_disk_registry_id(cursor, device_name, serial)
-            
-            if not disk_id:
-                conn.close()
-                return False
-            
-            # Get current worst_health
-            cursor.execute('SELECT worst_health FROM disk_registry WHERE id = ?', (disk_id,))
-            row = cursor.fetchone()
-            current_worst = row[0] if row and row[0] else 'healthy'
-            current_level = health_order.get(current_worst.lower(), 0)
-            
-            # Only update if new health is worse
-            if new_level > current_level:
-                cursor.execute('''
-                    UPDATE disk_registry 
-                    SET worst_health = ?, worst_health_date = ?, admin_cleared = NULL
-                    WHERE id = ?
-                ''', (new_health.lower(), now, disk_id))
-                conn.commit()
-                conn.close()
-                return True
-            
-            conn.close()
-            return False
-        except Exception as e:
-            print(f"[HealthPersistence] Error updating worst_health for {device_name}: {e}")
-            return False
-
-    def get_disk_health_status(self, device_name: str, serial: Optional[str] = None) -> Dict[str, Any]:
-        """Get the health status of a disk including worst_health.
-        
-        Returns dict with:
-          - worst_health: 'healthy', 'warning', or 'critical'
-          - worst_health_date: ISO timestamp when worst_health was set
-          - admin_cleared: ISO timestamp if admin manually cleared the health
-          - observations_count: Number of recorded observations
-        """
-        try:
-            conn = self._get_conn()
-            cursor = conn.cursor()
-            
-            disk_id = self._get_disk_registry_id(cursor, device_name, serial)
-            if not disk_id:
-                conn.close()
-                return {'worst_health': 'healthy', 'observations_count': 0}
-            
-            cursor.execute('''
-                SELECT worst_health, worst_health_date, admin_cleared
-                FROM disk_registry WHERE id = ?
-            ''', (disk_id,))
-            row = cursor.fetchone()
-            
-            # Count observations
-            cursor.execute(
-                'SELECT COUNT(*) FROM disk_observations WHERE disk_registry_id = ? AND dismissed = 0',
-                (disk_id,))
-            obs_count = cursor.fetchone()[0]
-            
-            conn.close()
-            
-            if row:
-                return {
-                    'worst_health': row[0] or 'healthy',
-                    'worst_health_date': row[1],
-                    'admin_cleared': row[2],
-                    'observations_count': obs_count
-                }
-            return {'worst_health': 'healthy', 'observations_count': obs_count}
-        except Exception as e:
-            print(f"[HealthPersistence] Error getting disk health for {device_name}: {e}")
-            return {'worst_health': 'healthy', 'observations_count': 0}
-
-    def clear_disk_health_history(self, device_name: str, serial: Optional[str] = None) -> bool:
-        """Admin action: clear worst_health back to healthy.
-        
-        This resets the health status but keeps all observations for audit.
-        Records when the admin cleared it for accountability.
-        """
-        now = datetime.now().isoformat()
-        try:
-            conn = self._get_conn()
-            cursor = conn.cursor()
-            
-            disk_id = self._get_disk_registry_id(cursor, device_name, serial)
-            if not disk_id:
-                conn.close()
-                return False
-            
-            cursor.execute('''
-                UPDATE disk_registry 
-                SET worst_health = 'healthy', worst_health_date = NULL, admin_cleared = ?
-                WHERE id = ?
-            ''', (now, disk_id))
-            conn.commit()
-            conn.close()
-            return True
-        except Exception as e:
-            print(f"[HealthPersistence] Error clearing health for {device_name}: {e}")
-            return False
+    # NOTE: update_disk_worst_health, get_disk_health_status, clear_disk_health_history
+    # were removed. The disk health badge now shows the CURRENT status from Proxmox/SMART
+    # directly, not a persistent "worst_health". Historical observations are preserved
+    # in disk_observations table and shown separately via the "X obs." badge.
 
     def record_disk_observation(self, device_name: str, serial: Optional[str],
                                  error_type: str, error_signature: str,
@@ -2025,9 +1898,7 @@ class HealthPersistence:
             
             conn.commit()
             conn.close()
-            
-            # Update worst_health based on observation severity
-            self.update_disk_worst_health(clean_dev, serial, severity)
+            # Observation recorded - worst_health no longer updated (badge shows current SMART status)
             
         except Exception as e:
             print(f"[HealthPersistence] Error recording disk observation: {e}")
