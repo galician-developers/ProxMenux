@@ -249,6 +249,44 @@ class HealthPersistence:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_obs_disk ON disk_observations(disk_registry_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_obs_dismissed ON disk_observations(dismissed)')
         
+        # Migration: ensure disk_observations has all required columns
+        # Some older DBs may have different column names or missing columns
+        cursor.execute('PRAGMA table_info(disk_observations)')
+        obs_columns = [col[1] for col in cursor.fetchall()]
+        
+        # Add missing columns if needed (SQLite doesn't support RENAME COLUMN in older versions)
+        if 'error_type' not in obs_columns and 'observation_type' in obs_columns:
+            # Old schema had observation_type, but we'll work with it as-is
+            pass  # The code should handle both column names
+        
+        if 'first_occurrence' not in obs_columns and 'first_seen' in obs_columns:
+            # Old schema had first_seen/last_seen instead of first_occurrence/last_occurrence
+            pass  # The code should handle both column names
+        
+        if 'occurrence_count' not in obs_columns:
+            try:
+                cursor.execute('ALTER TABLE disk_observations ADD COLUMN occurrence_count INTEGER DEFAULT 1')
+            except Exception:
+                pass
+        
+        if 'raw_message' not in obs_columns:
+            try:
+                cursor.execute('ALTER TABLE disk_observations ADD COLUMN raw_message TEXT')
+            except Exception:
+                pass
+        
+        if 'severity' not in obs_columns:
+            try:
+                cursor.execute('ALTER TABLE disk_observations ADD COLUMN severity TEXT DEFAULT "warning"')
+            except Exception:
+                pass
+        
+        if 'dismissed' not in obs_columns:
+            try:
+                cursor.execute('ALTER TABLE disk_observations ADD COLUMN dismissed INTEGER DEFAULT 0')
+            except Exception:
+                pass
+        
         # ── Remote Storage Exclusions System ──
         # Allows users to permanently exclude remote storages (PBS, NFS, CIFS, etc.)
         # from health monitoring and notifications
@@ -1883,14 +1921,23 @@ class HealthPersistence:
                 conn.close()
                 return
             
-            # Upsert observation: if same (disk, type, signature), bump count + update last_occurrence
-            cursor.execute('''
+            # Detect column names for backward compatibility with older schemas
+            cursor.execute('PRAGMA table_info(disk_observations)')
+            columns = [col[1] for col in cursor.fetchall()]
+            
+            # Map to actual column names (old vs new schema)
+            type_col = 'error_type' if 'error_type' in columns else 'observation_type'
+            first_col = 'first_occurrence' if 'first_occurrence' in columns else 'first_seen'
+            last_col = 'last_occurrence' if 'last_occurrence' in columns else 'last_seen'
+            
+            # Upsert observation: if same (disk, type, signature), bump count + update last timestamp
+            cursor.execute(f'''
                 INSERT INTO disk_observations
-                    (disk_registry_id, error_type, error_signature, first_occurrence,
-                     last_occurrence, occurrence_count, raw_message, severity, dismissed)
+                    (disk_registry_id, {type_col}, error_signature, {first_col},
+                     {last_col}, occurrence_count, raw_message, severity, dismissed)
                 VALUES (?, ?, ?, ?, ?, 1, ?, ?, 0)
-                ON CONFLICT(disk_registry_id, error_type, error_signature) DO UPDATE SET
-                    last_occurrence = excluded.last_occurrence,
+                ON CONFLICT(disk_registry_id, {type_col}, error_signature) DO UPDATE SET
+                    {last_col} = excluded.{last_col},
                     occurrence_count = occurrence_count + 1,
                     severity = CASE WHEN excluded.severity = 'critical' THEN 'critical' ELSE severity END,
                     dismissed = 0
@@ -1914,6 +1961,14 @@ class HealthPersistence:
         try:
             conn = self._get_conn()
             cursor = conn.cursor()
+            
+            # Detect column names for backward compatibility with older schemas
+            cursor.execute('PRAGMA table_info(disk_observations)')
+            columns = [col[1] for col in cursor.fetchall()]
+            
+            type_col = 'error_type' if 'error_type' in columns else 'observation_type'
+            first_col = 'first_occurrence' if 'first_occurrence' in columns else 'first_seen'
+            last_col = 'last_occurrence' if 'last_occurrence' in columns else 'last_seen'
             
             if device_name or serial:
                 clean_dev = (device_name or '').replace('/dev/', '')
@@ -1940,25 +1995,25 @@ class HealthPersistence:
                 # Query observations for ALL matching registry entries
                 placeholders = ','.join('?' * len(all_ids))
                 cursor.execute(f'''
-                    SELECT o.id, o.error_type, o.error_signature,
-                           o.first_occurrence, o.last_occurrence,
+                    SELECT o.id, o.{type_col}, o.error_signature,
+                           o.{first_col}, o.{last_col},
                            o.occurrence_count, o.raw_message, o.severity, o.dismissed,
                            d.device_name, d.serial, d.model
                     FROM disk_observations o
                     JOIN disk_registry d ON o.disk_registry_id = d.id
                     WHERE o.disk_registry_id IN ({placeholders}) AND o.dismissed = 0
-                    ORDER BY o.last_occurrence DESC
+                    ORDER BY o.{last_col} DESC
                 ''', all_ids)
             else:
-                cursor.execute('''
-                    SELECT o.id, o.error_type, o.error_signature,
-                           o.first_occurrence, o.last_occurrence,
+                cursor.execute(f'''
+                    SELECT o.id, o.{type_col}, o.error_signature,
+                           o.{first_col}, o.{last_col},
                            o.occurrence_count, o.raw_message, o.severity, o.dismissed,
                            d.device_name, d.serial, d.model
                     FROM disk_observations o
                     JOIN disk_registry d ON o.disk_registry_id = d.id
                     WHERE o.dismissed = 0
-                    ORDER BY o.last_occurrence DESC
+                    ORDER BY o.{last_col} DESC
                 ''')
             
             rows = cursor.fetchall()
@@ -2076,10 +2131,16 @@ class HealthPersistence:
             cutoff = (datetime.now() - timedelta(days=max_age_days)).isoformat()
             conn = self._get_conn()
             cursor = conn.cursor()
-            cursor.execute('''
+            
+            # Detect column name for backward compatibility
+            cursor.execute('PRAGMA table_info(disk_observations)')
+            columns = [col[1] for col in cursor.fetchall()]
+            last_col = 'last_occurrence' if 'last_occurrence' in columns else 'last_seen'
+            
+            cursor.execute(f'''
                 UPDATE disk_observations 
                 SET dismissed = 1 
-                WHERE dismissed = 0 AND last_occurrence < ?
+                WHERE dismissed = 0 AND {last_col} < ?
             ''', (cutoff,))
             conn.commit()
             conn.close()
