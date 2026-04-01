@@ -2839,6 +2839,11 @@ class HealthMonitor:
                         if _vzdump_running:
                             continue  # Normal during backup
                         vmid = vm_qmp_match.group(1)
+                        
+                        # Skip if VM no longer exists (deleted after error occurred)
+                        if not self._vm_ct_exists(vmid):
+                            continue
+                        
                         vm_name = self._resolve_vm_name(vmid)
                         display = f"VM {vmid} ({vm_name})" if vm_name else f"VM {vmid}"
                         error_key = f'vm_{vmid}'
@@ -2865,6 +2870,11 @@ class HealthMonitor:
                     vzstart_match = re.search(r'vzstart:(\d+):', line)
                     if vzstart_match and ('error' in line_lower or 'fail' in line_lower or 'does not exist' in line_lower):
                         ctid = vzstart_match.group(1)
+                        
+                        # Skip if CT no longer exists (deleted after error occurred)
+                        if not self._vm_ct_exists(ctid):
+                            continue
+                        
                         error_key = f'ct_{ctid}'
                         
                         if error_key not in vm_details:
@@ -3387,7 +3397,9 @@ class HealthMonitor:
                                 # Use the SMART-aware severity we already determined above
                                 device_exists = os.path.exists(f'/dev/{base_device}')
                                 if not device_exists:
-                                    fs_severity = 'WARNING'
+                                    # Device no longer exists (USB disconnected, removed disk)
+                                    # Skip creating error - it's a stale journal entry
+                                    continue
                                 elif smart_status_for_log == 'PASSED':
                                     fs_severity = 'WARNING'  # SMART healthy -> transient
                                 elif smart_status_for_log == 'FAILED':
@@ -3410,7 +3422,7 @@ class HealthMonitor:
                                             'sample': line[:200],
                                             'smart_status': smart_status_for_log,
                                             'dismissable': True,
-                                            'device_exists': device_exists,
+                                            'device_exists': True,  # Always true here (non-existent devices skip above)
                                         }
                                     )
                                 
