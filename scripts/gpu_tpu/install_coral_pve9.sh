@@ -3,8 +3,8 @@
 # =========================================
 # Author      : MacRimi
 # License     : MIT
-# Version     : 1.3 (PVE9, silent build)
-# Last Updated: 25/09/2025
+# Version     : 1.4 (kernel-conditional patches, direct DKMS, no debuild)
+# Last Updated: 01/04/2026
 # =========================================
 
 LOCAL_SCRIPTS="/usr/local/share/proxmenux/scripts"
@@ -74,68 +74,72 @@ pre_install_prompt() {
 
 install_coral_host() {
   show_proxmenux_logo
-  : >"$LOG_FILE"  
+  : >"$LOG_FILE"
 
+  # Detect running kernel and parse major/minor for conditional patches
+  local KVER KMAJ KMIN
+  KVER=$(uname -r)
+  KMAJ=$(echo "$KVER" | cut -d. -f1)
+  KMIN=$(echo "$KVER" | cut -d. -f2 | cut -d+ -f1 | cut -d- -f1)
 
 
   msg_info "$(translate 'Installing build dependencies...')"
+  export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq >>"$LOG_FILE" 2>&1
-  apt-get install -y git devscripts dh-dkms dkms proxmox-headers-$(uname -r) >>"$LOG_FILE" 2>&1
-  if [[ $? -ne 0 ]]; then msg_error "$(translate 'Error installing build dependencies. Check /tmp/coral_install.log')"; exit 1; fi
-  msg_ok   "$(translate 'Build dependencies installed.')"
-
+  if ! apt-get install -y git dkms build-essential "proxmox-headers-${KVER}" >>"$LOG_FILE" 2>&1; then
+    msg_error "$(translate 'Error installing build dependencies. Check /tmp/coral_install.log')"; exit 1
+  fi
+  msg_ok "$(translate 'Build dependencies installed.')"
 
 
   cd /tmp || exit 1
   rm -rf gasket-driver >>"$LOG_FILE" 2>&1
   msg_info "$(translate 'Cloning Google Coral driver repository...')"
-  git clone https://github.com/google/gasket-driver.git >>"$LOG_FILE" 2>&1
-  if [[ $? -ne 0 ]]; then msg_error "$(translate 'Could not clone the repository. Check /tmp/coral_install.log')"; exit 1; fi
-  msg_ok   "$(translate 'Repository cloned successfully.')"
-
+  if ! git clone https://github.com/google/gasket-driver.git >>"$LOG_FILE" 2>&1; then
+    msg_error "$(translate 'Could not clone the repository. Check /tmp/coral_install.log')"; exit 1
+  fi
+  msg_ok "$(translate 'Repository cloned successfully.')"
 
 
   cd /tmp/gasket-driver || exit 1
   msg_info "$(translate 'Patching source for kernel compatibility...')"
 
-
-  sed -i 's/\.llseek = no_llseek/\.llseek = noop_llseek/' src/gasket_core.c
-
-  sed -i 's/^MODULE_IMPORT_NS(DMA_BUF);/MODULE_IMPORT_NS("DMA_BUF");/' src/gasket_page_table.c
-
-  sed -i "s/\(linux-headers-686-pae | linux-headers-amd64 | linux-headers-generic | linux-headers\)/\1 | proxmox-headers-$(uname -r) | pve-headers-$(uname -r)/" debian/control
-  if [[ $? -ne 0 ]]; then msg_error "$(translate 'Patching failed. Check /tmp/coral_install.log')"; exit 1; fi
-  msg_ok   "$(translate 'Source patched successfully.')"
-
-
-
-  msg_info "$(translate 'Building DKMS package...')"
-  debuild -us -uc -tc -b >>"$LOG_FILE" 2>&1
-  if [[ $? -ne 0 ]]; then msg_error "$(translate 'Failed to build DKMS package. Check /tmp/coral_install.log')"; exit 1; fi
-  msg_ok   "$(translate 'DKMS package built successfully.')"
-
-
-
-  msg_info "$(translate 'Installing DKMS package...')"
-  dpkg -i ../gasket-dkms_*.deb >>"$LOG_FILE" 2>&1 || true
-  if ! dpkg -s gasket-dkms >/dev/null 2>&1; then
-    msg_error "$(translate 'Failed to install DKMS package. Check /tmp/coral_install.log')"; exit 1
+  # Patch 1: no_llseek was removed in kernel 6.5 — replace with noop_llseek
+  if [[ "$KMAJ" -gt 6 ]] || [[ "$KMAJ" -eq 6 && "$KMIN" -ge 5 ]]; then
+    sed -i 's/\.llseek = no_llseek/\.llseek = noop_llseek/' src/gasket_core.c
   fi
-  msg_ok   "$(translate 'DKMS package installed.')"
 
+  # Patch 2: MODULE_IMPORT_NS changed to string-literal syntax in kernel 6.13.
+  # IMPORTANT: applying this patch on kernel < 6.13 causes a compile error.
+  if [[ "$KMAJ" -gt 6 ]] || [[ "$KMAJ" -eq 6 && "$KMIN" -ge 13 ]]; then
+    sed -i 's/^MODULE_IMPORT_NS(DMA_BUF);/MODULE_IMPORT_NS("DMA_BUF");/' src/gasket_page_table.c
+  fi
+
+  msg_ok "$(translate 'Source patched successfully.') (kernel ${KVER})"
+
+
+  msg_info "$(translate 'Preparing DKMS source tree...')"
+  local GASKET_SRC="/usr/src/gasket-1.0"
+  # Remove any previous installation (package or manual) to avoid conflicts
+  dpkg -r gasket-dkms >>"$LOG_FILE" 2>&1 || true
+  dkms remove gasket/1.0 --all >>"$LOG_FILE" 2>&1 || true
+  rm -rf "$GASKET_SRC"
+  cp -r /tmp/gasket-driver/. "$GASKET_SRC"
+  if ! dkms add "$GASKET_SRC" >>"$LOG_FILE" 2>&1; then
+    msg_error "$(translate 'DKMS add failed. Check /tmp/coral_install.log')"; exit 1
+  fi
+  msg_ok "$(translate 'DKMS source tree prepared.')"
 
 
   msg_info "$(translate 'Compiling Coral TPU drivers for current kernel...')"
-  dkms remove -m gasket -v 1.0 -k "$(uname -r)" >>"$LOG_FILE" 2>&1 || true
-  dkms add    -m gasket -v 1.0            >>"$LOG_FILE" 2>&1 || true
-  dkms build  -m gasket -v 1.0 -k "$(uname -r)" >>"$LOG_FILE" 2>&1
-  if [[ $? -ne 0 ]]; then
+  if ! dkms build gasket/1.0 -k "$KVER" >>"$LOG_FILE" 2>&1; then
     sed -n '1,200p' /var/lib/dkms/gasket/1.0/build/make.log >>"$LOG_FILE" 2>&1 || true
     msg_error "$(translate 'DKMS build failed. Check /tmp/coral_install.log')"; exit 1
   fi
-  dkms install -m gasket -v 1.0 -k "$(uname -r)" >>"$LOG_FILE" 2>&1
-  if [[ $? -ne 0 ]]; then msg_error "$(translate 'DKMS install failed. Check /tmp/coral_install.log')"; exit 1; fi
-  msg_ok   "$(translate 'Drivers compiled and installed via DKMS.')"
+  if ! dkms install gasket/1.0 -k "$KVER" >>"$LOG_FILE" 2>&1; then
+    msg_error "$(translate 'DKMS install failed. Check /tmp/coral_install.log')"; exit 1
+  fi
+  msg_ok "$(translate 'Drivers compiled and installed via DKMS.')"
 
 
   ensure_apex_group_and_udev
@@ -149,8 +153,6 @@ install_coral_host() {
   else
     msg_warn "$(translate 'Installation finished but drivers are not loaded. Please check dmesg and /tmp/coral_install.log')"
   fi
-
-
 
   echo "---- dmesg | grep -i apex (last lines) ----" >>"$LOG_FILE"
   dmesg | grep -i apex | tail -n 20 >>"$LOG_FILE" 2>&1

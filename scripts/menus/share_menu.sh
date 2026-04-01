@@ -32,6 +32,8 @@ while true; do
             "1"         "$(translate "Configure NFS shared   on Host")" \
             "2"         "$(translate "Configure Samba shared on Host")" \
             "3"         "$(translate "Configure Local Shared on Host")" \
+            "9"         "$(translate "Add Local Disk   as Proxmox Storage")" \
+            "10"        "$(translate "Add iSCSI Target as Proxmox Storage")" \
             ""  "\Z4──────────────────────── $(translate "LXC") ─────────────────────────\Zn" \
             "4"         "$(translate "Configure LXC Mount Points    (Host ↔ Container)")" \
             ""          "" \
@@ -59,7 +61,13 @@ while true; do
             ;;
         3)
             bash "$LOCAL_SCRIPTS/share/local-shared-manager.sh"
-            ;;    
+            ;;
+        9)
+            bash "$LOCAL_SCRIPTS/share/disk_host.sh"
+            ;;
+        10)
+            bash "$LOCAL_SCRIPTS/share/iscsi_host.sh"
+            ;;
         4)
             bash "$LOCAL_SCRIPTS/share/lxc-mount-manager_minimal.sh"
             ;;
