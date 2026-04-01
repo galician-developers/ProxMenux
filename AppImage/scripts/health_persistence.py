@@ -1820,6 +1820,19 @@ class HealthPersistence:
                                     'WHERE id = ?',
                                     (device_name, model, size_bytes, now, old_id))
                 
+                # If no serial provided, check if a record WITH serial already exists for this device
+                # This prevents creating duplicate entries (one with serial, one without)
+                effective_serial = serial or ''
+                if not serial:
+                    cursor.execute('''
+                        SELECT serial FROM disk_registry 
+                        WHERE device_name = ? AND serial != '' 
+                        ORDER BY last_seen DESC LIMIT 1
+                    ''', (device_name,))
+                    existing = cursor.fetchone()
+                    if existing and existing[0]:
+                        effective_serial = existing[0]  # Use the existing serial
+                
                 cursor.execute('''
                     INSERT INTO disk_registry (device_name, serial, model, size_bytes, first_seen, last_seen, removed)
                     VALUES (?, ?, ?, ?, ?, ?, 0)
@@ -1828,7 +1841,7 @@ class HealthPersistence:
                         size_bytes = COALESCE(excluded.size_bytes, size_bytes),
                         last_seen = excluded.last_seen,
                         removed = 0
-                ''', (device_name, serial or '', model, size_bytes, now, now))
+                ''', (device_name, effective_serial, model, size_bytes, now, now))
                 
                 conn.commit()
                 conn.close()
@@ -1847,6 +1860,8 @@ class HealthPersistence:
         linked observations, which helps with USB disks that may have
         multiple registry entries (one with serial, one without).
         """
+        clean_dev = device_name.replace('/dev/', '')
+        
         if serial:
             cursor.execute(
                 'SELECT id FROM disk_registry WHERE serial = ? AND serial != "" ORDER BY last_seen DESC LIMIT 1',
@@ -1854,9 +1869,19 @@ class HealthPersistence:
             row = cursor.fetchone()
             if row:
                 return row[0]
+        else:
+            # No serial provided - first check if a record WITH serial exists for this device
+            # This prevents returning a duplicate record without serial
+            cursor.execute('''
+                SELECT id FROM disk_registry 
+                WHERE device_name = ? AND serial != '' 
+                ORDER BY last_seen DESC LIMIT 1
+            ''', (clean_dev,))
+            row = cursor.fetchone()
+            if row:
+                return row[0]
         
-        # Fallback: match by device_name (strip /dev/ prefix)
-        clean_dev = device_name.replace('/dev/', '')
+        # Fallback: match by device_name
         
         if prefer_with_observations:
             # First try to find a registry entry that has observations linked

@@ -304,10 +304,23 @@ def enrich_context_for_ai(
     context_parts = []
     combined_text = f"{title} {body} {journal_context}"
     
-    # 1. System uptime (always useful)
-    uptime = get_system_uptime()
-    if uptime and uptime != "unknown":
-        context_parts.append(f"System uptime: {uptime}")
+    # 1. System uptime - only relevant for errors, not informational notifications
+    # Uptime helps distinguish startup issues from runtime failures
+    uptime_relevant_types = [
+        'error', 'critical', 'warning', 'service', 'system', 
+        'disk', 'smart', 'storage', 'io_error', 'network', 
+        'cluster', 'ha', 'vm', 'ct', 'container', 'backup'
+    ]
+    # Exclude purely informational events
+    informational_types = ['update', 'upgrade', 'available', 'info', 'resolved']
+    
+    is_uptime_relevant = any(t in event_type.lower() for t in uptime_relevant_types)
+    is_informational = any(t in event_type.lower() for t in informational_types)
+    
+    if is_uptime_relevant and not is_informational:
+        uptime = get_system_uptime()
+        if uptime and uptime != "unknown":
+            context_parts.append(f"System uptime: {uptime}")
     
     # 2. Event frequency
     error_key = data.get('error_key') or data.get('error_id')
