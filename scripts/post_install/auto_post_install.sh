@@ -511,42 +511,7 @@ EOF
 
 
 # ==========================================================
-customize_bashrc_() {
-    msg_info "$(translate "Customizing bashrc for root user...")"
-    local bashrc="/root/.bashrc"
-    local bash_profile="/root/.bash_profile"
-    
-    if [ ! -f "${bashrc}.bak" ]; then
-        cp "$bashrc" "${bashrc}.bak"
-    fi
-    
- 
-    cat >> "$bashrc" << 'EOF'
-
-# ProxMenux customizations
-export HISTTIMEFORMAT="%d/%m/%y %T "
-export PS1="\[\e[31m\][\[\e[m\]\[\e[38;5;172m\]\u\[\e[m\]@\[\e[38;5;153m\]\h\[\e[m\] \[\e[38;5;214m\]\W\[\e[m\]\[\e[31m\]]\[\e[m\]\\$ "
-alias l='ls -CF'
-alias la='ls -A'
-alias ll='ls -alF'
-alias ls='ls --color=auto'
-alias grep='grep --color=auto'
-alias fgrep='fgrep --color=auto'
-alias egrep='egrep --color=auto'
-source /etc/profile.d/bash_completion.sh
-EOF
-    
-    if ! grep -q "source /root/.bashrc" "$bash_profile"; then
-        echo "source /root/.bashrc" >> "$bash_profile"
-    fi
-    
-    msg_ok "$(translate "Bashrc customization completed")"
-    register_tool "bashrc_custom" true
-}
-
-
-
-customize_bashrc() {    
+customize_bashrc() {
     msg_info "$(translate "Customizing bashrc for root user...")"
     local bashrc="/root/.bashrc"
     local bash_profile="/root/.bash_profile"
@@ -562,7 +527,7 @@ customize_bashrc() {
     fi
     
  
-    cat >> "$bashrc" << 'EOF'
+    cat >> "$bashrc" << EOF
 ${marker_begin}
 # ProxMenux core customizations
 export HISTTIMEFORMAT="%d/%m/%y %T "
@@ -837,27 +802,27 @@ EOF
 setup_persistent_network() {
     local LINK_DIR="/etc/systemd/network"
     local BACKUP_DIR="/etc/systemd/network/backup-$(date +%Y%m%d-%H%M%S)"
-    
+    local pve_version
+    pve_version=$(pveversion 2>/dev/null | grep -oP 'pve-manager/\K[0-9]+' | head -1)
 
- 
     msg_info "$(translate "Setting up persistent network interfaces")"
     sleep 2
 
     mkdir -p "$LINK_DIR"
-    
+
     if ls "$LINK_DIR"/*.link >/dev/null 2>&1; then
         mkdir -p "$BACKUP_DIR"
         cp "$LINK_DIR"/*.link "$BACKUP_DIR"/ 2>/dev/null || true
     fi
-    
+
     local count=0
     for iface in $(ls /sys/class/net/ | grep -vE "lo|docker|veth|br-|vmbr|tap|fwpr|fwln|virbr|bond|cilium|zt|wg"); do
         if [[ -e "/sys/class/net/$iface/device" ]] || [[ -e "/sys/class/net/$iface/phy80211" ]]; then
             local MAC=$(cat /sys/class/net/$iface/address 2>/dev/null)
-            
+
             if [[ "$MAC" =~ ^([a-fA-F0-9]{2}:){5}[a-fA-F0-9]{2}$ ]]; then
                 local LINK_FILE="$LINK_DIR/10-$iface.link"
-                
+
                 cat > "$LINK_FILE" <<EOF
 [Match]
 MACAddress=$MAC
@@ -870,15 +835,22 @@ EOF
             fi
         fi
     done
-    
+
     if [[ $count -gt 0 ]]; then
         msg_ok "$(translate "Created persistent names for") $count $(translate "interfaces")"
+        # In PVE9, systemd-networkd is the native network backend and udev processes
+        # .link files directly. Reloading udev rules makes the new .link files effective
+        # immediately for any interface added later (hotplug, new NICs) without waiting
+        # for a full reboot. On PVE8 (ifupdown2), names are resolved at boot anyway.
+        if [[ "$pve_version" -ge 9 ]]; then
+            udevadm control --reload-rules 2>/dev/null || true
+            msg_ok "$(translate "PVE9: udev rules reloaded — new interfaces will get correct names without reboot")"
+        fi
         msg_ok "$(translate "Changes will apply after reboot.")"
     else
         msg_warn "$(translate "No physical interfaces found")"
     fi
     register_tool "persistent_network" true
-
 }
 
 
