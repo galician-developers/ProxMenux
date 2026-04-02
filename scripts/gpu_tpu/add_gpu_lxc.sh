@@ -320,7 +320,8 @@ _install_intel_drivers() {
   case "$distro" in
     alpine)
       pct exec "$ctid" -- sh -c \
-        "apk update && apk add --no-cache mesa-va-gallium libva-utils" \
+        "echo '@community https://dl-cdn.alpinelinux.org/alpine/edge/community' >> /etc/apk/repositories 2>/dev/null || true
+         apk update && apk add --no-cache mesa-va-gallium intel-media-driver@community libva libva-utils" \
         2>&1 | tee -a "$LOG_FILE"
       ;;
     arch|manjaro|endeavouros)
@@ -332,7 +333,7 @@ _install_intel_drivers() {
       pct exec "$ctid" -- bash -s >>"$LOG_FILE" 2>&1 << EOF
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y va-driver-all vainfo libva2 intel-media-va-driver-non-free i965-va-driver 2>/dev/null || \
+apt-get install -y va-driver-all vainfo libva2 ocl-icd-libopencl1 intel-opencl-icd intel-gpu-tools 2>/dev/null || \
 apt-get install -y va-driver-all vainfo libva2 2>/dev/null || true
 EOF
       ;;
@@ -360,7 +361,8 @@ _install_amd_drivers() {
       pct exec "$ctid" -- bash -s >>"$LOG_FILE" 2>&1 << EOF
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y mesa-va-drivers libdrm-amdgpu1 vainfo libva2 2>/dev/null || true
+apt-get install -y mesa-va-drivers libdrm-amdgpu1 vainfo libva2 2>/dev/null || \
+apt-get install -y mesa-va-drivers vainfo libva2 2>/dev/null || true
 EOF
       ;;
   esac
