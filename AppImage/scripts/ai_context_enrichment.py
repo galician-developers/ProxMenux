@@ -304,19 +304,25 @@ def enrich_context_for_ai(
     context_parts = []
     combined_text = f"{title} {body} {journal_context}"
     
-    # 1. System uptime - only relevant for errors, not informational notifications
+    # 1. System uptime - only relevant for failure/error events, not informational
     # Uptime helps distinguish startup issues from runtime failures
+    # Only include uptime when something FAILED or has CRITICAL/WARNING status
     uptime_relevant_types = [
-        'error', 'critical', 'warning', 'service', 'system', 
-        'disk', 'smart', 'storage', 'io_error', 'network', 
-        'cluster', 'ha', 'vm', 'ct', 'container', 'backup'
+        'fail', 'error', 'critical', 'crash', 'panic', 'oom',
+        'disk_error', 'smart_error', 'io_error', 'service_fail',
+        'split_brain', 'quorum_lost', 'node_offline'
     ]
-    # Exclude purely informational events
-    informational_types = ['update', 'upgrade', 'available', 'info', 'resolved']
+    # Exclude informational events (success, start, stop, complete, etc.)
+    informational_types = [
+        'update', 'upgrade', 'available', 'info', 'resolved',
+        'start', 'stop', 'shutdown', 'restart', 'complete', 
+        'backup_complete', 'backup_start', 'migration'
+    ]
     
     is_uptime_relevant = any(t in event_type.lower() for t in uptime_relevant_types)
     is_informational = any(t in event_type.lower() for t in informational_types)
     
+    # Only add uptime for actual failures, not routine operations
     if is_uptime_relevant and not is_informational:
         uptime = get_system_uptime()
         if uptime and uptime != "unknown":

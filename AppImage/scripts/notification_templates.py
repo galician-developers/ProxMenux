@@ -471,6 +471,13 @@ TEMPLATES = {
         'group': 'vm_ct',
         'default_enabled': True,
     },
+    'vm_start_warning': {
+        'title': '{hostname}: VM {vmname} ({vmid}) started with warnings',
+        'body': 'Virtual machine {vmname} (ID: {vmid}) started successfully but has warnings.\nWarnings: {reason}',
+        'label': 'VM started (warnings)',
+        'group': 'vm_ct',
+        'default_enabled': True,
+    },
     'vm_stop': {
         'title': '{hostname}: VM {vmname} ({vmid}) stopped',
         'body': 'Virtual machine {vmname} (ID: {vmid}) has been stopped.',
@@ -503,6 +510,13 @@ TEMPLATES = {
         'title': '{hostname}: CT {vmname} ({vmid}) started',
         'body': 'Container {vmname} (ID: {vmid}) is now running.',
         'label': 'CT started',
+        'group': 'vm_ct',
+        'default_enabled': True,
+    },
+    'ct_start_warning': {
+        'title': '{hostname}: CT {vmname} ({vmid}) started with warnings',
+        'body': 'Container {vmname} (ID: {vmid}) started successfully but has warnings.\nWarnings: {reason}',
+        'label': 'CT started (warnings)',
         'group': 'vm_ct',
         'default_enabled': True,
     },
@@ -548,6 +562,13 @@ TEMPLATES = {
         'group': 'vm_ct',
         'default_enabled': True,
     },
+    'migration_warning': {
+        'title': '{hostname}: Migration complete with warnings — {vmname} ({vmid})',
+        'body': '{vmname} (ID: {vmid}) migrated to node {target_node} but encountered warnings.\nWarnings: {reason}',
+        'label': 'Migration (warnings)',
+        'group': 'vm_ct',
+        'default_enabled': True,
+    },
     'migration_fail': {
         'title': '{hostname}: Migration FAILED — {vmname} ({vmid})',
         'body': 'Migration of {vmname} (ID: {vmid}) to node {target_node} failed.\nReason: {reason}',
@@ -582,6 +603,13 @@ TEMPLATES = {
         'title': '{hostname}: Backup complete — {vmname} ({vmid})',
         'body': 'Backup of {vmname} (ID: {vmid}) completed successfully.\nSize: {size}',
         'label': 'Backup complete',
+        'group': 'backup',
+        'default_enabled': True,
+    },
+    'backup_warning': {
+        'title': '{hostname}: Backup complete with warnings — {vmname} ({vmid})',
+        'body': 'Backup of {vmname} (ID: {vmid}) completed but encountered warnings.\nWarnings: {reason}',
+        'label': 'Backup (warnings)',
         'group': 'backup',
         'default_enabled': True,
     },
@@ -1182,23 +1210,27 @@ CATEGORY_EMOJI = {
 EVENT_EMOJI = {
     # VM / CT
     'vm_start':             '\u25B6\uFE0F',    # play button
+    'vm_start_warning':     '\u26A0\uFE0F',     # warning sign - started with warnings
     'vm_stop':              '\u23F9\uFE0F',     # stop button
     'vm_shutdown':          '\u23CF\uFE0F',     # eject
     'vm_fail':              '\U0001F4A5',        # collision (crash)
     'vm_restart':           '\U0001F504',        # cycle
     'ct_start':             '\u25B6\uFE0F',
+    'ct_start_warning':     '\u26A0\uFE0F',     # warning sign - started with warnings
     'ct_stop':              '\u23F9\uFE0F',
     'ct_shutdown':          '\u23CF\uFE0F',
     'ct_restart':           '\U0001F504',
     'ct_fail':              '\U0001F4A5',
     'migration_start':      '\U0001F69A',        # moving truck
     'migration_complete':   '\u2705',            # check mark
+    'migration_warning':    '\U0001F69A\u26A0\uFE0F', # 🚚⚠️ truck + warning
     'migration_fail':       '\u274C',            # cross mark
     'replication_fail':     '\u274C',
     'replication_complete': '\u2705',
     # Backups
     'backup_start':         '\U0001F4BE\U0001F680',  # 💾🚀 floppy + rocket
     'backup_complete':      '\U0001F4BE\u2705',       # 💾✅ floppy + check
+    'backup_warning':       '\U0001F4BE\u26A0\uFE0F', # 💾⚠️ floppy + warning
     'backup_fail':          '\U0001F4BE\u274C',       # 💾❌ floppy + cross
     'snapshot_complete':    '\U0001F4F8',         # camera with flash
     'snapshot_fail':        '\u274C',

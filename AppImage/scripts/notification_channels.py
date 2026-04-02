@@ -620,7 +620,7 @@ class EmailChannel(NotificationChannel):
   <td colspan="2" style="padding:8px 12px;font-size:13px;color:#1f2937;border-bottom:1px solid #e5e7eb;">{value}</td>
 </tr>'''
 
-        # ── Reason / details block (long text, displayed separately) ──
+        # ── Reason / details block (long text, displayed separately) ���─
         reason = data.get('reason', '')
         reason_html = ''
         if reason and len(reason) > 80:

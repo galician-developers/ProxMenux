@@ -1319,6 +1319,55 @@ class TaskWatcher:
     """
     
     TASK_LOG = '/var/log/pve/tasks/index'
+    TASK_DIR = '/var/log/pve/tasks'
+    
+    def _get_task_log_reason(self, upid: str, status: str) -> str:
+        """Read the task log file to extract the actual error/warning reason.
+        
+        Returns a human-readable reason extracted from the task log,
+        or falls back to the status code if log cannot be read.
+        """
+        try:
+            # Parse UPID to find log file
+            # UPID format: UPID:node:pid:pstart:starttime:type:id:user:
+            parts = upid.split(':')
+            if len(parts) < 5:
+                return status
+            
+            # Task logs are stored in /var/log/pve/tasks/X/UPID
+            # where X is first char of hex(starttime)
+            starttime_hex = parts[4]
+            if starttime_hex:
+                # First character of starttime in hex determines subdirectory
+                subdir = starttime_hex[0].upper()
+                log_path = os.path.join(self.TASK_DIR, subdir, upid.rstrip(':'))
+                
+                if os.path.exists(log_path):
+                    with open(log_path, 'r', errors='replace') as f:
+                        lines = f.readlines()
+                    
+                    # Look for error/warning messages in the log
+                    # Common patterns: "WARNINGS: ...", "ERROR: ...", "failed: ..."
+                    error_lines = []
+                    for line in lines:
+                        line_lower = line.lower()
+                        # Skip status lines at the end
+                        if line.startswith('TASK '):
+                            continue
+                        # Capture warning/error lines
+                        if any(kw in line_lower for kw in ['warning:', 'error:', 'failed', 'unable to', 'cannot']):
+                            # Clean up the line
+                            clean_line = line.strip()
+                            if clean_line and len(clean_line) < 200:  # Reasonable length
+                                error_lines.append(clean_line)
+                    
+                    if error_lines:
+                        # Return the most relevant lines (up to 3)
+                        return '; '.join(error_lines[:3])
+            
+            return status
+        except Exception:
+            return status
     
     # Map PVE task types to our event types
     TASK_MAP = {
@@ -1559,16 +1608,31 @@ class TaskWatcher:
                 # Backup just finished -- start grace period for VM restarts
                 self._vzdump_running_since = time.time()  # will expire via grace_period
         
-        # Check if task failed
-        is_error = status and status != 'OK' and status != ''
+        # Check if task failed or completed with warnings
+        # WARNINGS means the task completed but with non-fatal issues (e.g., EFI cert warnings)
+        # The VM/CT DID start successfully, just with caveats
+        is_warning = status and status.upper() == 'WARNINGS'
+        is_error = status and status not in ('OK', 'WARNINGS', '')
         
         if is_error:
-            # Override to failure event
+            # Override to failure event - task actually failed
             if 'start' in event_type:
                 event_type = event_type.replace('_start', '_fail')
             elif 'complete' in event_type:
                 event_type = event_type.replace('_complete', '_fail')
             severity = 'CRITICAL'
+        elif is_warning:
+            # Task completed with warnings - VM/CT started but has issues
+            # Use specific warning event types for better messaging
+            if event_type == 'vm_start':
+                event_type = 'vm_start_warning'
+            elif event_type == 'ct_start':
+                event_type = 'ct_start_warning'
+            elif event_type == 'backup_start':
+                event_type = 'backup_warning'  # Backup finished with warnings
+            elif event_type == 'migration_start':
+                event_type = 'migration_warning'  # Migration finished with warnings
+            severity = 'WARNING'
         elif status == 'OK':
             # Task completed successfully
             if event_type == 'backup_start':
@@ -1580,12 +1644,18 @@ class TaskWatcher:
             # Task just started (no status yet)
             severity = default_severity
         
+        # Get the actual reason from task log if error or warning
+        if is_error or is_warning:
+            reason = self._get_task_log_reason(upid, status)
+        else:
+            reason = ''
+        
         data = {
             'vmid': vmid,
             'vmname': vmname or f'ID {vmid}',
             'hostname': self._hostname,
             'user': user,
-            'reason': status if is_error else '',
+            'reason': reason,
             'target_node': '',
             'size': '',
             'snapshot_name': '',
