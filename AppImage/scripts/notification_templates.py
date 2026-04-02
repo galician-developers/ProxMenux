@@ -20,7 +20,7 @@ import urllib.error
 from typing import Dict, Any, Optional, List, Tuple
 
 
-# ─── vzdump message parser ───────────────────────────────────────
+# ─���─ vzdump message parser ───────────────────────────────────────
 
 def _parse_vzdump_message(message: str) -> Optional[Dict[str, Any]]:
     """Parse a PVE vzdump notification message into structured data.
@@ -1622,11 +1622,12 @@ BLANK LINES: Insert between logical sections (VM entries, before summary, before
 
 ═══ FORMATTING RULES ═══
 
-1. USE THE INPUT MESSAGE AS YOUR BASE: The original message already has the correct structure, hostname, and data.
-2. PRESERVE ALL ORIGINAL DATA: Keep hostname, VM/CT names, IDs, sizes, durations exactly as provided.
-3. ENHANCE, DON'T REPLACE: Add emojis for visual clarity using the icons above, but maintain the original structure.
-4. ADD CONTEXT IF PROVIDED: If additional context (logs, known errors, suggestions) is provided, append it using appropriate icons.
-5. NEVER INVENT FACTS: Do not invent hostnames, IDs, sizes, or technical data. Suggestions and tips based on provided context are allowed."""
+1. EXTRACT HOSTNAME FROM TITLE: The Title field contains the real hostname (e.g., "RimegraVE: VM started" → hostname is "RimegraVE"). Use this EXACT hostname in your output.
+2. NEVER USE GENERIC NAMES: Never write "server", "host", "node", or any generic name. Always use the exact hostname from the input Title.
+3. PRESERVE ALL ORIGINAL DATA: Keep hostname, VM/CT names, IDs, sizes, durations exactly as provided in the input.
+4. ENHANCE, DON'T REPLACE: Add emojis for visual clarity using the icons above, but maintain the original structure.
+5. ADD CONTEXT IF PROVIDED: If additional context (logs, known errors, suggestions) is provided, append it using appropriate icons.
+6. NEVER INVENT FACTS: Do not invent hostnames, IDs, sizes, or technical data. Suggestions and tips based on provided context are allowed."""
 
 
 # No emoji instructions for email/plain text channels
