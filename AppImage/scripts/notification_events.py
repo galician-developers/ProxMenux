@@ -1351,23 +1351,36 @@ class TaskWatcher:
                         lines = f.readlines()
                     
                     # Look for error/warning messages in the log
-                    # Common patterns: "warning: ...", "error: ...", "failed: ..."
+                    # Proxmox uses various patterns: "WARN:", "warning:", "error:", etc.
                     error_lines = []
                     for line in lines:
-                        line_lower = line.lower()
-                        # Skip status lines at the end (TASK OK, TASK ERROR, etc.)
-                        if line.startswith('TASK '):
+                        line_strip = line.strip()
+                        line_lower = line_strip.lower()
+                        
+                        # Skip empty lines and status lines at the end
+                        if not line_strip or line_strip.startswith('TASK '):
                             continue
-                        # Capture warning/error lines
-                        if any(kw in line_lower for kw in ['warning:', 'error:', 'failed', 'unable to', 'cannot', 'exception']):
-                            # Clean up the line
-                            clean_line = line.strip()
-                            if clean_line and len(clean_line) < 200:  # Reasonable length
-                                error_lines.append(clean_line)
+                        
+                        # Capture warning/error lines with various patterns
+                        # Proxmox uses: "WARN: ...", "warning: ...", "error: ...", "ERROR: ..."
+                        is_warning_error = any(kw in line_lower for kw in [
+                            'warn:', 'warning:', 'error:', 'failed', 'failure',
+                            'unable to', 'cannot', 'exception', 'critical',
+                            'certificate', 'expired', 'expires'  # EFI cert warnings
+                        ])
+                        
+                        # Also check for lines starting with common prefixes
+                        starts_with_prefix = any(line_strip.upper().startswith(p) for p in [
+                            'WARN:', 'WARNING:', 'ERROR:', 'CRITICAL:', 'FATAL:'
+                        ])
+                        
+                        if is_warning_error or starts_with_prefix:
+                            if len(line_strip) < 300:  # Reasonable length
+                                error_lines.append(line_strip)
                     
                     if error_lines:
-                        # Return the most relevant lines (up to 3)
-                        return '; '.join(error_lines[:3])
+                        # Return the most relevant lines (up to 5 for better context)
+                        return '; '.join(error_lines[:5])
             
             return status
         except Exception as e:
@@ -1692,7 +1705,6 @@ class TaskWatcher:
                          'ct_start', 'ct_stop', 'ct_shutdown', 'ct_restart'}
         if event_type in _BACKUP_NOISE and not is_error and not is_warning:
             if self._is_vzdump_active():
-                print(f"[TaskWatcher] Suppressed {event_type} for {vmid} - vzdump active")
                 return
         
         # Suppress VM/CT stop/shutdown during host shutdown/reboot.
@@ -1702,7 +1714,6 @@ class TaskWatcher:
         _SHUTDOWN_NOISE = {'vm_stop', 'vm_shutdown', 'ct_stop', 'ct_shutdown'}
         if event_type in _SHUTDOWN_NOISE and not is_error and not is_warning:
             if _shared_state.is_host_shutting_down():
-                print(f"[TaskWatcher] Suppressed {event_type} for {vmid} - host shutdown")
                 return
         
         # During startup period, aggregate VM/CT starts into a single message.
@@ -1712,12 +1723,10 @@ class TaskWatcher:
         _STARTUP_EVENTS = {'vm_start', 'ct_start'}
         if event_type in _STARTUP_EVENTS and not is_error and not is_warning:
             if _shared_state.is_startup_period():
-                print(f"[TaskWatcher] Suppressed {event_type} for {vmid} - startup period active")
                 vm_type = 'ct' if event_type == 'ct_start' else 'vm'
                 _shared_state.add_startup_vm(vmid, vmname or f'ID {vmid}', vm_type)
                 return
         
-        print(f"[TaskWatcher] Emitting event: {event_type}, severity={severity}, vmid={vmid}, vmname={vmname}")
         self._queue.put(NotificationEvent(
             event_type, severity, data, source='tasks',
             entity=entity, entity_id=vmid,
