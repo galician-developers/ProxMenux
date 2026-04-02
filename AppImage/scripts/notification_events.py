@@ -1336,12 +1336,13 @@ class TaskWatcher:
                 return status
             
             # Task logs are stored in /var/log/pve/tasks/X/UPID
-            # where X is first char of starttime (which is already hex in UPID)
+            # where X is the LAST character of starttime hex (uppercase)
+            # Example: starttime=69CE20CF -> subdirectory is "F"
             # The starttime field (parts[4]) is a hex timestamp
             starttime_hex = parts[4]
             if starttime_hex:
-                # First character of hex starttime determines subdirectory
-                subdir = starttime_hex[0].upper()
+                # LAST character of hex starttime determines subdirectory
+                subdir = starttime_hex[-1].upper()
                 # The log filename is the full UPID without trailing colon
                 upid_clean = upid.rstrip(':')
                 log_path = os.path.join(self.TASK_DIR, subdir, upid_clean)
