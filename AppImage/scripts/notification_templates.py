@@ -1605,7 +1605,7 @@ RULES:
 2. ENHANCE WITH ICONS: Place emojis at the START of a line to identify the data type.
 3. NEW CONTEXT: When adding journal info, SMART data, or known errors, use appropriate icons to make it readable.
 4. NO SPAM: Do not put emojis in the middle or end of sentences. Use 1-3 emojis at START of lines where they add clarity. Combine when meaningful (💾✅ backup ok).
-5. HIGHLIGHT ONLY: Not every line needs emoji — use them to highlight, not as filler. Blank lines = completely empty.
+  5. HIGHLIGHT ONLY: Use emojis to highlight, not as filler. Blank lines = completely empty.
 
 TITLE EMOJIS:
 ✅ success  ❌ failed  💥 crash  🆘 critical  📦 updates  🆕 pve-update  🚚 migration
