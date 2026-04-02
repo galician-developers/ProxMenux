@@ -1330,32 +1330,36 @@ class TaskWatcher:
         try:
             # Parse UPID to find log file
             # UPID format: UPID:node:pid:pstart:starttime:type:id:user:
+            # Example: UPID:pve:0000F234:0000B890:67890ABC:qmstart:100:root@pam:
             parts = upid.split(':')
             if len(parts) < 5:
                 return status
             
             # Task logs are stored in /var/log/pve/tasks/X/UPID
-            # where X is first char of hex(starttime)
+            # where X is first char of starttime (which is already hex in UPID)
+            # The starttime field (parts[4]) is a hex timestamp
             starttime_hex = parts[4]
             if starttime_hex:
-                # First character of starttime in hex determines subdirectory
+                # First character of hex starttime determines subdirectory
                 subdir = starttime_hex[0].upper()
-                log_path = os.path.join(self.TASK_DIR, subdir, upid.rstrip(':'))
+                # The log filename is the full UPID without trailing colon
+                upid_clean = upid.rstrip(':')
+                log_path = os.path.join(self.TASK_DIR, subdir, upid_clean)
                 
                 if os.path.exists(log_path):
                     with open(log_path, 'r', errors='replace') as f:
                         lines = f.readlines()
                     
                     # Look for error/warning messages in the log
-                    # Common patterns: "WARNINGS: ...", "ERROR: ...", "failed: ..."
+                    # Common patterns: "warning: ...", "error: ...", "failed: ..."
                     error_lines = []
                     for line in lines:
                         line_lower = line.lower()
-                        # Skip status lines at the end
+                        # Skip status lines at the end (TASK OK, TASK ERROR, etc.)
                         if line.startswith('TASK '):
                             continue
                         # Capture warning/error lines
-                        if any(kw in line_lower for kw in ['warning:', 'error:', 'failed', 'unable to', 'cannot']):
+                        if any(kw in line_lower for kw in ['warning:', 'error:', 'failed', 'unable to', 'cannot', 'exception']):
                             # Clean up the line
                             clean_line = line.strip()
                             if clean_line and len(clean_line) < 200:  # Reasonable length
@@ -1366,7 +1370,8 @@ class TaskWatcher:
                         return '; '.join(error_lines[:3])
             
             return status
-        except Exception:
+        except Exception as e:
+            # Log error for debugging but return status as fallback
             return status
     
     # Map PVE task types to our event types
@@ -1668,9 +1673,9 @@ class TaskWatcher:
         # EXCLUSIVELY by the PVE webhook, which delivers richer data (full
         # logs, sizes, durations, filenames).  TaskWatcher skips these to
         # avoid duplicates.
-        # NOTE: backup_start is NOT in this set -- PVE's webhook only fires
-        # when a backup FINISHES, so TaskWatcher is the only source for
-        # the "backup started" notification.
+        # NOTE: backup_start and backup_warning are NOT in this set --
+        # PVE's webhook only fires when backup FINISHES with OK or ERROR,
+        # but WARNINGS come through TaskWatcher with richer context.
         _WEBHOOK_EXCLUSIVE = {'backup_complete', 'backup_fail',
                               'replication_complete', 'replication_fail'}
         if event_type in _WEBHOOK_EXCLUSIVE:
@@ -1678,26 +1683,28 @@ class TaskWatcher:
         
         # Suppress VM/CT start/stop/shutdown while a vzdump is active.
         # These are backup-induced operations (mode=stop), not user actions.
-        # Exception: if a VM/CT FAILS to start after backup, that IS important.
+        # Exception: if a VM/CT FAILS or has WARNINGS, that IS important.
         _BACKUP_NOISE = {'vm_start', 'vm_stop', 'vm_shutdown', 'vm_restart',
                          'ct_start', 'ct_stop', 'ct_shutdown', 'ct_restart'}
-        if event_type in _BACKUP_NOISE and not is_error:
+        if event_type in _BACKUP_NOISE and not is_error and not is_warning:
             if self._is_vzdump_active():
                 return
         
         # Suppress VM/CT stop/shutdown during host shutdown/reboot.
         # When the host shuts down, all VMs/CTs stop - that's expected behavior,
         # not something that needs individual notifications.
+        # Exception: errors and warnings should still be notified.
         _SHUTDOWN_NOISE = {'vm_stop', 'vm_shutdown', 'ct_stop', 'ct_shutdown'}
-        if event_type in _SHUTDOWN_NOISE and not is_error:
+        if event_type in _SHUTDOWN_NOISE and not is_error and not is_warning:
             if _shared_state.is_host_shutting_down():
                 return
         
         # During startup period, aggregate VM/CT starts into a single message.
         # Instead of N individual "VM X started" messages, collect them and
         # let PollingCollector emit one "System startup: X VMs, Y CTs started".
+        # Exception: errors and warnings should NOT be aggregated - notify immediately.
         _STARTUP_EVENTS = {'vm_start', 'ct_start'}
-        if event_type in _STARTUP_EVENTS and not is_error:
+        if event_type in _STARTUP_EVENTS and not is_error and not is_warning:
             if _shared_state.is_startup_period():
                 vm_type = 'ct' if event_type == 'ct_start' else 'vm'
                 _shared_state.add_startup_vm(vmid, vmname or f'ID {vmid}', vm_type)
