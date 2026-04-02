@@ -1343,9 +1343,9 @@ class TaskWatcher:
             if starttime_hex:
                 # LAST character of hex starttime determines subdirectory
                 subdir = starttime_hex[-1].upper()
-                # The log filename is the full UPID without trailing colon
-                upid_clean = upid.rstrip(':')
-                log_path = os.path.join(self.TASK_DIR, subdir, upid_clean)
+                # The log filename is the full UPID INCLUDING the trailing colon
+                # Proxmox names the file exactly as the UPID (with colon at end)
+                log_path = os.path.join(self.TASK_DIR, subdir, upid)
                 
                 if os.path.exists(log_path):
                     with open(log_path, 'r', errors='replace') as f:
