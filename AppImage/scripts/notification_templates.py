@@ -20,7 +20,7 @@ import urllib.error
 from typing import Dict, Any, Optional, List, Tuple
 
 
-# ─���─ vzdump message parser ───────────────────────────────────────
+# ─── vzdump message parser ───────────────────────────────────────
 
 def _parse_vzdump_message(message: str) -> Optional[Dict[str, Any]]:
     """Parse a PVE vzdump notification message into structured data.
@@ -1620,14 +1620,81 @@ BODY EMOJIS:
 
 BLANK LINES: Insert between logical sections (VM entries, before summary, before packages block).
 
-═══ FORMATTING RULES ═══
+═══ HOSTNAME RULE (CRITICAL) ═══
+The Title field contains the real hostname before the colon e.g.: 
+("constructor: VM started" → hostname is "constructor").
+("amd: VM started" → hostname is "amd").
+("pve01: VM started" → hostname is "pve01").
+("pve05: VM started" → hostname is "pve05").
+You MUST use this EXACT hostname in your output. NEVER use generic names like "server", "host", or "node".
 
-1. EXTRACT HOSTNAME FROM TITLE: The Title field contains the real hostname (e.g., "RimegraVE: VM started" → hostname is "RimegraVE"). Use this EXACT hostname in your output.
-2. NEVER USE GENERIC NAMES: Never write "server", "host", "node", or any generic name. Always use the exact hostname from the input Title.
-3. PRESERVE ALL ORIGINAL DATA: Keep hostname, VM/CT names, IDs, sizes, durations exactly as provided in the input.
-4. ENHANCE, DON'T REPLACE: Add emojis for visual clarity using the icons above, but maintain the original structure.
-5. ADD CONTEXT IF PROVIDED: If additional context (logs, known errors, suggestions) is provided, append it using appropriate icons.
-6. NEVER INVENT FACTS: Do not invent hostnames, IDs, sizes, or technical data. Suggestions and tips based on provided context are allowed."""
+═══ EXAMPLES (follow these formats) ═══
+
+BACKUP START:
+[TITLE]
+💾🚀 constructor: Backup started
+[BODY]
+Backup job starting on storage PBS.
+🏷️ VMs: web01 (100)
+
+🗄️ Storage: PBS  |  ⚙️ Mode: stop
+
+BACKUP COMPLETE:
+[TITLE]
+💾✅ amd: Backup complete
+[BODY]
+Backup job finished on storage local-bak.
+
+🏷️ VM web01 (ID: 100)
+✔️ Status: ok
+💽 Size: 12.3 GiB
+⏱️ Duration: 00:04:21
+🗄️ Storage: vm/100/2026-03-17T22:00:08Z
+
+📊 Total: 1 backup | 💾 12.3 GiB | ⏱️ 00:04:21
+
+BACKUP PARTIAL FAIL:
+[TITLE]
+💾❌ pve05: Backup partially failed
+[BODY]
+Backup job finished with errors.
+
+🏷️ VM web01 (ID: 100)
+✔️ Status: ok
+💽 Size: 12.3 GiB
+
+🏷️ VM broken (ID: 102)
+❌ Status: error
+
+📊 Total: 2 backups | ❌ 1 failed
+
+UPDATES:
+[TITLE]
+📦 amd: Updates available
+[BODY]
+📦 Total updates: 24
+🔒 Security updates: 6
+🔄 Proxmox updates: 0
+
+🗂️ Important packages:
+• none
+
+VM/CT START:
+[TITLE]
+🚀 pve01: VM arch-linux (100) started
+[BODY]
+🏷️ Virtual machine arch-linux (ID: 100)
+✔️ Now running
+
+HEALTH DEGRADED:
+[TITLE]
+⚠️ constructor: Health warning — Disk I/O
+[BODY]
+💿 Device: /dev/sda
+⚠️ 1 sector unreadable (pending)
+📝 Log: process crashed (exit-code 255)
+⚠️ Recurring: 5 times in 24h
+💡 Tip: Run 'systemctl status pvedaemon'"""
 
 
 # No emoji instructions for email/plain text channels
