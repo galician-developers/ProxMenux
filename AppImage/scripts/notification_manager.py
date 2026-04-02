@@ -660,9 +660,10 @@ class NotificationManager:
         # Suppress VM/CT start/stop during active backups (second layer of defense).
         # The primary filter is in TaskWatcher, but timing gaps can let events
         # slip through. This catch-all filter checks at dispatch time.
+        # Exception: CRITICAL and WARNING events should always be notified.
         _BACKUP_NOISE_TYPES = {'vm_start', 'vm_stop', 'vm_shutdown', 'vm_restart',
                                 'ct_start', 'ct_stop', 'ct_shutdown', 'ct_restart'}
-        if event.event_type in _BACKUP_NOISE_TYPES and event.severity != 'CRITICAL':
+        if event.event_type in _BACKUP_NOISE_TYPES and event.severity not in ('CRITICAL', 'WARNING'):
             if self._is_backup_running():
                 return
         

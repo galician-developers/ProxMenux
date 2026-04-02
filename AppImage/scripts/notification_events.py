@@ -1580,7 +1580,10 @@ class TaskWatcher:
             return
         
         upid = parts[0]
-        status = parts[2] if len(parts) >= 3 else ''
+        # Status can be multi-word like "WARNINGS: 1" or "OK"
+        # Format: UPID TIMESTAMP STATUS [...]
+        # Join everything after timestamp as status
+        status = ' '.join(parts[2:]) if len(parts) >= 3 else ''
         
         # Parse UPID
         upid_parts = upid.split(':')
@@ -1616,8 +1619,9 @@ class TaskWatcher:
         # Check if task failed or completed with warnings
         # WARNINGS means the task completed but with non-fatal issues (e.g., EFI cert warnings)
         # The VM/CT DID start successfully, just with caveats
-        is_warning = status and status.upper() == 'WARNINGS'
-        is_error = status and status not in ('OK', 'WARNINGS', '')
+        # Status format can be "WARNINGS: N" where N is the count, so use startswith
+        is_warning = status and status.upper().startswith('WARNINGS')
+        is_error = status and status != 'OK' and not is_warning and status != ''
         
         if is_error:
             # Override to failure event - task actually failed
@@ -1688,6 +1692,7 @@ class TaskWatcher:
                          'ct_start', 'ct_stop', 'ct_shutdown', 'ct_restart'}
         if event_type in _BACKUP_NOISE and not is_error and not is_warning:
             if self._is_vzdump_active():
+                print(f"[TaskWatcher] Suppressed {event_type} for {vmid} - vzdump active")
                 return
         
         # Suppress VM/CT stop/shutdown during host shutdown/reboot.
@@ -1697,6 +1702,7 @@ class TaskWatcher:
         _SHUTDOWN_NOISE = {'vm_stop', 'vm_shutdown', 'ct_stop', 'ct_shutdown'}
         if event_type in _SHUTDOWN_NOISE and not is_error and not is_warning:
             if _shared_state.is_host_shutting_down():
+                print(f"[TaskWatcher] Suppressed {event_type} for {vmid} - host shutdown")
                 return
         
         # During startup period, aggregate VM/CT starts into a single message.
@@ -1706,10 +1712,12 @@ class TaskWatcher:
         _STARTUP_EVENTS = {'vm_start', 'ct_start'}
         if event_type in _STARTUP_EVENTS and not is_error and not is_warning:
             if _shared_state.is_startup_period():
+                print(f"[TaskWatcher] Suppressed {event_type} for {vmid} - startup period active")
                 vm_type = 'ct' if event_type == 'ct_start' else 'vm'
                 _shared_state.add_startup_vm(vmid, vmname or f'ID {vmid}', vm_type)
                 return
         
+        print(f"[TaskWatcher] Emitting event: {event_type}, severity={severity}, vmid={vmid}, vmname={vmname}")
         self._queue.put(NotificationEvent(
             event_type, severity, data, source='tasks',
             entity=entity, entity_id=vmid,
