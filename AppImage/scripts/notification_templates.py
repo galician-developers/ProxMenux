@@ -1001,7 +1001,7 @@ EVENT_GROUPS = {
 }
 
 
-# ─── Template Renderer ───────────────────────────────────────────
+# ─── Template Renderer ─��─────────────────────────────────────────
 
 def _get_hostname() -> str:
     """Get short hostname for message titles."""
@@ -1622,9 +1622,11 @@ BLANK LINES: Insert between logical sections (VM entries, before summary, before
 
 ═══ EXAMPLES (follow these formats) ═══
 
+IMPORTANT: {hostname} is a placeholder. Always use the ACTUAL hostname from the original message.
+
 BACKUP START:
 [TITLE]
-💾🚀 pve01: Backup started
+💾🚀 {hostname}: Backup started
 [BODY]
 Backup job starting on storage PBS.
 🏷️ VMs: web01 (100)
@@ -1633,7 +1635,7 @@ Backup job starting on storage PBS.
 
 BACKUP COMPLETE:
 [TITLE]
-💾✅ pve01: Backup complete
+💾✅ {hostname}: Backup complete
 [BODY]
 Backup job finished on storage local-bak.
 
@@ -1647,7 +1649,7 @@ Backup job finished on storage local-bak.
 
 BACKUP PARTIAL FAIL:
 [TITLE]
-💾❌ pve01: Backup partially failed
+💾❌ {hostname}: Backup partially failed
 [BODY]
 Backup job finished with errors.
 
@@ -1662,7 +1664,7 @@ Backup job finished with errors.
 
 UPDATES:
 [TITLE]
-📦 amd: Updates available
+📦 {hostname}: Updates available
 [BODY]
 📦 Total updates: 24
 🔒 Security updates: 6
@@ -1673,14 +1675,14 @@ UPDATES:
 
 VM/CT START:
 [TITLE]
-🚀 pve01: VM arch-linux (100) started
+🚀 {hostname}: VM arch-linux (100) started
 [BODY]
 🏷️ Virtual machine arch-linux (ID: 100)
 ✔️ Now running
 
 HEALTH DEGRADED:
 [TITLE]
-⚠️ amd: Health warning — Disk I/O
+⚠️ {hostname}: Health warning — Disk I/O
 [BODY]
 💿 Device: /dev/sda
 ⚠️ 1 sector unreadable (pending)

@@ -6192,6 +6192,8 @@ def api_network_interface_metrics(interface_name):
         
         rrd_data = []
         
+        rrd_error = None
+        
         if interface_type == 'vm_lxc':
             # For VM/LXC interfaces, get data from the VM/LXC RRD
             vmid, vm_type = extract_vmid_from_interface(interface_name)
@@ -6202,19 +6204,20 @@ def api_network_interface_metrics(interface_name):
                                            capture_output=True, text=True, timeout=10)
                 
                 if rrd_result.returncode == 0:
-                    all_data = json.loads(rrd_result.stdout)
-                    # Filter to only network-related fields
-                    for point in all_data:
-                        filtered_point = {'time': point.get('time')}
-                        # Add network fields if they exist
-                        for key in ['netin', 'netout']:
-                            if key in point:
-                                filtered_point[key] = point[key]
-                        rrd_data.append(filtered_point)
-
+                    try:
+                        all_data = json.loads(rrd_result.stdout)
+                        # Filter to only network-related fields
+                        for point in all_data:
+                            filtered_point = {'time': point.get('time')}
+                            # Add network fields if they exist
+                            for key in ['netin', 'netout']:
+                                if key in point:
+                                    filtered_point[key] = point[key]
+                            rrd_data.append(filtered_point)
+                    except json.JSONDecodeError:
+                        rrd_error = f'RRD data for {vm_type.upper()} {vmid} is empty or corrupted'
                 else:
-                    # print(f"[v0] ERROR: Failed to get RRD data for VM/LXC")
-                    pass
+                    rrd_error = f'Failed to get RRD data: {rrd_result.stderr}'
         else:
             # For physical/bridge interfaces, get data from node RRD
 
@@ -6223,37 +6226,41 @@ def api_network_interface_metrics(interface_name):
                                        capture_output=True, text=True, timeout=10)
             
             if rrd_result.returncode == 0:
-                all_data = json.loads(rrd_result.stdout)
-                # Filter to only network-related fields for this interface
-                for point in all_data:
-                    filtered_point = {'time': point.get('time')}
-                    # Add network fields if they exist
-                    for key in ['netin', 'netout']:
-                        if key in point:
-                            filtered_point[key] = point[key]
-                    rrd_data.append(filtered_point)
-
+                try:
+                    all_data = json.loads(rrd_result.stdout)
+                    # Filter to only network-related fields for this interface
+                    for point in all_data:
+                        filtered_point = {'time': point.get('time')}
+                        # Add network fields if they exist
+                        for key in ['netin', 'netout']:
+                            if key in point:
+                                filtered_point[key] = point[key]
+                        rrd_data.append(filtered_point)
+                except json.JSONDecodeError:
+                    rrd_error = 'Node RRD data is empty or corrupted'
             else:
-                # print(f"[v0] ERROR: Failed to get RRD data for node")
-                pass
+                rrd_error = f'Failed to get RRD data: {rrd_result.stderr}'
         
 
+        # If there was an RRD error and no data collected, return error with details
+        if rrd_error and not rrd_data:
+            return jsonify({
+                'error': 'RRD data not available',
+                'details': rrd_error,
+                'suggestion': 'The RRD database may be empty or corrupted. Try: systemctl restart rrdcached'
+            }), 503
+        
         return jsonify({
             'interface': interface_name,
             'type': interface_type,
             'timeframe': timeframe,
-            'data': rrd_data
+            'data': rrd_data,
+            'warning': rrd_error if rrd_error else None  # Include warning if there was an error but some data exists
         })
             
     except Exception as e:
 
         return jsonify({'error': str(e)}), 500
-
-@app.route('/api/vms', methods=['GET'])
-@require_auth
-def api_vms():
-    """Get virtual machine information"""
-    return jsonify(get_proxmox_vms())
 
 @app.route('/api/vms/<int:vmid>/metrics', methods=['GET'])
 @require_auth
@@ -6316,9 +6323,22 @@ def api_vm_metrics(vmid):
                 'data': rrd_data
             })
         else:
-
+            # Check if RRD file is empty or corrupted
+            stderr_lower = rrd_result.stderr.lower() if rrd_result.stderr else ''
+            if 'rrd' in stderr_lower or 'no such file' in stderr_lower or 'empty' in stderr_lower:
+                return jsonify({
+                    'error': 'RRD data not available',
+                    'details': f'The RRD database for {vm_type.upper()} {vmid} may be empty or corrupted.',
+                    'suggestion': 'Try restarting rrdcached: systemctl restart rrdcached'
+                }), 503
             return jsonify({'error': f'Failed to get RRD data: {rrd_result.stderr}'}), 500
-            
+    
+    except json.JSONDecodeError:
+        return jsonify({
+            'error': 'RRD data not available',
+            'details': f'Unable to parse metrics data for VM/LXC {vmid}.',
+            'suggestion': 'Try restarting rrdcached: systemctl restart rrdcached'
+        }), 503
     except Exception as e:
 
         return jsonify({'error': str(e)}), 500
@@ -6381,8 +6401,23 @@ def api_node_metrics():
                 'data': rrd_data
             })
         else:
+            # Check if RRD file is empty or corrupted
+            stderr_lower = rrd_result.stderr.lower() if rrd_result.stderr else ''
+            if 'rrd' in stderr_lower or 'no such file' in stderr_lower or 'empty' in stderr_lower:
+                return jsonify({
+                    'error': 'RRD data not available',
+                    'details': 'The RRD database file may be empty or corrupted. This can happen if rrdcached was not running properly after Proxmox installation.',
+                    'suggestion': 'Try restarting rrdcached: systemctl restart rrdcached'
+                }), 503  # Service Unavailable - more appropriate than 500
             return jsonify({'error': f'Failed to get RRD data: {rrd_result.stderr}'}), 500
             
+    except json.JSONDecodeError:
+        # pvesh returned invalid JSON - likely empty RRD
+        return jsonify({
+            'error': 'RRD data not available',
+            'details': 'Unable to parse metrics data. The RRD database may be empty or corrupted.',
+            'suggestion': 'Try restarting rrdcached: systemctl restart rrdcached'
+        }), 503
     except Exception as e:
 
         return jsonify({'error': str(e)}), 500
