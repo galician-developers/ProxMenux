@@ -967,6 +967,36 @@ class HealthPersistence:
         cutoff_events = (now - timedelta(days=30)).isoformat()
         cursor.execute('DELETE FROM events WHERE timestamp < ?', (cutoff_events,))
         
+        # ── Auto-resolve log errors that occurred before the last system reboot ──
+        # After a reboot, transient errors like OOM, service failures, etc. are resolved.
+        # Only resolve log errors (not disk errors which may persist across reboots).
+        try:
+            import os
+            # Get system boot time from /proc/stat
+            with open('/proc/stat', 'r') as f:
+                for line in f:
+                    if line.startswith('btime '):
+                        boot_timestamp = int(line.split()[1])
+                        boot_time = datetime.fromtimestamp(boot_timestamp)
+                        # Resolve log errors that were last seen BEFORE the boot time
+                        # These are transient errors (OOM, service crashes) that a reboot fixes
+                        boot_time_iso = boot_time.isoformat()
+                        cursor.execute('''
+                            UPDATE errors 
+                            SET resolved_at = ?
+                            WHERE category = 'logs'
+                              AND resolved_at IS NULL 
+                              AND acknowledged = 0
+                              AND last_seen < ?
+                              AND (error_key LIKE 'log_critical_%' 
+                                   OR reason LIKE '%Out of memory%'
+                                   OR reason LIKE '%service%Failed%'
+                                   OR reason LIKE '%timeout%')
+                        ''', (now_iso, boot_time_iso))
+                        break
+        except Exception:
+            pass  # If we can't read boot time, skip this cleanup
+        
         conn.commit()
         conn.close()
         

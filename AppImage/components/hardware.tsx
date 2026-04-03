@@ -1095,6 +1095,22 @@ export default function Hardware() {
                       </div>
                     )}
                   </>
+                ) : (findPCIDeviceForGPU(selectedGPU)?.driver === 'vfio-pci' || selectedGPU.pci_driver === 'vfio-pci') ? (
+                  <div className="rounded-lg bg-purple-500/10 p-4 border border-purple-500/20">
+                    <div className="flex gap-3">
+                      <div className="flex-shrink-0">
+                        <svg className="h-5 w-5 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-semibold text-purple-500 mb-1">GPU in Switch Mode VM</h4>
+                        <p className="text-sm text-muted-foreground">
+                          This GPU is assigned to a virtual machine via VFIO passthrough. Real-time monitoring is not available from the host because the GPU is controlled by the VM.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 ) : (
                   <div className="rounded-lg bg-blue-500/10 p-4 border border-blue-500/20">
                     <div className="flex gap-3">
