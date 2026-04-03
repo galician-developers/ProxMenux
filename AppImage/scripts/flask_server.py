@@ -6262,6 +6262,12 @@ def api_network_interface_metrics(interface_name):
 
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/vms', methods=['GET'])
+@require_auth
+def api_vms():
+    """Get virtual machine information"""
+    return jsonify(get_proxmox_vms())
+
 @app.route('/api/vms/<int:vmid>/metrics', methods=['GET'])
 @require_auth
 def api_vm_metrics(vmid):
