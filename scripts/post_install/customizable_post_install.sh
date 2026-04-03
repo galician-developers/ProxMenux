@@ -65,6 +65,9 @@ initialize_cache
 if [[ -f "$LOCAL_SCRIPTS/global/common-functions.sh" ]]; then
     source "$LOCAL_SCRIPTS/global/common-functions.sh"
 fi
+if [[ -f "$LOCAL_SCRIPTS/global/utils-install-functions.sh" ]]; then
+    source "$LOCAL_SCRIPTS/global/utils-install-functions.sh"
+fi
 # ==========================================================
 
 
@@ -2582,6 +2585,73 @@ EOF
 
 
 
+install_system_utils() {
+    msg_info2 "$(translate "Installing system utilities...")"
+
+    # Build checklist from global PROXMENUX_UTILS array
+    local checklist_items=()
+    for util_entry in "${PROXMENUX_UTILS[@]}"; do
+        IFS=':' read -r pkg cmd desc <<< "$util_entry"
+        checklist_items+=("$pkg" "$(translate "$desc")" "OFF")
+    done
+
+    exec 3>&1
+    local selected
+    selected=$(dialog --clear --backtitle "ProxMenux" \
+        --title "$(translate "Select utilities to install")" \
+        --checklist "$(translate "Use SPACE to select, ENTER to confirm")" \
+        25 80 20 "${checklist_items[@]}" 2>&1 1>&3)
+    local dialog_exit=$?
+    exec 3>&-
+
+    if [[ $dialog_exit -ne 0 || -z "$selected" ]]; then
+        msg_warn "$(translate "No utilities selected")"
+        return 0
+    fi
+
+    clear
+    show_proxmenux_logo
+
+    if ! ensure_repositories; then
+        msg_error "$(translate "Failed to configure repositories. Installation aborted.")"
+        return 1
+    fi
+
+    local success=0 failed=0 warning=0
+    local selected_array
+    IFS=' ' read -ra selected_array <<< "$selected"
+
+    for util in "${selected_array[@]}"; do
+        util=$(echo "$util" | tr -d '"')
+        local pkg_cmd="$util" pkg_desc="$util"
+        for util_entry in "${PROXMENUX_UTILS[@]}"; do
+            IFS=':' read -r epkg ecmd edesc <<< "$util_entry"
+            if [[ "$epkg" == "$util" ]]; then
+                pkg_cmd="$ecmd"
+                pkg_desc="$edesc"
+                break
+            fi
+        done
+        install_single_package "$util" "$pkg_cmd" "$pkg_desc"
+        case $? in
+            0) success=$((success + 1)) ;;
+            1) failed=$((failed + 1)) ;;
+            2) warning=$((warning + 1)) ;;
+        esac
+    done
+
+    hash -r 2>/dev/null
+    echo
+    msg_info2 "$(translate "Installation summary"):"
+    [[ $success -gt 0 ]] && msg_ok "$(translate "Successful"): $success"
+    [[ $warning -gt 0 ]] && msg_warn "$(translate "With warnings"): $warning"
+    [[ $failed -gt 0 ]] && msg_error "$(translate "Failed"): $failed"
+    msg_success "$(translate "Utilities installation completed")"
+}
+
+
+
+
 # Main menu function
 main_menu() {
   local HEADER
@@ -2750,7 +2820,7 @@ done
         APTUPGRADE) apt_upgrade ;;
         TIMESYNC) configure_time_sync ;;
         NOAPTLANG) skip_apt_languages ;;
-        UTILS) bash "$LOCAL_SCRIPTS/utilities/system_utils.sh" ;;
+        UTILS) install_system_utils ;;
         JOURNALD) optimize_journald ;;
         LOGROTATE) optimize_logrotate ;;
         LIMITS) increase_system_limits ;;
