@@ -967,35 +967,40 @@ class HealthPersistence:
         cutoff_events = (now - timedelta(days=30)).isoformat()
         cursor.execute('DELETE FROM events WHERE timestamp < ?', (cutoff_events,))
         
-        # ── Auto-resolve log errors that occurred before the last system reboot ──
-        # After a reboot, transient errors like OOM, service failures, etc. are resolved.
-        # Only resolve log errors (not disk errors which may persist across reboots).
+        # ── Auto-resolve transient log errors after system reboot ──
+        # OOM, service failures, timeouts are transient - a reboot resolves them.
+        # If the system has been up for >1 hour and these errors haven't recurred,
+        # they are from a previous boot and should be auto-resolved.
+        # 
+        # Logic: If uptime > 1 hour AND error.last_seen is not within the last 30 minutes,
+        # the error is stale (from before the current stable state) and should be resolved.
         try:
-            import os
-            # Get system boot time from /proc/stat
-            with open('/proc/stat', 'r') as f:
-                for line in f:
-                    if line.startswith('btime '):
-                        boot_timestamp = int(line.split()[1])
-                        boot_time = datetime.fromtimestamp(boot_timestamp)
-                        # Resolve log errors that were last seen BEFORE the boot time
-                        # These are transient errors (OOM, service crashes) that a reboot fixes
-                        boot_time_iso = boot_time.isoformat()
-                        cursor.execute('''
-                            UPDATE errors 
-                            SET resolved_at = ?
-                            WHERE category = 'logs'
-                              AND resolved_at IS NULL 
-                              AND acknowledged = 0
-                              AND last_seen < ?
-                              AND (error_key LIKE 'log_critical_%' 
-                                   OR reason LIKE '%Out of memory%'
-                                   OR reason LIKE '%service%Failed%'
-                                   OR reason LIKE '%timeout%')
-                        ''', (now_iso, boot_time_iso))
-                        break
+            # Get system uptime
+            with open('/proc/uptime', 'r') as f:
+                uptime_seconds = float(f.read().split()[0])
+            
+            # Only auto-resolve if system has been stable for at least 1 hour
+            if uptime_seconds > 3600:  # 1 hour
+                # Resolve transient log errors that haven't been seen in the last 30 minutes
+                # If they were real current issues, journalctl -b 0 would have detected them recently
+                stale_cutoff = (now - timedelta(minutes=30)).isoformat()
+                cursor.execute('''
+                    UPDATE errors 
+                    SET resolved_at = ?
+                    WHERE category = 'logs'
+                      AND resolved_at IS NULL 
+                      AND acknowledged = 0
+                      AND last_seen < ?
+                      AND (error_key LIKE 'log_critical_%' 
+                           OR error_key LIKE 'log_persistent_%'
+                           OR reason LIKE '%Out of memory%'
+                           OR reason LIKE '%Recurring error%'
+                           OR reason LIKE '%service%Failed%'
+                           OR reason LIKE '%timeout%'
+                           OR reason LIKE '%critical error%')
+                ''', (now_iso, stale_cutoff))
         except Exception:
-            pass  # If we can't read boot time, skip this cleanup
+            pass  # If we can't read uptime, skip this cleanup
         
         conn.commit()
         conn.close()

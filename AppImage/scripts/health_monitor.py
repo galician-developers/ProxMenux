@@ -279,9 +279,10 @@ class HealthMonitor:
             return cache['output']
         
         # Execute journalctl and cache result
+        # Use -b 0 to only include logs from the current boot
         try:
             result = subprocess.run(
-                ['journalctl', '--since', '10 minutes ago', '--no-pager', '-p', 'warning'],
+                ['journalctl', '-b', '0', '--since', '10 minutes ago', '--no-pager', '-p', 'warning'],
                 capture_output=True,
                 text=True,
                 timeout=20
@@ -311,9 +312,10 @@ class HealthMonitor:
             return cache['output']
         
         # Execute journalctl and cache result
+        # Use -b 0 to only include logs from the current boot
         try:
             result = subprocess.run(
-                ['journalctl', '--since', '1 hour ago', '--no-pager', '-p', 'warning',
+                ['journalctl', '-b', '0', '--since', '1 hour ago', '--no-pager', '-p', 'warning',
                  '--output=short-precise'],
                 capture_output=True,
                 text=True,
@@ -3284,16 +3286,19 @@ class HealthMonitor:
         
         try:
             # Fetch logs from the last 3 minutes for immediate issue detection
+            # Use -b 0 to only include logs from the CURRENT boot (not previous boots)
+            # This prevents OOM/crash errors from before a reboot from persisting
             result_recent = subprocess.run(
-                ['journalctl', '--since', '3 minutes ago', '--no-pager', '-p', 'warning'],
+                ['journalctl', '-b', '0', '--since', '3 minutes ago', '--no-pager', '-p', 'warning'],
                 capture_output=True,
                 text=True,
                 timeout=20
             )
             
             # Fetch logs from the previous 3-minute interval to detect spikes/cascades
+            # Also limited to current boot only
             result_previous = subprocess.run(
-                ['journalctl', '--since', '6 minutes ago', '--until', '3 minutes ago', '--no-pager', '-p', 'warning'],
+                ['journalctl', '-b', '0', '--since', '6 minutes ago', '--until', '3 minutes ago', '--no-pager', '-p', 'warning'],
                 capture_output=True,
                 text=True,
                 timeout=20
