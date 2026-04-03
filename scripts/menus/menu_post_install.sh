@@ -137,7 +137,7 @@ show_menu() {
         
 
         menu_items+=("" "")
-        menu_items+=("-" "───────────────────── $(translate "Community Scripts") ──────────────────────")
+        menu_items+=("-" "───────────────────── Community Scripts ──────────────────────")
         menu_items+=("" "")
         
 

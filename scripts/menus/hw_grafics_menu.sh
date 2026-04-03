@@ -28,13 +28,15 @@ while true; do
     OPTION=$(dialog --colors --backtitle "ProxMenux" \
         --title "$(translate "GPUs and Coral-TPU Menu")" \
         --menu "\n$(translate "Select an option:")" 25 80 15 \
-            ""  "\Z4──────────────────────── $(translate "HOST") ─────────────────────────\Zn" \
+            ""  "\Z4──────────────────────── HOST ─────────────────────────\Zn" \
             "1"         "$(translate "Install NVIDIA Drivers on Host")" \
             "2"         "$(translate "Update NVIDIA Drivers (Host + LXC)")" \
             "3"         "$(translate "Install/Update Coral TPU on Host")" \
-            ""  "\Z4──────────────────────── $(translate "LXC") ──────────────────────────\Zn" \
-            "4"         "$(translate "Add GPU to LXC   (Intel / AMD / NVIDIA)")" \
+            ""  "\Z4──────────────────────── LXC ──────────────────────────\Zn" \
+            "4"         "$(translate "Add GPU to LXC   (Intel | AMD | NVIDIA)")  \Zb\Z4Switch Mode\Zn" \
             "5"         "$(translate "Add Coral TPU to LXC")" \
+            ""  "\Z4──────────────────────── VM ───────────────────────────\Zn" \
+            "6"         "$(translate "Add GPU to VM    (Intel | AMD | NVIDIA)")  \Zb\Z4Switch Mode\Zn" \
             ""          "" \
             "0"         "$(translate "Return to Main Menu")" \
             2>&1 >/dev/tty
@@ -55,6 +57,9 @@ while true; do
             ;;
         5)
             bash "$LOCAL_SCRIPTS/gpu_tpu/install_coral_lxc.sh"
+            ;;
+        6)
+            bash "$LOCAL_SCRIPTS/gpu_tpu/add_gpu_vm.sh"
             ;;
         0)
             exec bash "$LOCAL_SCRIPTS/menus/main_menu.sh"

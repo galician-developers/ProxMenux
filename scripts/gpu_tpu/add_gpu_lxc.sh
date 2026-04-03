@@ -16,6 +16,14 @@ INSTALL_ABORTED=false
 NVIDIA_INSTALL_SUCCESS=false
 NVIDIA_SMI_OUTPUT=""
 screen_capture="/tmp/proxmenux_add_gpu_screen_capture_$$.txt"
+LXC_SWITCH_MODE=false
+
+INTEL_PCI=""
+INTEL_VID_DID=""
+AMD_PCI=""
+AMD_VID_DID=""
+NVIDIA_PCI=""
+NVIDIA_VID_DID=""
 
 if [[ -f "$UTILS_FILE" ]]; then
   source "$UTILS_FILE"
@@ -37,6 +45,128 @@ get_next_dev_index() {
   echo "$idx"
 }
 
+_get_lxc_run_title() {
+  if [[ "$LXC_SWITCH_MODE" == "true" ]]; then
+    echo "GPU Switch Mode (VM → LXC)"
+  else
+    echo "$(translate 'Add GPU to LXC')"
+  fi
+}
+
+_gpu_type_label() {
+  case "$1" in
+    intel)  echo "${INTEL_NAME:-Intel iGPU}" ;;
+    amd)    echo "${AMD_NAME:-AMD GPU}" ;;
+    nvidia) echo "${NVIDIA_NAME:-NVIDIA GPU}" ;;
+    *)      echo "$1" ;;
+  esac
+}
+
+_config_has_dev_entry() {
+  local cfg="$1"
+  local dev="$2"
+  local dev_escaped
+  dev_escaped=$(printf '%s' "$dev" | sed 's/[][(){}.^$*+?|\\]/\\&/g')
+  grep -qE "^dev[0-9]+:.*${dev_escaped}([,[:space:]]|$)" "$cfg" 2>/dev/null
+}
+
+_is_lxc_gpu_already_configured() {
+  local cfg="$1"
+  local gpu_type="$2"
+  local dev
+
+  case "$gpu_type" in
+    intel)
+      local have_dri=0
+      for dev in /dev/dri/card0 /dev/dri/card1 /dev/dri/renderD128 /dev/dri/renderD129; do
+        [[ -c "$dev" ]] || continue
+        have_dri=1
+        _config_has_dev_entry "$cfg" "$dev" || return 1
+      done
+      [[ $have_dri -eq 1 ]] || return 1
+      return 0
+      ;;
+    amd)
+      local have_dri=0
+      for dev in /dev/dri/card0 /dev/dri/card1 /dev/dri/renderD128 /dev/dri/renderD129; do
+        [[ -c "$dev" ]] || continue
+        have_dri=1
+        _config_has_dev_entry "$cfg" "$dev" || return 1
+      done
+      [[ $have_dri -eq 1 ]] || return 1
+      if [[ -c "/dev/kfd" ]]; then
+        _config_has_dev_entry "$cfg" "/dev/kfd" || return 1
+      fi
+      return 0
+      ;;
+    nvidia)
+      local -a nv_devs=()
+      for dev in /dev/nvidia[0-9]* /dev/nvidiactl /dev/nvidia-uvm /dev/nvidia-uvm-tools /dev/nvidia-modeset; do
+        [[ -c "$dev" ]] && nv_devs+=("$dev")
+      done
+      if [[ -d /dev/nvidia-caps ]]; then
+        for dev in /dev/nvidia-caps/nvidia-cap[0-9]*; do
+          [[ -c "$dev" ]] && nv_devs+=("$dev")
+        done
+      fi
+      [[ ${#nv_devs[@]} -gt 0 ]] || return 1
+      for dev in "${nv_devs[@]}"; do
+        _config_has_dev_entry "$cfg" "$dev" || return 1
+      done
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+precheck_existing_lxc_gpu_config() {
+  local cfg="/etc/pve/lxc/${CONTAINER_ID}.conf"
+  [[ -f "$cfg" ]] || return 0
+
+  local -a already_present=() missing=()
+  local gpu_type
+  for gpu_type in "${SELECTED_GPUS[@]}"; do
+    if _is_lxc_gpu_already_configured "$cfg" "$gpu_type"; then
+      already_present+=("$gpu_type")
+    else
+      missing+=("$gpu_type")
+    fi
+  done
+
+  if [[ ${#missing[@]} -eq 0 ]]; then
+    local msg labels=""
+    for gpu_type in "${already_present[@]}"; do
+      labels+="  •  $(_gpu_type_label "$gpu_type")\n"
+    done
+    msg="\n$(translate 'The selected GPU configuration already exists in this container.')\n\n"
+    msg+="$(translate 'No changes are required for') ${CONTAINER_ID}:\n\n${labels}"
+    dialog --backtitle "ProxMenux" \
+      --title "$(_get_lxc_run_title)" \
+      --msgbox "$msg" 14 74
+    exit 0
+  fi
+
+  if [[ ${#already_present[@]} -gt 0 ]]; then
+    local msg already_labels="" missing_labels=""
+    for gpu_type in "${already_present[@]}"; do
+      already_labels+="  •  $(_gpu_type_label "$gpu_type")\n"
+    done
+    for gpu_type in "${missing[@]}"; do
+      missing_labels+="  •  $(_gpu_type_label "$gpu_type")\n"
+    done
+    msg="\n$(translate 'Some selected GPUs are already configured in this container.')\n\n"
+    msg+="$(translate 'Already configured'):\n${already_labels}\n"
+    msg+="$(translate 'Will be configured now'):\n${missing_labels}"
+    dialog --backtitle "ProxMenux" \
+      --title "$(_get_lxc_run_title)" \
+      --msgbox "$msg" 18 78
+  fi
+
+  SELECTED_GPUS=("${missing[@]}")
+}
+
 
 # ============================================================
 # GPU detection on host
@@ -50,26 +180,38 @@ detect_host_gpus() {
   INTEL_NAME=""
   AMD_NAME=""
   NVIDIA_NAME=""
+  INTEL_PCI=""
+  INTEL_VID_DID=""
+  AMD_PCI=""
+  AMD_VID_DID=""
+  NVIDIA_PCI=""
+  NVIDIA_VID_DID=""
 
   local intel_line amd_line nvidia_line
-  intel_line=$(lspci | grep -iE "VGA compatible|3D controller|Display controller" \
+  intel_line=$(lspci -nn | grep -iE "VGA compatible|3D controller|Display controller" \
     | grep -i "Intel" | grep -iv "Ethernet\|Audio\|Network" | head -1)
-  amd_line=$(lspci | grep -iE "VGA compatible|3D controller|Display controller" \
+  amd_line=$(lspci -nn | grep -iE "VGA compatible|3D controller|Display controller" \
     | grep -iE "AMD|Advanced Micro|Radeon" | head -1)
-  nvidia_line=$(lspci | grep -iE "VGA compatible|3D controller|Display controller" \
+  nvidia_line=$(lspci -nn | grep -iE "VGA compatible|3D controller|Display controller" \
     | grep -i "NVIDIA" | head -1)
 
   if [[ -n "$intel_line" ]]; then
     HAS_INTEL=true
-    INTEL_NAME=$(echo "$intel_line" | sed 's/^.*: //' | cut -c1-58)
+    INTEL_NAME=$(echo "$intel_line" | sed 's/^[^:]*[^:]: //' | sed 's/ \[.*//' | cut -c1-58)
+    INTEL_PCI="0000:$(echo "$intel_line" | awk '{print $1}')"
+    INTEL_VID_DID=$(echo "$intel_line" | grep -oE '\[[0-9a-f]{4}:[0-9a-f]{4}\]' | tr -d '[]')
   fi
   if [[ -n "$amd_line" ]]; then
     HAS_AMD=true
-    AMD_NAME=$(echo "$amd_line" | sed 's/^.*: //' | cut -c1-58)
+    AMD_NAME=$(echo "$amd_line" | sed 's/^[^:]*[^:]: //' | sed 's/ \[.*//' | cut -c1-58)
+    AMD_PCI="0000:$(echo "$amd_line" | awk '{print $1}')"
+    AMD_VID_DID=$(echo "$amd_line" | grep -oE '\[[0-9a-f]{4}:[0-9a-f]{4}\]' | tr -d '[]')
   fi
   if [[ -n "$nvidia_line" ]]; then
     HAS_NVIDIA=true
-    NVIDIA_NAME=$(echo "$nvidia_line" | sed 's/^.*: //' | cut -c1-58)
+    NVIDIA_NAME=$(echo "$nvidia_line" | sed 's/^[^:]*[^:]: //' | sed 's/ \[.*//' | cut -c1-58)
+    NVIDIA_PCI="0000:$(echo "$nvidia_line" | awk '{print $1}')"
+    NVIDIA_VID_DID=$(echo "$nvidia_line" | grep -oE '\[[0-9a-f]{4}:[0-9a-f]{4}\]' | tr -d '[]')
     if lsmod | grep -q "^nvidia " && command -v nvidia-smi >/dev/null 2>&1; then
       NVIDIA_HOST_VERSION=$(nvidia-smi --query-gpu=driver_version \
         --format=csv,noheader 2>/dev/null | head -n1 | tr -d '[:space:]')
@@ -583,6 +725,292 @@ install_drivers() {
 
 
 # ============================================================
+# Switch mode: GPU → VM  →  GPU → LXC
+# ============================================================
+
+# Returns all vendor:device IDs in the same IOMMU group as a PCI device.
+# Skips PCI bridges (class 0x0604 / 0x0600).
+_get_iommu_group_ids() {
+  local pci_full="$1"
+  local group_link="/sys/bus/pci/devices/${pci_full}/iommu_group"
+  [[ ! -L "$group_link" ]] && return
+
+  local group_dir
+  group_dir="/sys/kernel/iommu_groups/$(basename "$(readlink "$group_link")")/devices"
+
+  for dev_path in "${group_dir}/"*; do
+    [[ -e "$dev_path" ]] || continue
+    local dev dev_class
+    dev=$(basename "$dev_path")
+    dev_class=$(cat "/sys/bus/pci/devices/${dev}/class" 2>/dev/null)
+    [[ "$dev_class" == "0x0604" || "$dev_class" == "0x0600" ]] && continue
+    local vid did
+    vid=$(cat "/sys/bus/pci/devices/${dev}/vendor" 2>/dev/null | sed 's/0x//')
+    did=$(cat "/sys/bus/pci/devices/${dev}/device" 2>/dev/null | sed 's/0x//')
+    [[ -n "$vid" && -n "$did" ]] && echo "${vid}:${did}"
+  done
+}
+
+# Removes the given vendor:device IDs from the vfio-pci ids= line in vfio.conf.
+# If no IDs remain after removal, the line is deleted entirely.
+# Prints the number of remaining IDs to stdout (captured by caller).
+_remove_vfio_ids() {
+  local vfio_conf="/etc/modprobe.d/vfio.conf"
+  local -a ids_to_remove=("$@")
+  [[ ! -f "$vfio_conf" ]] && echo "0" && return
+
+  local ids_line ids_part
+  ids_line=$(grep "^options vfio-pci ids=" "$vfio_conf" 2>/dev/null | head -1)
+  if [[ -z "$ids_line" ]]; then echo "0"; return; fi
+  ids_part=$(echo "$ids_line" | grep -oE 'ids=[^[:space:]]+' | sed 's/ids=//')
+
+  local -a remaining=()
+  IFS=',' read -ra current_ids <<< "$ids_part"
+  for id in "${current_ids[@]}"; do
+    local remove=false
+    for r in "${ids_to_remove[@]}"; do
+      [[ "$id" == "$r" ]] && remove=true && break
+    done
+    $remove || remaining+=("$id")
+  done
+
+  sed -i '/^options vfio-pci ids=/d' "$vfio_conf"
+  if [[ ${#remaining[@]} -gt 0 ]]; then
+    local new_ids
+    new_ids=$(IFS=','; echo "${remaining[*]}")
+    echo "options vfio-pci ids=${new_ids} disable_vga=1" >> "$vfio_conf"
+  fi
+
+  echo "${#remaining[@]}"
+}
+
+# Removes blacklist entries for the given GPU driver type.
+_remove_gpu_blacklist() {
+  local gpu_type="$1"
+  local blacklist_file="/etc/modprobe.d/blacklist.conf"
+  [[ ! -f "$blacklist_file" ]] && return
+  case "$gpu_type" in
+    nvidia)
+      sed -i '/^blacklist nouveau$/d'          "$blacklist_file"
+      sed -i '/^blacklist nvidia$/d'            "$blacklist_file"
+      sed -i '/^blacklist nvidiafb$/d'          "$blacklist_file"
+      sed -i '/^blacklist lbm-nouveau$/d'       "$blacklist_file"
+      sed -i '/^options nouveau modeset=0$/d'   "$blacklist_file"
+      ;;
+    amd)
+      sed -i '/^blacklist radeon$/d'    "$blacklist_file"
+      sed -i '/^blacklist amdgpu$/d'    "$blacklist_file"
+      ;;
+    intel)
+      sed -i '/^blacklist i915$/d'      "$blacklist_file"
+      ;;
+  esac
+}
+
+# Removes AMD softdep entries from vfio.conf.
+_remove_amd_softdep() {
+  local vfio_conf="/etc/modprobe.d/vfio.conf"
+  [[ ! -f "$vfio_conf" ]] && return
+  sed -i '/^softdep radeon pre: vfio-pci$/d'         "$vfio_conf"
+  sed -i '/^softdep amdgpu pre: vfio-pci$/d'         "$vfio_conf"
+  sed -i '/^softdep snd_hda_intel pre: vfio-pci$/d'  "$vfio_conf"
+}
+
+# Removes VFIO modules from /etc/modules (called when no IDs remain in vfio.conf).
+_remove_vfio_modules() {
+  local modules_file="/etc/modules"
+  [[ ! -f "$modules_file" ]] && return
+  sed -i '/^vfio$/d'             "$modules_file"
+  sed -i '/^vfio_iommu_type1$/d' "$modules_file"
+  sed -i '/^vfio_pci$/d'         "$modules_file"
+  sed -i '/^vfio_virqfd$/d'      "$modules_file"
+}
+
+# Detects if any selected GPU is currently in GPU → VM mode (VFIO binding).
+# If so, guides the user through the switch to GPU → LXC mode and exits.
+check_vfio_switch_mode() {
+  local vfio_conf="/etc/modprobe.d/vfio.conf"
+  [[ ! -f "$vfio_conf" ]] && return 0
+
+  local ids_line ids_part
+  ids_line=$(grep "^options vfio-pci ids=" "$vfio_conf" 2>/dev/null | head -1)
+  [[ -z "$ids_line" ]] && return 0
+  ids_part=$(echo "$ids_line" | grep -oE 'ids=[^[:space:]]+' | sed 's/ids=//')
+  [[ -z "$ids_part" ]] && return 0
+
+  # Detect which selected GPUs are in VFIO mode
+  local -a vfio_types=() vfio_pcis=() vfio_names=()
+  for gpu_type in "${SELECTED_GPUS[@]}"; do
+    local pci="" vid_did="" gpu_name=""
+    case "$gpu_type" in
+      intel)  pci="$INTEL_PCI";  vid_did="$INTEL_VID_DID";  gpu_name="$INTEL_NAME"  ;;
+      amd)    pci="$AMD_PCI";    vid_did="$AMD_VID_DID";    gpu_name="$AMD_NAME"    ;;
+      nvidia) pci="$NVIDIA_PCI"; vid_did="$NVIDIA_VID_DID"; gpu_name="$NVIDIA_NAME" ;;
+    esac
+    [[ -z "$vid_did" ]] && continue
+    if echo "$ids_part" | grep -q "$vid_did"; then
+      vfio_types+=("$gpu_type")
+      vfio_pcis+=("$pci")
+      vfio_names+=("$gpu_name")
+    fi
+  done
+
+  [[ ${#vfio_types[@]} -eq 0 ]] && return 0
+
+  # ── One or more GPUs are in GPU → VM mode ─────────────────────
+
+  local msg
+  msg="\n$(translate 'The following GPU(s) are currently in GPU → VM passthrough mode (VFIO)'):\n\n"
+  for i in "${!vfio_types[@]}"; do
+    msg+="  •  ${vfio_names[$i]}  (${vfio_pcis[$i]})\n"
+  done
+  msg+="\n$(translate 'VFIO gives the VM exclusive ownership of the GPU. The native driver is blacklisted.')\n"
+  msg+="$(translate 'To use this GPU in an LXC container the VFIO binding must be removed')\n"
+  msg+="$(translate 'and the native driver reloaded. This requires a system reboot.')\n"
+
+  # Check for VM configs that still reference this GPU
+  local -a affected_vms=() affected_vm_names=()
+  for pci in "${vfio_pcis[@]}"; do
+    local pci_slot="${pci#0000:}"
+    pci_slot="${pci_slot%.*}"
+    for conf in /etc/pve/qemu-server/*.conf; do
+      [[ -f "$conf" ]] || continue
+      if grep -qE "hostpci[0-9]+:.*${pci_slot}" "$conf"; then
+        local vmid vm_name
+        vmid=$(basename "$conf" .conf)
+        vm_name=$(grep "^name:" "$conf" 2>/dev/null | awk '{print $2}')
+        local dup=false
+        for v in "${affected_vms[@]}"; do [[ "$v" == "$vmid" ]] && dup=true && break; done
+        $dup || { affected_vms+=("$vmid"); affected_vm_names+=("${vm_name:-VM-${vmid}}"); }
+      fi
+    done
+  done
+
+  if [[ ${#affected_vms[@]} -gt 0 ]]; then
+    msg+="\n\Z1\Zb$(translate 'Warning: This GPU is assigned to the following VM(s)'):\Zn\n\n"
+    for i in "${!affected_vms[@]}"; do
+      msg+="  •  VM ${affected_vms[$i]} (${affected_vm_names[$i]})\n"
+    done
+    msg+="\n$(translate 'Starting those VMs after the switch will cause errors on the system and in the VM.')\n"
+    msg+="$(translate 'You will be asked to stop them or remove the GPU from their config.')\n"
+  fi
+
+  msg+="\n$(translate 'Do you want to switch to GPU → LXC mode?')"
+
+  dialog --backtitle "ProxMenux" --colors \
+    --title "$(translate 'GPU → VM Mode Detected')" \
+    --yesno "$msg" 26 80
+  [[ $? -ne 0 ]] && exit 0
+
+  # ── User confirmed switch — enter processing phase ─────────
+  LXC_SWITCH_MODE=true
+
+  # Handle VM conflicts: stop VM or remove GPU from config
+  if [[ ${#affected_vms[@]} -gt 0 ]]; then
+    local vm_msg
+    vm_msg="\n$(translate 'The following VM(s) have this GPU assigned'):\n\n"
+    for i in "${!affected_vms[@]}"; do
+      vm_msg+="  •  VM ${affected_vms[$i]} (${affected_vm_names[$i]})\n"
+    done
+    vm_msg+="\n$(translate 'YES — Stop the VM(s) now (GPU entry stays in config, reusable for passthrough later)')\n"
+    vm_msg+="$(translate 'NO  — Remove GPU from VM config (VM can start normally without GPU)')"
+
+    dialog --backtitle "ProxMenux" --colors \
+      --title "$(translate 'VM Conflict: Choose Action')" \
+      --yesno "$vm_msg" 18 78
+    local vm_action=$?
+
+  show_proxmenux_logo
+  msg_title "$(_get_lxc_run_title)"
+
+    for i in "${!affected_vms[@]}"; do
+      local vmid="${affected_vms[$i]}"
+      if [[ $vm_action -eq 0 ]]; then
+        if qm status "$vmid" 2>/dev/null | grep -q "running"; then
+          msg_info "$(translate 'Stopping VM') ${vmid}..."
+          qm stop "$vmid" >>"$LOG_FILE" 2>&1 || true
+          msg_ok "$(translate 'VM') ${vmid} $(translate 'stopped.')"
+        else
+          msg_ok "$(translate 'VM') ${vmid} $(translate 'is already stopped.')"
+        fi
+      else
+        local src_conf="/etc/pve/qemu-server/${vmid}.conf"
+        if [[ -f "$src_conf" ]]; then
+          for pci in "${vfio_pcis[@]}"; do
+            local pci_slot="${pci#0000:}"; pci_slot="${pci_slot%.*}"
+            sed -i "/^hostpci[0-9]\+:.*${pci_slot}/d" "$src_conf"
+          done
+          msg_ok "$(translate 'GPU removed from VM') ${vmid} $(translate 'configuration.')"
+        fi
+      fi
+    done
+  fi
+
+  # ── Remove VFIO config for each affected GPU ───────────────
+  msg_info "$(translate 'Removing VFIO configuration...')"
+
+  local -a all_ids_to_remove=()
+  for i in "${!vfio_types[@]}"; do
+    local gpu_type="${vfio_types[$i]}"
+    local pci="${vfio_pcis[$i]}"
+
+    # Collect all IOMMU group IDs (GPU + audio function, etc.)
+    local -a group_ids=()
+    mapfile -t group_ids < <(_get_iommu_group_ids "$pci")
+    if [[ ${#group_ids[@]} -gt 0 ]]; then
+      all_ids_to_remove+=("${group_ids[@]}")
+    else
+      # IOMMU not active: fall back to the GPU's own vendor:device ID
+      case "$gpu_type" in
+        intel)  all_ids_to_remove+=("$INTEL_VID_DID")  ;;
+        amd)    all_ids_to_remove+=("$AMD_VID_DID")    ;;
+        nvidia) all_ids_to_remove+=("$NVIDIA_VID_DID") ;;
+      esac
+    fi
+
+    _remove_gpu_blacklist "$gpu_type"
+    msg_ok "$(translate 'Driver blacklist removed for') ${gpu_type}"
+
+    if [[ "$gpu_type" == "amd" ]]; then
+      _remove_amd_softdep
+      msg_ok "$(translate 'AMD softdep entries removed')"
+    fi
+  done
+
+  local remaining_count
+  remaining_count=$(_remove_vfio_ids "${all_ids_to_remove[@]}")
+  msg_ok "$(translate 'VFIO device IDs removed from /etc/modprobe.d/vfio.conf')"
+
+  if [[ "$remaining_count" -eq 0 ]]; then
+    _remove_vfio_modules
+    msg_ok "$(translate 'VFIO modules removed from /etc/modules')"
+  else
+    msg_ok "$(translate 'VFIO modules kept (other GPUs remain in VFIO mode)')"
+  fi
+
+  msg_info "$(translate 'Updating initramfs (this may take a minute)...')"
+  update-initramfs -u -k all >>"$LOG_FILE" 2>&1
+  msg_ok "$(translate 'initramfs updated')"
+
+  echo
+  msg_success "$(translate 'GPU → LXC switch complete. A reboot is required to load the native GPU driver.')"
+  echo
+
+  whiptail --title "$(translate 'Reboot Required')" \
+    --yesno "$(translate 'A reboot is required to complete the switch to GPU → LXC mode. Do you want to restart now?')" 10 74
+  if [[ $? -eq 0 ]]; then
+    msg_warn "$(translate 'Rebooting the system...')"
+    reboot
+  else
+    msg_info2 "$(translate 'Please reboot manually before adding the GPU to an LXC container.')"
+    msg_success "$(translate 'Press Enter to continue...')"
+    read -r
+  fi
+  exit 0
+}
+
+
+# ============================================================
 # Main
 # ============================================================
 main() {
@@ -593,6 +1021,8 @@ main() {
   detect_host_gpus
   select_container
   select_gpus
+  check_vfio_switch_mode
+  precheck_existing_lxc_gpu_config
 
   # NVIDIA check runs only if NVIDIA was selected
   for gpu_type in "${SELECTED_GPUS[@]}"; do
@@ -601,7 +1031,7 @@ main() {
 
   # ---- Phase 2: processing ----
   show_proxmenux_logo
-  msg_title "$(translate 'Add GPU to LXC')"
+  msg_title "$(_get_lxc_run_title)"
 
   configure_passthrough "$CONTAINER_ID"
 
@@ -624,7 +1054,7 @@ main() {
   fi
 
   show_proxmenux_logo
-  msg_title "$(translate 'Add GPU to LXC')"
+  msg_title "$(_get_lxc_run_title)"
   cat "$screen_capture"
   echo -e "${TAB}${GN}📄 $(translate 'Log')${CL}: ${BL}${LOG_FILE}${CL}"
   if [[ -n "$NVIDIA_SMI_OUTPUT" ]]; then
