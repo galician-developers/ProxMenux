@@ -15,7 +15,7 @@
 # configurations, streamlining the deployment of Linux, Windows, and other systems.
 #
 # Key features:
-# - Supports both virtual disk creation and physical disk passthrough.
+# - Supports virtual disks, import disks, and Controller + NVMe passthrough.
 # - Automates CPU, RAM, BIOS, network and storage configuration.
 # - Provides a user-friendly menu to select OS type, ISO image and disk interface.
 # - Automatically generates a detailed and styled HTML description for each VM.
@@ -24,14 +24,22 @@
 # consistent and maintainable way, using ProxMenux standards.
 # ==========================================================
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_SCRIPTS_DEFAULT="/usr/local/share/proxmenux/scripts"
+LOCAL_SCRIPTS_LOCAL="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+if [[ -f "$LOCAL_SCRIPTS_LOCAL/vm/disk_selector.sh" ]]; then
+  LOCAL_SCRIPTS="$LOCAL_SCRIPTS_LOCAL"
+else
+  LOCAL_SCRIPTS="$LOCAL_SCRIPTS_DEFAULT"
+fi
 
-LOCAL_SCRIPTS="/usr/local/share/proxmenux/scripts"
 VM_REPO="$LOCAL_SCRIPTS/vm"
 ISO_REPO="$LOCAL_SCRIPTS/vm"
 MENU_REPO="$LOCAL_SCRIPTS/menus"
 BASE_DIR="/usr/local/share/proxmenux"
-UTILS_FILE="$BASE_DIR/utils.sh"
+UTILS_FILE="$LOCAL_SCRIPTS/utils.sh"
+[[ ! -f "$UTILS_FILE" ]] && UTILS_FILE="$BASE_DIR/utils.sh"
 VENV_PATH="/opt/googletrans-env"
 
 # Source utilities and required scripts
@@ -55,12 +63,39 @@ initialize_cache
 function header_info() {
   clear
   show_proxmenux_logo
-  echo -e "${BL}╔═══════════════════════════════════════════════╗${CL}"
-  echo -e "${BL}║                                               ║${CL}"
-  echo -e "${BL}║${YWB}             ProxMenux VM Creator              ${BL}║${CL}"
-  echo -e "${BL}║                                               ║${CL}"
-  echo -e "${BL}╚═══════════════════════════════════════════════╝${CL}"
-  echo -e
+  msg_title "ProxMenux VM Creator"
+}
+
+VM_WIZARD_CAPTURE_FILE=""
+VM_WIZARD_CAPTURE_ACTIVE=0
+
+function start_vm_wizard_capture() {
+  [[ "${VM_WIZARD_CAPTURE_ACTIVE:-0}" -eq 1 ]] && return 0
+  VM_WIZARD_CAPTURE_FILE="/tmp/proxmenux_vm_wizard_screen_capture_$$.txt"
+  : >"$VM_WIZARD_CAPTURE_FILE"
+  exec 8>&1
+  exec > >(tee -a "$VM_WIZARD_CAPTURE_FILE")
+  VM_WIZARD_CAPTURE_ACTIVE=1
+}
+
+function stop_vm_wizard_capture() {
+  if [[ "${VM_WIZARD_CAPTURE_ACTIVE:-0}" -eq 1 ]]; then
+    exec 1>&8
+    exec 8>&-
+    VM_WIZARD_CAPTURE_ACTIVE=0
+  fi
+  if [[ -n "${VM_WIZARD_CAPTURE_FILE:-}" && -f "$VM_WIZARD_CAPTURE_FILE" ]]; then
+    rm -f "$VM_WIZARD_CAPTURE_FILE"
+  fi
+  VM_WIZARD_CAPTURE_FILE=""
+}
+
+function has_usable_gpu_for_vm_passthrough() {
+  lspci -nn 2>/dev/null \
+    | grep -iE "VGA compatible controller|3D controller|Display controller" \
+    | grep -ivE "Ethernet|Network|Audio" \
+    | grep -ivE "ASPEED|AST[0-9]{3,4}|Matrox|G200e|BMC" \
+    | grep -q .
 }
 
 # ==========================================================
@@ -77,14 +112,15 @@ function header_info() {
 function start_vm_configuration() {
 
   if (whiptail --title "ProxMenux" --yesno "$(translate "Use Default Settings?")" --no-button "$(translate "Advanced")" 10 60); then
-    header_info
-    load_default_vm_config "$OS_TYPE"
+    #header_info
+    #load_default_vm_config "$OS_TYPE"
 
     if [[ -z "$HN" ]]; then
       HN=$(whiptail --inputbox "$(translate "Enter a name for the new virtual machine:")" 10 60 --title "VM Hostname" 3>&1 1>&2 2>&3)
       [[ -z "$HN" ]] && HN="custom-vm"
     fi
-
+    header_info
+    load_default_vm_config "$OS_TYPE"
     apply_default_vm_config
   else
     header_info
@@ -133,19 +169,45 @@ while true; do
   esac
 
   if ! confirm_vm_creation; then
+    stop_vm_wizard_capture
     continue  
   fi
 
+  start_vm_wizard_capture
 
-  start_vm_configuration || continue
+  if ! start_vm_configuration; then
+    stop_vm_wizard_capture
+    continue
+  fi
 
 
-  select_disk_type
-  if [[ -z "$DISK_TYPE" ]]; then
-    msg_error "$(translate "Disk type selection failed or cancelled")"
+  unset DISK_TYPE
+  if ! select_disk_type; then
+    stop_vm_wizard_capture
+    msg_error "$(translate "Storage plan selection failed or cancelled")"
     continue  
   fi
 
-  create_vm
+  WIZARD_ADD_GPU="no"
+  if has_usable_gpu_for_vm_passthrough; then
+    if whiptail --backtitle "ProxMenux" --title "$(translate "Optional GPU Passthrough")" \
+      --yesno "$(translate "Do you want to configure GPU passthrough for this VM now?")\n\n$(translate "This will launch the GPU assistant after VM creation and may require a host reboot.")" 12 78 --defaultno; then
+      WIZARD_ADD_GPU="yes"
+    fi
+  else
+    msg_warn "$(translate "No compatible GPU detected for VM passthrough. Skipping GPU wizard option.")"
+  fi
+  export WIZARD_ADD_GPU
+
+  if [[ "$WIZARD_ADD_GPU" != "yes" ]]; then
+    stop_vm_wizard_capture
+  fi
+
+  if ! create_vm; then
+    stop_vm_wizard_capture
+    msg_error "$(translate "VM creation failed or was cancelled during storage setup.")"
+    continue
+  fi
+  stop_vm_wizard_capture
   break
 done

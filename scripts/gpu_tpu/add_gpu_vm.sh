@@ -23,14 +23,28 @@
 #  - VM config: hostpci entries, NVIDIA KVM hiding
 # ==========================================================
 
-LOCAL_SCRIPTS="/usr/local/share/proxmenux/scripts"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_SCRIPTS_LOCAL="$(cd "$SCRIPT_DIR/.." && pwd)"
+LOCAL_SCRIPTS_DEFAULT="/usr/local/share/proxmenux/scripts"
+LOCAL_SCRIPTS="$LOCAL_SCRIPTS_DEFAULT"
 BASE_DIR="/usr/local/share/proxmenux"
-UTILS_FILE="$BASE_DIR/utils.sh"
+UTILS_FILE="$LOCAL_SCRIPTS/utils.sh"
+if [[ -f "$LOCAL_SCRIPTS_LOCAL/utils.sh" ]]; then
+    LOCAL_SCRIPTS="$LOCAL_SCRIPTS_LOCAL"
+    UTILS_FILE="$LOCAL_SCRIPTS/utils.sh"
+elif [[ ! -f "$UTILS_FILE" ]]; then
+    UTILS_FILE="$BASE_DIR/utils.sh"
+fi
 LOG_FILE="/tmp/add_gpu_vm.log"
 screen_capture="/tmp/proxmenux_add_gpu_vm_screen_$$.txt"
 
 if [[ -f "$UTILS_FILE" ]]; then
     source "$UTILS_FILE"
+fi
+if [[ -f "$LOCAL_SCRIPTS_LOCAL/global/pci_passthrough_helpers.sh" ]]; then
+    source "$LOCAL_SCRIPTS_LOCAL/global/pci_passthrough_helpers.sh"
+elif [[ -f "$LOCAL_SCRIPTS_DEFAULT/global/pci_passthrough_helpers.sh" ]]; then
+    source "$LOCAL_SCRIPTS_DEFAULT/global/pci_passthrough_helpers.sh"
 fi
 
 load_language
@@ -50,6 +64,7 @@ SELECTED_GPU_NAME=""
 
 declare -a IOMMU_DEVICES=()      # all PCI addrs in IOMMU group (endpoint devices)
 declare -a IOMMU_VFIO_IDS=()    # vendor:device for vfio-pci ids=
+declare -a EXTRA_AUDIO_DEVICES=() # sibling audio function(s), typically *.1
 IOMMU_GROUP=""
 
 SELECTED_VMID=""
@@ -63,10 +78,16 @@ SWITCH_LXC_LIST=""
 SWITCH_FROM_VM=false
 SWITCH_VM_SRC=""
 TARGET_VM_ALREADY_HAS_GPU=false
+VM_SWITCH_ALREADY_VFIO=false
+PREFLIGHT_HOST_REBOOT_REQUIRED=true
 
 AMD_ROM_FILE=""
 
 HOST_CONFIG_CHANGED=false   # set to true whenever host VFIO config is actually written
+
+PRESELECT_VMID=""
+WIZARD_CALL=false
+GPU_WIZARD_RESULT_FILE=""
 
 
 # ==========================================================
@@ -92,19 +113,173 @@ _add_line_if_missing() {
     fi
 }
 
+_append_unique() {
+    local needle="$1"
+    shift
+    local item
+    for item in "$@"; do
+        [[ "$item" == "$needle" ]] && return 1
+    done
+    return 0
+}
+
+_vm_is_running() {
+    local vmid="$1"
+    qm status "$vmid" 2>/dev/null | grep -q "status: running"
+}
+
+_vm_onboot_enabled() {
+    local vmid="$1"
+    qm config "$vmid" 2>/dev/null | grep -qE "^onboot:\s*1"
+}
+
+_set_wizard_result() {
+    local result="$1"
+    [[ -z "${GPU_WIZARD_RESULT_FILE:-}" ]] && return 0
+    printf '%s\n' "$result" >"$GPU_WIZARD_RESULT_FILE" 2>/dev/null || true
+}
+
+_file_has_exact_line() {
+    local line="$1"
+    local file="$2"
+    [[ -f "$file" ]] || return 1
+    grep -qFx "$line" "$file"
+}
+
+evaluate_host_reboot_requirement() {
+    # Fast path for VM-to-VM reassignment where GPU is already bound to vfio
+    if [[ "$VM_SWITCH_ALREADY_VFIO" == "true" ]]; then
+        PREFLIGHT_HOST_REBOOT_REQUIRED=false
+        return 0
+    fi
+
+    local needs_change=false
+    local current_driver
+    current_driver=$(_get_pci_driver "$SELECTED_GPU_PCI")
+    [[ "$current_driver" != "vfio-pci" ]] && needs_change=true
+
+    # /etc/modules expected lines
+    local modules_file="/etc/modules"
+    local modules=("vfio" "vfio_iommu_type1" "vfio_pci")
+    local kernel_major kernel_minor
+    kernel_major=$(uname -r | cut -d. -f1)
+    kernel_minor=$(uname -r | cut -d. -f2)
+    if (( kernel_major < 6 || ( kernel_major == 6 && kernel_minor < 2 ) )); then
+        modules+=("vfio_virqfd")
+    fi
+    local mod
+    for mod in "${modules[@]}"; do
+        _file_has_exact_line "$mod" "$modules_file" || needs_change=true
+    done
+
+    # vfio-pci ids
+    local vfio_conf="/etc/modprobe.d/vfio.conf"
+    local ids_line ids_part
+    ids_line=$(grep "^options vfio-pci ids=" "$vfio_conf" 2>/dev/null | head -1)
+    if [[ -z "$ids_line" ]]; then
+        needs_change=true
+    else
+        [[ "$ids_line" == *"disable_vga=1"* ]] || needs_change=true
+        ids_part=$(echo "$ids_line" | grep -oE 'ids=[^[:space:]]+' | sed 's/ids=//')
+        local existing_ids=()
+        IFS=',' read -ra existing_ids <<< "$ids_part"
+        local required found existing
+        for required in "${IOMMU_VFIO_IDS[@]}"; do
+            found=false
+            for existing in "${existing_ids[@]}"; do
+                [[ "$existing" == "$required" ]] && found=true && break
+            done
+            $found || needs_change=true
+        done
+    fi
+
+    # modprobe options files
+    _file_has_exact_line "options vfio_iommu_type1 allow_unsafe_interrupts=1" \
+        /etc/modprobe.d/iommu_unsafe_interrupts.conf || needs_change=true
+    _file_has_exact_line "options kvm ignore_msrs=1" \
+        /etc/modprobe.d/kvm.conf || needs_change=true
+
+    # AMD softdep
+    if [[ "$SELECTED_GPU" == "amd" ]]; then
+        _file_has_exact_line "softdep radeon pre: vfio-pci" "$vfio_conf" || needs_change=true
+        _file_has_exact_line "softdep amdgpu pre: vfio-pci" "$vfio_conf" || needs_change=true
+        _file_has_exact_line "softdep snd_hda_intel pre: vfio-pci" "$vfio_conf" || needs_change=true
+    fi
+
+    # host driver blacklist
+    local blacklist_file="/etc/modprobe.d/blacklist.conf"
+    case "$SELECTED_GPU" in
+        nvidia)
+            _file_has_exact_line "blacklist nouveau" "$blacklist_file" || needs_change=true
+            _file_has_exact_line "blacklist nvidia" "$blacklist_file" || needs_change=true
+            _file_has_exact_line "blacklist nvidiafb" "$blacklist_file" || needs_change=true
+            _file_has_exact_line "blacklist lbm-nouveau" "$blacklist_file" || needs_change=true
+            _file_has_exact_line "options nouveau modeset=0" "$blacklist_file" || needs_change=true
+            ;;
+        amd)
+            _file_has_exact_line "blacklist radeon" "$blacklist_file" || needs_change=true
+            _file_has_exact_line "blacklist amdgpu" "$blacklist_file" || needs_change=true
+            ;;
+        intel)
+            _file_has_exact_line "blacklist i915" "$blacklist_file" || needs_change=true
+            ;;
+    esac
+
+    if [[ "$needs_change" == "true" ]]; then
+        PREFLIGHT_HOST_REBOOT_REQUIRED=true
+    else
+        PREFLIGHT_HOST_REBOOT_REQUIRED=false
+    fi
+}
+
+parse_cli_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --vmid)
+                if [[ -n "${2:-}" ]]; then
+                    PRESELECT_VMID="$2"
+                    shift 2
+                else
+                    shift
+                fi
+                ;;
+            --wizard)
+                WIZARD_CALL=true
+                shift
+                ;;
+            --result-file)
+                if [[ -n "${2:-}" ]]; then
+                    GPU_WIZARD_RESULT_FILE="$2"
+                    shift 2
+                else
+                    shift
+                fi
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+}
+
 _get_vm_run_title() {
     if [[ "$SWITCH_FROM_LXC" == "true" && "$SWITCH_FROM_VM" == "true" ]]; then
-        echo "GPU Switch Mode (LXC/VM → VM)"
+        echo "$(translate 'GPU Passthrough to VM (reassign from LXC and another VM)')"
     elif [[ "$SWITCH_FROM_LXC" == "true" ]]; then
-        echo "GPU Switch Mode (LXC → VM)"
+        echo "$(translate 'GPU Passthrough to VM (from LXC)')"
     elif [[ "$SWITCH_FROM_VM" == "true" ]]; then
-        echo "GPU Switch Mode (VM → VM)"
+        echo "$(translate 'GPU Passthrough to VM (reassign from another VM)')"
     else
         echo "$(translate 'GPU Passthrough to VM')"
     fi
 }
 
 _is_pci_slot_assigned_to_vm() {
+    if declare -F _pci_slot_assigned_to_vm >/dev/null 2>&1; then
+        _pci_slot_assigned_to_vm "$1" "$2"
+        return $?
+    fi
+
     local pci_full="$1"
     local vmid="$2"
     local slot_base
@@ -118,6 +293,11 @@ _is_pci_slot_assigned_to_vm() {
 # Match a specific PCI function when possible.
 # For function .0, also accept slot-only entries (e.g. 01:00) as equivalent.
 _is_pci_function_assigned_to_vm() {
+    if declare -F _pci_function_assigned_to_vm >/dev/null 2>&1; then
+        _pci_function_assigned_to_vm "$1" "$2"
+        return $?
+    fi
+
     local pci_full="$1"
     local vmid="$2"
     local bdf slot func pattern
@@ -234,6 +414,7 @@ detect_host_gpus() {
     GPU_COUNT=${#ALL_GPU_PCIS[@]}
 
     if [[ $GPU_COUNT -eq 0 ]]; then
+        _set_wizard_result "no_gpu"
         dialog --backtitle "ProxMenux" \
             --title "$(translate 'No GPU Detected')" \
             --msgbox "\n$(translate 'No compatible GPU was detected on this host.')" 8 60
@@ -248,6 +429,10 @@ detect_host_gpus() {
 # Phase 1 — Step 2: Check IOMMU, offer to enable it
 # ==========================================================
 check_iommu_enabled() {
+    if declare -F _pci_is_iommu_active >/dev/null 2>&1 && _pci_is_iommu_active; then
+        return 0
+    fi
+
     if grep -qE 'intel_iommu=on|amd_iommu=on' /proc/cmdline 2>/dev/null && \
        [[ -d /sys/kernel/iommu_groups ]] && \
        [[ -n "$(ls /sys/kernel/iommu_groups/ 2>/dev/null)" ]]; then
@@ -266,10 +451,10 @@ check_iommu_enabled() {
         --yesno "$msg" 15 72
 
     local response=$?
-    clear
+    [[ "$WIZARD_CALL" != "true" ]] && clear
 
     if [[ $response -eq 0 ]]; then
-        show_proxmenux_logo
+        [[ "$WIZARD_CALL" != "true" ]] && show_proxmenux_logo
         msg_title "$(translate 'Enabling IOMMU')"
         _enable_iommu_cmdline
         echo
@@ -709,11 +894,59 @@ analyze_iommu_group() {
         --msgbox "\n${msg}" 22 82
 }
 
+detect_optional_gpu_audio() {
+    EXTRA_AUDIO_DEVICES=()
+
+    local sibling_audio="${SELECTED_GPU_PCI%.*}.1"
+    local dev_path="/sys/bus/pci/devices/${sibling_audio}"
+    [[ -d "$dev_path" ]] || return 0
+
+    local class_hex
+    class_hex=$(cat "${dev_path}/class" 2>/dev/null | sed 's/^0x//')
+    [[ "${class_hex:0:2}" == "04" ]] || return 0
+
+    local already_in_group=false dev
+    for dev in "${IOMMU_DEVICES[@]}"; do
+        if [[ "$dev" == "$sibling_audio" ]]; then
+            already_in_group=true
+            break
+        fi
+    done
+
+    if [[ "$already_in_group" == "true" ]]; then
+        return 0
+    fi
+
+    EXTRA_AUDIO_DEVICES+=("$sibling_audio")
+
+    local vid did new_id
+    vid=$(cat "${dev_path}/vendor" 2>/dev/null | sed 's/0x//')
+    did=$(cat "${dev_path}/device" 2>/dev/null | sed 's/0x//')
+    if [[ -n "$vid" && -n "$did" ]]; then
+        new_id="${vid}:${did}"
+        if _append_unique "$new_id" "${IOMMU_VFIO_IDS[@]}"; then
+            IOMMU_VFIO_IDS+=("$new_id")
+        fi
+    fi
+}
+
 
 # ==========================================================
 # Phase 1 — Step 6: VM selection
 # ==========================================================
 select_vm() {
+    if [[ -n "$PRESELECT_VMID" ]]; then
+        if qm config "$PRESELECT_VMID" >/dev/null 2>&1; then
+            SELECTED_VMID="$PRESELECT_VMID"
+            VM_NAME=$(qm config "$SELECTED_VMID" 2>/dev/null | grep "^name:" | awk '{print $2}')
+            return 0
+        fi
+        dialog --backtitle "ProxMenux" \
+            --title "$(translate 'Invalid VMID')" \
+            --msgbox "\n$(translate 'The preselected VMID does not exist on this host:') ${PRESELECT_VMID}" 9 72
+        exit 1
+    fi
+
     local menu_items=()
 
     while IFS= read -r line; do
@@ -805,6 +1038,7 @@ check_switch_mode() {
         done
         msg+="\n$(translate 'VM passthrough requires exclusive VFIO binding of the GPU.')\n"
         msg+="$(translate 'GPU device access will be removed from those LXC containers.')\n\n"
+        msg+="\Z3$(translate 'After this LXC → VM switch, reboot the host so the new binding state is applied cleanly.')\Zn\n\n"
         msg+="$(translate 'Do you want to continue?')"
 
         dialog --backtitle "ProxMenux" \
@@ -828,19 +1062,57 @@ check_switch_mode() {
     done
 
     if [[ -n "$vm_src_id" ]]; then
+        local src_running=false
+        _vm_is_running "$vm_src_id" && src_running=true
+
+        if [[ "$src_running" == "true" ]]; then
+            local msg
+            msg="\n$(translate 'The selected GPU is already assigned to another VM that is currently running:')\n\n"
+            msg+="  VM ${vm_src_id} (${vm_src_name:-VM-${vm_src_id}})\n\n"
+            msg+="$(translate 'The same GPU cannot be used by two VMs at the same time.')\n\n"
+            msg+="$(translate 'Next step: stop that VM first, then run')\n"
+            msg+="  Hardware Graphics → Add GPU to VM\n"
+            msg+="$(translate 'to move the GPU safely.')"
+
+            dialog --backtitle "ProxMenux" \
+                --title "$(translate 'GPU Busy in Running VM')" \
+                --msgbox "$msg" 16 78
+            exit 0
+        fi
+
         SWITCH_FROM_VM=true
         SWITCH_VM_SRC="$vm_src_id"
+        local selected_driver
+        selected_driver=$(_get_pci_driver "$SELECTED_GPU_PCI")
+        if [[ "$selected_driver" == "vfio-pci" && "$SWITCH_FROM_LXC" != "true" ]]; then
+            VM_SWITCH_ALREADY_VFIO=true
+        fi
+
+        local src_onboot target_onboot
+        src_onboot="0"
+        target_onboot="0"
+        _vm_onboot_enabled "$vm_src_id" && src_onboot="1"
+        _vm_onboot_enabled "$SELECTED_VMID" && target_onboot="1"
 
         local msg
         msg="\n$(translate 'The selected GPU is already configured for passthrough to:')\n\n"
         msg+="  VM ${vm_src_id} (${vm_src_name:-VM-${vm_src_id}})\n\n"
+        msg+="$(translate 'That VM is currently stopped, so the GPU can be reassigned now.')\n"
+        msg+="\Z3$(translate 'Important: both VMs cannot be running at the same time with the same GPU.')\Zn\n\n"
         msg+="$(translate 'The existing hostpci entry will be removed from that VM and configured on'): "
         msg+="VM ${SELECTED_VMID} (${VM_NAME:-VM-${SELECTED_VMID}})\n\n"
+        if [[ "$src_onboot" == "1" && "$target_onboot" == "1" ]]; then
+            msg+="\Z3$(translate 'Warning: both VMs have autostart enabled (onboot=1).')\Zn\n"
+            msg+="\Z3$(translate 'Disable autostart on one VM to avoid startup conflicts.')\Zn\n\n"
+        fi
+        if [[ "$VM_SWITCH_ALREADY_VFIO" == "true" ]]; then
+            msg+="$(translate 'Host GPU is already bound to vfio-pci. Host reconfiguration/reboot should not be required for this VM-to-VM reassignment.')\n\n"
+        fi
         msg+="$(translate 'Do you want to continue?')"
 
-        dialog --backtitle "ProxMenux" \
+        dialog --backtitle "ProxMenux" --colors \
             --title "$(translate 'GPU Already Assigned to Another VM')" \
-            --yesno "$msg" 14 76
+            --yesno "$msg" 24 88
         [[ $? -ne 0 ]] && exit 0
     fi
 }
@@ -859,20 +1131,28 @@ confirm_summary() {
     msg+="  $(translate 'Target VM')    :  ${VM_NAME:-VM-${SELECTED_VMID}} (${SELECTED_VMID})\n"
     msg+="  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     msg+="  \Zb$(translate 'Host'):\Zn\n"
-    msg+="  •  $(translate 'VFIO modules in /etc/modules')\n"
-    msg+="  •  $(translate 'vfio-pci IDs in /etc/modprobe.d/vfio.conf')\n"
-    [[ "$SELECTED_GPU" == "amd" ]] && \
-        msg+="  •  $(translate 'AMD softdep configured')\n"
-    [[ "$SELECTED_GPU" == "amd" ]] && \
-        msg+="  •  $(translate 'GPU ROM dump to /usr/share/kvm/')\n"
-    msg+="  •  $(translate 'GPU driver blacklisted')\n"
-    msg+="  •  $(translate 'initramfs updated')\n"
-    msg+="  •  \Zb$(translate 'System reboot required')\Zn\n\n"
+    if [[ "$PREFLIGHT_HOST_REBOOT_REQUIRED" != "true" ]]; then
+        msg+="  •  $(translate 'Host VFIO configuration already up to date')\n"
+        msg+="  •  $(translate 'No host VFIO reconfiguration expected')\n"
+        msg+="  •  $(translate 'No host reboot expected')\n\n"
+    else
+        msg+="  •  $(translate 'VFIO modules in /etc/modules')\n"
+        msg+="  •  $(translate 'vfio-pci IDs in /etc/modprobe.d/vfio.conf')\n"
+        [[ "$SELECTED_GPU" == "amd" ]] && \
+            msg+="  •  $(translate 'AMD softdep configured')\n"
+        [[ "$SELECTED_GPU" == "amd" ]] && \
+            msg+="  •  $(translate 'GPU ROM dump to /usr/share/kvm/')\n"
+        msg+="  •  $(translate 'GPU driver blacklisted')\n"
+        msg+="  •  $(translate 'initramfs updated')\n"
+        msg+="  •  \Zb$(translate 'System reboot required')\Zn\n\n"
+    fi
     msg+="  \Zb$(translate 'VM') ${SELECTED_VMID}:\Zn\n"
     [[ "$TARGET_VM_ALREADY_HAS_GPU" == "true" ]] && \
         msg+="  •  $(translate 'Existing hostpci entries detected — they will be reused')\n"
     msg+="  •  $(translate 'Virtual display normalized to vga: std (compatibility)')\n"
     msg+="  •  $(translate 'hostpci entries for all IOMMU group devices')\n"
+    [[ ${#EXTRA_AUDIO_DEVICES[@]} -gt 0 ]] && \
+        msg+="  •  $(translate 'Additional GPU audio function will be added'): ${EXTRA_AUDIO_DEVICES[*]}\n"
     [[ "$SELECTED_GPU" == "nvidia" ]] && \
         msg+="  •  $(translate 'NVIDIA KVM hiding (cpu hidden=1)')\n"
     [[ "$SWITCH_FROM_LXC" == "true" ]] && \
@@ -1144,9 +1424,13 @@ configure_vm() {
 
     # Find next free hostpciN index
     local idx=0
-    while qm config "$SELECTED_VMID" 2>/dev/null | grep -q "^hostpci${idx}:"; do
-        idx=$((idx + 1))
-    done
+    if declare -F _pci_next_hostpci_index >/dev/null 2>&1; then
+        idx=$(_pci_next_hostpci_index "$SELECTED_VMID" 2>/dev/null || echo 0)
+    else
+        while qm config "$SELECTED_VMID" 2>/dev/null | grep -q "^hostpci${idx}:"; do
+            idx=$((idx + 1))
+        done
+    fi
 
     # Primary GPU: pcie=1, x-vga=1 only for NVIDIA/AMD (not Intel iGPU), romfile if AMD
     local gpu_opts="pcie=1"
@@ -1170,6 +1454,17 @@ configure_vm() {
         fi
         qm set "$SELECTED_VMID" --hostpci${idx} "${dev},pcie=1" >>"$LOG_FILE" 2>&1
         msg_ok "$(translate 'Device added'): hostpci${idx}: ${dev},pcie=1" | tee -a "$screen_capture"
+        idx=$((idx + 1))
+    done
+
+    # Optional sibling GPU audio function (typically *.1) when split from IOMMU group
+    for dev in "${EXTRA_AUDIO_DEVICES[@]}"; do
+        if _is_pci_function_assigned_to_vm "$dev" "$SELECTED_VMID"; then
+            msg_ok "$(translate 'GPU audio already present in target VM — existing hostpci entry reused'): ${dev}" | tee -a "$screen_capture"
+            continue
+        fi
+        qm set "$SELECTED_VMID" --hostpci${idx} "${dev},pcie=1" >>"$LOG_FILE" 2>&1
+        msg_ok "$(translate 'GPU audio added'): hostpci${idx}: ${dev},pcie=1" | tee -a "$screen_capture"
         idx=$((idx + 1))
     done
 
@@ -1221,8 +1516,11 @@ update_initramfs_host() {
 # Main
 # ==========================================================
 main() {
+    parse_cli_args "$@"
+
     : >"$LOG_FILE"
     : >"$screen_capture"
+    [[ "$WIZARD_CALL" == "true" ]] && _set_wizard_result "cancelled"
 
     # ── Phase 1: all dialogs (no terminal output) ─────────
     detect_host_gpus
@@ -1233,23 +1531,33 @@ main() {
     ensure_selected_gpu_not_already_in_target_vm
     check_gpu_vm_compatibility
     analyze_iommu_group
+    detect_optional_gpu_audio
     check_vm_machine_type
     check_switch_mode
+    evaluate_host_reboot_requirement
     confirm_summary
 
     # ── Phase 2: processing ───────────────────────────────
-    clear
-    show_proxmenux_logo
     local run_title
     run_title=$(_get_vm_run_title)
-    msg_title "${run_title}"
+    if [[ "$WIZARD_CALL" == "true" ]]; then
+        echo
+    else
+        clear
+        show_proxmenux_logo
+        msg_title "${run_title}"
+    fi
 
-    add_vfio_modules
-    configure_vfio_pci_ids
-    configure_iommu_options
-    [[ "$SELECTED_GPU" == "amd" ]] && add_softdep_amd
-    blacklist_gpu_drivers
-    [[ "$SELECTED_GPU" == "amd" ]] && dump_amd_rom
+    if [[ "$VM_SWITCH_ALREADY_VFIO" == "true" ]]; then
+        msg_ok "$(translate 'Host already in VFIO mode — skipping host reconfiguration for VM reassignment')" | tee -a "$screen_capture"
+    else
+        add_vfio_modules
+        configure_vfio_pci_ids
+        configure_iommu_options
+        [[ "$SELECTED_GPU" == "amd" ]] && add_softdep_amd
+        blacklist_gpu_drivers
+        [[ "$SELECTED_GPU" == "amd" ]] && dump_amd_rom
+    fi
     cleanup_lxc_configs
     cleanup_vm_config
     ensure_vm_display_std
@@ -1257,42 +1565,49 @@ main() {
     [[ "$HOST_CONFIG_CHANGED" == "true" ]] && update_initramfs_host
 
     # ── Phase 3: summary ─────────────────────────────────
-    show_proxmenux_logo
-    msg_title "${run_title}"
-    cat "$screen_capture"
-
-    echo
-    echo -e "${TAB}${BL}📄 Log: ${LOG_FILE}${CL}"
-    echo
-
-    if [[ "$HOST_CONFIG_CHANGED" == "true" ]]; then
-        msg_info2 "$(translate 'After rebooting, verify VFIO binding with:')"
-        echo "    lspci -nnk | grep -A2 vfio-pci"
+    if [[ "$WIZARD_CALL" == "true" ]]; then
         echo
-        msg_info2 "$(translate 'Next steps after reboot:')"
-        echo "  1. $(translate 'Start the VM')"
     else
-        msg_info2 "$(translate 'Host VFIO config was already up to date — no reboot needed.')"
-        msg_info2 "$(translate 'Next steps:')"
-        echo "  1. $(translate 'Start the VM')"
+        show_proxmenux_logo
+        msg_title "${run_title}"
+        cat "$screen_capture"
+        echo
+    fi
+
+    if [[ "$WIZARD_CALL" == "true" ]]; then
+        _set_wizard_result "applied"
+        rm -f "$screen_capture"
+        return 0
+    fi
+
+    echo -e "${TAB}${BL}📄 Log: ${LOG_FILE}${CL}"
+    if [[ "$HOST_CONFIG_CHANGED" == "true" ]]; then
+        echo -e "${TAB}${DGN}- $(translate 'Host VFIO configuration changed — reboot required before starting the VM.')${CL}"
+    else
+        echo -e "${TAB}${DGN}- $(translate 'Host VFIO config was already up to date — no reboot needed.')${CL}"
     fi
 
     case "$SELECTED_GPU" in
         nvidia)
-            echo "  2. $(translate 'Install NVIDIA drivers from nvidia.com inside the guest')"
-            echo "  3. $(translate 'If Code 43 error: KVM hiding is already configured')"
+            echo -e "${TAB}${DGN}- $(translate 'Install NVIDIA drivers from nvidia.com inside the guest.')${CL}"
+            echo -e "${TAB}${DGN}- $(translate 'If Code 43 error appears, KVM hiding is already configured.')${CL}"
             ;;
         amd)
-            echo "  2. $(translate 'Install AMD GPU drivers inside the guest')"
-            echo "  3. $(translate 'If passthrough fails on Windows: install RadeonResetBugFix')"
+            echo -e "${TAB}${DGN}- $(translate 'Install AMD GPU drivers inside the guest.')${CL}"
+            echo -e "${TAB}${DGN}- $(translate 'If passthrough fails on Windows: install RadeonResetBugFix.')${CL}"
             [[ -n "$AMD_ROM_FILE" ]] && \
-            echo "     $(translate 'ROM file used'): /usr/share/kvm/${AMD_ROM_FILE}"
+            echo -e "${TAB}${DGN}- $(translate 'ROM file used'): /usr/share/kvm/${AMD_ROM_FILE}${CL}"
             ;;
         intel)
-            echo "  2. $(translate 'Install Intel Graphics Driver inside the guest')"
-            echo "  3. $(translate 'Enable Remote Desktop (RDP) before disabling the virtual display')"
+            echo -e "${TAB}${DGN}- $(translate 'Install Intel Graphics Driver inside the guest.')${CL}"
+            echo -e "${TAB}${DGN}- $(translate 'Enable Remote Desktop (RDP) before disabling the virtual display.')${CL}"
             ;;
     esac
+
+    echo
+    msg_info2 "$(translate 'If you want to use a physical monitor on the passthrough GPU:')"
+    echo "  • $(translate 'First install the GPU drivers inside the guest and verify remote access (RDP/SSH).')"
+    echo "  • $(translate 'Then change the VM display to none (vga: none) when the guest is stable.')"
 
     echo
     msg_success "$(translate 'GPU passthrough configured for VM') ${SELECTED_VMID} (${VM_NAME})."
@@ -1317,4 +1632,4 @@ main() {
     fi
 }
 
-main
+main "$@"

@@ -24,13 +24,33 @@
 # consistent and maintainable way, using ProxMenux standards.
 # ==========================================================
 
-LOCAL_SCRIPTS="/usr/local/share/proxmenux/scripts"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_SCRIPTS_LOCAL="$(cd "$SCRIPT_DIR/.." && pwd)"
+LOCAL_SCRIPTS_DEFAULT="/usr/local/share/proxmenux/scripts"
+LOCAL_SCRIPTS="$LOCAL_SCRIPTS_DEFAULT"
 BASE_DIR="/usr/local/share/proxmenux"
-UTILS_FILE="$BASE_DIR/utils.sh"
+UTILS_FILE="$LOCAL_SCRIPTS/utils.sh"
+if [[ -f "$LOCAL_SCRIPTS_LOCAL/utils.sh" ]]; then
+  LOCAL_SCRIPTS="$LOCAL_SCRIPTS_LOCAL"
+  UTILS_FILE="$LOCAL_SCRIPTS/utils.sh"
+elif [[ ! -f "$UTILS_FILE" ]]; then
+  UTILS_FILE="$BASE_DIR/utils.sh"
+fi
 VENV_PATH="/opt/googletrans-env"
 
 if [[ -f "$UTILS_FILE" ]]; then
   source "$UTILS_FILE"
+fi
+
+if [[ -f "$LOCAL_SCRIPTS_LOCAL/global/vm_storage_helpers.sh" ]]; then
+  source "$LOCAL_SCRIPTS_LOCAL/global/vm_storage_helpers.sh"
+elif [[ -f "$LOCAL_SCRIPTS_DEFAULT/global/vm_storage_helpers.sh" ]]; then
+  source "$LOCAL_SCRIPTS_DEFAULT/global/vm_storage_helpers.sh"
+fi
+if [[ -f "$LOCAL_SCRIPTS_LOCAL/global/pci_passthrough_helpers.sh" ]]; then
+  source "$LOCAL_SCRIPTS_LOCAL/global/pci_passthrough_helpers.sh"
+elif [[ -f "$LOCAL_SCRIPTS_DEFAULT/global/pci_passthrough_helpers.sh" ]]; then
+  source "$LOCAL_SCRIPTS_DEFAULT/global/pci_passthrough_helpers.sh"
 fi
 
 load_language
@@ -67,7 +87,10 @@ function select_interface_type() {
     "sata"    "$(translate "SATA   (standard - high compatibility)")" OFF \
     "virtio"  "$(translate "VirtIO (advanced - high performance)")" OFF \
     "ide"     "IDE    (legacy)" OFF \
-    3>&1 1>&2 2>&3) || exit 1
+    3>&1 1>&2 2>&3) || {
+      msg_warn "$(translate "Disk interface selection cancelled.")" >&2
+      return 1
+    }
 
   case "$INTERFACE_TYPE" in
     "scsi"|"sata")
@@ -102,17 +125,21 @@ function select_storage_target() {
   done < <(pvesm status -content images | awk 'NR>1')
 
   if [[ ${#STORAGE_MENU[@]} -eq 0 ]]; then
-    msg_error "$(translate "Unable to detect a valid storage location for $PURPOSE disk.")"
-    exit 1
+    msg_error "$(translate "Unable to detect a valid storage location for $PURPOSE disk.")" >&2
+    return 1
   elif [[ $((${#STORAGE_MENU[@]} / 3)) -eq 1 ]]; then
     STORAGE="${STORAGE_MENU[0]}"
   else
-    kill $SPINNER_PID > /dev/null
+    [[ -n "${SPINNER_PID:-}" ]] && kill "$SPINNER_PID" >/dev/null 2>&1
     STORAGE=$(whiptail --backtitle "ProxMenux" --title "$(translate "$PURPOSE Disk Storage")" --radiolist \
       "$(translate "Choose the storage volume for the $PURPOSE disk (4MB):\n\nUse Spacebar to select.")" 16 70 6 \
-      "${STORAGE_MENU[@]}" 3>&1 1>&2 2>&3) || exit 1
+      "${STORAGE_MENU[@]}" 3>&1 1>&2 2>&3) || {
+        msg_warn "$(translate "$PURPOSE disk storage selection cancelled.")" >&2
+        return 1
+      }
   fi
 
+  [[ -z "$STORAGE" ]] && return 1
   echo "$STORAGE"
 }
 
@@ -141,6 +168,35 @@ function configure_guest_agent() {
 
 }
 
+function run_gpu_passthrough_wizard() {
+  [[ "${WIZARD_ADD_GPU:-no}" != "yes" ]] && return 0
+
+  local gpu_script="$LOCAL_SCRIPTS/gpu_tpu/add_gpu_vm.sh"
+  local wizard_result_file=""
+  if [[ ! -f "$gpu_script" ]]; then
+    local local_gpu_script
+    local_gpu_script="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)/gpu_tpu/add_gpu_vm.sh"
+    [[ -f "$local_gpu_script" ]] && gpu_script="$local_gpu_script"
+  fi
+
+  if [[ ! -f "$gpu_script" ]]; then
+    msg_warn "$(translate "GPU passthrough assistant not found. You can run it later from Hardware Graphics.")"
+    return 0
+  fi
+
+  msg_info2 "$(translate "Launching GPU passthrough assistant for VM") ${VMID}..."
+  wizard_result_file="/tmp/proxmenux_gpu_wizard_result_${VMID}_$$.txt"
+  : >"$wizard_result_file"
+  bash "$gpu_script" --vmid "$VMID" --wizard --result-file "$wizard_result_file"
+
+  if [[ -s "$wizard_result_file" ]]; then
+    WIZARD_GPU_RESULT=$(head -n1 "$wizard_result_file" | tr -d '\r\n')
+  else
+    WIZARD_GPU_RESULT="cancelled"
+  fi
+  rm -f "$wizard_result_file"
+}
+
 
 
 
@@ -152,7 +208,6 @@ function create_vm() {
   local DISK_INFO=""
   local DISK_INDEX=0
   local ISO_DIR="/var/lib/vz/template/iso"
-
 
 
   if [[ -n "$ISO_PATH" && -n "$ISO_URL" && ! -f "$ISO_PATH" ]]; then
@@ -170,7 +225,7 @@ function create_vm() {
       msg_ok "$(translate "ISO image downloaded")"
     else
       msg_error "$(translate "Failed to download ISO image")"
-      return
+      return 1
     fi
   fi
 
@@ -179,6 +234,13 @@ function create_vm() {
     else
 	  GUEST_OS_TYPE="l26"
   fi
+
+  local VM_TAGS="proxmenux"
+  case "${OS_TYPE:-}" in
+    1) VM_TAGS="proxmenux,nas" ;;
+    2) VM_TAGS="proxmenux,windows" ;;
+    *) VM_TAGS="proxmenux,linux" ;;
+  esac
 
 
 
@@ -195,7 +257,7 @@ qm create "$VMID" \
   -cores "$CORE_COUNT" \
   -memory "$RAM_SIZE" \
   -name "$HN" \
-  -tags proxmenux \
+  -tags "$VM_TAGS" \
   -net0 "virtio,bridge=$BRG,macaddr=$MAC$VLAN$MTU" \
   -ostype "$GUEST_OS_TYPE" \
   -scsihw virtio-scsi-pci \
@@ -213,7 +275,10 @@ fi
 
 if [[ "$BIOS_TYPE" == *"ovmf"* ]]; then
   msg_info "$(translate "Configuring EFI disk")"
-  EFI_STORAGE=$(select_storage_target "EFI" "$VMID")
+  if ! EFI_STORAGE=$(select_storage_target "EFI" "$VMID"); then
+    msg_error "$(translate "EFI storage selection failed or was cancelled. VM creation aborted.")"
+    return 1
+  fi
   STORAGE_TYPE=$(pvesm status -storage "$EFI_STORAGE" | awk 'NR>1 {print $2}')
   EFI_DISK_ID="efidisk0"
   EFI_KEYS="0"
@@ -249,7 +314,10 @@ fi
 
 if [[ "$OS_TYPE" == "2" ]]; then
   msg_info "$(translate "Configuring TPM device")"
-  TPM_STORAGE=$(select_storage_target "TPM" "$VMID")
+  if ! TPM_STORAGE=$(select_storage_target "TPM" "$VMID"); then
+    msg_error "$(translate "TPM storage selection failed or was cancelled. VM creation aborted.")"
+    return 1
+  fi
   STORAGE_TYPE=$(pvesm status -storage "$TPM_STORAGE" | awk 'NR>1 {print $2}')
   TPM_ID="tpmstate0"
 
@@ -282,18 +350,31 @@ fi
 
 
 # ==========================================================
-# Create Diks
+# Create Disks / Import Disks / Controller + NVMe
 # ==========================================================
 
+  local -a EFFECTIVE_IMPORT_DISKS=()
+  if [[ ${#IMPORT_DISKS[@]} -gt 0 ]]; then
+    EFFECTIVE_IMPORT_DISKS=("${IMPORT_DISKS[@]}")
+  elif [[ ${#PASSTHROUGH_DISKS[@]} -gt 0 ]]; then
+    EFFECTIVE_IMPORT_DISKS=("${PASSTHROUGH_DISKS[@]}")
+  fi
 
-select_interface_type
+  if [[ ${#VIRTUAL_DISKS[@]} -gt 0 || ${#EFFECTIVE_IMPORT_DISKS[@]} -gt 0 ]]; then
+    if ! select_interface_type; then
+      msg_error "$(translate "Disk interface is required to continue VM creation.")"
+      return 1
+    fi
+  fi
 
-  if [[ "$DISK_TYPE" == "virtual" && ${#VIRTUAL_DISKS[@]} -gt 0 ]]; then
+  local NEXT_DISK_SLOT=0
+
+  if [[ ${#VIRTUAL_DISKS[@]} -gt 0 ]]; then
     for i in "${!VIRTUAL_DISKS[@]}"; do
-      DISK_INDEX=$((i+1))
+      DISK_INDEX=$((NEXT_DISK_SLOT+1))
       IFS=':' read -r STORAGE SIZE <<< "${VIRTUAL_DISKS[$i]}"
       DISK_NAME="vm-${VMID}-disk-${DISK_INDEX}"
-      SLOT_NAME="${INTERFACE_TYPE}${i}"
+      SLOT_NAME="${INTERFACE_TYPE}${NEXT_DISK_SLOT}"
 
       STORAGE_TYPE=$(pvesm status -storage "$STORAGE" | awk 'NR>1 {print $2}')
       case "$STORAGE_TYPE" in
@@ -313,6 +394,7 @@ select_interface_type
               msg_ok "$(translate "Virtual disk") $DISK_INDEX ${SIZE}GB - $STORAGE ($SLOT_NAME)"
               DISK_INFO+="<p>Virtual Disk $DISK_INDEX: ${SIZE}GB ($STORAGE / $SLOT_NAME)</p>"
               [[ -z "$BOOT_ORDER" ]] && BOOT_ORDER="$SLOT_NAME"
+              NEXT_DISK_SLOT=$((NEXT_DISK_SLOT + 1))
             else
               msg_error "$(translate "Failed to assign virtual disk") $DISK_INDEX"
             fi
@@ -325,6 +407,7 @@ select_interface_type
               msg_ok "$(translate "Virtual disk") $DISK_INDEX ${SIZE}GB - $STORAGE ($SLOT_NAME)"
               DISK_INFO+="<p>Virtual Disk $DISK_INDEX: ${SIZE}GB ($STORAGE / $SLOT_NAME)</p>"
               [[ -z "$BOOT_ORDER" ]] && BOOT_ORDER="$SLOT_NAME"
+              NEXT_DISK_SLOT=$((NEXT_DISK_SLOT + 1))
             else
               msg_error "$(translate "Failed to create disk") $DISK_INDEX"
             fi
@@ -334,17 +417,57 @@ select_interface_type
 
 
 
-  if [[ "$DISK_TYPE" == "passthrough" && ${#PASSTHROUGH_DISKS[@]} -gt 0 ]]; then
-    for i in "${!PASSTHROUGH_DISKS[@]}"; do
-      SLOT_NAME="${INTERFACE_TYPE}${i}"
-      DISK="${PASSTHROUGH_DISKS[$i]}"
+  if [[ ${#EFFECTIVE_IMPORT_DISKS[@]} -gt 0 ]]; then
+    for i in "${!EFFECTIVE_IMPORT_DISKS[@]}"; do
+      SLOT_NAME="${INTERFACE_TYPE}${NEXT_DISK_SLOT}"
+      DISK="${EFFECTIVE_IMPORT_DISKS[$i]}"
       MODEL=$(lsblk -ndo MODEL "$DISK")
       SIZE=$(lsblk -ndo SIZE "$DISK")
       qm set "$VMID" -$SLOT_NAME "$DISK${DISCARD_OPTS}" >/dev/null 2>&1
-      msg_ok "$(translate "Passthrough disk assigned") ($DISK → $SLOT_NAME)"
-      DISK_INFO+="<p>Passthrough Disk $((i+1)): $DISK ($MODEL $SIZE)</p>"
+      msg_ok "$(translate "Import disk assigned") ($DISK → $SLOT_NAME)"
+      DISK_INFO+="<p>Import Disk $((NEXT_DISK_SLOT+1)): $DISK ($MODEL $SIZE)</p>"
       [[ -z "$BOOT_ORDER" ]] && BOOT_ORDER="$SLOT_NAME"
+      NEXT_DISK_SLOT=$((NEXT_DISK_SLOT + 1))
     done
+  fi
+
+  if [[ ${#CONTROLLER_NVME_PCIS[@]} -gt 0 ]]; then
+    if ! _vm_is_q35 "$VMID"; then
+      msg_error "$(translate "Controller + NVMe passthrough requires machine type q35. Skipping controller assignment.")"
+    else
+      local hostpci_idx=0
+      if declare -F _pci_next_hostpci_index >/dev/null 2>&1; then
+        hostpci_idx=$(_pci_next_hostpci_index "$VMID" 2>/dev/null || echo 0)
+      else
+        local hostpci_existing
+        hostpci_existing=$(qm config "$VMID" 2>/dev/null)
+        while grep -q "^hostpci${hostpci_idx}:" <<< "$hostpci_existing"; do
+          hostpci_idx=$((hostpci_idx + 1))
+        done
+      fi
+
+      local pci bdf
+      for pci in "${CONTROLLER_NVME_PCIS[@]}"; do
+        bdf="${pci#0000:}"
+        if declare -F _pci_function_assigned_to_vm >/dev/null 2>&1; then
+          if _pci_function_assigned_to_vm "$pci" "$VMID"; then
+            msg_warn "$(translate "Controller/NVMe already present in VM config") ($pci)"
+            continue
+          fi
+        elif qm config "$VMID" 2>/dev/null | grep -qE "^hostpci[0-9]+:.*(0000:)?${bdf}([,[:space:]]|$)"; then
+          msg_warn "$(translate "Controller/NVMe already present in VM config") ($pci)"
+          continue
+        fi
+
+        if qm set "$VMID" --hostpci${hostpci_idx} "${pci},pcie=1" >/dev/null 2>&1; then
+          msg_ok "$(translate "Controller/NVMe assigned") (hostpci${hostpci_idx} → ${pci})"
+          DISK_INFO+="<p>Controller/NVMe: ${pci}</p>"
+          hostpci_idx=$((hostpci_idx + 1))
+        else
+          msg_error "$(translate "Failed to assign Controller/NVMe") (${pci})"
+        fi
+      done
+    fi
   fi
 
 
@@ -427,10 +550,17 @@ select_interface_type
   fi
 
 
-  local BOOT_FINAL="$BOOT_ORDER"
-  [[ -f "$ISO_PATH" ]] && BOOT_FINAL="$BOOT_ORDER;ide2"
-  qm set "$VMID" -boot order="$BOOT_FINAL" >/dev/null
-  msg_ok "$(translate "Boot order set to") $BOOT_FINAL"
+  local BOOT_FINAL=""
+  if [[ -n "$BOOT_ORDER" ]]; then
+    BOOT_FINAL="$BOOT_ORDER"
+  fi
+  if [[ -f "$ISO_PATH" ]]; then
+    BOOT_FINAL="${BOOT_FINAL:+$BOOT_FINAL;}ide2"
+  fi
+  if [[ -n "$BOOT_FINAL" ]]; then
+    qm set "$VMID" -boot order="$BOOT_FINAL" >/dev/null
+    msg_ok "$(translate "Boot order set to") $BOOT_FINAL"
+  fi
 
 
 
@@ -450,7 +580,7 @@ select_interface_type
 
 <p>
 <a href='https://macrimi.github.io/ProxMenux/docs/create-vm' target='_blank'><img src='https://img.shields.io/badge/📚_Docs-blue' alt='Docs'></a>
-<a href='https://github.com/MacRimi/ProxMenux/blob/main/scripts/vm/create_vm.sh' target='_blank'><img src='https://img.shields.io/badge/💻_Code-green' alt='Code'></a>
+<a href='https://github.com/MacRimi/ProxMenux/blob/main/scripts/menus/create_vm_menu.sh' target='_blank'><img src='https://img.shields.io/badge/💻_Code-green' alt='Code'></a>
 <a href='https://ko-fi.com/macrimi' target='_blank'><img src='https://img.shields.io/badge/☕_Ko--fi-red' alt='Ko-fi'></a>
 </p>
 
@@ -466,16 +596,75 @@ else
     msg_ok "$(translate "VM description configured")"
 fi
 
+  if [[ "${WIZARD_ADD_GPU:-no}" == "yes" && "$START_VM" == "yes" ]]; then
+    msg_warn "$(translate "Auto-start was skipped because GPU passthrough setup was requested.")"
+    msg_warn "$(translate "After completing GPU setup, start the VM manually when the host is ready.")"
+    START_VM="no"
+  fi
+
 
   if [[ "$START_VM" == "yes" ]]; then
     qm start "$VMID"
     msg_ok "$(translate "VM started")"
   fi
   configure_guest_agent
-  msg_success "$(translate "VM creation completed")"
 
+if [[ "${WIZARD_ADD_GPU:-no}" == "yes" ]]; then
+  WIZARD_GPU_RESULT="cancelled"
+  run_gpu_passthrough_wizard
+  if [[ "${VM_WIZARD_CAPTURE_ACTIVE:-0}" -eq 1 ]]; then
+    stop_spinner
+    exec 1>&8
+    exec 8>&-
+    VM_WIZARD_CAPTURE_ACTIVE=0
+    show_proxmenux_logo
+    cat "$VM_WIZARD_CAPTURE_FILE"
+    rm -f "$VM_WIZARD_CAPTURE_FILE"
+    VM_WIZARD_CAPTURE_FILE=""
+  fi
+  if [[ "$WIZARD_GPU_RESULT" == "applied" ]]; then
+    msg_success "$(translate "VM creation completed with GPU passthrough configured.")"
+  elif [[ "$WIZARD_GPU_RESULT" == "no_gpu" ]]; then
+    msg_success "$(translate "VM creation completed. GPU passthrough was skipped (no compatible GPU detected).")"
+  else
+    msg_success "$(translate "VM creation completed. GPU passthrough was not applied.")"
+  fi
+  if [[ "$OS_TYPE" == "2" ]]; then
+    echo -e "${TAB}$(translate "Next Steps:")"
+    echo -e "${TAB}1. $(translate "Start the VM to begin Windows installation from the mounted ISO.")"
+    echo -e "${TAB}2. $(translate "When asked to select a disk, click Load Driver and load the VirtIO drivers.")"
+    echo -e "${TAB}   $(translate "Required if using a VirtIO or SCSI disk.")"
+    echo -e "${TAB}3. $(translate "Also install the VirtIO network driver during setup to enable network access.")"
+    echo -e "${TAB}4. $(translate "Continue the Windows installation as usual.")"
+    echo -e "${TAB}5. $(translate "Once installed, open the VirtIO ISO and run the installer to complete driver setup.")"
+    echo -e "${TAB}6. $(translate "Reboot the VM to complete the driver installation.")"
+    if [[ "$WIZARD_GPU_RESULT" == "applied" ]]; then
+      echo -e "${TAB}- $(translate "If you want to use a physical monitor on the passthrough GPU:")"
+      echo -e "${TAB}• $(translate "First install the GPU drivers inside the guest and verify remote access (RDP/SSH).")"
+      echo -e "${TAB}• $(translate "Then change the VM display to none (vga: none) when the guest is stable.")"
+      echo -e "${TAB}• $(translate "If passthrough fails on Windows: install RadeonResetBugFix.")"
+    fi
+    echo -e
+  elif [[ "$OS_TYPE" == "3" ]]; then
+    echo -e "${TAB}${GN}$(translate "Recommended: Install the QEMU Guest Agent in the VM")${CL}"
+    echo -e "${TAB}$(translate "Run the following inside the VM:")"
+    echo -e "${TAB}apt install qemu-guest-agent -y && systemctl enable --now qemu-guest-agent"
+    if [[ "$WIZARD_GPU_RESULT" == "applied" ]]; then
+      echo -e "${TAB}- $(translate "If you want to use a physical monitor on the passthrough GPU:")"
+      echo -e "${TAB}• $(translate "First install the GPU drivers inside the guest and verify remote access (RDP/SSH).")"
+      echo -e "${TAB}• $(translate "Then change the VM display to none (vga: none) when the guest is stable.")"
+    fi
+    echo -e
+  fi
+  msg_success "$(translate "Press Enter to return to the main menu...")"
+  read -r
+  bash "$LOCAL_SCRIPTS/menus/create_vm_menu.sh"
+  exit 0
+fi
+
+msg_success "$(translate "VM creation completed")"
 if [[ "$OS_TYPE" == "2" ]]; then
-  echo -e "${TAB}${GN}$(translate "Next Steps:")${CL}"
+  echo -e "${TAB}$(translate "Next Steps:")"
   echo -e "${TAB}1. $(translate "Start the VM to begin Windows installation from the mounted ISO.")"
   echo -e "${TAB}2. $(translate "When asked to select a disk, click Load Driver and load the VirtIO drivers.")"
   echo -e "${TAB}   $(translate "Required if using a VirtIO or SCSI disk.")"
@@ -487,10 +676,9 @@ if [[ "$OS_TYPE" == "2" ]]; then
 elif [[ "$OS_TYPE" == "3" ]]; then
   echo -e "${TAB}${GN}$(translate "Recommended: Install the QEMU Guest Agent in the VM")${CL}"
   echo -e "${TAB}$(translate "Run the following inside the VM:")"
-  echo -e "${TAB}${CY}apt install qemu-guest-agent -y && systemctl enable --now qemu-guest-agent${CL}"
+  echo -e "${TAB}apt install qemu-guest-agent -y && systemctl enable --now qemu-guest-agent"
   echo -e
 fi
-
 
 msg_success "$(translate "Press Enter to return to the main menu...")"
 read -r
