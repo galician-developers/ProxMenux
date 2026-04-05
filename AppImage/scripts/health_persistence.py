@@ -967,23 +967,21 @@ class HealthPersistence:
         cutoff_events = (now - timedelta(days=30)).isoformat()
         cursor.execute('DELETE FROM events WHERE timestamp < ?', (cutoff_events,))
         
-        # ── Auto-resolve transient log errors after system reboot ──
-        # OOM, service failures, timeouts are transient - a reboot resolves them.
-        # If the system has been up for >1 hour and these errors haven't recurred,
-        # they are from a previous boot and should be auto-resolved.
-        # 
-        # Logic: If uptime > 1 hour AND error.last_seen is not within the last 30 minutes,
-        # the error is stale (from before the current stable state) and should be resolved.
+        # ── Auto-resolve transient errors after system stabilizes ──
+        # Transient errors (OOM, high CPU, service failures) resolve themselves.
+        # If the system has been up for >10 minutes and these errors haven't recurred,
+        # they are stale and should be auto-resolved.
         try:
+            import psutil
             # Get system uptime
             with open('/proc/uptime', 'r') as f:
                 uptime_seconds = float(f.read().split()[0])
             
-            # Only auto-resolve if system has been stable for at least 1 hour
-            if uptime_seconds > 3600:  # 1 hour
-                # Resolve transient log errors that haven't been seen in the last 30 minutes
-                # If they were real current issues, journalctl -b 0 would have detected them recently
-                stale_cutoff = (now - timedelta(minutes=30)).isoformat()
+            # Only auto-resolve if system has been stable for at least 10 minutes
+            if uptime_seconds > 600:  # 10 minutes
+                stale_cutoff = (now - timedelta(minutes=10)).isoformat()
+                
+                # 1. Resolve transient log errors (OOM, service failures)
                 cursor.execute('''
                     UPDATE errors 
                     SET resolved_at = ?
@@ -999,6 +997,42 @@ class HealthPersistence:
                            OR reason LIKE '%timeout%'
                            OR reason LIKE '%critical error%')
                 ''', (now_iso, stale_cutoff))
+                
+                # 2. Auto-resolve CPU errors if current CPU is normal (<75%)
+                try:
+                    current_cpu = psutil.cpu_percent(interval=0.1)
+                    if current_cpu < 75:
+                        cursor.execute('''
+                            UPDATE errors 
+                            SET resolved_at = ?
+                            WHERE category = 'temperature'
+                              AND resolved_at IS NULL 
+                              AND acknowledged = 0
+                              AND last_seen < ?
+                              AND (error_key = 'cpu_usage'
+                                   OR reason LIKE '%CPU >%sustained%'
+                                   OR reason LIKE '%Sustained high CPU%')
+                        ''', (now_iso, stale_cutoff))
+                except Exception:
+                    pass
+                
+                # 3. Auto-resolve memory errors if current memory is normal (<80%)
+                try:
+                    current_mem = psutil.virtual_memory().percent
+                    if current_mem < 80:
+                        cursor.execute('''
+                            UPDATE errors 
+                            SET resolved_at = ?
+                            WHERE category = 'memory'
+                              AND resolved_at IS NULL 
+                              AND acknowledged = 0
+                              AND last_seen < ?
+                              AND (reason LIKE '%Memory >%'
+                                   OR reason LIKE '%RAM usage%')
+                        ''', (now_iso, stale_cutoff))
+                except Exception:
+                    pass
+                    
         except Exception:
             pass  # If we can't read uptime, skip this cleanup
         

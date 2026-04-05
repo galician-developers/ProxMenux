@@ -150,7 +150,7 @@ class HealthMonitor:
         r'zfs.*scrub (started|finished|in progress)',
         r'zpool.*resilver',
         
-        # ── LXC/Container normal operations ──
+        # ���─ LXC/Container normal operations ──
         r'lxc.*monitor',
         r'systemd\[1\]: (started|stopped) .*\.scope',
         
@@ -837,90 +837,95 @@ class HealthMonitor:
                 return self.cached_results.get(cache_key)
         
         try:
-            # Use shared journalctl cache to avoid duplicate calls
-            journalctl_output = self._get_journalctl_10min_warnings()
+            # Read temperature directly from sensors command (not journalctl)
+            result = subprocess.run(
+                ['sensors', '-u'],
+                capture_output=True, text=True, timeout=3
+            )
             
-            if journalctl_output:
-                temps = []
-                for line in journalctl_output.split('\n'):
-                    if 'temp' in line.lower() and '_input' in line:
+            temps = []
+            if result.returncode == 0 and result.stdout:
+                for line in result.stdout.split('\n'):
+                    # Look for temperature input lines like "temp1_input: 42.000"
+                    if '_input' in line and 'temp' in line.lower():
                         try:
                             temp = float(line.split(':')[1].strip())
-                            temps.append(temp)
+                            if 0 < temp < 150:  # Sanity check for valid temp range
+                                temps.append(temp)
                         except:
                             continue
+            
+            if temps:
+                max_temp = max(temps)
                 
-                if temps:
-                    max_temp = max(temps)
+                state_key = 'cpu_temp_history'
+                # Add this reading (supplements the sampler thread)
+                self.state_history[state_key].append({
+                    'value': max_temp,
+                    'time': current_time
+                })
+                
+                # Snapshot for thread-safe reading, then atomic prune
+                temp_snapshot = list(self.state_history[state_key])
+                self.state_history[state_key] = [
+                    entry for entry in temp_snapshot
+                    if current_time - entry['time'] < 240
+                ]
+                
+                # Check if temperature >80°C for more than 3 minutes (180 seconds)
+                high_temp_samples = [
+                    entry for entry in self.state_history[state_key]
+                    if entry['value'] > 80 and current_time - entry['time'] <= 180
+                ]
+                
+                # Check if temperature ≤80°C for last 30 seconds (recovery)
+                recovery_samples = [
+                    entry for entry in self.state_history[state_key]
+                    if entry['value'] <= 80 and current_time - entry['time'] <= 30
+                ]
+                
+                # Require at least 18 samples over 3 minutes (one every 10 seconds) to trigger alert
+                if len(high_temp_samples) >= 18:
+                    # Temperature has been >80°C for >3 minutes
+                    status = 'WARNING'
+                    reason = f'CPU temperature {max_temp}°C >80°C sustained >3min'
                     
-                    state_key = 'cpu_temp_history'
-                    # Add this reading (supplements the sampler thread)
-                    self.state_history[state_key].append({
-                        'value': max_temp,
-                        'time': current_time
-                    })
-                    
-                    # Snapshot for thread-safe reading, then atomic prune
-                    temp_snapshot = list(self.state_history[state_key])
-                    self.state_history[state_key] = [
-                        entry for entry in temp_snapshot
-                        if current_time - entry['time'] < 240
-                    ]
-                    
-                    # Check if temperature >80°C for more than 3 minutes (180 seconds)
-                    high_temp_samples = [
-                        entry for entry in self.state_history[state_key]
-                        if entry['value'] > 80 and current_time - entry['time'] <= 180
-                    ]
-                    
-                    # Check if temperature ≤80°C for last 30 seconds (recovery)
-                    recovery_samples = [
-                        entry for entry in self.state_history[state_key]
-                        if entry['value'] <= 80 and current_time - entry['time'] <= 30
-                    ]
-                    
-                    # Require at least 18 samples over 3 minutes (one every 10 seconds) to trigger alert
-                    if len(high_temp_samples) >= 18:
-                        # Temperature has been >80°C for >3 minutes
+                    # Record non-dismissable error
+                    health_persistence.record_error(
+                        error_key='cpu_temperature',
+                        category='temperature',
+                        severity='WARNING',
+                        reason=reason,
+                        details={'temperature': max_temp, 'dismissable': False}
+                    )
+                elif len(recovery_samples) >= 3:
+                    # Temperature has been ≤80°C for 30 seconds - clear the error
+                    status = 'OK'
+                    reason = None
+                    health_persistence.resolve_error('cpu_temperature', 'Temperature recovered')
+                else:
+                    # Temperature is elevated but not long enough, or recovering but not yet cleared
+                    # Check if we already have an active error
+                    if health_persistence.is_error_active('cpu_temperature', category='temperature'):
+                        # Keep the warning active
                         status = 'WARNING'
-                        reason = f'CPU temperature {max_temp}°C >80°C sustained >3min'
-                        
-                        # Record non-dismissable error
-                        health_persistence.record_error(
-                            error_key='cpu_temperature',
-                            category='temperature',
-                            severity='WARNING',
-                            reason=reason,
-                            details={'temperature': max_temp, 'dismissable': False}
-                        )
-                    elif len(recovery_samples) >= 3:
-                        # Temperature has been ≤80°C for 30 seconds - clear the error
+                        reason = f'CPU temperature {max_temp}°C still elevated'
+                    else:
+                        # No active warning yet
                         status = 'OK'
                         reason = None
-                        health_persistence.resolve_error('cpu_temperature', 'Temperature recovered')
-                    else:
-                        # Temperature is elevated but not long enough, or recovering but not yet cleared
-                        # Check if we already have an active error
-                        if health_persistence.is_error_active('cpu_temperature', category='temperature'):
-                            # Keep the warning active
-                            status = 'WARNING'
-                            reason = f'CPU temperature {max_temp}°C still elevated'
-                        else:
-                            # No active warning yet
-                            status = 'OK'
-                            reason = None
-                    
-                    temp_result = {
-                        'status': status,
-                        'value': round(max_temp, 1),
-                        'unit': '°C'
-                    }
-                    if reason:
-                        temp_result['reason'] = reason
-                    
-                    self.cached_results[cache_key] = temp_result
-                    self.last_check_times[cache_key] = current_time
-                    return temp_result
+                
+                temp_result = {
+                    'status': status,
+                    'value': round(max_temp, 1),
+                    'unit': '°C'
+                }
+                if reason:
+                    temp_result['reason'] = reason
+                
+                self.cached_results[cache_key] = temp_result
+                self.last_check_times[cache_key] = current_time
+                return temp_result
             
             return None
             
