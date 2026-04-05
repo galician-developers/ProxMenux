@@ -2863,40 +2863,40 @@ class HealthMonitor:
                 for line in journalctl_output.split('\n'):
                     line_lower = line.lower()
                     
-                # VM QMP errors (skip during active backup -- normal behavior)
-                vm_qmp_match = re.search(r'vm\s+(\d+)\s+qmp\s+command.*(?:failed|unable|timeout)', line_lower)
-                if vm_qmp_match:
-                    if _vzdump_running:
-                        continue  # Normal during backup
-                    vmid = vm_qmp_match.group(1)
-                    
-                    # Skip if VM no longer exists (deleted after error occurred)
-                    if not self._vm_ct_exists(vmid):
-                        continue
-                    
-                    # Skip if VM is now running - the QMP error is stale/resolved
-                    # This prevents re-detecting old journal entries after VM recovery
-                    if self._is_vm_running(vmid):
-                        # Auto-resolve any existing error for this VM
-                        health_persistence.check_vm_running(vmid)
-                        continue
-                    
-                    vm_name = self._resolve_vm_name(vmid)
-                    display = f"VM {vmid} ({vm_name})" if vm_name else f"VM {vmid}"
-                    error_key = f'vm_{vmid}'
-                    if error_key not in vm_details:
-                        rec_result = health_persistence.record_error(
-                            error_key=error_key,
-                            category='vms',
-                            severity='WARNING',
-                            reason=f'{display}: QMP command failed or timed out.\n{line.strip()[:200]}',
-                            details={'id': vmid, 'vmname': vm_name, 'type': 'VM'}
-                        )
-                        if not rec_result or rec_result.get('type') != 'skipped_acknowledged':
-                            issues.append(f'{display}: QMP communication issue')
-                            vm_details[error_key] = {
-                                'status': 'WARNING',
-                                'reason': f'{display}: QMP command failed or timed out',
+                    # VM QMP errors (skip during active backup -- normal behavior)
+                    vm_qmp_match = re.search(r'vm\s+(\d+)\s+qmp\s+command.*(?:failed|unable|timeout)', line_lower)
+                    if vm_qmp_match:
+                        if _vzdump_running:
+                            continue  # Normal during backup
+                        vmid = vm_qmp_match.group(1)
+                        
+                        # Skip if VM no longer exists (deleted after error occurred)
+                        if not self._vm_ct_exists(vmid):
+                            continue
+                        
+                        # Skip if VM is now running - the QMP error is stale/resolved
+                        # This prevents re-detecting old journal entries after VM recovery
+                        if self._is_vm_running(vmid):
+                            # Auto-resolve any existing error for this VM
+                            health_persistence.check_vm_running(vmid)
+                            continue
+                        
+                        vm_name = self._resolve_vm_name(vmid)
+                        display = f"VM {vmid} ({vm_name})" if vm_name else f"VM {vmid}"
+                        error_key = f'vm_{vmid}'
+                        if error_key not in vm_details:
+                            rec_result = health_persistence.record_error(
+                                error_key=error_key,
+                                category='vms',
+                                severity='WARNING',
+                                reason=f'{display}: QMP command failed or timed out.\n{line.strip()[:200]}',
+                                details={'id': vmid, 'vmname': vm_name, 'type': 'VM'}
+                            )
+                            if not rec_result or rec_result.get('type') != 'skipped_acknowledged':
+                                issues.append(f'{display}: QMP communication issue')
+                                vm_details[error_key] = {
+                                    'status': 'WARNING',
+                                    'reason': f'{display}: QMP command failed or timed out',
                                     'id': vmid,
                                     'vmname': vm_name,
                                     'type': 'VM'
