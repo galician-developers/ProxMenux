@@ -3534,24 +3534,18 @@ def get_proxmox_vms():
 
                 return all_vms
             else:
-                return {
-                    'error': 'pvesh command not available or failed',
-                    'vms': []
-                }
+                # Return empty array instead of error object - frontend expects array
+                return []
         except Exception as e:
             # print(f"[v0] Error getting VM/LXC info: {e}")
             pass
-            return {
-                'error': 'Unable to access VM information: {str(e)}',
-                'vms': []
-            }
+            # Return empty array instead of error object - frontend expects array
+            return []
     except Exception as e:
         # print(f"Error getting VM info: {e}")
         pass
-        return {
-            'error': f'Unable to access VM information: {str(e)}',
-            'vms': []
-        }
+        # Return empty array instead of error object - frontend expects array
+        return []
 
 def get_ipmi_fans():
     """Get fan information from IPMI"""

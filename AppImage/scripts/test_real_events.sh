@@ -557,7 +557,7 @@ test_vmct() {
 test_system() {
     header "SYSTEM EVENT TESTS (syslog injection)"
     
-    # ── Test S1: Authentication failures ──
+    # ��─ Test S1: Authentication failures ──
     log ""
     log "${BOLD}  Test S1: SSH auth failure injection${NC}"
     info "Injecting SSH auth failure messages into syslog."
@@ -684,7 +684,7 @@ show_menu() {
     echo -ne "  Select: "
 }
 
-# ── Main ──────���─────────────────────────────────────────────────
+# ── Main ────────────────────────────────────────────────────────
 main() {
     local mode="${1:-menu}"
     

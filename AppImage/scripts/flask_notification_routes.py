@@ -953,7 +953,7 @@ def proxmox_webhook():
         return jsonify({'accepted': False, 'error': 'internal_error', 'detail': str(e)}), 200
 
 
-# ─── Internal Shutdown Event Endpoint ────────────���────────────────
+# ─── Internal Shutdown Event Endpoint ─────────────────────────────
 
 @notification_bp.route('/api/internal/shutdown-event', methods=['POST'])
 def internal_shutdown_event():

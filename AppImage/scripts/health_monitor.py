@@ -2618,6 +2618,28 @@ class HealthMonitor:
                             return True
         return False
     
+    def _is_vm_running(self, vmid: str) -> bool:
+        """Check if a VM or CT is currently running."""
+        import subprocess
+        try:
+            # Check VM status
+            result = subprocess.run(
+                ['qm', 'status', vmid],
+                capture_output=True, text=True, timeout=2
+            )
+            if result.returncode == 0 and 'running' in result.stdout.lower():
+                return True
+            # Check CT status
+            result = subprocess.run(
+                ['pct', 'status', vmid],
+                capture_output=True, text=True, timeout=2
+            )
+            if result.returncode == 0 and 'running' in result.stdout.lower():
+                return True
+        except Exception:
+            pass
+        return False
+    
     def _check_vms_cts_optimized(self) -> Dict[str, Any]:
         """
         Optimized VM/CT check - detects qmp failures and startup errors from logs.
@@ -2657,6 +2679,12 @@ class HealthMonitor:
                         vmid = vm_qmp_match.group(1)
                         # Skip if VM no longer exists (stale journal entry)
                         if not self._vm_ct_exists(vmid):
+                            continue
+                        # Skip if VM is now running - the QMP error is stale/resolved
+                        # This prevents re-detecting old journal entries after VM recovery
+                        if self._is_vm_running(vmid):
+                            # Auto-resolve any existing error for this VM
+                            health_persistence.check_vm_running(vmid)
                             continue
                         vm_name = self._resolve_vm_name(vmid)
                         display = f"VM {vmid} ({vm_name})" if vm_name else f"VM {vmid}"
@@ -2835,18 +2863,25 @@ class HealthMonitor:
                 for line in journalctl_output.split('\n'):
                     line_lower = line.lower()
                     
-                    # VM QMP errors (skip during active backup -- normal behavior)
-                    vm_qmp_match = re.search(r'vm\s+(\d+)\s+qmp\s+command.*(?:failed|unable|timeout)', line_lower)
-                    if vm_qmp_match:
-                        if _vzdump_running:
-                            continue  # Normal during backup
-                        vmid = vm_qmp_match.group(1)
-                        
-                        # Skip if VM no longer exists (deleted after error occurred)
-                        if not self._vm_ct_exists(vmid):
-                            continue
-                        
-                        vm_name = self._resolve_vm_name(vmid)
+                # VM QMP errors (skip during active backup -- normal behavior)
+                vm_qmp_match = re.search(r'vm\s+(\d+)\s+qmp\s+command.*(?:failed|unable|timeout)', line_lower)
+                if vm_qmp_match:
+                    if _vzdump_running:
+                        continue  # Normal during backup
+                    vmid = vm_qmp_match.group(1)
+                    
+                    # Skip if VM no longer exists (deleted after error occurred)
+                    if not self._vm_ct_exists(vmid):
+                        continue
+                    
+                    # Skip if VM is now running - the QMP error is stale/resolved
+                    # This prevents re-detecting old journal entries after VM recovery
+                    if self._is_vm_running(vmid):
+                        # Auto-resolve any existing error for this VM
+                        health_persistence.check_vm_running(vmid)
+                        continue
+                    
+                    vm_name = self._resolve_vm_name(vmid)
                         display = f"VM {vmid} ({vm_name})" if vm_name else f"VM {vmid}"
                         error_key = f'vm_{vmid}'
                         if error_key not in vm_details:

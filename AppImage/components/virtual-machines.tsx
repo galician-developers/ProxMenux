@@ -621,7 +621,8 @@ const handleDownloadLogs = async (vmid: number, vmName: string) => {
     }
   }
 
-  const safeVMData = vmData || []
+  // Ensure vmData is always an array (backend may return object on error)
+  const safeVMData = Array.isArray(vmData) ? vmData : []
 
   // Total allocated RAM for ALL VMs/LXCs (running + stopped)
   const totalAllocatedMemoryGB = useMemo(() => {
