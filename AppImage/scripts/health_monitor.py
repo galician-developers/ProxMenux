@@ -2882,21 +2882,21 @@ class HealthMonitor:
                         continue
                     
                     vm_name = self._resolve_vm_name(vmid)
-                        display = f"VM {vmid} ({vm_name})" if vm_name else f"VM {vmid}"
-                        error_key = f'vm_{vmid}'
-                        if error_key not in vm_details:
-                            rec_result = health_persistence.record_error(
-                                error_key=error_key,
-                                category='vms',
-                                severity='WARNING',
-                                reason=f'{display}: QMP command failed or timed out.\n{line.strip()[:200]}',
-                                details={'id': vmid, 'vmname': vm_name, 'type': 'VM'}
-                            )
-                            if not rec_result or rec_result.get('type') != 'skipped_acknowledged':
-                                issues.append(f'{display}: QMP communication issue')
-                                vm_details[error_key] = {
-                                    'status': 'WARNING',
-                                    'reason': f'{display}: QMP command failed or timed out',
+                    display = f"VM {vmid} ({vm_name})" if vm_name else f"VM {vmid}"
+                    error_key = f'vm_{vmid}'
+                    if error_key not in vm_details:
+                        rec_result = health_persistence.record_error(
+                            error_key=error_key,
+                            category='vms',
+                            severity='WARNING',
+                            reason=f'{display}: QMP command failed or timed out.\n{line.strip()[:200]}',
+                            details={'id': vmid, 'vmname': vm_name, 'type': 'VM'}
+                        )
+                        if not rec_result or rec_result.get('type') != 'skipped_acknowledged':
+                            issues.append(f'{display}: QMP communication issue')
+                            vm_details[error_key] = {
+                                'status': 'WARNING',
+                                'reason': f'{display}: QMP command failed or timed out',
                                     'id': vmid,
                                     'vmname': vm_name,
                                     'type': 'VM'
