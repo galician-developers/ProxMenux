@@ -83,6 +83,7 @@ SWITCH_FROM_LXC=false
 SWITCH_LXC_LIST=""
 SWITCH_FROM_VM=false
 SWITCH_VM_SRC=""
+SWITCH_VM_ACTION=""   # keep_gpu_disable_onboot | remove_gpu_keep_onboot
 TARGET_VM_ALREADY_HAS_GPU=false
 VM_SWITCH_ALREADY_VFIO=false
 PREFLIGHT_HOST_REBOOT_REQUIRED=true
@@ -178,6 +179,14 @@ _lxc_switch_action_label() {
         keep_gpu_disable_onboot) echo "$(translate 'Keep GPU in LXC config + disable Start on boot')" ;;
         remove_gpu_keep_onboot) echo "$(translate 'Remove GPU from LXC config + keep Start on boot unchanged')" ;;
         *) echo "$(translate 'No specific LXC action selected')" ;;
+    esac
+}
+
+_vm_switch_action_label() {
+    case "$SWITCH_VM_ACTION" in
+        keep_gpu_disable_onboot) echo "$(translate 'Keep GPU in source VM config + disable Start on boot if enabled')" ;;
+        remove_gpu_keep_onboot) echo "$(translate 'Remove GPU from source VM config + keep Start on boot unchanged')" ;;
+        *) echo "$(translate 'No specific VM action selected')" ;;
     esac
 }
 
@@ -666,7 +675,7 @@ warn_single_gpu() {
     msg+="  •  Proxmox Web UI (https)\n"
     msg+="  •  Serial console\n\n"
     msg+="$(translate 'The VM guest will have exclusive access to the GPU.')\n\n"
-    msg+="\Z3$(translate 'Important: some GPUs may still fail in passthrough and can affect host stability or overall performance depending on hardware/firmware quality.')\Zn\n\n"
+    msg+="\Z1$(translate 'Important: some GPUs may still fail in passthrough and can affect host stability or overall performance depending on hardware/firmware quality.')\Zn\n\n"
     msg+="$(translate 'Make sure you have SSH or Web UI access before rebooting.')\n\n"
     msg+="$(translate 'Do you want to continue?')"
 
@@ -901,7 +910,7 @@ check_gpu_vm_compatibility() {
         msg+="  •  $(translate 'SoC-integrated GPU: tight coupling with other SoC components')\n"
         msg+="  •  $(translate 'Power state D3cold/D0 transitions may be inaccessible')\n"
         [[ "$power_state" == "D3cold" ]] && \
-        msg+="  •  \Z3$(translate 'Current power state: D3cold (device currently inaccessible)')\Zn\n"
+        msg+="  •  \Z1$(translate 'Current power state: D3cold (device currently inaccessible)')\Zn\n"
         msg+="\n$(translate 'Attempting passthrough with this GPU typically results in'):\n"
         msg+="  —  write error: Inappropriate ioctl for device\n"
         msg+="  —  Unable to change power state from D3cold to D0\n"
@@ -1028,7 +1037,7 @@ analyze_iommu_group() {
     msg+="${display_lines}"
 
     if [[ $extra_devices -gt 0 ]]; then
-        msg+="\n\Z3$(translate 'All devices in the same IOMMU group must be passed together.')\Zn"
+        msg+="\n\Z1$(translate 'All devices in the same IOMMU group must be passed together.')\Zn"
     fi
 
     dialog --backtitle "ProxMenux" --colors \
@@ -1210,10 +1219,10 @@ check_switch_mode() {
         msg+="\n$(translate 'VM passthrough requires exclusive VFIO binding of the GPU.')\n"
         msg+="$(translate 'Choose how to handle affected LXC containers before switching to VM mode.')\n\n"
         [[ "$running_count" -gt 0 ]] && \
-            msg+="\Z3$(translate 'Running containers detected'): ${running_count}\Zn\n"
+            msg+="\Z1$(translate 'Running containers detected'): ${running_count}\Zn\n"
         [[ "$onboot_count" -gt 0 ]] && \
             msg+="\Z1\Zb$(translate 'Start on boot enabled (onboot=1)'): ${onboot_count}\Zn\n"
-        msg+="\n\Z3$(translate 'After this LXC → VM switch, reboot the host so the new binding state is applied cleanly.')\Zn"
+        msg+="\n\Z1$(translate 'After this LXC → VM switch, reboot the host so the new binding state is applied cleanly.')\Zn"
 
         action_choice=$(dialog --backtitle "ProxMenux" --colors \
             --title "$(translate 'GPU Used in LXC Containers')" \
@@ -1267,6 +1276,7 @@ check_switch_mode() {
 
         SWITCH_FROM_VM=true
         SWITCH_VM_SRC="$vm_src_id"
+        SWITCH_VM_ACTION="remove_gpu_keep_onboot"
         local selected_driver
         selected_driver=$(_get_pci_driver "$SELECTED_GPU_PCI")
         if [[ "$selected_driver" == "vfio-pci" && "$SWITCH_FROM_LXC" != "true" ]]; then
@@ -1283,22 +1293,32 @@ check_switch_mode() {
         msg="\n$(translate 'The selected GPU is already configured for passthrough to:')\n\n"
         msg+="  VM ${vm_src_id} (${vm_src_name:-VM-${vm_src_id}})\n\n"
         msg+="$(translate 'That VM is currently stopped, so the GPU can be reassigned now.')\n"
-        msg+="\Z3$(translate 'Important: both VMs cannot be running at the same time with the same GPU.')\Zn\n\n"
-        msg+="$(translate 'The existing hostpci entry will be removed from that VM and configured on'): "
-        msg+="VM ${SELECTED_VMID} (${VM_NAME:-VM-${SELECTED_VMID}})\n\n"
+        msg+="\Z1\Zb$(translate 'Important: both VMs cannot be running at the same time with the same GPU.')\Zn\n\n"
+        msg+="$(translate 'Target VM'): VM ${SELECTED_VMID} (${VM_NAME:-VM-${SELECTED_VMID}})\n"
+        msg+="$(translate 'Source VM'): VM ${vm_src_id} (${vm_src_name:-VM-${vm_src_id}})\n\n"
         if [[ "$src_onboot" == "1" && "$target_onboot" == "1" ]]; then
-            msg+="\Z3$(translate 'Warning: both VMs have autostart enabled (onboot=1).')\Zn\n"
-            msg+="\Z3$(translate 'Disable autostart on one VM to avoid startup conflicts.')\Zn\n\n"
+            msg+="\Z1\Zb$(translate 'Warning: both VMs have autostart enabled (onboot=1).')\Zn\n"
+            msg+="\Z1\Zb$(translate 'Disable autostart on one VM to avoid startup conflicts.')\Zn\n\n"
         fi
         if [[ "$VM_SWITCH_ALREADY_VFIO" == "true" ]]; then
             msg+="$(translate 'Host GPU is already bound to vfio-pci. Host reconfiguration/reboot should not be required for this VM-to-VM reassignment.')\n\n"
         fi
-        msg+="$(translate 'Do you want to continue?')"
+        msg+="$(translate 'Choose conflict policy for the source VM:')"
 
-        dialog --backtitle "ProxMenux" --colors \
+        local vm_action_choice
+        vm_action_choice=$(dialog --backtitle "ProxMenux" --colors \
             --title "$(translate 'GPU Already Assigned to Another VM')" \
-            --yesno "$msg" 24 88
-        [[ $? -ne 0 ]] && exit 0
+            --default-item "1" \
+            --menu "$msg" 24 98 8 \
+            "1" "$(translate 'Keep GPU in source VM config (disable Start on boot if enabled)')" \
+            "2" "$(translate 'Remove GPU from source VM config (keep Start on boot)')" \
+            2>&1 >/dev/tty) || exit 0
+
+        case "$vm_action_choice" in
+            1) SWITCH_VM_ACTION="keep_gpu_disable_onboot" ;;
+            2) SWITCH_VM_ACTION="remove_gpu_keep_onboot" ;;
+            *) exit 0 ;;
+        esac
     fi
 }
 
@@ -1349,14 +1369,22 @@ confirm_summary() {
     [[ "$SELECTED_GPU" == "nvidia" ]] && \
         msg+="  •  $(translate 'NVIDIA KVM hiding (cpu hidden=1)')\n"
     if [[ "$SWITCH_FROM_LXC" == "true" ]]; then
-        msg+="\n  \Z3•  $(translate 'Affected LXC containers'): ${SWITCH_LXC_LIST}\Zn\n"
-        msg+="  \Z3•  $(translate 'Selected LXC action'): $(_lxc_switch_action_label)\Zn\n"
+        msg+="\n  \Z1•  $(translate 'Affected LXC containers'): ${SWITCH_LXC_LIST}\Zn\n"
+        msg+="  \Z1•  $(translate 'Selected LXC action'): $(_lxc_switch_action_label)\Zn\n"
         if [[ "$LXC_SWITCH_ACTION" == "remove_gpu_keep_onboot" ]]; then
-            msg+="  \Z3•  $(translate 'To use the GPU again in LXC, run Add GPU to LXC from GPUs and Coral-TPU Menu')\Zn\n"
+            msg+="  \Z1•  $(translate 'To use the GPU again in LXC, run Add GPU to LXC from GPUs and Coral-TPU Menu')\Zn\n"
         fi
     fi
-    [[ "$SWITCH_FROM_VM" == "true" ]] && \
-        msg+="\n  \Z3•  $(translate 'GPU will be removed from VM') ${SWITCH_VM_SRC}\Zn\n"
+    if [[ "$SWITCH_FROM_VM" == "true" ]]; then
+        if [[ "$SWITCH_VM_ACTION" == "keep_gpu_disable_onboot" ]]; then
+            msg+="\n  \Z1•  $(translate 'GPU will remain configured in source VM'): ${SWITCH_VM_SRC}\Zn\n"
+            msg+="  \Z1•  $(translate 'Start on boot will be disabled on source VM only if currently enabled')\Zn\n"
+            msg+="  \Z1•  $(translate 'GPU guard hook will block concurrent start when another VM is already using this GPU')\Zn\n"
+        else
+            msg+="\n  \Z1•  $(translate 'GPU will be removed from source VM config'): ${SWITCH_VM_SRC}\Zn\n"
+        fi
+        msg+="  \Z1•  $(translate 'Selected VM action'): $(_vm_switch_action_label)\Zn\n"
+    fi
     msg+="\n$(translate 'Do you want to proceed?')"
 
     local run_title
@@ -1688,6 +1716,21 @@ cleanup_vm_config() {
 
     local pci_slot="${SELECTED_GPU_PCI#0000:}"
     pci_slot="${pci_slot%.*}"   # 01:00
+
+    if [[ "$VM_SWITCH_ACTION" == "keep_gpu_disable_onboot" ]]; then
+        msg_info "$(translate 'Keeping GPU in source VM config') ${SWITCH_VM_SRC}..."
+        if _vm_onboot_enabled "$SWITCH_VM_SRC"; then
+            if qm set "$SWITCH_VM_SRC" -onboot 0 >>"$LOG_FILE" 2>&1; then
+                msg_warn "$(translate 'Start on boot disabled for VM') ${SWITCH_VM_SRC}" | tee -a "$screen_capture"
+            else
+                msg_error "$(translate 'Failed to disable Start on boot for VM') ${SWITCH_VM_SRC}" | tee -a "$screen_capture"
+            fi
+        else
+            msg_ok "$(translate 'Start on boot already disabled for VM') ${SWITCH_VM_SRC}" | tee -a "$screen_capture"
+        fi
+        msg_ok "$(translate 'GPU kept in source VM config') ${SWITCH_VM_SRC}" | tee -a "$screen_capture"
+        return 0
+    fi
 
     local src_conf="/etc/pve/qemu-server/${SWITCH_VM_SRC}.conf"
     if [[ -f "$src_conf" ]]; then

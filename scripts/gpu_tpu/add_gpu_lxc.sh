@@ -313,7 +313,7 @@ check_nvidia_ready() {
   if ! $NVIDIA_READY; then
     dialog --colors --backtitle "ProxMenux" \
       --title "$(translate 'NVIDIA Drivers Not Found')" \
-      --msgbox "\n$(translate 'NVIDIA drivers are not installed or not loaded on this host.')\n\n$(translate 'Please install the NVIDIA drivers first using the option:')\n\n  \Zb$(translate 'Install NVIDIA Drivers on Host')\Zn\n\n$(translate 'available in this same GPU and TPU menu.')" \
+      --msgbox "\n\Z1\Zb$(translate 'NVIDIA drivers are not installed or not loaded on this host.')\Zn\n\n$(translate 'Please install the NVIDIA drivers first using the option:')\n\n  \Z1\Zb$(translate 'Install NVIDIA Drivers on Host')\Zn\n\n$(translate 'available in this same GPU and TPU menu.')" \
       14 72
     exit 0
   fi
@@ -870,8 +870,8 @@ check_vfio_switch_mode() {
   for i in "${!vfio_types[@]}"; do
     msg+="  •  ${vfio_names[$i]}  (${vfio_pcis[$i]})\n"
   done
-  msg+="\n$(translate 'To continue with Add GPU to LXC, first switch the host to GPU -> LXC mode and reboot.')\n"
-  msg+="$(translate 'Do you want to open Switch GPU Mode now?')"
+  msg+="\n\Z1\Zb$(translate 'To continue with Add GPU to LXC, first switch the host to GPU -> LXC mode and reboot.')\Zn\n"
+  msg+="\Z1\Zb$(translate 'Do you want to open Switch GPU Mode now?')\Zn"
 
   dialog --backtitle "ProxMenux" --colors \
     --title "$(translate 'GPU -> VM Mode Detected')" \
@@ -896,7 +896,7 @@ check_vfio_switch_mode() {
 
   dialog --backtitle "ProxMenux" --colors \
     --title "$(translate 'Next Step Required')" \
-    --msgbox "\n$(translate 'After switching mode, reboot the host if requested.')\n\n$(translate 'Then run this option again:')\n\n  Add GPU to LXC\n\n$(translate 'This guarantees that device nodes are available before applying LXC GPU config.')" \
+    --msgbox "\n\Z1\Zb$(translate 'After switching mode, reboot the host if requested.')\Zn\n\n$(translate 'Then run this option again:')\n\n  \Z1\ZbAdd GPU to LXC\Zn\n\n$(translate 'This guarantees that device nodes are available before applying LXC GPU config.')" \
     12 84
   exit 0
 }

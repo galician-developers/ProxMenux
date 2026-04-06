@@ -675,7 +675,7 @@ prompt_lxc_action_for_vm_mode() {
     msg+="  •  CT ${LXC_AFFECTED_CTIDS[$i]} (${LXC_AFFECTED_NAMES[$i]}) [${st}, ${ob}]\n"
   done
   msg+="\n$(translate 'Switching to GPU -> VM mode requires exclusive VFIO binding.')\n"
-  [[ "$running_count" -gt 0 ]] && msg+="\Z3$(translate 'Running containers detected'): ${running_count}\Zn\n"
+  [[ "$running_count" -gt 0 ]] && msg+="\Z1$(translate 'Running containers detected'): ${running_count}\Zn\n"
   [[ "$onboot_count" -gt 0 ]] && msg+="\Z1\Zb$(translate 'Start on boot enabled'): ${onboot_count}\Zn\n"
   msg+="\n$(translate 'Choose conflict policy:')"
 
@@ -800,7 +800,7 @@ prompt_vm_action_for_lxc_mode() {
     msg+="  •  VM ${VM_AFFECTED_IDS[$i]} (${VM_AFFECTED_NAMES[$i]}) [${st}, ${ob}]\n"
   done
   msg+="\n$(translate 'Switching to GPU -> LXC mode removes VFIO exclusivity.')\n"
-  [[ "$running_count" -gt 0 ]] && msg+="\Z3$(translate 'Running VM detected'): ${running_count}\Zn\n"
+  [[ "$running_count" -gt 0 ]] && msg+="\Z1$(translate 'Running VM detected'): ${running_count}\Zn\n"
   [[ "$onboot_count" -gt 0 ]] && msg+="\Z1\Zb$(translate 'Start on boot enabled'): ${onboot_count}\Zn\n"
   msg+="\n$(translate 'Choose conflict policy:')"
 
