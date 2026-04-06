@@ -293,7 +293,7 @@ select_controller_nvme() {
     fi
     dialog --backtitle "ProxMenux" \
       --title "$(translate "Controller + NVMe")" \
-      --msgbox "$msg" 22 100
+      --msgbox "$msg" 18 84
     return 1
   fi
 

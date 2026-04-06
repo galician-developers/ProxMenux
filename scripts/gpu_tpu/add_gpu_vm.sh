@@ -1306,13 +1306,22 @@ check_switch_mode() {
         msg+="$(translate 'Choose conflict policy for the source VM:')"
 
         local vm_action_choice
-        vm_action_choice=$(dialog --backtitle "ProxMenux" --colors \
-            --title "$(translate 'GPU Already Assigned to Another VM')" \
-            --default-item "1" \
-            --menu "$msg" 24 98 8 \
-            "1" "$(translate 'Keep GPU in source VM config (disable Start on boot if enabled)')" \
-            "2" "$(translate 'Remove GPU from source VM config (keep Start on boot)')" \
-            2>&1 >/dev/tty) || exit 0
+        if [[ "$WIZARD_CALL" == "true" ]]; then
+            vm_action_choice=$(whiptail --backtitle "ProxMenux" \
+                --title "$(translate 'GPU Already Assigned to Another VM')" \
+                --menu "$msg" 24 98 8 \
+                "1" "$(translate 'Keep GPU in source VM config (disable Start on boot if enabled)')" \
+                "2" "$(translate 'Remove GPU from source VM config (keep Start on boot)')" \
+                3>&1 1>&2 2>&3) || exit 0
+        else
+            vm_action_choice=$(dialog --backtitle "ProxMenux" --colors \
+                --title "$(translate 'GPU Already Assigned to Another VM')" \
+                --default-item "1" \
+                --menu "$msg" 24 98 8 \
+                "1" "$(translate 'Keep GPU in source VM config (disable Start on boot if enabled)')" \
+                "2" "$(translate 'Remove GPU from source VM config (keep Start on boot)')" \
+                2>&1 >/dev/tty) || exit 0
+        fi
 
         case "$vm_action_choice" in
             1) SWITCH_VM_ACTION="keep_gpu_disable_onboot" ;;
@@ -1390,11 +1399,15 @@ confirm_summary() {
     local run_title
     run_title=$(_get_vm_run_title)
 
-    dialog --backtitle "ProxMenux" --colors \
-        --title "${run_title}" \
-        --yesno "$msg" 28 78
-
-    [[ $? -ne 0 ]] && exit 0
+    if [[ "$WIZARD_CALL" == "true" ]]; then
+        whiptail --backtitle "ProxMenux" --title "${run_title}" --yesno "$msg" 28 78
+        [[ $? -ne 0 ]] && exit 0
+    else
+        dialog --backtitle "ProxMenux" --colors \
+            --title "${run_title}" \
+            --yesno "$msg" 28 78
+        [[ $? -ne 0 ]] && exit 0
+    fi
 }
 
 

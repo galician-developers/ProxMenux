@@ -360,7 +360,7 @@ function select_controller_nvme() {
     if [[ $blocked_count -gt 0 ]]; then
       msg+="$(translate "Hidden for safety"):\n${blocked_report}"
     fi
-    whiptail --title "Controller + NVMe" --msgbox "$msg" 22 100
+    whiptail --title "Controller + NVMe" --msgbox "$msg" 18 84
     return 1
   fi
 
