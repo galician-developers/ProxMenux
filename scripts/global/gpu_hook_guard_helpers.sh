@@ -133,16 +133,20 @@ if [[ -f "$vm_conf" ]]; then
 
       # Slot-only syntax (e.g. 01:00) is accepted by Proxmox.
       if [[ "$id" =~ ^[0-9a-fA-F]{2}:[0-9a-fA-F]{2}$ ]]; then
-        slot_ok=false
+        slot_has_gpu=false
         for dev in /sys/bus/pci/devices/0000:${id}.*; do
           [[ -e "$dev" ]] || continue
+          class_hex="$(cat "$dev/class" 2>/dev/null | sed 's/^0x//')"
+          [[ "${class_hex:0:2}" != "03" ]] && continue
+          slot_has_gpu=true
           drv="$(basename "$(readlink "$dev/driver" 2>/dev/null)" 2>/dev/null)"
-          [[ "$drv" == "vfio-pci" ]] && slot_ok=true && break
+          if [[ "$drv" != "vfio-pci" ]]; then
+            failed=1
+            details+=$'\n'"- ${dev##*/}: driver=${drv:-none}"
+          fi
         done
-        if [[ "$slot_ok" != "true" ]]; then
-          failed=1
-          details+=$'\n'"- ${id}: not bound to vfio-pci"
-        fi
+        # If this slot does not include a display/3D controller, it is not GPU-guarded.
+        [[ "$slot_has_gpu" == "true" ]] || true
         continue
       fi
 
@@ -153,6 +157,9 @@ if [[ -f "$vm_conf" ]]; then
         details+=$'\n'"- ${id}: PCI device not found"
         continue
       fi
+      class_hex="$(cat "$dev_path/class" 2>/dev/null | sed 's/^0x//')"
+      # Enforce vfio only for display/3D devices (PCI class 03xx).
+      [[ "${class_hex:0:2}" == "03" ]] || continue
       drv="$(basename "$(readlink "$dev_path/driver" 2>/dev/null)" 2>/dev/null)"
       if [[ "$drv" != "vfio-pci" ]]; then
         failed=1
