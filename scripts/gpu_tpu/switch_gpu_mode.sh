@@ -183,10 +183,13 @@ _remove_gpu_blacklist() {
   local changed=false
   case "$gpu_type" in
     nvidia)
-      grep -qE '^blacklist (nouveau|nvidia|nvidiafb|lbm-nouveau)$|^options nouveau modeset=0$' "$blacklist_file" 2>/dev/null && changed=true
+      grep -qE '^blacklist (nouveau|nvidia|nvidiafb|nvidia_drm|nvidia_modeset|nvidia_uvm|lbm-nouveau)$|^options nouveau modeset=0$' "$blacklist_file" 2>/dev/null && changed=true
       sed -i '/^blacklist nouveau$/d' "$blacklist_file"
       sed -i '/^blacklist nvidia$/d' "$blacklist_file"
       sed -i '/^blacklist nvidiafb$/d' "$blacklist_file"
+      sed -i '/^blacklist nvidia_drm$/d' "$blacklist_file"
+      sed -i '/^blacklist nvidia_modeset$/d' "$blacklist_file"
+      sed -i '/^blacklist nvidia_uvm$/d' "$blacklist_file"
       sed -i '/^blacklist lbm-nouveau$/d' "$blacklist_file"
       sed -i '/^options nouveau modeset=0$/d' "$blacklist_file"
       ;;
@@ -213,6 +216,9 @@ _add_gpu_blacklist() {
       _add_line_if_missing "blacklist nouveau" "$blacklist_file"
       _add_line_if_missing "blacklist nvidia" "$blacklist_file"
       _add_line_if_missing "blacklist nvidiafb" "$blacklist_file"
+      _add_line_if_missing "blacklist nvidia_drm" "$blacklist_file"
+      _add_line_if_missing "blacklist nvidia_modeset" "$blacklist_file"
+      _add_line_if_missing "blacklist nvidia_uvm" "$blacklist_file"
       _add_line_if_missing "blacklist lbm-nouveau" "$blacklist_file"
       _add_line_if_missing "options nouveau modeset=0" "$blacklist_file"
       ;;
@@ -224,6 +230,103 @@ _add_gpu_blacklist() {
       _add_line_if_missing "blacklist i915" "$blacklist_file"
       ;;
   esac
+}
+
+_sanitize_nvidia_host_stack_for_vfio() {
+  local changed=false
+  local state_dir="/var/lib/proxmenux"
+  local state_file="${state_dir}/nvidia-host-services.state"
+  local svc
+  local -a services=(
+    "nvidia-persistenced.service"
+    "nvidia-powerd.service"
+    "nvidia-fabricmanager.service"
+  )
+
+  mkdir -p "$state_dir" >/dev/null 2>&1 || true
+  : > "$state_file"
+
+  for svc in "${services[@]}"; do
+    local was_enabled=0 was_active=0
+    if systemctl is-enabled --quiet "$svc" 2>/dev/null; then
+      was_enabled=1
+    fi
+    if systemctl is-active --quiet "$svc" 2>/dev/null; then
+      was_active=1
+    fi
+    if (( was_enabled == 1 || was_active == 1 )); then
+      echo "${svc} enabled=${was_enabled} active=${was_active}" >>"$state_file"
+    fi
+
+    if systemctl is-active --quiet "$svc" 2>/dev/null; then
+      systemctl stop "$svc" >>"$LOG_FILE" 2>&1 || true
+      changed=true
+    fi
+    if systemctl is-enabled --quiet "$svc" 2>/dev/null; then
+      systemctl disable "$svc" >>"$LOG_FILE" 2>&1 || true
+      changed=true
+    fi
+  done
+
+  [[ -s "$state_file" ]] || rm -f "$state_file"
+
+  if [[ -f /etc/modules-load.d/nvidia-vfio.conf ]]; then
+    mv /etc/modules-load.d/nvidia-vfio.conf /etc/modules-load.d/nvidia-vfio.conf.proxmenux-disabled-vfio >>"$LOG_FILE" 2>&1 || true
+    changed=true
+  fi
+
+  if grep -qE '^(nvidia|nvidia_uvm|nvidia_drm|nvidia_modeset)$' /etc/modules 2>/dev/null; then
+    sed -i '/^nvidia$/d;/^nvidia_uvm$/d;/^nvidia_drm$/d;/^nvidia_modeset$/d' /etc/modules
+    changed=true
+  fi
+
+  if $changed; then
+    HOST_CONFIG_CHANGED=true
+    msg_ok "$(translate 'NVIDIA host services/autoload disabled for VFIO mode')" | tee -a "$screen_capture"
+  else
+    msg_ok "$(translate 'NVIDIA host services/autoload already aligned for VFIO mode')" | tee -a "$screen_capture"
+  fi
+}
+
+_restore_nvidia_host_stack_for_lxc() {
+  local changed=false
+  local state_file="/var/lib/proxmenux/nvidia-host-services.state"
+  local disabled_file="/etc/modules-load.d/nvidia-vfio.conf.proxmenux-disabled-vfio"
+  local active_file="/etc/modules-load.d/nvidia-vfio.conf"
+
+  # Restore previous modules-load policy if ProxMenux disabled it in VM mode.
+  if [[ -f "$disabled_file" ]]; then
+    mv "$disabled_file" "$active_file" >>"$LOG_FILE" 2>&1 || true
+    changed=true
+  fi
+
+  # Best effort: load NVIDIA kernel modules now that we are back in native mode.
+  # If not installed, these calls simply fail silently.
+  modprobe nvidia >/dev/null 2>&1 || true
+  modprobe nvidia_uvm >/dev/null 2>&1 || true
+  modprobe nvidia_modeset >/dev/null 2>&1 || true
+  modprobe nvidia_drm >/dev/null 2>&1 || true
+
+  if [[ -f "$state_file" ]]; then
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      local svc enabled active
+      svc=$(echo "$line" | awk '{print $1}')
+      enabled=$(echo "$line" | awk -F'enabled=' '{print $2}' | awk '{print $1}')
+      active=$(echo "$line" | awk -F'active=' '{print $2}' | awk '{print $1}')
+      [[ "$enabled" == "1" ]] && systemctl enable "$svc" >>"$LOG_FILE" 2>&1 || true
+      [[ "$active" == "1" ]] && systemctl start "$svc" >>"$LOG_FILE" 2>&1 || true
+    done <"$state_file"
+    rm -f "$state_file"
+    changed=true
+  fi
+
+  if $changed; then
+    HOST_CONFIG_CHANGED=true
+    msg_ok "$(translate 'NVIDIA host services/autoload restored for native mode')" | tee -a "$screen_capture"
+  else
+    msg_ok "$(translate 'NVIDIA host services/autoload already aligned for native mode')" | tee -a "$screen_capture"
+  fi
 }
 
 _add_amd_softdep() {
@@ -777,6 +880,7 @@ switch_to_vm_mode() {
     _add_gpu_blacklist "$t"
   done
   msg_ok "$(translate 'GPU host driver blacklisted in /etc/modprobe.d/blacklist.conf')" | tee -a "$screen_capture"
+  _contains_in_array "nvidia" "${selected_types[@]}" && _sanitize_nvidia_host_stack_for_vfio
   _contains_in_array "amd" "${selected_types[@]}" && _add_amd_softdep
 
   if [[ "$HOST_CONFIG_CHANGED" == "true" ]]; then
@@ -839,6 +943,9 @@ switch_to_lxc_mode() {
     if ! _type_has_remaining_vfio_ids "$t" "${remaining_ids[@]}"; then
       if _remove_gpu_blacklist "$t"; then
         msg_ok "$(translate 'Driver blacklist removed for') ${t}" | tee -a "$screen_capture"
+      fi
+      if [[ "$t" == "nvidia" ]]; then
+        _restore_nvidia_host_stack_for_lxc
       fi
     fi
   done

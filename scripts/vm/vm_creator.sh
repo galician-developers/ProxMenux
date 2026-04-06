@@ -704,6 +704,17 @@ fi
 if [[ "${WIZARD_ADD_GPU:-no}" == "yes" ]]; then
   WIZARD_GPU_RESULT="cancelled"
   run_gpu_passthrough_wizard
+  local GPU_WIZARD_APPLIED="no"
+  local GPU_WIZARD_REBOOT_REQUIRED="no"
+  case "$WIZARD_GPU_RESULT" in
+    applied)
+      GPU_WIZARD_APPLIED="yes"
+      ;;
+    applied_reboot_required)
+      GPU_WIZARD_APPLIED="yes"
+      GPU_WIZARD_REBOOT_REQUIRED="yes"
+      ;;
+  esac
   if [[ "${VM_WIZARD_CAPTURE_ACTIVE:-0}" -eq 1 ]]; then
     stop_spinner
     exec 1>&8
@@ -714,8 +725,11 @@ if [[ "${WIZARD_ADD_GPU:-no}" == "yes" ]]; then
     rm -f "$VM_WIZARD_CAPTURE_FILE"
     VM_WIZARD_CAPTURE_FILE=""
   fi
-  if [[ "$WIZARD_GPU_RESULT" == "applied" ]]; then
+  if [[ "$GPU_WIZARD_APPLIED" == "yes" ]]; then
     msg_success "$(translate "VM creation completed with GPU passthrough configured.")"
+    if [[ "$GPU_WIZARD_REBOOT_REQUIRED" == "yes" ]]; then
+      msg_warn "$(translate "Host VFIO configuration changed (initramfs updated). Reboot required before starting the VM.")"
+    fi
   elif [[ "$WIZARD_GPU_RESULT" == "no_gpu" ]]; then
     msg_success "$(translate "VM creation completed. GPU passthrough was skipped (no compatible GPU detected).")"
   else
@@ -730,7 +744,7 @@ if [[ "${WIZARD_ADD_GPU:-no}" == "yes" ]]; then
     echo -e "${TAB}4. $(translate "Continue the Windows installation as usual.")"
     echo -e "${TAB}5. $(translate "Once installed, open the VirtIO ISO and run the installer to complete driver setup.")"
     echo -e "${TAB}6. $(translate "Reboot the VM to complete the driver installation.")"
-    if [[ "$WIZARD_GPU_RESULT" == "applied" ]]; then
+    if [[ "$GPU_WIZARD_APPLIED" == "yes" ]]; then
       echo -e "${TAB}- $(translate "If you want to use a physical monitor on the passthrough GPU:")"
       echo -e "${TAB}• $(translate "First install the GPU drivers inside the guest and verify remote access (RDP/SSH).")"
       echo -e "${TAB}• $(translate "Then change the VM display to none (vga: none) when the guest is stable.")"
@@ -741,16 +755,28 @@ if [[ "${WIZARD_ADD_GPU:-no}" == "yes" ]]; then
     echo -e "${TAB}${GN}$(translate "Recommended: Install the QEMU Guest Agent in the VM")${CL}"
     echo -e "${TAB}$(translate "Run the following inside the VM:")"
     echo -e "${TAB}apt install qemu-guest-agent -y && systemctl enable --now qemu-guest-agent"
-    if [[ "$WIZARD_GPU_RESULT" == "applied" ]]; then
+    if [[ "$GPU_WIZARD_APPLIED" == "yes" ]]; then
       echo -e "${TAB}- $(translate "If you want to use a physical monitor on the passthrough GPU:")"
       echo -e "${TAB}• $(translate "First install the GPU drivers inside the guest and verify remote access (RDP/SSH).")"
       echo -e "${TAB}• $(translate "Then change the VM display to none (vga: none) when the guest is stable.")"
     fi
     echo -e
   fi
+  local HOST_REBOOT_REQUIRED="no"
   if [[ "${VM_STORAGE_IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
+    HOST_REBOOT_REQUIRED="yes"
     msg_warn "$(translate "IOMMU was enabled during this wizard. Reboot the host to apply it.")"
     echo -e "${TAB}$(translate "After reboot, run: Storage -> Add Controller or NVMe PCIe to VM, and select VM") ${VMID}."
+  fi
+  if [[ "$GPU_WIZARD_REBOOT_REQUIRED" == "yes" ]]; then
+    HOST_REBOOT_REQUIRED="yes"
+  fi
+  if [[ "$HOST_REBOOT_REQUIRED" == "yes" ]]; then
+    if whiptail --title "$(translate "Reboot Recommended")" --yesno \
+"$(translate "A host reboot is required to apply passthrough changes before starting the VM.")\n\n$(translate "Do you want to reboot now?")" 11 78; then
+      msg_warn "$(translate "Rebooting the system...")"
+      reboot
+    fi
   fi
   msg_success "$(translate "Press Enter to return to the main menu...")"
   read -r

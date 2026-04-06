@@ -799,6 +799,9 @@ _remove_gpu_blacklist() {
       sed -i '/^blacklist nouveau$/d'          "$blacklist_file"
       sed -i '/^blacklist nvidia$/d'            "$blacklist_file"
       sed -i '/^blacklist nvidiafb$/d'          "$blacklist_file"
+      sed -i '/^blacklist nvidia_drm$/d'        "$blacklist_file"
+      sed -i '/^blacklist nvidia_modeset$/d'    "$blacklist_file"
+      sed -i '/^blacklist nvidia_uvm$/d'        "$blacklist_file"
       sed -i '/^blacklist lbm-nouveau$/d'       "$blacklist_file"
       sed -i '/^options nouveau modeset=0$/d'   "$blacklist_file"
       ;;

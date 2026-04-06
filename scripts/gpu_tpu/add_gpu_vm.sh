@@ -259,9 +259,20 @@ evaluate_host_reboot_requirement() {
         nvidia)
             _file_has_exact_line "blacklist nouveau" "$blacklist_file" || needs_change=true
             _file_has_exact_line "blacklist nvidia" "$blacklist_file" || needs_change=true
+            _file_has_exact_line "blacklist nvidia_drm" "$blacklist_file" || needs_change=true
+            _file_has_exact_line "blacklist nvidia_modeset" "$blacklist_file" || needs_change=true
+            _file_has_exact_line "blacklist nvidia_uvm" "$blacklist_file" || needs_change=true
             _file_has_exact_line "blacklist nvidiafb" "$blacklist_file" || needs_change=true
             _file_has_exact_line "blacklist lbm-nouveau" "$blacklist_file" || needs_change=true
             _file_has_exact_line "options nouveau modeset=0" "$blacklist_file" || needs_change=true
+            [[ -f /etc/modules-load.d/nvidia-vfio.conf ]] && needs_change=true
+            grep -qE '^(nvidia|nvidia_uvm|nvidia_drm|nvidia_modeset)$' /etc/modules 2>/dev/null && needs_change=true
+            local svc
+            for svc in nvidia-persistenced.service nvidia-persistenced nvidia-powerd.service nvidia-fabricmanager.service; do
+                if systemctl is-active --quiet "$svc" 2>/dev/null || systemctl is-enabled --quiet "$svc" 2>/dev/null; then
+                    needs_change=true
+                fi
+            done
             ;;
         amd)
             _file_has_exact_line "blacklist radeon" "$blacklist_file" || needs_change=true
@@ -1381,6 +1392,9 @@ blacklist_gpu_drivers() {
         nvidia)
             _add_line_if_missing "blacklist nouveau"          "$blacklist_file"
             _add_line_if_missing "blacklist nvidia"           "$blacklist_file"
+            _add_line_if_missing "blacklist nvidia_drm"       "$blacklist_file"
+            _add_line_if_missing "blacklist nvidia_modeset"   "$blacklist_file"
+            _add_line_if_missing "blacklist nvidia_uvm"       "$blacklist_file"
             _add_line_if_missing "blacklist nvidiafb"         "$blacklist_file"
             _add_line_if_missing "blacklist lbm-nouveau"      "$blacklist_file"
             _add_line_if_missing "options nouveau modeset=0"  "$blacklist_file"
@@ -1394,6 +1408,63 @@ blacklist_gpu_drivers() {
             ;;
     esac
     msg_ok "$(translate 'GPU host driver blacklisted in /etc/modprobe.d/blacklist.conf')" | tee -a "$screen_capture"
+}
+
+sanitize_nvidia_host_stack_for_vfio() {
+    msg_info "$(translate 'Sanitizing NVIDIA host services for VFIO mode...')"
+    local changed=false
+    local state_dir="/var/lib/proxmenux"
+    local state_file="${state_dir}/nvidia-host-services.state"
+    local svc
+    local -a services=(
+        "nvidia-persistenced.service"
+        "nvidia-powerd.service"
+        "nvidia-fabricmanager.service"
+    )
+
+    mkdir -p "$state_dir" >/dev/null 2>&1 || true
+    : > "$state_file"
+
+    for svc in "${services[@]}"; do
+        local was_enabled=0 was_active=0
+        if systemctl is-enabled --quiet "$svc" 2>/dev/null; then
+            was_enabled=1
+        fi
+        if systemctl is-active --quiet "$svc" 2>/dev/null; then
+            was_active=1
+        fi
+        if (( was_enabled == 1 || was_active == 1 )); then
+            echo "${svc} enabled=${was_enabled} active=${was_active}" >>"$state_file"
+        fi
+
+        if systemctl is-active --quiet "$svc" 2>/dev/null; then
+            systemctl stop "$svc" >>"$LOG_FILE" 2>&1 || true
+            changed=true
+        fi
+        if systemctl is-enabled --quiet "$svc" 2>/dev/null; then
+            systemctl disable "$svc" >>"$LOG_FILE" 2>&1 || true
+            changed=true
+        fi
+    done
+
+    [[ -s "$state_file" ]] || rm -f "$state_file"
+
+    if [[ -f /etc/modules-load.d/nvidia-vfio.conf ]]; then
+        mv /etc/modules-load.d/nvidia-vfio.conf /etc/modules-load.d/nvidia-vfio.conf.proxmenux-disabled-vfio >>"$LOG_FILE" 2>&1 || true
+        changed=true
+    fi
+
+    if grep -qE '^(nvidia|nvidia_uvm|nvidia_drm|nvidia_modeset)$' /etc/modules 2>/dev/null; then
+        sed -i '/^nvidia$/d;/^nvidia_uvm$/d;/^nvidia_drm$/d;/^nvidia_modeset$/d' /etc/modules
+        changed=true
+    fi
+
+    if $changed; then
+        HOST_CONFIG_CHANGED=true
+        msg_ok "$(translate 'NVIDIA host services/autoload disabled for VFIO mode')" | tee -a "$screen_capture"
+    else
+        msg_ok "$(translate 'NVIDIA host services/autoload already aligned for VFIO mode')" | tee -a "$screen_capture"
+    fi
 }
 
 
@@ -1726,6 +1797,7 @@ main() {
         blacklist_gpu_drivers
         [[ "$SELECTED_GPU" == "amd" ]] && dump_amd_rom
     fi
+    [[ "$SELECTED_GPU" == "nvidia" ]] && sanitize_nvidia_host_stack_for_vfio
     cleanup_lxc_configs
     cleanup_vm_config
     ensure_vm_display_std
@@ -1748,7 +1820,11 @@ main() {
     fi
 
     if [[ "$WIZARD_CALL" == "true" ]]; then
-        _set_wizard_result "applied"
+        if [[ "$HOST_CONFIG_CHANGED" == "true" ]]; then
+            _set_wizard_result "applied_reboot_required"
+        else
+            _set_wizard_result "applied"
+        fi
         rm -f "$screen_capture"
         return 0
     fi

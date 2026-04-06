@@ -1483,8 +1483,23 @@ else
     replay_vm_wizard_capture
   fi
 
-  if [[ "${WIZARD_ADD_GPU:-no}" == "yes" && "$WIZARD_GPU_RESULT" == "applied" ]]; then
+  local GPU_WIZARD_APPLIED="no"
+  local GPU_WIZARD_REBOOT_REQUIRED="no"
+  case "${WIZARD_GPU_RESULT:-}" in
+    applied)
+      GPU_WIZARD_APPLIED="yes"
+      ;;
+    applied_reboot_required)
+      GPU_WIZARD_APPLIED="yes"
+      GPU_WIZARD_REBOOT_REQUIRED="yes"
+      ;;
+  esac
+
+  if [[ "${WIZARD_ADD_GPU:-no}" == "yes" && "$GPU_WIZARD_APPLIED" == "yes" ]]; then
     msg_success "$(translate "Completed Successfully with GPU passthrough configured!")"
+    if [[ "$GPU_WIZARD_REBOOT_REQUIRED" == "yes" ]]; then
+      msg_warn "$(translate "Host VFIO configuration changed (initramfs updated). Reboot required before starting the VM.")"
+    fi
   else
     msg_success "$(translate "Completed Successfully!")"
     if [[ "${WIZARD_ADD_GPU:-no}" == "yes" && "$WIZARD_GPU_RESULT" == "no_gpu" ]]; then
@@ -1498,14 +1513,26 @@ else
   echo -e "${TAB}1. $(translate "Start the VM")"
   echo -e "${TAB}2. $(translate "Open the VM console and wait for the installer to boot")"
   echo -e "${TAB}3. $(translate "Complete the ZimaOS installation wizard")"
-  if [[ "$WIZARD_GPU_RESULT" == "applied" ]]; then
+  if [[ "$GPU_WIZARD_APPLIED" == "yes" ]]; then
     echo -e "${TAB}- $(translate "If you want to use a physical monitor on the passthrough GPU:")"
     echo -e "${TAB}• $(translate "First complete ZimaOS setup and verify remote access (web/SSH).")"
     echo -e "${TAB}• $(translate "Then change the VM display to none (vga: none) when the system is stable.")"
   fi
+  local HOST_REBOOT_REQUIRED="no"
   if [[ "${VM_STORAGE_IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
+    HOST_REBOOT_REQUIRED="yes"
     msg_warn "$(translate "IOMMU was enabled during this wizard. Reboot the host to apply it.")"
     echo -e "${TAB}$(translate "After reboot, run: Storage -> Add Controller or NVMe PCIe to VM, and select VM") ${VMID}."
+  fi
+  if [[ "$GPU_WIZARD_REBOOT_REQUIRED" == "yes" ]]; then
+    HOST_REBOOT_REQUIRED="yes"
+  fi
+  if [[ "$HOST_REBOOT_REQUIRED" == "yes" ]]; then
+    if whiptail --title "$(translate "Reboot Recommended")" --yesno \
+"$(translate "A host reboot is required to apply passthrough changes before starting the VM.")\n\n$(translate "Do you want to reboot now?")" 11 78; then
+      msg_warn "$(translate "Rebooting the system...")"
+      reboot
+    fi
   fi
   echo -e
 
