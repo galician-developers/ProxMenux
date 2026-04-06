@@ -436,12 +436,12 @@ ensure_selected_gpu_not_already_in_target_vm() {
         fi
 
         local choice
-        choice=$(dialog --clear --backtitle "ProxMenux" --colors \
+        choice=$(dialog --stdout --clear --backtitle "ProxMenux" --colors \
             --title "$(translate 'GPU Already Assigned to This VM')" \
             --menu "\n$(translate 'The selected GPU is already present in this VM. Select another GPU to continue:')" \
             18 82 10 \
             "${menu_items[@]}" \
-            3>&1 1>&2 2>&3) || exit 0
+            2>/dev/tty) || exit 0
 
         SELECTED_GPU="${ALL_GPU_TYPES[$choice]}"
         SELECTED_GPU_PCI="${ALL_GPU_PCIS[$choice]}"
@@ -630,12 +630,12 @@ select_gpu() {
     done
 
     local choice
-    choice=$(dialog --clear --backtitle "ProxMenux" --colors \
+    choice=$(dialog --stdout --clear --backtitle "ProxMenux" --colors \
         --title "$(translate 'Select GPU for VM Passthrough')" \
         --menu "\n$(translate 'Select the GPU to pass through to the VM:')" \
         18 82 10 \
         "${menu_items[@]}" \
-        3>&1 1>&2 2>&3) || exit 0
+        2>/dev/tty) || exit 0
 
     SELECTED_GPU="${ALL_GPU_TYPES[$choice]}"
     SELECTED_GPU_PCI="${ALL_GPU_PCIS[$choice]}"
@@ -1100,12 +1100,12 @@ select_vm() {
         exit 0
     fi
 
-    SELECTED_VMID=$(dialog --backtitle "ProxMenux" \
+    SELECTED_VMID=$(dialog --stdout --backtitle "ProxMenux" \
         --title "$(translate 'Select Virtual Machine')" \
         --menu "\n$(translate 'Select the VM to add the GPU to:')" \
         20 72 12 \
         "${menu_items[@]}" \
-        2>&1 >/dev/tty) || exit 0
+        2>/dev/tty) || exit 0
 
     VM_NAME=$(qm config "$SELECTED_VMID" 2>/dev/null | grep "^name:" | awk '{print $2}')
 }
@@ -1206,13 +1206,13 @@ check_switch_mode() {
             msg+="\Z1\Zb$(translate 'Start on boot enabled (onboot=1)'): ${onboot_count}\Zn\n"
         msg+="\n\Z1$(translate 'After this LXC → VM switch, reboot the host so the new binding state is applied cleanly.')\Zn"
 
-        action_choice=$(dialog --backtitle "ProxMenux" --colors \
+        action_choice=$(dialog --stdout --backtitle "ProxMenux" --colors \
             --title "$(translate 'GPU Used in LXC Containers')" \
             --default-item "2" \
             --menu "$msg" 25 96 8 \
             "1" "$(translate 'Keep GPU in LXC config (disable Start on boot)')" \
             "2" "$(translate 'Remove GPU from LXC config (keep Start on boot)')" \
-            2>&1 >/dev/tty) || exit 0
+            2>/dev/tty) || exit 0
 
         case "$action_choice" in
             1) LXC_SWITCH_ACTION="keep_gpu_disable_onboot" ;;
@@ -1288,13 +1288,13 @@ check_switch_mode() {
         msg+="$(translate 'Choose conflict policy for the source VM:')"
 
         local vm_action_choice
-        vm_action_choice=$(dialog --clear --backtitle "ProxMenux" --colors \
+        vm_action_choice=$(dialog --stdout --clear --backtitle "ProxMenux" --colors \
             --title "$(translate 'GPU Already Assigned to Another VM')" \
             --default-item "1" \
             --menu "$msg" 24 98 8 \
             "1" "$(translate 'Keep GPU in source VM config (disable Start on boot if enabled)')" \
             "2" "$(translate 'Remove GPU from source VM config (keep Start on boot)')" \
-            3>&1 1>&2 2>&3) || exit 0
+            2>/dev/tty) || exit 0
 
         case "$vm_action_choice" in
             1) SWITCH_VM_ACTION="keep_gpu_disable_onboot" ;;
@@ -1774,8 +1774,12 @@ configure_vm() {
     if _is_pci_function_assigned_to_vm "$SELECTED_GPU_PCI" "$SELECTED_VMID"; then
         msg_ok "$(translate 'GPU already present in target VM — existing hostpci entry reused')" | tee -a "$screen_capture"
     else
-        qm set "$SELECTED_VMID" --hostpci${idx} "${SELECTED_GPU_PCI},${gpu_opts}" >>"$LOG_FILE" 2>&1
-        msg_ok "$(translate 'GPU added'): hostpci${idx}: ${SELECTED_GPU_PCI},${gpu_opts}" | tee -a "$screen_capture"
+        if qm set "$SELECTED_VMID" --hostpci${idx} "${SELECTED_GPU_PCI},${gpu_opts}" >>"$LOG_FILE" 2>&1; then
+            msg_ok "$(translate 'GPU added'): hostpci${idx}: ${SELECTED_GPU_PCI},${gpu_opts}" | tee -a "$screen_capture"
+        else
+            msg_error "$(translate 'Failed to add GPU to target VM'): ${SELECTED_GPU_PCI}" | tee -a "$screen_capture"
+            return 1
+        fi
         idx=$((idx + 1))
     fi
 
@@ -1786,8 +1790,12 @@ configure_vm() {
             msg_ok "$(translate 'Device already present in target VM — existing hostpci entry reused'): ${dev}" | tee -a "$screen_capture"
             continue
         fi
-        qm set "$SELECTED_VMID" --hostpci${idx} "${dev},pcie=1" >>"$LOG_FILE" 2>&1
-        msg_ok "$(translate 'Device added'): hostpci${idx}: ${dev},pcie=1" | tee -a "$screen_capture"
+        if qm set "$SELECTED_VMID" --hostpci${idx} "${dev},pcie=1" >>"$LOG_FILE" 2>&1; then
+            msg_ok "$(translate 'Device added'): hostpci${idx}: ${dev},pcie=1" | tee -a "$screen_capture"
+        else
+            msg_error "$(translate 'Failed to add IOMMU group device'): ${dev}" | tee -a "$screen_capture"
+            return 1
+        fi
         idx=$((idx + 1))
     done
 
@@ -1797,13 +1805,18 @@ configure_vm() {
             msg_ok "$(translate 'GPU audio already present in target VM — existing hostpci entry reused'): ${dev}" | tee -a "$screen_capture"
             continue
         fi
-        qm set "$SELECTED_VMID" --hostpci${idx} "${dev},pcie=1" >>"$LOG_FILE" 2>&1
-        msg_ok "$(translate 'GPU audio added'): hostpci${idx}: ${dev},pcie=1" | tee -a "$screen_capture"
+        if qm set "$SELECTED_VMID" --hostpci${idx} "${dev},pcie=1" >>"$LOG_FILE" 2>&1; then
+            msg_ok "$(translate 'GPU audio added'): hostpci${idx}: ${dev},pcie=1" | tee -a "$screen_capture"
+        else
+            msg_error "$(translate 'Failed to add GPU audio function'): ${dev}" | tee -a "$screen_capture"
+            return 1
+        fi
         idx=$((idx + 1))
     done
 
     # NVIDIA: hide KVM hypervisor from guest
     [[ "$SELECTED_GPU" == "nvidia" ]] && _configure_nvidia_kvm_hide
+    return 0
 }
 
 _configure_nvidia_kvm_hide() {
@@ -1896,7 +1909,12 @@ main() {
     cleanup_lxc_configs
     cleanup_vm_config
     ensure_vm_display_std
-    configure_vm
+    if ! configure_vm; then
+        msg_error "$(translate 'VM passthrough configuration failed. Review the log and VM config.')"
+        [[ "$WIZARD_CALL" == "true" ]] && _set_wizard_result "failed"
+        rm -f "$screen_capture"
+        exit 1
+    fi
     if declare -F attach_proxmenux_gpu_guard_to_vm >/dev/null 2>&1; then
         ensure_proxmenux_gpu_guard_hookscript
         attach_proxmenux_gpu_guard_to_vm "$SELECTED_VMID"
