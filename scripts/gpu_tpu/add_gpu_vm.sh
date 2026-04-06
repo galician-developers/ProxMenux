@@ -436,7 +436,9 @@ ensure_selected_gpu_not_already_in_target_vm() {
         fi
 
         local choice
-        choice=$(dialog --stdout --clear --backtitle "ProxMenux" --colors \
+        local -a clear_opt=()
+        [[ "$WIZARD_CALL" != "true" ]] && clear_opt+=(--clear)
+        choice=$(dialog --stdout "${clear_opt[@]}" --backtitle "ProxMenux" --colors \
             --title "$(translate 'GPU Already Assigned to This VM')" \
             --menu "\n$(translate 'The selected GPU is already present in this VM. Select another GPU to continue:')" \
             18 82 10 \
@@ -630,7 +632,9 @@ select_gpu() {
     done
 
     local choice
-    choice=$(dialog --stdout --clear --backtitle "ProxMenux" --colors \
+    local -a clear_opt=()
+    [[ "$WIZARD_CALL" != "true" ]] && clear_opt+=(--clear)
+    choice=$(dialog --stdout "${clear_opt[@]}" --backtitle "ProxMenux" --colors \
         --title "$(translate 'Select GPU for VM Passthrough')" \
         --menu "\n$(translate 'Select the GPU to pass through to the VM:')" \
         18 82 10 \
@@ -1288,7 +1292,9 @@ check_switch_mode() {
         msg+="$(translate 'Choose conflict policy for the source VM:')"
 
         local vm_action_choice
-        vm_action_choice=$(dialog --stdout --clear --backtitle "ProxMenux" --colors \
+        local -a clear_opt=()
+        [[ "$WIZARD_CALL" != "true" ]] && clear_opt+=(--clear)
+        vm_action_choice=$(dialog --stdout "${clear_opt[@]}" --backtitle "ProxMenux" --colors \
             --title "$(translate 'GPU Already Assigned to Another VM')" \
             --default-item "1" \
             --menu "$msg" 24 98 8 \
@@ -1372,7 +1378,9 @@ confirm_summary() {
     local run_title
     run_title=$(_get_vm_run_title)
 
-    dialog --clear --backtitle "ProxMenux" --colors \
+    local -a clear_opt=()
+    [[ "$WIZARD_CALL" != "true" ]] && clear_opt+=(--clear)
+    dialog "${clear_opt[@]}" --backtitle "ProxMenux" --colors \
         --title "${run_title}" \
         --yesno "$msg" 28 78
     [[ $? -ne 0 ]] && exit 0
