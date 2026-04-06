@@ -915,8 +915,9 @@ def _capture_health_journal_context(categories: list, reason: str = '') -> str:
             return ""
         
         # Capture recent journal entries matching keywords
+        # Use -b 0 to only include logs from the current boot
         cmd = (
-            f"journalctl --since='10 minutes ago' --no-pager -n 500 2>/dev/null | "
+            f"journalctl -b 0 --since='10 minutes ago' --no-pager -n 500 2>/dev/null | "
             f"grep -iE '{pattern}' | tail -n 30"
         )
         

@@ -967,10 +967,12 @@ class HealthPersistence:
         cutoff_events = (now - timedelta(days=30)).isoformat()
         cursor.execute('DELETE FROM events WHERE timestamp < ?', (cutoff_events,))
         
-        # ── Auto-resolve transient errors after system stabilizes ──
-        # Transient errors (OOM, high CPU, service failures) resolve themselves.
-        # If the system has been up for >10 minutes and these errors haven't recurred,
-        # they are stale and should be auto-resolved.
+        # ══════════════════════════════════════════════════════════════════════
+        # SMART AUTO-RESOLVE: Based on system state, not hardcoded patterns
+        # ══════════════════════════════════════════════════════════════════════
+        # Logic: If an error hasn't been seen recently AND the system is healthy,
+        # the error is stale and should be auto-resolved.
+        # This works for ANY error pattern, not just predefined ones.
         try:
             import psutil
             # Get system uptime
@@ -979,9 +981,13 @@ class HealthPersistence:
             
             # Only auto-resolve if system has been stable for at least 10 minutes
             if uptime_seconds > 600:  # 10 minutes
-                stale_cutoff = (now - timedelta(minutes=10)).isoformat()
+                current_cpu = psutil.cpu_percent(interval=0.1)
+                current_mem = psutil.virtual_memory().percent
                 
-                # 1. Resolve transient log errors (OOM, service failures)
+                # ── 1. LOGS category: Auto-resolve if not seen in 15 minutes ──
+                # Log errors are transient - if journalctl hasn't reported them recently,
+                # they are from a previous state and should be resolved.
+                stale_logs_cutoff = (now - timedelta(minutes=15)).isoformat()
                 cursor.execute('''
                     UPDATE errors 
                     SET resolved_at = ?
@@ -989,49 +995,69 @@ class HealthPersistence:
                       AND resolved_at IS NULL 
                       AND acknowledged = 0
                       AND last_seen < ?
-                      AND (error_key LIKE 'log_critical_%' 
-                           OR error_key LIKE 'log_persistent_%'
-                           OR reason LIKE '%Out of memory%'
-                           OR reason LIKE '%Recurring error%'
-                           OR reason LIKE '%service%Failed%'
-                           OR reason LIKE '%timeout%'
-                           OR reason LIKE '%critical error%')
-                ''', (now_iso, stale_cutoff))
+                ''', (now_iso, stale_logs_cutoff))
                 
-                # 2. Auto-resolve CPU errors if current CPU is normal (<75%)
-                try:
-                    current_cpu = psutil.cpu_percent(interval=0.1)
-                    if current_cpu < 75:
-                        cursor.execute('''
-                            UPDATE errors 
-                            SET resolved_at = ?
-                            WHERE category = 'temperature'
-                              AND resolved_at IS NULL 
-                              AND acknowledged = 0
-                              AND last_seen < ?
-                              AND (error_key = 'cpu_usage'
-                                   OR reason LIKE '%CPU >%sustained%'
-                                   OR reason LIKE '%Sustained high CPU%')
-                        ''', (now_iso, stale_cutoff))
-                except Exception:
-                    pass
+                # ── 2. CPU category: Auto-resolve if CPU is normal (<75%) ──
+                if current_cpu < 75:
+                    stale_cpu_cutoff = (now - timedelta(minutes=5)).isoformat()
+                    cursor.execute('''
+                        UPDATE errors 
+                        SET resolved_at = ?
+                        WHERE (category = 'cpu' OR category = 'temperature')
+                          AND resolved_at IS NULL 
+                          AND acknowledged = 0
+                          AND last_seen < ?
+                          AND (error_key LIKE 'cpu_%' OR reason LIKE '%CPU%')
+                    ''', (now_iso, stale_cpu_cutoff))
                 
-                # 3. Auto-resolve memory errors if current memory is normal (<80%)
-                try:
-                    current_mem = psutil.virtual_memory().percent
-                    if current_mem < 80:
-                        cursor.execute('''
-                            UPDATE errors 
-                            SET resolved_at = ?
-                            WHERE category = 'memory'
-                              AND resolved_at IS NULL 
-                              AND acknowledged = 0
-                              AND last_seen < ?
-                              AND (reason LIKE '%Memory >%'
-                                   OR reason LIKE '%RAM usage%')
-                        ''', (now_iso, stale_cutoff))
-                except Exception:
-                    pass
+                # ── 3. MEMORY category: Auto-resolve if memory is normal (<80%) ──
+                if current_mem < 80:
+                    stale_mem_cutoff = (now - timedelta(minutes=5)).isoformat()
+                    cursor.execute('''
+                        UPDATE errors 
+                        SET resolved_at = ?
+                        WHERE (category = 'memory' OR category = 'logs')
+                          AND resolved_at IS NULL 
+                          AND acknowledged = 0
+                          AND last_seen < ?
+                          AND (error_key LIKE '%oom%' 
+                               OR error_key LIKE '%memory%'
+                               OR reason LIKE '%memory%'
+                               OR reason LIKE '%OOM%'
+                               OR reason LIKE '%killed%process%')
+                    ''', (now_iso, stale_mem_cutoff))
+                
+                # ── 4. VMS category: Auto-resolve if VM/CT is now running ──
+                # Check all active VM/CT errors and resolve if the VM/CT is now running
+                cursor.execute('''
+                    SELECT error_key, category FROM errors 
+                    WHERE (category IN ('vms', 'vmct') OR error_key LIKE 'vm_%' OR error_key LIKE 'ct_%' OR error_key LIKE 'vmct_%')
+                      AND resolved_at IS NULL 
+                      AND acknowledged = 0
+                ''')
+                vm_errors = cursor.fetchall()
+                for error_key, cat in vm_errors:
+                    # Extract VM/CT ID from error_key
+                    import re
+                    vmid_match = re.search(r'(?:vm_|ct_|vmct_)(\d+)', error_key)
+                    if vmid_match:
+                        vmid = vmid_match.group(1)
+                        # Check if running - this auto-resolves if so
+                        self.check_vm_running(vmid)
+                
+                # ── 5. GENERIC: Any error not seen in 30 minutes while system is healthy ──
+                # If CPU < 80% and Memory < 85% and error hasn't been seen in 30 min,
+                # the system has recovered and the error is stale.
+                if current_cpu < 80 and current_mem < 85:
+                    stale_generic_cutoff = (now - timedelta(minutes=30)).isoformat()
+                    cursor.execute('''
+                        UPDATE errors 
+                        SET resolved_at = ?
+                        WHERE resolved_at IS NULL 
+                          AND acknowledged = 0
+                          AND last_seen < ?
+                          AND category NOT IN ('disks', 'storage')
+                    ''', (now_iso, stale_generic_cutoff))
                     
         except Exception:
             pass  # If we can't read uptime, skip this cleanup
@@ -1166,9 +1192,20 @@ class HealthPersistence:
             """Extract VM/CT ID from error message or key."""
             if not text:
                 return None
-            # Patterns: "VM 100", "CT 100", "vm_100_", "ct_100_", "VMID 100", etc.
-            match = re.search(r'(?:VM|CT|VMID|CTID|vm_|ct_)[\s_]?(\d{3,})', text, re.IGNORECASE)
-            return match.group(1) if match else None
+            # Patterns: "VM 100", "CT 100", "vm_100_", "ct_100_", "VMID 100", "VM/CT 100", "qemu/100", "lxc/100", etc.
+            patterns = [
+                r'(?:VM|CT|VMID|CTID|vm_|ct_|vmct_)[\s_]?(\d{3,})',  # VM 100, ct_100
+                r'VM/CT[\s_]?(\d{3,})',                               # VM/CT 100
+                r'(?:qemu|lxc)[/\\](\d{3,})',                         # qemu/100, lxc/100
+                r'process.*kvm.*?(\d{3,})',                           # process kvm with vmid
+                r'Failed to start.*?(\d{3,})',                        # Failed to start VM/CT
+                r'starting.*?(\d{3,}).*failed',                       # starting 100 failed
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    return match.group(1)
+            return None
         
         def get_age_hours(timestamp_str):
             """Get age in hours from ISO timestamp string."""
@@ -1189,11 +1226,20 @@ class HealthPersistence:
             
             # === VM/CT ERRORS ===
             # Check if VM/CT still exists (covers: vms/vmct categories, vm_*, ct_*, vmct_* error keys)
-            if category in ('vms', 'vmct') or (error_key and (error_key.startswith('vm_') or error_key.startswith('ct_') or error_key.startswith('vmct_'))):
-                vmid = extract_vmid_from_text(error_key) or extract_vmid_from_text(reason)
-                if vmid and not check_vm_ct_cached(vmid):
+            # Also check if the reason mentions a VM/CT that no longer exists
+            vmid_from_key = extract_vmid_from_text(error_key) if error_key else None
+            vmid_from_reason = extract_vmid_from_text(reason) if reason else None
+            vmid = vmid_from_key or vmid_from_reason
+            
+            if vmid and not check_vm_ct_cached(vmid):
+                # VM/CT doesn't exist - resolve regardless of category
+                should_resolve = True
+                resolution_reason = f'VM/CT {vmid} deleted'
+            elif category in ('vms', 'vmct') or (error_key and (error_key.startswith('vm_') or error_key.startswith('ct_') or error_key.startswith('vmct_'))):
+                # VM/CT category but ID couldn't be extracted - resolve if stale
+                if not vmid and last_seen_hours > 1:
                     should_resolve = True
-                    resolution_reason = 'VM/CT deleted'
+                    resolution_reason = 'VM/CT error stale (>1h, ID not found)'
             
             # === DISK ERRORS ===
             # Check if disk device or ZFS pool still exists
@@ -1360,8 +1406,17 @@ class HealthPersistence:
     
     def check_vm_running(self, vm_id: str) -> bool:
         """
-        Check if a VM/CT is running and resolve error if so.
+        Check if a VM/CT is running and resolve TRANSIENT errors if so.
         Also resolves error if VM/CT no longer exists.
+        
+        Only resolves errors that are likely to be fixed by a restart:
+        - QMP command failures
+        - Startup failures (generic)
+        
+        Does NOT resolve persistent configuration errors like:
+        - Device missing
+        - Permission issues
+        
         Returns True if running/resolved, False otherwise.
         """
         import subprocess
@@ -1369,6 +1424,8 @@ class HealthPersistence:
         try:
             vm_exists = False
             ct_exists = False
+            is_running = False
+            vm_type = None
             
             # Check qm status for VMs
             result_vm = subprocess.run(
@@ -1380,32 +1437,59 @@ class HealthPersistence:
             
             if result_vm.returncode == 0:
                 vm_exists = True
+                vm_type = 'vm'
                 if 'running' in result_vm.stdout.lower():
-                    self.resolve_error(f'vm_{vm_id}', 'VM started')
-                    self.resolve_error(f'vmct_{vm_id}', 'VM started')
-                    return True
+                    is_running = True
             
             # Check pct status for containers
-            result_ct = subprocess.run(
-                ['pct', 'status', vm_id],
-                capture_output=True,
-                text=True,
-                timeout=2
-            )
+            if not vm_exists:
+                result_ct = subprocess.run(
+                    ['pct', 'status', vm_id],
+                    capture_output=True,
+                    text=True,
+                    timeout=2
+                )
+                
+                if result_ct.returncode == 0:
+                    ct_exists = True
+                    vm_type = 'ct'
+                    if 'running' in result_ct.stdout.lower():
+                        is_running = True
             
-            if result_ct.returncode == 0:
-                ct_exists = True
-                if 'running' in result_ct.stdout.lower():
-                    self.resolve_error(f'ct_{vm_id}', 'Container started')
-                    self.resolve_error(f'vmct_{vm_id}', 'Container started')
-                    return True
-            
-            # If neither VM nor CT exists, resolve all related errors
+            # If neither VM nor CT exists, resolve ALL related errors
             if not vm_exists and not ct_exists:
                 self.resolve_error(f'vm_{vm_id}', 'VM/CT deleted')
                 self.resolve_error(f'ct_{vm_id}', 'VM/CT deleted')
                 self.resolve_error(f'vmct_{vm_id}', 'VM/CT deleted')
-                return True  # Error resolved because resource doesn't exist
+                return True
+            
+            # If running, only resolve TRANSIENT errors (QMP, startup)
+            # Do NOT resolve persistent config errors (device missing, permissions)
+            if is_running:
+                conn = self._get_conn()
+                cursor = conn.cursor()
+                
+                # Get the error details to check if it's a persistent config error
+                for prefix in (f'{vm_type}_{vm_id}', f'vmct_{vm_id}'):
+                    cursor.execute('''
+                        SELECT error_key, reason FROM errors 
+                        WHERE error_key = ? AND resolved_at IS NULL
+                    ''', (prefix,))
+                    row = cursor.fetchone()
+                    if row:
+                        reason = (row[1] or '').lower()
+                        # Check if this is a persistent config error that won't be fixed by restart
+                        is_persistent_config = any(indicator in reason for indicator in [
+                            'device', 'missing', 'does not exist', 'permission', 
+                            'not found', 'no such', 'invalid'
+                        ])
+                        
+                        if not is_persistent_config:
+                            # Transient error - resolve it
+                            self.resolve_error(prefix, f'{vm_type.upper()} started successfully')
+                
+                conn.close()
+                return True
             
             return False
             

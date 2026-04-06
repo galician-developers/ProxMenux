@@ -150,7 +150,7 @@ class HealthMonitor:
         r'zfs.*scrub (started|finished|in progress)',
         r'zpool.*resilver',
         
-        # ���─ LXC/Container normal operations ──
+        # ── LXC/Container normal operations ──
         r'lxc.*monitor',
         r'systemd\[1\]: (started|stopped) .*\.scope',
         
@@ -184,13 +184,21 @@ class HealthMonitor:
     ]
     
     CRITICAL_LOG_KEYWORDS = [
-        'out of memory', 'oom_kill', 'kernel panic',
-        'filesystem read-only', 'cannot mount',
-        'raid.*failed', 'md.*device failed',
-        'ext4-fs error', 'xfs.*corruption',
-        'lvm activation failed',
+        # OOM and memory errors
+        'out of memory', 'oom_kill', 'oom-kill', 'invoked oom-killer',
+        'memory cgroup out of memory', 'cannot allocate memory', 'oom_reaper',
+        # Kernel panics and critical faults
+        'kernel panic', 'general protection fault', 'trap invalid opcode',
+        # Filesystem critical errors
+        'filesystem read-only', 'read-only file system', 'cannot mount',
+        'ext4-fs error', 'ext4_abort', 'xfs.*corruption', 'btrfs.*error',
+        # RAID/Storage critical
+        'raid.*failed', 'md.*device failed', 'lvm activation failed',
+        'zpool.*faulted', 'state: faulted',
+        # Hardware errors
         'hardware error', 'mce:',
-        'general protection fault',
+        # Cluster critical
+        'quorum lost', 'split brain',
     ]
     
     # Segfault is WARNING, not CRITICAL -- only PVE-critical process
@@ -202,11 +210,20 @@ class HealthMonitor:
     }
     
     WARNING_LOG_KEYWORDS = [
-        'i/o error', 'ata error', 'scsi error',
-        'task hung', 'blocked for more than',
-        'failed to start', 'service.*failed',
+        # Storage I/O errors
+        'i/o error', 'buffer i/o error', 'ata error', 'scsi error',
         'disk.*offline', 'disk.*removed',
-        'segfault',  # WARNING by default; escalated to CRITICAL only for PVE processes
+        # CPU/IO blocking
+        'task hung', 'blocked for more than', 'soft lockup',
+        # Service failures
+        'failed to start', 'service.*failed',
+        'entering failed state', 'code=exited, status=', 'code=killed',
+        # Process crashes (WARNING by default; escalated to CRITICAL for PVE processes)
+        'segfault',
+        # Cluster/Network warnings
+        'corosync.*failed', 'corosync.*timeout',
+        'connection lost', 'totem.*failed',
+        'entered disabled state', 'entered blocking state',
     ]
     
     # PVE Critical Services
@@ -769,12 +786,30 @@ class HealthMonitor:
             if len(critical_samples) >= 3:
                 status = 'CRITICAL'
                 reason = f'CPU >{self.CPU_CRITICAL}% sustained for {self.CPU_CRITICAL_DURATION}s'
+                # Record the error
+                health_persistence.record_error(
+                    error_key='cpu_usage',
+                    category='cpu',
+                    severity='CRITICAL',
+                    reason=reason,
+                    details={'cpu_percent': cpu_percent}
+                )
             elif len(warning_samples) >= 3 and len(recovery_samples) < 2:
                 status = 'WARNING'
                 reason = f'CPU >{self.CPU_WARNING}% sustained for {self.CPU_WARNING_DURATION}s'
+                # Record the warning
+                health_persistence.record_error(
+                    error_key='cpu_usage',
+                    category='cpu',
+                    severity='WARNING',
+                    reason=reason,
+                    details={'cpu_percent': cpu_percent}
+                )
             else:
                 status = 'OK'
                 reason = None
+                # CPU is normal - auto-resolve any existing CPU errors
+                health_persistence.resolve_error('cpu_usage', 'CPU usage returned to normal')
             
             temp_status = self._check_cpu_temperature()
             

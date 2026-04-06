@@ -111,9 +111,9 @@ const fetchSystemData = async (retries = 3, delayMs = 500): Promise<SystemData |
     try {
       const data = await fetchApi<SystemData>("/api/system")
       return data
-    } catch (error) {
+    } catch {
       if (attempt === retries - 1) {
-        console.error("[v0] Failed to fetch system data after retries:", error)
+        // Silent fail - API not available (expected in preview environment)
         return null
       }
       // Wait before retry
@@ -127,8 +127,8 @@ const fetchVMData = async (): Promise<VMData[]> => {
   try {
     const data = await fetchApi<any>("/api/vms")
     return Array.isArray(data) ? data : data.vms || []
-  } catch (error) {
-    console.error("[v0] Failed to fetch VM data:", error)
+  } catch {
+    // Silent fail - API not available
     return []
   }
 }
@@ -137,8 +137,7 @@ const fetchStorageData = async (): Promise<StorageData | null> => {
   try {
     const data = await fetchApi<StorageData>("/api/storage/summary")
     return data
-  } catch (error) {
-    console.log("[v0] Storage API not available (this is normal if not configured)")
+  } catch {
     return null
   }
 }
@@ -146,11 +145,20 @@ const fetchStorageData = async (): Promise<StorageData | null> => {
 const fetchNetworkData = async (): Promise<NetworkData | null> => {
   try {
     const data = await fetchApi<NetworkData>("/api/network/summary")
-    return data
-  } catch (error) {
-    console.log("[v0] Network API not available (this is normal if not configured)")
-    return null
+  return data
+  } catch {
+  return null
   }
+}
+
+const fetchProxmoxStorageData = async (): Promise<ProxmoxStorage[] | null> => {
+  try {
+  const data = await fetchApi<ProxmoxStorage[]>("/api/proxmox-storage")
+  return data
+  } catch {
+  return null
+  }
+}
 }
 
 const fetchProxmoxStorageData = async (): Promise<ProxmoxStorageData | null> => {

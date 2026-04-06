@@ -174,8 +174,9 @@ def capture_journal_context(keywords: list, lines: int = 30,
             return ""
         
         # Use journalctl with grep to filter relevant lines
+        # Use -b 0 to only include logs from the current boot (not previous boots)
         cmd = (
-            f"journalctl --since='{since}' --no-pager -n 500 2>/dev/null | "
+            f"journalctl -b 0 --since='{since}' --no-pager -n 500 2>/dev/null | "
             f"grep -iE '{pattern}' | tail -n {lines}"
         )
         
@@ -1800,6 +1801,8 @@ class PollingCollector:
     # Key = health_persistence category name
     # Value = minimum seconds between notifications for the same error_key
     _CATEGORY_COOLDOWNS = {
+        # Category cooldown: minimum time between DIFFERENT errors of the same category
+        # This prevents notification storms when multiple issues arise together
         'disks':        86400,   # 24h - I/O errors are persistent hardware issues
         'smart':        86400,   # 24h - SMART errors same as I/O
         'zfs':          86400,   # 24h - ZFS pool issues are persistent
@@ -1809,12 +1812,17 @@ class PollingCollector:
         'temperature':  3600,    # 1h  - temp can fluctuate near thresholds
         'logs':         3600,    # 1h  - repeated log patterns
         'vms':          1800,    # 30m - VM state oscillation
+        'vmct':         1800,    # 30m - VM/CT state oscillation
         'security':     3600,    # 1h  - auth failures tend to be bursty
         'cpu':          1800,    # 30m - CPU spikes can be transient
         'memory':       1800,    # 30m - memory pressure oscillation
         'disk':         3600,    # 1h  - disk space can fluctuate near threshold
         'updates':      86400,   # 24h - update info doesn't change fast
     }
+    
+    # Global cooldown: minimum time before the SAME error can be re-notified
+    # This is independent of category - same error_key cannot repeat before this time
+    SAME_ERROR_COOLDOWN = 86400  # 24 hours
     
     _ENTITY_MAP = {
         'cpu': ('node', ''), 'memory': ('node', ''), 'temperature': ('node', ''),
@@ -2032,15 +2040,20 @@ class PollingCollector:
             # Determine if we should notify
             is_new = error_key not in self._known_errors
             last_sent = self._last_notified.get(error_key, 0)
-            cat_cooldown = self._CATEGORY_COOLDOWNS.get(category, self.DIGEST_INTERVAL)
-            is_due = (now - last_sent) >= cat_cooldown
+            time_since_last = now - last_sent
             
-            # Anti-oscillation: even if "new" (resolved then reappeared),
-            # respect the per-category cooldown interval.  This prevents
-            # "semi-cascades" where the same root cause generates multiple
-            # slightly different notifications across health check cycles.
-            # Each category has its own appropriate cooldown (30m for network,
-            # 24h for disks, 1h for temperature, etc.).
+            # ── SAME ERROR COOLDOWN (24h) ──
+            # The SAME error_key cannot be re-notified before 24 hours.
+            # This is the PRIMARY deduplication mechanism.
+            if time_since_last < self.SAME_ERROR_COOLDOWN:
+                continue
+            
+            # ── CATEGORY COOLDOWN (varies) ──
+            # DIFFERENT errors within the same category respect category cooldown.
+            # This prevents notification storms when multiple issues arise together.
+            cat_cooldown = self._CATEGORY_COOLDOWNS.get(category, self.DIGEST_INTERVAL)
+            is_due = time_since_last >= cat_cooldown
+            
             if not is_due:
                 continue
             
