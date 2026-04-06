@@ -145,28 +145,17 @@ const fetchStorageData = async (): Promise<StorageData | null> => {
 const fetchNetworkData = async (): Promise<NetworkData | null> => {
   try {
     const data = await fetchApi<NetworkData>("/api/network/summary")
-  return data
+    return data
   } catch {
-  return null
+    return null
   }
 }
 
 const fetchProxmoxStorageData = async (): Promise<ProxmoxStorage[] | null> => {
   try {
-  const data = await fetchApi<ProxmoxStorage[]>("/api/proxmox-storage")
-  return data
-  } catch {
-  return null
-  }
-}
-}
-
-const fetchProxmoxStorageData = async (): Promise<ProxmoxStorageData | null> => {
-  try {
-    const data = await fetchApi<ProxmoxStorageData>("/api/proxmox-storage")
+    const data = await fetchApi<ProxmoxStorage[]>("/api/proxmox-storage")
     return data
-  } catch (error) {
-    console.log("[v0] Proxmox storage API not available")
+  } catch {
     return null
   }
 }
