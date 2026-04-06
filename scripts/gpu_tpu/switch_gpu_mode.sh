@@ -404,10 +404,14 @@ detect_host_gpus() {
   ALL_GPU_VIDDID=()
 
   while IFS= read -r line; do
-    local pci_short pci_full name type driver viddid
+    local pci_short pci_full name type driver viddid pci_info
     pci_short=$(echo "$line" | awk '{print $1}')
     pci_full="0000:${pci_short}"
-    name=$(echo "$line" | sed 's/^[^:]*[^:]: //' | sed 's/ \[.*//' | cut -c1-62)
+    pci_info=$(lspci -nn -s "${pci_short}" 2>/dev/null | sed 's/^[^ ]* //')
+    name="${pci_info#*: }"
+    [[ "$name" == "$pci_info" ]] && name="$pci_info"
+    name=$(echo "$name" | sed -E 's/ \(rev [^)]+\)$//' | cut -c1-72)
+    [[ -z "$name" ]] && name="$(translate 'Unknown GPU')"
     if echo "$line" | grep -qi "Intel"; then
       type="intel"
     elif echo "$line" | grep -qiE "AMD|Advanced Micro|Radeon"; then

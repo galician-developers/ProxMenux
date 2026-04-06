@@ -413,9 +413,7 @@ ensure_selected_gpu_not_already_in_target_vm() {
             local pci label
             pci="${ALL_GPU_PCIS[$i]}"
             _is_pci_slot_assigned_to_vm "$pci" "$SELECTED_VMID" && continue
-            label="${ALL_GPU_NAMES[$i]}"
-            [[ "${ALL_GPU_DRIVERS[$i]}" == "vfio-pci" ]] && label+=" [VFIO]"
-            label+=" — ${pci}"
+            label="${ALL_GPU_NAMES[$i]} [${ALL_GPU_DRIVERS[$i]}] — ${pci}"
             menu_items+=("$i" "$label")
             available=$((available + 1))
         done
@@ -429,12 +427,21 @@ ensure_selected_gpu_not_already_in_target_vm() {
         fi
 
         local choice
-        choice=$(dialog --backtitle "ProxMenux" \
-            --title "$(translate 'GPU Already Assigned to This VM')" \
-            --menu "\n$(translate 'The selected GPU is already present in this VM. Select another GPU to continue:')" \
-            18 82 10 \
-            "${menu_items[@]}" \
-            2>&1 >/dev/tty) || exit 0
+        if [[ "$WIZARD_CALL" == "true" ]]; then
+            choice=$(whiptail --backtitle "ProxMenux" \
+                --title "$(translate 'GPU Already Assigned to This VM')" \
+                --menu "\n$(translate 'The selected GPU is already present in this VM. Select another GPU to continue:')" \
+                18 82 10 \
+                "${menu_items[@]}" \
+                3>&1 1>&2 2>&3) || exit 0
+        else
+            choice=$(dialog --backtitle "ProxMenux" \
+                --title "$(translate 'GPU Already Assigned to This VM')" \
+                --menu "\n$(translate 'The selected GPU is already present in this VM. Select another GPU to continue:')" \
+                18 82 10 \
+                "${menu_items[@]}" \
+                2>&1 >/dev/tty) || exit 0
+        fi
 
         SELECTED_GPU="${ALL_GPU_TYPES[$choice]}"
         SELECTED_GPU_PCI="${ALL_GPU_PCIS[$choice]}"
@@ -448,12 +455,16 @@ ensure_selected_gpu_not_already_in_target_vm() {
 # ==========================================================
 detect_host_gpus() {
     while IFS= read -r line; do
-        local pci_short pci_full name type driver
+        local pci_short pci_full name type driver pci_info
         pci_short=$(echo "$line" | awk '{print $1}')
         pci_full="0000:${pci_short}"
 
-        # Human-readable name: between first ":" and first "["
-        name=$(echo "$line" | sed 's/^[^:]*[^:]: //' | sed 's/ \[.*//' | cut -c1-62)
+        # Prefer full vendor/model descriptor for clearer menus.
+        pci_info=$(lspci -nn -s "${pci_short}" 2>/dev/null | sed 's/^[^ ]* //')
+        name="${pci_info#*: }"
+        [[ "$name" == "$pci_info" ]] && name="$pci_info"
+        name=$(echo "$name" | sed -E 's/ \(rev [^)]+\)$//' | cut -c1-72)
+        [[ -z "$name" ]] && name="$(translate 'Unknown GPU')"
 
         if echo "$line" | grep -qi "Intel"; then
             type="intel"
@@ -614,19 +625,26 @@ select_gpu() {
     local menu_items=()
     local i
     for i in "${!ALL_GPU_PCIS[@]}"; do
-        local label="${ALL_GPU_NAMES[$i]}"
-        [[ "${ALL_GPU_DRIVERS[$i]}" == "vfio-pci" ]] && label+=" [VFIO]"
-        label+=" — ${ALL_GPU_PCIS[$i]}"
+        local label="${ALL_GPU_NAMES[$i]} [${ALL_GPU_DRIVERS[$i]}] — ${ALL_GPU_PCIS[$i]}"
         menu_items+=("$i" "$label")
     done
 
     local choice
-    choice=$(dialog --backtitle "ProxMenux" \
-        --title "$(translate 'Select GPU for VM Passthrough')" \
-        --menu "\n$(translate 'Select the GPU to pass through to the VM:')" \
-        18 82 10 \
-        "${menu_items[@]}" \
-        2>&1 >/dev/tty) || exit 0
+    if [[ "$WIZARD_CALL" == "true" ]]; then
+        choice=$(whiptail --backtitle "ProxMenux" \
+            --title "$(translate 'Select GPU for VM Passthrough')" \
+            --menu "\n$(translate 'Select the GPU to pass through to the VM:')" \
+            18 82 10 \
+            "${menu_items[@]}" \
+            3>&1 1>&2 2>&3) || exit 0
+    else
+        choice=$(dialog --backtitle "ProxMenux" \
+            --title "$(translate 'Select GPU for VM Passthrough')" \
+            --menu "\n$(translate 'Select the GPU to pass through to the VM:')" \
+            18 82 10 \
+            "${menu_items[@]}" \
+            2>&1 >/dev/tty) || exit 0
+    fi
 
     SELECTED_GPU="${ALL_GPU_TYPES[$choice]}"
     SELECTED_GPU_PCI="${ALL_GPU_PCIS[$choice]}"

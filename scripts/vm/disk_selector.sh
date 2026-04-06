@@ -325,15 +325,7 @@ function select_controller_nvme() {
 
     if [[ ${#blocked_reasons[@]} -gt 0 ]]; then
       blocked_count=$((blocked_count + 1))
-      blocked_report+="------------------------------------------------------------\n"
-      blocked_report+="PCI: ${pci_full}\n"
-      blocked_report+="Name: ${name}\n"
-      blocked_report+="$(translate "Blocked because protected/in-use disks are attached"):\n"
-      local reason
-      for reason in "${blocked_reasons[@]}"; do
-        blocked_report+="  - ${reason}\n"
-      done
-      blocked_report+="\n"
+      blocked_report+="  •  ${pci_full} — $(_shorten_text "$name" 56)\n"
       continue
     fi
 
@@ -345,12 +337,7 @@ function select_controller_nvme() {
       assigned_suffix=" | $(translate "Assigned to VM")"
     fi
 
-    if [[ ${#controller_disks[@]} -gt 0 ]]; then
-      controller_desc="$(printf "%-42s [%s: %d]" "$short_name" "$(translate "attached disks")" "${#controller_disks[@]}")"
-    else
-      controller_desc="$(printf "%-42s [%s]" "$short_name" "$(translate "No attached disks")")"
-    fi
-    controller_desc+="${assigned_suffix}"
+    controller_desc="${short_name}${assigned_suffix}"
 
     if _array_contains "$pci_full" "${CONTROLLER_NVME_PCIS[@]}"; then
       state="ON"
@@ -368,22 +355,18 @@ function select_controller_nvme() {
     if [[ "$hidden_target_count" -gt 0 && "$blocked_count" -eq 0 ]]; then
       msg="$(translate "All detected controllers/NVMe are already present in the selected VM.")\n\n$(translate "No additional device needs to be added.")"
     else
-      msg="$(translate "No safe controllers/NVMe devices are available for passthrough.")\n\n"
+      msg="$(translate "No available Controllers/NVMe devices were found.")\n\n"
     fi
     if [[ $blocked_count -gt 0 ]]; then
-      msg+="$(translate "Detected controllers blocked for safety:")\n\n${blocked_report}"
+      msg+="$(translate "Hidden for safety"):\n${blocked_report}"
     fi
     whiptail --title "Controller + NVMe" --msgbox "$msg" 22 100
     return 1
   fi
 
-  if [[ $blocked_count -gt 0 ]]; then
-    whiptail --title "Controller + NVMe" --msgbox "$(translate "Some controllers were hidden because they have host system disks attached.")\n\n${blocked_report}" 22 100
-  fi
-
   local selected
   selected=$(whiptail --title "Controller + NVMe" --checklist \
-    "$(translate "Select controllers/NVMe to passthrough (safe devices only):")\n\n$(translate "Only safe devices are shown in this list.")" 20 96 10 \
+    "$(translate "Select available Controllers/NVMe to add:")" 20 96 10 \
     "${menu_items[@]}" 3>&1 1>&2 2>&3)
 
   [[ $? -ne 0 ]] && return 1
