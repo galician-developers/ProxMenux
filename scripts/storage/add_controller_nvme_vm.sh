@@ -56,6 +56,100 @@ set_title() {
   msg_title "$(translate "Add Controller or NVMe PCIe to VM")"
 }
 
+enable_iommu_cmdline() {
+  local cpu_vendor iommu_param
+  cpu_vendor=$(grep -m1 "vendor_id" /proc/cpuinfo 2>/dev/null | awk '{print $3}')
+
+  if [[ "$cpu_vendor" == "GenuineIntel" ]]; then
+    iommu_param="intel_iommu=on"
+    msg_info "$(translate "Intel CPU detected")"
+  elif [[ "$cpu_vendor" == "AuthenticAMD" ]]; then
+    iommu_param="amd_iommu=on"
+    msg_info "$(translate "AMD CPU detected")"
+  else
+    msg_error "$(translate "Unknown CPU vendor. Cannot determine IOMMU parameter.")"
+    return 1
+  fi
+
+  local cmdline_file="/etc/kernel/cmdline"
+  local grub_file="/etc/default/grub"
+
+  if [[ -f "$cmdline_file" ]] && grep -qE 'root=ZFS=|root=ZFS/' "$cmdline_file" 2>/dev/null; then
+    if ! grep -q "$iommu_param" "$cmdline_file"; then
+      cp "$cmdline_file" "${cmdline_file}.bak.$(date +%Y%m%d_%H%M%S)"
+      sed -i "s|\\s*$| ${iommu_param} iommu=pt|" "$cmdline_file"
+      proxmox-boot-tool refresh >/dev/null 2>&1 || true
+      msg_ok "$(translate "IOMMU parameters added to /etc/kernel/cmdline")"
+    else
+      msg_ok "$(translate "IOMMU already configured in /etc/kernel/cmdline")"
+    fi
+  elif [[ -f "$grub_file" ]]; then
+    if ! grep -q "$iommu_param" "$grub_file"; then
+      cp "$grub_file" "${grub_file}.bak.$(date +%Y%m%d_%H%M%S)"
+      sed -i "/GRUB_CMDLINE_LINUX_DEFAULT=/ s|\"$| ${iommu_param} iommu=pt\"|" "$grub_file"
+      update-grub >/dev/null 2>&1 || true
+      msg_ok "$(translate "IOMMU parameters added to GRUB")"
+    else
+      msg_ok "$(translate "IOMMU already configured in GRUB")"
+    fi
+  else
+    msg_error "$(translate "Neither /etc/kernel/cmdline nor /etc/default/grub found.")"
+    return 1
+  fi
+}
+
+check_iommu_or_offer_enable() {
+  if declare -F _pci_is_iommu_active >/dev/null 2>&1 && _pci_is_iommu_active; then
+    return 0
+  fi
+
+  if grep -qE 'intel_iommu=on|amd_iommu=on' /proc/cmdline 2>/dev/null && \
+     [[ -d /sys/kernel/iommu_groups ]] && \
+     [[ -n "$(ls /sys/kernel/iommu_groups/ 2>/dev/null)" ]]; then
+    return 0
+  fi
+
+  local msg
+  msg="\n$(translate "IOMMU is not active on this system.")\n\n"
+  msg+="$(translate "Controller/NVMe passthrough to VMs requires IOMMU to be enabled in the kernel.")\n\n"
+  msg+="$(translate "Do you want to enable IOMMU now?")\n\n"
+  msg+="$(translate "Note: A system reboot will be required after enabling IOMMU.")\n"
+  msg+="$(translate "You must run this option again after rebooting.")"
+
+  dialog --backtitle "ProxMenux" \
+    --title "$(translate "IOMMU Required")" \
+    --yesno "$msg" 15 74
+  local response=$?
+  clear
+
+  [[ $response -ne 0 ]] && return 1
+
+  set_title
+  msg_title "$(translate "Enabling IOMMU")"
+  echo
+  if ! enable_iommu_cmdline; then
+    echo
+    msg_error "$(translate "Failed to configure IOMMU automatically.")"
+    msg_success "$(translate "Press Enter to continue...")"
+    read -r
+    return 1
+  fi
+
+  echo
+  msg_success "$(translate "IOMMU configured. Reboot required before using Controller/NVMe passthrough.")"
+  echo
+  if whiptail --title "$(translate "Reboot Required")" \
+    --yesno "$(translate "Do you want to reboot now?")" 10 64; then
+    msg_warn "$(translate "Rebooting the system...")"
+    reboot
+  else
+    msg_info2 "$(translate "Please reboot manually and run this option again.")"
+    msg_success "$(translate "Press Enter to continue...")"
+    read -r
+  fi
+  return 1
+}
+
 select_target_vm() {
   local -a vm_menu=()
   local line vmid vmname vmstatus vm_machine status_label
@@ -71,7 +165,6 @@ select_target_vm() {
     status_label="${vmstatus}, ${vm_machine}"
     vm_menu+=("$vmid" "${vmname} [${status_label}]")
   done < <(qm list 2>/dev/null)
-
   if [[ ${#vm_menu[@]} -eq 0 ]]; then
     dialog --backtitle "ProxMenux" \
       --title "$(translate "Add Controller or NVMe PCIe to VM")" \
@@ -107,14 +200,7 @@ validate_vm_requirements() {
     return 1
   fi
 
-  if declare -F _pci_is_iommu_active >/dev/null 2>&1; then
-    if ! _pci_is_iommu_active; then
-      dialog --backtitle "ProxMenux" --colors \
-        --title "$(translate "IOMMU Required")" \
-        --msgbox "\n\Zb\Z1$(translate "IOMMU is not active on this host.")\Zn\n\n$(translate "PCIe passthrough requires IOMMU enabled in kernel and firmware.")\n\n$(translate "Enable IOMMU, reboot the host, and run again.")" 12 80
-      return 1
-    fi
-  fi
+  check_iommu_or_offer_enable || return 1
 
   return 0
 }
@@ -234,6 +320,12 @@ select_controller_nvme() {
       --title "$(translate "Controller + NVMe")" \
       --msgbox "\n$(translate "No controller/NVMe selected.")" 8 62
     return 1
+  fi
+
+  if declare -F _vm_storage_confirm_controller_passthrough_risk >/dev/null 2>&1; then
+    if ! _vm_storage_confirm_controller_passthrough_risk "$SELECTED_VMID" "$SELECTED_VM_NAME" "$(translate "Controller + NVMe")"; then
+      return 1
+    fi
   fi
 
   return 0

@@ -60,6 +60,7 @@ fi
 
 load_language
 initialize_cache
+VM_STORAGE_IOMMU_PENDING_REBOOT="${VM_STORAGE_IOMMU_PENDING_REBOOT:-0}"
 
 # ==========================================================
 # Mont ISOs
@@ -284,7 +285,7 @@ function create_vm() {
  #   $( [[ -n "$SERIAL_PORT" ]] && echo "-serial0 $SERIAL_PORT" ) >/dev/null 2>&1
 
 
-qm create "$VMID" \
+if ! qm create "$VMID" \
   -agent 1${MACHINE:+ $MACHINE} \
   -localtime 1${BIOS_TYPE:+ $BIOS_TYPE}${CPU_TYPE:+ $CPU_TYPE} \
   -cores "$CORE_COUNT" \
@@ -295,7 +296,10 @@ qm create "$VMID" \
   -ostype "$GUEST_OS_TYPE" \
   -scsihw virtio-scsi-pci \
   $( [[ -n "$SERIAL_PORT" ]] && echo "-serial0 $SERIAL_PORT" ) \
-  >/dev/null 2>&1
+  >/dev/null 2>&1; then
+  msg_error "$(translate "Failed to create base VM. Check VM ID and host configuration.")"
+  return 1
+fi
 
 if [[ "$OS_TYPE" == "2" ]]; then
   qm set "$VMID" -tablet 1 >/dev/null 2>&1
@@ -465,7 +469,14 @@ fi
   fi
 
   if [[ ${#CONTROLLER_NVME_PCIS[@]} -gt 0 ]]; then
-    if ! _vm_is_q35 "$VMID"; then
+    if declare -F _pci_is_iommu_active >/dev/null 2>&1 && ! _pci_is_iommu_active; then
+      if [[ "${VM_STORAGE_IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
+        msg_warn "$(translate "IOMMU was configured during this wizard and a reboot is pending.")"
+        msg_warn "$(translate "Controller + NVMe assignment is postponed until after host reboot.")"
+      else
+        msg_error "$(translate "IOMMU is not active. Skipping Controller + NVMe assignment.")"
+      fi
+    elif ! _vm_is_q35 "$VMID"; then
       msg_error "$(translate "Controller + NVMe passthrough requires machine type q35. Skipping controller assignment.")"
     else
       local hostpci_idx=0
@@ -737,6 +748,10 @@ if [[ "${WIZARD_ADD_GPU:-no}" == "yes" ]]; then
     fi
     echo -e
   fi
+  if [[ "${VM_STORAGE_IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
+    msg_warn "$(translate "IOMMU was enabled during this wizard. Reboot the host to apply it.")"
+    echo -e "${TAB}$(translate "After reboot, run: Storage -> Add Controller or NVMe PCIe to VM, and select VM") ${VMID}."
+  fi
   msg_success "$(translate "Press Enter to return to the main menu...")"
   read -r
   bash "$LOCAL_SCRIPTS/menus/create_vm_menu.sh"
@@ -759,6 +774,11 @@ elif [[ "$OS_TYPE" == "3" ]]; then
   echo -e "${TAB}$(translate "Run the following inside the VM:")"
   echo -e "${TAB}apt install qemu-guest-agent -y && systemctl enable --now qemu-guest-agent"
   echo -e
+fi
+
+if [[ "${VM_STORAGE_IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
+  msg_warn "$(translate "IOMMU was enabled during this wizard. Reboot the host to apply it.")"
+  echo -e "${TAB}$(translate "After reboot, run: Storage -> Add Controller or NVMe PCIe to VM, and select VM") ${VMID}."
 fi
 
 msg_success "$(translate "Press Enter to return to the main menu...")"

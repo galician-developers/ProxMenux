@@ -137,6 +137,135 @@ function _vm_is_q35() {
   [[ "$machine_line" == *q35* ]]
 }
 
+function _vm_storage_enable_iommu_cmdline() {
+  local cpu_vendor iommu_param
+  cpu_vendor=$(grep -m1 "vendor_id" /proc/cpuinfo 2>/dev/null | awk '{print $3}')
+
+  if [[ "$cpu_vendor" == "GenuineIntel" ]]; then
+    iommu_param="intel_iommu=on"
+  elif [[ "$cpu_vendor" == "AuthenticAMD" ]]; then
+    iommu_param="amd_iommu=on"
+  else
+    return 1
+  fi
+
+  local cmdline_file="/etc/kernel/cmdline"
+  local grub_file="/etc/default/grub"
+
+  if [[ -f "$cmdline_file" ]] && grep -qE 'root=ZFS=|root=ZFS/' "$cmdline_file" 2>/dev/null; then
+    if ! grep -q "$iommu_param" "$cmdline_file"; then
+      cp "$cmdline_file" "${cmdline_file}.bak.$(date +%Y%m%d_%H%M%S)"
+      sed -i "s|\\s*$| ${iommu_param} iommu=pt|" "$cmdline_file"
+      proxmox-boot-tool refresh >/dev/null 2>&1 || true
+    fi
+  elif [[ -f "$grub_file" ]]; then
+    if ! grep -q "$iommu_param" "$grub_file"; then
+      cp "$grub_file" "${grub_file}.bak.$(date +%Y%m%d_%H%M%S)"
+      sed -i "/GRUB_CMDLINE_LINUX_DEFAULT=/ s|\"$| ${iommu_param} iommu=pt\"|" "$grub_file"
+      update-grub >/dev/null 2>&1 || true
+    fi
+  else
+    return 1
+  fi
+
+  return 0
+}
+
+function _vm_storage_ensure_iommu_or_offer() {
+  if declare -F _pci_is_iommu_active >/dev/null 2>&1 && _pci_is_iommu_active; then
+    return 0
+  fi
+
+  if grep -qE 'intel_iommu=on|amd_iommu=on' /proc/cmdline 2>/dev/null && \
+     [[ -d /sys/kernel/iommu_groups ]] && \
+     [[ -n "$(ls /sys/kernel/iommu_groups/ 2>/dev/null)" ]]; then
+    return 0
+  fi
+
+  local prompt
+  prompt="$(translate "IOMMU is not active on this system.")\n\n"
+  prompt+="$(translate "Controller/NVMe passthrough to VMs requires IOMMU enabled in BIOS/UEFI and kernel.")\n\n"
+  prompt+="$(translate "Do you want to enable IOMMU now?")\n\n"
+  prompt+="$(translate "A host reboot is required after this change.")"
+
+  whiptail --title "IOMMU Required" --yesno "$prompt" 14 78
+  [[ $? -ne 0 ]] && return 1
+
+  if ! _vm_storage_enable_iommu_cmdline; then
+    whiptail --title "IOMMU" --msgbox \
+"$(translate "Failed to configure IOMMU automatically.")\n\n$(translate "Please configure it manually and reboot.")" \
+      10 72
+    return 1
+  fi
+
+  local reboot_policy="${VM_STORAGE_IOMMU_REBOOT_POLICY:-ask_now}"
+  if [[ "$reboot_policy" == "defer" ]]; then
+    VM_STORAGE_IOMMU_PENDING_REBOOT=1
+    export VM_STORAGE_IOMMU_PENDING_REBOOT
+    whiptail --title "Reboot Required" --msgbox \
+"$(translate "IOMMU configured successfully.")\n\n$(translate "Continue the VM wizard and reboot the host at the end.")\n\n$(translate "Controller/NVMe passthrough will be available after reboot.")" \
+      12 78
+    return 1
+  fi
+
+  if whiptail --title "Reboot Required" --yesno \
+"$(translate "IOMMU configured successfully.")\n\n$(translate "Do you want to reboot now?")" 10 68; then
+    reboot
+  else
+    whiptail --title "Reboot Required" --msgbox \
+"$(translate "Please reboot manually and run the passthrough step again.")" 9 68
+  fi
+
+  return 1
+}
+
+function _vm_storage_confirm_controller_passthrough_risk() {
+  local vmid="${1:-}"
+  local vm_name="${2:-}"
+  local title="${3:-Controller + NVMe}"
+  local vm_label=""
+  if [[ -n "$vmid" ]]; then
+    vm_label="$vmid"
+    [[ -n "$vm_name" ]] && vm_label="${vm_label} (${vm_name})"
+  fi
+
+  local msg
+  msg="$(translate "Important compatibility notice")\n\n"
+  msg+="$(translate "Not all motherboards support physical Controller/NVMe passthrough to VMs reliably, especially systems with old platforms or limited BIOS/UEFI firmware.")\n\n"
+  msg+="$(translate "On some systems, the VM may fail to start or the host may freeze when the VM boots.")\n\n"
+
+  local reinforce_limited_firmware="no"
+  local bios_date bios_year current_year cpu_model
+  bios_date=$(cat /sys/class/dmi/id/bios_date 2>/dev/null)
+  bios_year=$(echo "$bios_date" | grep -oE '[0-9]{4}' | tail -n1)
+  current_year=$(date +%Y 2>/dev/null)
+  if [[ -n "$bios_year" && -n "$current_year" ]]; then
+    if (( current_year - bios_year >= 7 )); then
+      reinforce_limited_firmware="yes"
+    fi
+  fi
+  cpu_model=$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | xargs)
+  if echo "$cpu_model" | grep -qiE 'J4[0-9]{3}|J3[0-9]{3}|N4[0-9]{3}|N3[0-9]{3}|Apollo Lake'; then
+    reinforce_limited_firmware="yes"
+  fi
+
+  if [[ "$reinforce_limited_firmware" == "yes" ]]; then
+    msg+="$(translate "Detected risk factor: this host may use an older or limited firmware platform, which increases passthrough instability risk.")\n\n"
+  fi
+
+  if [[ -n "$vm_label" ]]; then
+    msg+="$(translate "Target VM"): ${vm_label}\n\n"
+  fi
+  msg+="$(translate "If this happens after assignment"):\n"
+  msg+="  - $(translate "Power cycle the host if it is frozen.")\n"
+  msg+="  - $(translate "Remove the hostpci controller/NVMe entries from the VM config file.")\n"
+  msg+="    /etc/pve/qemu-server/${vmid:-<VMID>}.conf\n"
+  msg+="  - $(translate "Start the VM again without that passthrough device.")\n\n"
+  msg+="$(translate "Do you want to continue with this assignment?")"
+
+  whiptail --title "$title" --yesno "$msg" 21 96
+}
+
 function _shorten_text() {
   local text="$1"
   local max_len="${2:-42}"

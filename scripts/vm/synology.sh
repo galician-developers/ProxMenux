@@ -79,6 +79,7 @@ WIZARD_ADD_GPU="no"
 WIZARD_GPU_RESULT="not_requested"
 VM_WIZARD_CAPTURE_FILE=""
 VM_WIZARD_CAPTURE_ACTIVE=0
+VM_STORAGE_IOMMU_PENDING_REBOOT=0
 
 
 
@@ -599,6 +600,7 @@ function select_import_disk() {
     fi
   done < <(lsblk -dn -e 7,11 -o PATH)
 
+  stop_spinner
   if [[ ${#FREE_DISKS[@]} -eq 0 ]]; then
     whiptail --title "Error" --msgbox "$(translate "No importable disks available. System disks and protected disks are hidden.")" 9 70
     return 1
@@ -618,7 +620,23 @@ function select_import_disk() {
 }
 
 function select_controller_nvme() {
+  local VM_STORAGE_IOMMU_REBOOT_POLICY="defer"
+
+  if declare -F _vm_storage_ensure_iommu_or_offer >/dev/null 2>&1; then
+    if ! _vm_storage_ensure_iommu_or_offer; then
+      return 1
+    fi
+  elif declare -F _pci_is_iommu_active >/dev/null 2>&1; then
+    if ! _pci_is_iommu_active; then
+      whiptail --title "Controller + NVMe" --msgbox \
+"$(translate "IOMMU is not active on this host.")\n\n$(translate "Controller/NVMe passthrough requires IOMMU enabled in BIOS/UEFI and kernel.")\n\n$(translate "Enable IOMMU, reboot the host, and try again.")" \
+        14 90
+      return 1
+    fi
+  fi
+
   msg_info "$(translate "Detecting PCI storage controllers and NVMe devices...")"
+
   _refresh_host_storage_cache
 
   local menu_items=()
@@ -721,6 +739,15 @@ function select_controller_nvme() {
   for pci in $(echo "$selected" | tr -d '"'); do
     CONTROLLER_NVME_PCIS+=("$pci")
   done
+
+  if [[ ${#CONTROLLER_NVME_PCIS[@]} -gt 0 ]] && declare -F _vm_storage_confirm_controller_passthrough_risk >/dev/null 2>&1; then
+    local vm_name_for_notice="${HN:-$NAME}"
+    if ! _vm_storage_confirm_controller_passthrough_risk "${VMID:-}" "$vm_name_for_notice" "Controller + NVMe"; then
+      CONTROLLER_NVME_PCIS=()
+      return 1
+    fi
+  fi
+
   export CONTROLLER_NVME_PCIS
 }
 
@@ -1056,9 +1083,12 @@ function select_storage_volume() {
 function create_vm() {
 
   # Create the VM
-  qm create $VMID -agent 1${MACHINE} -tablet 0 -localtime 1${BIOS_TYPE}${CPU_TYPE} -cores $CORE_COUNT -memory $RAM_SIZE \
+  if ! qm create $VMID -agent 1${MACHINE} -tablet 0 -localtime 1${BIOS_TYPE}${CPU_TYPE} -cores $CORE_COUNT -memory $RAM_SIZE \
     -name $HN -tags proxmenux,nas -net0 virtio,bridge=$BRG,macaddr=$MAC$VLAN$MTU -onboot 1 -ostype l26 -scsihw virtio-scsi-pci \
-    -serial0 socket
+    -serial0 socket; then
+    msg_error "Failed to create base VM. Check VM ID and host configuration."
+    return 1
+  fi
   msg_ok "Create a $NAME"
 
 
@@ -1279,7 +1309,15 @@ if [[ ${#EFFECTIVE_IMPORT_DISKS[@]} -gt 0 ]]; then
 fi
 
 if [[ ${#CONTROLLER_NVME_PCIS[@]} -gt 0 ]]; then
-    if ! _vm_is_q35 "$VMID"; then
+    if declare -F _pci_is_iommu_active >/dev/null 2>&1 && ! _pci_is_iommu_active; then
+        if [[ "${VM_STORAGE_IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
+            msg_warn "$(translate "IOMMU was configured during this wizard and a reboot is pending.")"
+            msg_warn "$(translate "Controller + NVMe assignment is postponed until after host reboot.")"
+        else
+            msg_error "$(translate "IOMMU is not active. Skipping Controller + NVMe assignment.")"
+            ERROR_FLAG=true
+        fi
+    elif ! _vm_is_q35 "$VMID"; then
         msg_error "$(translate "Controller + NVMe passthrough requires machine type q35. Skipping controller assignment.")"
         ERROR_FLAG=true
     else
@@ -1439,6 +1477,10 @@ if [[ "$WIZARD_GPU_RESULT" == "applied" ]]; then
   echo -e "${TAB}- $(translate "If you want to use a physical monitor on the passthrough GPU:")"
   echo -e "${TAB}• $(translate "First complete DSM setup and verify Web UI/SSH access.")"
   echo -e "${TAB}• $(translate "Then change the VM display to none (vga: none) when the system is stable.")"
+fi
+if [[ "${VM_STORAGE_IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
+  msg_warn "$(translate "IOMMU was enabled during this wizard. Reboot the host to apply it.")"
+  echo -e "${TAB}$(translate "After reboot, run: Storage -> Add Controller or NVMe PCIe to VM, and select VM") ${VMID}."
 fi
 echo -e
 

@@ -68,6 +68,7 @@ function header_info() {
 
 VM_WIZARD_CAPTURE_FILE=""
 VM_WIZARD_CAPTURE_ACTIVE=0
+VM_STORAGE_IOMMU_PENDING_REBOOT=0
 
 function start_vm_wizard_capture() {
   [[ "${VM_WIZARD_CAPTURE_ACTIVE:-0}" -eq 1 ]] && return 0
@@ -132,6 +133,7 @@ function start_vm_configuration() {
 
 
 while true; do
+  VM_STORAGE_IOMMU_PENDING_REBOOT=0
   OS_TYPE=$(dialog --backtitle "ProxMenux" \
     --title "$(translate "Select System Type")" \
     --menu "\n$(translate "Choose the type of virtual system to install:")" 20 70 10 \

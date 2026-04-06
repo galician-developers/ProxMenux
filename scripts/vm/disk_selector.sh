@@ -175,7 +175,7 @@ function select_virtual_disk() {
   fi
 
   local DISK_SIZE
-  cleanup
+  stop_spinner
   DISK_SIZE=$(whiptail --backtitle "ProxMenuX" --inputbox "$(translate "System Disk Size (GB)")" 8 58 32 --title "VIRTUAL DISK" --cancel-button Cancel 3>&1 1>&2 2>&3)
   if [ $? -ne 0 ]; then
     return 0
@@ -229,7 +229,7 @@ function select_import_disk() {
   done < <(lsblk -dn -e 7,11 -o PATH)
 
   if [[ "${#FREE_DISKS[@]}" -eq 0 ]]; then
-    cleanup
+    stop_spinner
     whiptail --title "Error" --msgbox "$(translate "No importable disks available. System disks and protected disks are hidden.")" 9 70
     return 1
   fi
@@ -265,6 +265,21 @@ function select_passthrough_disk() {
 }
 
 function select_controller_nvme() {
+  local VM_STORAGE_IOMMU_REBOOT_POLICY="defer"
+
+  if declare -F _vm_storage_ensure_iommu_or_offer >/dev/null 2>&1; then
+    if ! _vm_storage_ensure_iommu_or_offer; then
+      return 1
+    fi
+  elif declare -F _pci_is_iommu_active >/dev/null 2>&1; then
+    if ! _pci_is_iommu_active; then
+      whiptail --title "Controller + NVMe" --msgbox \
+"$(translate "IOMMU is not active on this host.")\n\n$(translate "Controller/NVMe passthrough requires IOMMU enabled in BIOS/UEFI and kernel.")\n\n$(translate "Enable IOMMU, reboot the host, and try again.")" \
+        14 90
+      return 1
+    fi
+  fi
+
   msg_info "$(translate "Detecting PCI storage controllers and NVMe devices...")"
 
   _refresh_host_storage_cache
@@ -382,6 +397,14 @@ function select_controller_nvme() {
   if [[ ${#CONTROLLER_NVME_PCIS[@]} -eq 0 ]]; then
     msg_warn "$(translate "No Controller/NVMe selected for now.")"
     return 0
+  fi
+
+  if declare -F _vm_storage_confirm_controller_passthrough_risk >/dev/null 2>&1; then
+    local vm_name_for_notice="${HN:-}"
+    if ! _vm_storage_confirm_controller_passthrough_risk "${VMID:-}" "$vm_name_for_notice" "Controller + NVMe"; then
+      CONTROLLER_NVME_PCIS=()
+      return 1
+    fi
   fi
 
   export CONTROLLER_NVME_PCIS
