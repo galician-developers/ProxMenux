@@ -196,6 +196,16 @@ _set_wizard_result() {
     printf '%s\n' "$result" >"$GPU_WIZARD_RESULT_FILE" 2>/dev/null || true
 }
 
+_wizard_dialog_begin() {
+    [[ "$WIZARD_CALL" == "true" ]] || return 0
+    tput smcup >/dev/tty 2>/dev/null || true
+}
+
+_wizard_dialog_end() {
+    [[ "$WIZARD_CALL" == "true" ]] || return 0
+    tput rmcup >/dev/tty 2>/dev/null || true
+}
+
 _file_has_exact_line() {
     local line="$1"
     local file="$2"
@@ -435,22 +445,17 @@ ensure_selected_gpu_not_already_in_target_vm() {
             exit 0
         fi
 
-        local choice
-        if [[ "$WIZARD_CALL" == "true" ]]; then
-            choice=$(whiptail --backtitle "ProxMenux" \
-                --title "$(translate 'GPU Already Assigned to This VM')" \
-                --menu "\n$(translate 'The selected GPU is already present in this VM. Select another GPU to continue:')" \
-                18 82 10 \
-                "${menu_items[@]}" \
-                3>&1 1>&2 2>&3) || exit 0
-        else
-            choice=$(dialog --backtitle "ProxMenux" \
-                --title "$(translate 'GPU Already Assigned to This VM')" \
-                --menu "\n$(translate 'The selected GPU is already present in this VM. Select another GPU to continue:')" \
-                18 82 10 \
-                "${menu_items[@]}" \
-                2>&1 >/dev/tty) || exit 0
-        fi
+        local choice rc
+        _wizard_dialog_begin
+        choice=$(dialog --backtitle "ProxMenux" --colors \
+            --title "$(translate 'GPU Already Assigned to This VM')" \
+            --menu "\n$(translate 'The selected GPU is already present in this VM. Select another GPU to continue:')" \
+            18 82 10 \
+            "${menu_items[@]}" \
+            2>&1 >/dev/tty)
+        rc=$?
+        _wizard_dialog_end
+        [[ $rc -ne 0 ]] && exit 0
 
         SELECTED_GPU="${ALL_GPU_TYPES[$choice]}"
         SELECTED_GPU_PCI="${ALL_GPU_PCIS[$choice]}"
@@ -638,22 +643,17 @@ select_gpu() {
         menu_items+=("$i" "$label")
     done
 
-    local choice
-    if [[ "$WIZARD_CALL" == "true" ]]; then
-        choice=$(whiptail --backtitle "ProxMenux" \
-            --title "$(translate 'Select GPU for VM Passthrough')" \
-            --menu "\n$(translate 'Select the GPU to pass through to the VM:')" \
-            18 82 10 \
-            "${menu_items[@]}" \
-            3>&1 1>&2 2>&3) || exit 0
-    else
-        choice=$(dialog --backtitle "ProxMenux" \
-            --title "$(translate 'Select GPU for VM Passthrough')" \
-            --menu "\n$(translate 'Select the GPU to pass through to the VM:')" \
-            18 82 10 \
-            "${menu_items[@]}" \
-            2>&1 >/dev/tty) || exit 0
-    fi
+    local choice rc
+    _wizard_dialog_begin
+    choice=$(dialog --backtitle "ProxMenux" --colors \
+        --title "$(translate 'Select GPU for VM Passthrough')" \
+        --menu "\n$(translate 'Select the GPU to pass through to the VM:')" \
+        18 82 10 \
+        "${menu_items[@]}" \
+        2>&1 >/dev/tty)
+    rc=$?
+    _wizard_dialog_end
+    [[ $rc -ne 0 ]] && exit 0
 
     SELECTED_GPU="${ALL_GPU_TYPES[$choice]}"
     SELECTED_GPU_PCI="${ALL_GPU_PCIS[$choice]}"
@@ -1305,23 +1305,18 @@ check_switch_mode() {
         fi
         msg+="$(translate 'Choose conflict policy for the source VM:')"
 
-        local vm_action_choice
-        if [[ "$WIZARD_CALL" == "true" ]]; then
-            vm_action_choice=$(whiptail --backtitle "ProxMenux" \
-                --title "$(translate 'GPU Already Assigned to Another VM')" \
-                --menu "$msg" 24 98 8 \
-                "1" "$(translate 'Keep GPU in source VM config (disable Start on boot if enabled)')" \
-                "2" "$(translate 'Remove GPU from source VM config (keep Start on boot)')" \
-                3>&1 1>&2 2>&3) || exit 0
-        else
-            vm_action_choice=$(dialog --backtitle "ProxMenux" --colors \
-                --title "$(translate 'GPU Already Assigned to Another VM')" \
-                --default-item "1" \
-                --menu "$msg" 24 98 8 \
-                "1" "$(translate 'Keep GPU in source VM config (disable Start on boot if enabled)')" \
-                "2" "$(translate 'Remove GPU from source VM config (keep Start on boot)')" \
-                2>&1 >/dev/tty) || exit 0
-        fi
+        local vm_action_choice rc
+        _wizard_dialog_begin
+        vm_action_choice=$(dialog --backtitle "ProxMenux" --colors \
+            --title "$(translate 'GPU Already Assigned to Another VM')" \
+            --default-item "1" \
+            --menu "$msg" 24 98 8 \
+            "1" "$(translate 'Keep GPU in source VM config (disable Start on boot if enabled)')" \
+            "2" "$(translate 'Remove GPU from source VM config (keep Start on boot)')" \
+            2>&1 >/dev/tty)
+        rc=$?
+        _wizard_dialog_end
+        [[ $rc -ne 0 ]] && exit 0
 
         case "$vm_action_choice" in
             1) SWITCH_VM_ACTION="keep_gpu_disable_onboot" ;;
@@ -1399,15 +1394,14 @@ confirm_summary() {
     local run_title
     run_title=$(_get_vm_run_title)
 
-    if [[ "$WIZARD_CALL" == "true" ]]; then
-        whiptail --backtitle "ProxMenux" --title "${run_title}" --yesno "$msg" 28 78
-        [[ $? -ne 0 ]] && exit 0
-    else
-        dialog --backtitle "ProxMenux" --colors \
-            --title "${run_title}" \
-            --yesno "$msg" 28 78
-        [[ $? -ne 0 ]] && exit 0
-    fi
+    local rc
+    _wizard_dialog_begin
+    dialog --backtitle "ProxMenux" --colors \
+        --title "${run_title}" \
+        --yesno "$msg" 28 78
+    rc=$?
+    _wizard_dialog_end
+    [[ $rc -ne 0 ]] && exit 0
 }
 
 
