@@ -50,6 +50,7 @@ initialize_cache
 SELECTED_VMID=""
 SELECTED_VM_NAME=""
 declare -a SELECTED_CONTROLLER_PCIS=()
+IOMMU_PENDING_REBOOT=0
 
 set_title() {
   show_proxmenux_logo
@@ -99,6 +100,10 @@ enable_iommu_cmdline() {
 }
 
 check_iommu_or_offer_enable() {
+  if [[ "${IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
+    return 0
+  fi
+
   if declare -F _pci_is_iommu_active >/dev/null 2>&1 && _pci_is_iommu_active; then
     return 0
   fi
@@ -143,11 +148,13 @@ check_iommu_or_offer_enable() {
     msg_warn "$(translate "Rebooting the system...")"
     reboot
   else
-    msg_info2 "$(translate "Please reboot manually and run this option again.")"
+    IOMMU_PENDING_REBOOT=1
+    msg_warn "$(translate "Reboot postponed by user.")"
+    msg_info2 "$(translate "You can continue assigning Controller/NVMe now, but reboot the host before starting the VM.")"
     msg_success "$(translate "Press Enter to continue...")"
     read -r
   fi
-  return 1
+  return 0
 }
 
 select_target_vm() {
@@ -474,6 +481,9 @@ apply_assignment() {
 
   if [[ "$assigned_count" -gt 0 ]]; then
     msg_success "$(translate "Completed. Controller/NVMe passthrough configured for VM") ${SELECTED_VMID}."
+    if [[ "${IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
+      msg_warn "$(translate "IOMMU was configured during this run. Reboot the host before starting the VM.")"
+    fi
   else
     msg_warn "$(translate "No new Controller/NVMe entries were added.")"
   fi

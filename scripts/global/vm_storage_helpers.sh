@@ -172,6 +172,8 @@ function _vm_storage_enable_iommu_cmdline() {
 }
 
 function _vm_storage_ensure_iommu_or_offer() {
+  local reboot_policy="${VM_STORAGE_IOMMU_REBOOT_POLICY:-ask_now}"
+
   if declare -F _pci_is_iommu_active >/dev/null 2>&1 && _pci_is_iommu_active; then
     return 0
   fi
@@ -179,6 +181,12 @@ function _vm_storage_ensure_iommu_or_offer() {
   if grep -qE 'intel_iommu=on|amd_iommu=on' /proc/cmdline 2>/dev/null && \
      [[ -d /sys/kernel/iommu_groups ]] && \
      [[ -n "$(ls /sys/kernel/iommu_groups/ 2>/dev/null)" ]]; then
+    return 0
+  fi
+
+  # Wizard flow: if IOMMU was already configured in this run and reboot is pending,
+  # allow the user to continue planning storage selections without re-prompting.
+  if [[ "$reboot_policy" == "defer" && "${VM_STORAGE_IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
     return 0
   fi
 
@@ -198,14 +206,13 @@ function _vm_storage_ensure_iommu_or_offer() {
     return 1
   fi
 
-  local reboot_policy="${VM_STORAGE_IOMMU_REBOOT_POLICY:-ask_now}"
   if [[ "$reboot_policy" == "defer" ]]; then
     VM_STORAGE_IOMMU_PENDING_REBOOT=1
     export VM_STORAGE_IOMMU_PENDING_REBOOT
     whiptail --title "Reboot Required" --msgbox \
-"$(translate "IOMMU configured successfully.")\n\n$(translate "Continue the VM wizard and reboot the host at the end.")\n\n$(translate "Controller/NVMe passthrough will be available after reboot.")" \
+"$(translate "IOMMU configured successfully.")\n\n$(translate "Continue the VM wizard and reboot the host at the end.")\n\n$(translate "You can now select Controller/NVMe devices in Storage Plan.")\n$(translate "Controller/NVMe passthrough will be applied after reboot.")" \
       12 78
-    return 1
+    return 0
   fi
 
   if whiptail --title "Reboot Required" --yesno \
