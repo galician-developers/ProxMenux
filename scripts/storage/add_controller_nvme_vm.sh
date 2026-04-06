@@ -104,6 +104,14 @@ check_iommu_or_offer_enable() {
     return 0
   fi
 
+  if grep -qE 'intel_iommu=on|amd_iommu=on' /etc/kernel/cmdline 2>/dev/null || \
+     grep -qE 'intel_iommu=on|amd_iommu=on' /etc/default/grub 2>/dev/null; then
+    IOMMU_PENDING_REBOOT=1
+    msg_warn "$(translate "IOMMU is configured for next boot, but not active yet.")"
+    msg_info2 "$(translate "Controller/NVMe assignment can continue now and will be effective after reboot.")"
+    return 0
+  fi
+
   if declare -F _pci_is_iommu_active >/dev/null 2>&1 && _pci_is_iommu_active; then
     return 0
   fi
@@ -119,7 +127,7 @@ check_iommu_or_offer_enable() {
   msg+="$(translate "Controller/NVMe passthrough to VMs requires IOMMU to be enabled in the kernel.")\n\n"
   msg+="$(translate "Do you want to enable IOMMU now?")\n\n"
   msg+="$(translate "Note: A system reboot will be required after enabling IOMMU.")\n"
-  msg+="$(translate "You must run this option again after rebooting.")"
+  msg+="$(translate "Configuration can continue now and will be effective after reboot.")"
 
   dialog --backtitle "ProxMenux" \
     --title "$(translate "IOMMU Required")" \

@@ -210,7 +210,7 @@ function _vm_storage_ensure_iommu_or_offer() {
     VM_STORAGE_IOMMU_PENDING_REBOOT=1
     export VM_STORAGE_IOMMU_PENDING_REBOOT
     whiptail --title "Reboot Required" --msgbox \
-"$(translate "IOMMU configured successfully.")\n\n$(translate "Continue the VM wizard and reboot the host at the end.")\n\n$(translate "You can now select Controller/NVMe devices in Storage Plan.")\n$(translate "Controller/NVMe passthrough will be applied after reboot.")" \
+"$(translate "IOMMU configured successfully.")\n\n$(translate "Continue the VM wizard and reboot the host at the end.")\n\n$(translate "You can now select Controller/NVMe devices in Storage Plan.")\n$(translate "Device assignments will be written now and become active after reboot.")" \
       12 78
     return 0
   fi

@@ -225,7 +225,7 @@ complete_nvidia_uninstall() {
   unload_nvidia_modules
   
   if command -v nvidia-uninstall >/dev/null 2>&1; then
-    msg_info "$(translate 'Running NVIDIA uninstaller...')"
+    #msg_info "$(translate 'Running NVIDIA uninstaller...')"
     nvidia-uninstall --silent >>"$LOG_FILE" 2>&1 || true
     msg_ok "$(translate 'NVIDIA uninstaller completed.')"
   fi

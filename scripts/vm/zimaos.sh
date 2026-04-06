@@ -1323,14 +1323,20 @@ function create_vm() {
     fi
 
     if [[ ${#CONTROLLER_NVME_PCIS[@]} -gt 0 ]]; then
+        local CONTROLLER_CAN_STAGE=true
         if declare -F _pci_is_iommu_active >/dev/null 2>&1 && ! _pci_is_iommu_active; then
             if [[ "${VM_STORAGE_IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
                 msg_warn "$(translate "IOMMU was configured during this wizard and a reboot is pending.")"
-                msg_warn "$(translate "Controller + NVMe assignment is postponed until after host reboot.")"
+                msg_warn "$(translate "Controller + NVMe assignment will be written now and become active after host reboot.")"
             else
                 msg_error "$(translate "IOMMU is not active. Skipping Controller + NVMe assignment.")"
                 ERROR_FLAG=true
+                CONTROLLER_CAN_STAGE=false
             fi
+        fi
+
+        if [[ "$CONTROLLER_CAN_STAGE" != "true" ]]; then
+            :
         elif ! _vm_is_q35 "$VMID"; then
             msg_error "$(translate "Controller + NVMe passthrough requires machine type q35. Skipping controller assignment.")"
             ERROR_FLAG=true
@@ -1522,7 +1528,6 @@ else
   if [[ "${VM_STORAGE_IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
     HOST_REBOOT_REQUIRED="yes"
     msg_warn "$(translate "IOMMU was enabled during this wizard. Reboot the host to apply it.")"
-    echo -e "${TAB}$(translate "After reboot, run: Storage -> Add Controller or NVMe PCIe to VM, and select VM") ${VMID}."
   fi
   if [[ "$GPU_WIZARD_REBOOT_REQUIRED" == "yes" ]]; then
     HOST_REBOOT_REQUIRED="yes"

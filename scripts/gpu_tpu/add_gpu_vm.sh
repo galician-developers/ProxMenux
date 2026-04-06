@@ -71,6 +71,7 @@ declare -a IOMMU_DEVICES=()      # all PCI addrs in IOMMU group (endpoint device
 declare -a IOMMU_VFIO_IDS=()    # vendor:device for vfio-pci ids=
 declare -a EXTRA_AUDIO_DEVICES=() # sibling audio function(s), typically *.1
 IOMMU_GROUP=""
+IOMMU_PENDING_REBOOT=false
 
 SELECTED_VMID=""
 VM_NAME=""
@@ -194,6 +195,11 @@ _file_has_exact_line() {
 }
 
 evaluate_host_reboot_requirement() {
+    if [[ "$IOMMU_PENDING_REBOOT" == "true" ]]; then
+        PREFLIGHT_HOST_REBOOT_REQUIRED=true
+        return 0
+    fi
+
     # Fast path for VM-to-VM reassignment where GPU is already bound to vfio
     if [[ "$VM_SWITCH_ALREADY_VFIO" == "true" ]]; then
         PREFLIGHT_HOST_REBOOT_REQUIRED=false
@@ -491,9 +497,19 @@ check_iommu_enabled() {
         return 0
     fi
 
-    if grep -qE 'intel_iommu=on|amd_iommu=on' /proc/cmdline 2>/dev/null && \
-       [[ -d /sys/kernel/iommu_groups ]] && \
-       [[ -n "$(ls /sys/kernel/iommu_groups/ 2>/dev/null)" ]]; then
+    local configured_next_boot=false
+    if grep -qE 'intel_iommu=on|amd_iommu=on' /etc/kernel/cmdline 2>/dev/null || \
+       grep -qE 'intel_iommu=on|amd_iommu=on' /etc/default/grub 2>/dev/null; then
+        configured_next_boot=true
+    fi
+
+    if [[ "$configured_next_boot" == "true" ]]; then
+        IOMMU_PENDING_REBOOT=true
+        HOST_CONFIG_CHANGED=true
+        dialog --backtitle "ProxMenux" \
+            --title "$(translate 'IOMMU Pending Reboot')" \
+            --msgbox "\n$(translate 'IOMMU is already configured for next boot, but it is not active yet.')\n\n$(translate 'GPU passthrough configuration will continue now and will become effective after host reboot.')" \
+            11 78
         return 0
     fi
 
@@ -502,7 +518,7 @@ check_iommu_enabled() {
     msg+="$(translate 'GPU passthrough to VMs requires IOMMU to be enabled in the kernel.')\n\n"
     msg+="$(translate 'Do you want to enable IOMMU now?')\n\n"
     msg+="$(translate 'Note: A system reboot will be required after enabling IOMMU.')\n"
-    msg+="$(translate 'You must run this option again after rebooting.')"
+    msg+="$(translate 'Configuration will continue now and be effective after reboot.')"
 
     dialog --backtitle "ProxMenux" \
         --title "$(translate 'IOMMU Required')" \
@@ -514,12 +530,24 @@ check_iommu_enabled() {
     if [[ $response -eq 0 ]]; then
         [[ "$WIZARD_CALL" != "true" ]] && show_proxmenux_logo
         msg_title "$(translate 'Enabling IOMMU')"
-        _enable_iommu_cmdline
+        if ! _enable_iommu_cmdline; then
+            echo
+            msg_error "$(translate 'Failed to configure IOMMU automatically.')"
+            echo
+            msg_success "$(translate 'Press Enter to continue...')"
+            read -r
+            exit 0
+        fi
+        IOMMU_PENDING_REBOOT=true
+        HOST_CONFIG_CHANGED=true
         echo
-        msg_success "$(translate 'IOMMU configured. Please reboot and run GPU passthrough to VM again.')"
+        msg_success "$(translate 'IOMMU configured. GPU passthrough setup will continue now and will be effective after reboot.')"
         echo
-        msg_success "$(translate 'Press Enter to continue...')"
-        read -r
+        if [[ "$WIZARD_CALL" != "true" ]]; then
+            msg_success "$(translate 'Press Enter to continue...')"
+            read -r
+        fi
+        return 0
     fi
     exit 0
 }
@@ -914,6 +942,23 @@ analyze_iommu_group() {
     local group_link="/sys/bus/pci/devices/${pci_full}/iommu_group"
 
     if [[ ! -L "$group_link" ]]; then
+        if [[ "$IOMMU_PENDING_REBOOT" == "true" ]]; then
+            IOMMU_GROUP="pending-reboot"
+            IOMMU_DEVICES=("$pci_full")
+            IOMMU_VFIO_IDS=()
+
+            local vid did
+            vid=$(cat "/sys/bus/pci/devices/${pci_full}/vendor" 2>/dev/null | sed 's/0x//')
+            did=$(cat "/sys/bus/pci/devices/${pci_full}/device" 2>/dev/null | sed 's/0x//')
+            [[ -n "$vid" && -n "$did" ]] && IOMMU_VFIO_IDS+=("${vid}:${did}")
+
+            dialog --backtitle "ProxMenux" --colors \
+                --title "$(translate 'IOMMU Group Pending')" \
+                --msgbox "\n$(translate 'IOMMU groups are not available yet because reboot is pending.')\n\n$(translate 'The script will preconfigure the selected GPU now and finalize hardware binding after reboot.')\n\n$(translate 'Selected GPU function'):\n  • ${pci_full}" \
+                14 82
+            return 0
+        fi
+
         dialog --backtitle "ProxMenux" \
             --title "$(translate 'IOMMU Group Error')" \
             --msgbox "\n$(translate 'Could not determine the IOMMU group for the selected GPU.')\n\n$(translate 'Make sure IOMMU is properly enabled and the system has been rebooted after activation.')" \
@@ -1249,7 +1294,11 @@ confirm_summary() {
     msg+="\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     msg+="  $(translate 'GPU')          :  ${SELECTED_GPU_NAME}\n"
     msg+="  $(translate 'PCI Address')  :  ${SELECTED_GPU_PCI}\n"
-    msg+="  $(translate 'IOMMU Group')  :  ${IOMMU_GROUP} (${#IOMMU_DEVICES[@]} $(translate 'devices'))\n"
+    if [[ "$IOMMU_PENDING_REBOOT" == "true" ]]; then
+        msg+="  $(translate 'IOMMU Group')  :  $(translate 'pending (reboot required to enumerate full group)')\n"
+    else
+        msg+="  $(translate 'IOMMU Group')  :  ${IOMMU_GROUP} (${#IOMMU_DEVICES[@]} $(translate 'devices'))\n"
+    fi
     msg+="  $(translate 'Target VM')    :  ${VM_NAME:-VM-${SELECTED_VMID}} (${SELECTED_VMID})\n"
     msg+="  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     msg+="  \Zb$(translate 'Host'):\Zn\n"
@@ -1272,7 +1321,11 @@ confirm_summary() {
     [[ "$TARGET_VM_ALREADY_HAS_GPU" == "true" ]] && \
         msg+="  •  $(translate 'Existing hostpci entries detected — they will be reused')\n"
     msg+="  •  $(translate 'Virtual display normalized to vga: std (compatibility)')\n"
-    msg+="  •  $(translate 'hostpci entries for all IOMMU group devices')\n"
+    if [[ "$IOMMU_PENDING_REBOOT" == "true" ]]; then
+        msg+="  •  $(translate 'hostpci entries for selected GPU functions (full IOMMU group will be enforced after reboot)')\n"
+    else
+        msg+="  •  $(translate 'hostpci entries for all IOMMU group devices')\n"
+    fi
     [[ ${#EXTRA_AUDIO_DEVICES[@]} -gt 0 ]] && \
         msg+="  •  $(translate 'Additional GPU audio function will be added'): ${EXTRA_AUDIO_DEVICES[*]}\n"
     [[ "$SELECTED_GPU" == "nvidia" ]] && \

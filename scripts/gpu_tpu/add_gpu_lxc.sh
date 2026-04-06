@@ -705,12 +705,12 @@ install_drivers() {
   for gpu_type in "${SELECTED_GPUS[@]}"; do
     case "$gpu_type" in
       intel)
-        msg_info "$(translate 'Installing Intel VA-API drivers in container...')"
+        #msg_info "$(translate 'Installing Intel VA-API drivers in container...')"
         _install_intel_drivers "$ctid" "$ct_distro"
         msg_ok "$(translate 'Intel VA-API drivers installed.')" | tee -a "$screen_capture"
         ;;
       amd)
-        msg_info "$(translate 'Installing AMD mesa drivers in container...')"
+        #msg_info "$(translate 'Installing AMD mesa drivers in container...')"
         _install_amd_drivers "$ctid" "$ct_distro"
         msg_ok "$(translate 'AMD mesa drivers installed.')" | tee -a "$screen_capture"
         ;;
