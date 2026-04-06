@@ -196,14 +196,26 @@ _set_wizard_result() {
     printf '%s\n' "$result" >"$GPU_WIZARD_RESULT_FILE" 2>/dev/null || true
 }
 
+_wizard_alt_screen_enter() {
+    # More robust than relying only on terminfo smcup in some terminals.
+    printf '\033[?1049h\033[H' >/dev/tty 2>/dev/null || true
+}
+
+_wizard_alt_screen_leave() {
+    printf '\033[?1049l' >/dev/tty 2>/dev/null || true
+}
+
 _wizard_dialog_begin() {
     [[ "$WIZARD_CALL" == "true" ]] || return 0
+    _wizard_alt_screen_enter
     tput smcup >/dev/tty 2>/dev/null || true
+    printf '\033[2J\033[H' >/dev/tty 2>/dev/null || true
 }
 
 _wizard_dialog_end() {
     [[ "$WIZARD_CALL" == "true" ]] || return 0
     tput rmcup >/dev/tty 2>/dev/null || true
+    _wizard_alt_screen_leave
 }
 
 _file_has_exact_line() {
@@ -447,7 +459,7 @@ ensure_selected_gpu_not_already_in_target_vm() {
 
         local choice rc
         _wizard_dialog_begin
-        choice=$(dialog --backtitle "ProxMenux" --colors \
+        choice=$(dialog --clear --backtitle "ProxMenux" --colors \
             --title "$(translate 'GPU Already Assigned to This VM')" \
             --menu "\n$(translate 'The selected GPU is already present in this VM. Select another GPU to continue:')" \
             18 82 10 \
@@ -645,7 +657,7 @@ select_gpu() {
 
     local choice rc
     _wizard_dialog_begin
-    choice=$(dialog --backtitle "ProxMenux" --colors \
+    choice=$(dialog --clear --backtitle "ProxMenux" --colors \
         --title "$(translate 'Select GPU for VM Passthrough')" \
         --menu "\n$(translate 'Select the GPU to pass through to the VM:')" \
         18 82 10 \
@@ -1307,7 +1319,7 @@ check_switch_mode() {
 
         local vm_action_choice rc
         _wizard_dialog_begin
-        vm_action_choice=$(dialog --backtitle "ProxMenux" --colors \
+        vm_action_choice=$(dialog --clear --backtitle "ProxMenux" --colors \
             --title "$(translate 'GPU Already Assigned to Another VM')" \
             --default-item "1" \
             --menu "$msg" 24 98 8 \
@@ -1396,7 +1408,7 @@ confirm_summary() {
 
     local rc
     _wizard_dialog_begin
-    dialog --backtitle "ProxMenux" --colors \
+    dialog --clear --backtitle "ProxMenux" --colors \
         --title "${run_title}" \
         --yesno "$msg" 28 78
     rc=$?
