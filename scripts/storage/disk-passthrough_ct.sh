@@ -120,7 +120,7 @@ CTID=$(echo "$CTID" | tr -d '"')
 clear
 show_proxmenux_logo
 echo -e
-msg_title "$(translate "Add Disk") Passthrough $(translate "to a LXC")"
+msg_title "$(translate "Import Disk to LXC")"
 echo -e
 msg_ok "$(translate "CT selected successfully.")"
 

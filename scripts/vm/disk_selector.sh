@@ -271,15 +271,24 @@ function select_controller_nvme() {
 
   local menu_items=()
   local blocked_report=""
-  local pci_path pci_full class_hex name controller_disks controller_desc disk reason safe_count blocked_count state
+  local pci_path pci_full class_hex name controller_disks controller_desc disk safe_count blocked_count state slot_base hidden_target_count
   safe_count=0
   blocked_count=0
+  hidden_target_count=0
+  local target_vmid="${VMID:-}"
 
   while IFS= read -r pci_path; do
     pci_full=$(basename "$pci_path")
     class_hex=$(cat "$pci_path/class" 2>/dev/null | sed 's/^0x//')
     [[ -z "$class_hex" ]] && continue
     [[ "${class_hex:0:2}" != "01" ]] && continue
+    slot_base=$(_pci_slot_base "$pci_full")
+
+    # If target VM already has this slot assigned, hide it.
+    if [[ -n "$target_vmid" ]] && _vm_has_pci_slot "$target_vmid" "$slot_base"; then
+      hidden_target_count=$((hidden_target_count + 1))
+      continue
+    fi
 
     name=$(lspci -nn -s "${pci_full#0000:}" 2>/dev/null | sed 's/^[^ ]* //')
     [[ -z "$name" ]] && name="$(translate "Unknown storage controller")"
@@ -290,26 +299,43 @@ function select_controller_nvme() {
       _array_contains "$disk" "${controller_disks[@]}" || controller_disks+=("$disk")
     done < <(_controller_block_devices "$pci_full")
 
-    reason=""
+    local -a blocked_reasons=()
     for disk in "${controller_disks[@]}"; do
       if _disk_is_host_system_used "$disk"; then
-        reason+="${disk} (${DISK_USAGE_REASON}); "
+        blocked_reasons+=("${disk} (${DISK_USAGE_REASON})")
       elif _disk_used_in_guest_configs "$disk"; then
-        reason+="${disk} ($(translate "In use by VM/LXC config")); "
+        blocked_reasons+=("${disk} ($(translate "In use by VM/LXC config"))")
       fi
     done
 
-    if [[ -n "$reason" ]]; then
+    if [[ ${#blocked_reasons[@]} -gt 0 ]]; then
       blocked_count=$((blocked_count + 1))
-      blocked_report+="  • ${pci_full} — ${name}\n    $(translate "Blocked because protected/in-use disks are attached"): ${reason}\n"
+      blocked_report+="------------------------------------------------------------\n"
+      blocked_report+="PCI: ${pci_full}\n"
+      blocked_report+="Name: ${name}\n"
+      blocked_report+="$(translate "Blocked because protected/in-use disks are attached"):\n"
+      local reason
+      for reason in "${blocked_reasons[@]}"; do
+        blocked_report+="  - ${reason}\n"
+      done
+      blocked_report+="\n"
       continue
     fi
 
-    if [[ ${#controller_disks[@]} -gt 0 ]]; then
-      controller_desc="$(printf "%-50s [%s]" "$name" "$(IFS=,; echo "${controller_disks[*]}")")"
-    else
-      controller_desc="$(printf "%-50s [%s]" "$name" "$(translate "No attached disks detected")")"
+    local short_name
+    short_name=$(_shorten_text "$name" 42)
+
+    local assigned_suffix=""
+    if [[ -n "$(_pci_assigned_vm_ids "$pci_full" "$target_vmid" 2>/dev/null | head -1)" ]]; then
+      assigned_suffix=" | $(translate "Assigned to VM")"
     fi
+
+    if [[ ${#controller_disks[@]} -gt 0 ]]; then
+      controller_desc="$(printf "%-42s [%s: %d]" "$short_name" "$(translate "attached disks")" "${#controller_disks[@]}")"
+    else
+      controller_desc="$(printf "%-42s [%s]" "$short_name" "$(translate "No attached disks")")"
+    fi
+    controller_desc+="${assigned_suffix}"
 
     if _array_contains "$pci_full" "${CONTROLLER_NVME_PCIS[@]}"; then
       state="ON"
@@ -324,21 +350,25 @@ function select_controller_nvme() {
   stop_spinner
   if [[ $safe_count -eq 0 ]]; then
     local msg
-    msg="$(translate "No safe controllers/NVMe devices are available for passthrough.")\n\n"
+    if [[ "$hidden_target_count" -gt 0 && "$blocked_count" -eq 0 ]]; then
+      msg="$(translate "All detected controllers/NVMe are already present in the selected VM.")\n\n$(translate "No additional device needs to be added.")"
+    else
+      msg="$(translate "No safe controllers/NVMe devices are available for passthrough.")\n\n"
+    fi
     if [[ $blocked_count -gt 0 ]]; then
       msg+="$(translate "Detected controllers blocked for safety:")\n\n${blocked_report}"
     fi
-    whiptail --title "Controller + NVMe" --msgbox "$msg" 20 90
+    whiptail --title "Controller + NVMe" --msgbox "$msg" 22 100
     return 1
   fi
 
   if [[ $blocked_count -gt 0 ]]; then
-    whiptail --title "Controller + NVMe" --msgbox "$(translate "Some controllers were hidden because they have host system disks attached.")\n\n${blocked_report}" 20 90
+    whiptail --title "Controller + NVMe" --msgbox "$(translate "Some controllers were hidden because they have host system disks attached.")\n\n${blocked_report}" 22 100
   fi
 
   local selected
   selected=$(whiptail --title "Controller + NVMe" --checklist \
-    "$(translate "Select controllers/NVMe to passthrough (safe devices only):")" 20 90 10 \
+    "$(translate "Select controllers/NVMe to passthrough (safe devices only):")\n\n$(translate "Only safe devices are shown in this list.")" 20 96 10 \
     "${menu_items[@]}" 3>&1 1>&2 2>&3)
 
   [[ $? -ne 0 ]] && return 1

@@ -136,3 +136,131 @@ function _vm_is_q35() {
   machine_line=$(qm config "$vmid" 2>/dev/null | awk -F': ' '/^machine:/ {print $2}')
   [[ "$machine_line" == *q35* ]]
 }
+
+function _shorten_text() {
+  local text="$1"
+  local max_len="${2:-42}"
+  [[ -z "$text" ]] && { echo ""; return; }
+  if (( ${#text} > max_len )); then
+    echo "${text:0:$((max_len-3))}..."
+  else
+    echo "$text"
+  fi
+}
+
+function _pci_slot_base() {
+  local pci_full="$1"
+  local slot
+  slot="${pci_full#0000:}"
+  slot="${slot%.*}"
+  echo "$slot"
+}
+
+function _vm_status_is_running() {
+  local vmid="$1"
+  qm status "$vmid" 2>/dev/null | grep -q "status: running"
+}
+
+function _vm_onboot_is_enabled() {
+  local vmid="$1"
+  qm config "$vmid" 2>/dev/null | grep -qE '^onboot:\s*1'
+}
+
+function _vm_name_by_id() {
+  local vmid="$1"
+  local conf="/etc/pve/qemu-server/${vmid}.conf"
+  local vm_name
+  vm_name=$(awk '/^name:/ {print $2}' "$conf" 2>/dev/null)
+  [[ -z "$vm_name" ]] && vm_name="VM-${vmid}"
+  echo "$vm_name"
+}
+
+function _vm_has_pci_slot() {
+  local vmid="$1"
+  local slot_base="$2"
+  local conf="/etc/pve/qemu-server/${vmid}.conf"
+  [[ -f "$conf" ]] || return 1
+  grep -qE "^hostpci[0-9]+:.*(0000:)?${slot_base}(\\.[0-7])?([,[:space:]]|$)" "$conf"
+}
+
+function _pci_assigned_vm_ids() {
+  local pci_full="$1"
+  local exclude_vmid="${2:-}"
+  local slot_base conf vmid
+  slot_base=$(_pci_slot_base "$pci_full")
+
+  for conf in /etc/pve/qemu-server/*.conf; do
+    [[ -f "$conf" ]] || continue
+    vmid=$(basename "$conf" .conf)
+    [[ -n "$exclude_vmid" && "$vmid" == "$exclude_vmid" ]] && continue
+    if grep -qE "^hostpci[0-9]+:.*(0000:)?${slot_base}(\\.[0-7])?([,[:space:]]|$)" "$conf"; then
+      echo "$vmid"
+    fi
+  done
+}
+
+function _remove_pci_slot_from_vm_config() {
+  local vmid="$1"
+  local slot_base="$2"
+  local conf="/etc/pve/qemu-server/${vmid}.conf"
+  [[ -f "$conf" ]] || return 1
+  local tmpf
+  tmpf=$(mktemp)
+  awk -v slot="$slot_base" '
+    $0 ~ "^hostpci[0-9]+:.*(0000:)?" slot "(\\.[0-7])?([,[:space:]]|$)" {next}
+    {print}
+  ' "$conf" > "$tmpf" && cat "$tmpf" > "$conf"
+  rm -f "$tmpf"
+}
+
+function _pci_assigned_vm_summary() {
+  local pci_full="$1"
+  local slot_base conf vmid vm_name running onboot
+  local -a refs=()
+  local running_count=0 onboot_count=0
+
+  slot_base="${pci_full#0000:}"
+  slot_base="${slot_base%.*}"
+
+  for conf in /etc/pve/qemu-server/*.conf; do
+    [[ -f "$conf" ]] || continue
+
+    if ! grep -qE "^hostpci[0-9]+:.*(0000:)?${slot_base}(\\.[0-7])?([,[:space:]]|$)" "$conf"; then
+      continue
+    fi
+
+    vmid=$(basename "$conf" .conf)
+    vm_name=$(awk '/^name:/ {print $2}' "$conf" 2>/dev/null)
+    [[ -z "$vm_name" ]] && vm_name="VM-${vmid}"
+
+    if qm status "$vmid" 2>/dev/null | grep -q "status: running"; then
+      running="running"
+      running_count=$((running_count + 1))
+    else
+      running="stopped"
+    fi
+
+    if grep -qE "^onboot:\s*1" "$conf" 2>/dev/null; then
+      onboot="1"
+      onboot_count=$((onboot_count + 1))
+    else
+      onboot="0"
+    fi
+
+    refs+=("${vmid}[${running},onboot=${onboot}]")
+  done
+
+  [[ ${#refs[@]} -eq 0 ]] && return 1
+
+  local joined summary
+  joined=$(IFS=', '; echo "${refs[*]}")
+  summary="$(translate "Assigned to VM(s)"): ${joined}"
+  if [[ "$running_count" -gt 0 ]]; then
+    summary+=" ($(translate "running"): ${running_count})"
+  fi
+  if [[ "$onboot_count" -gt 0 ]]; then
+    summary+=", onboot=1: ${onboot_count}"
+  fi
+  echo "$summary"
+  return 0
+}

@@ -38,6 +38,9 @@ while true; do
             ""  "\Z4──────────────────────── VM ───────────────────────────\Zn" \
             "6"         "$(translate "Add GPU to VM    (Intel | AMD | NVIDIA)")  \Zb\Z4Switch Mode\Zn" \
             ""          "" \
+            ""  "\Z4──────────────────── SWICHT MODE ───────────────────────\Zn" \
+            "7"         "$(translate "Switch GPU Mode  (VM <-> LXC)")" \
+            ""          "" \
             "0"         "$(translate "Return to Main Menu")" \
             2>&1 >/dev/tty
     ) || { exec bash "$LOCAL_SCRIPTS/menus/main_menu.sh"; }
@@ -60,6 +63,9 @@ while true; do
             ;;
         6)
             bash "$LOCAL_SCRIPTS/gpu_tpu/add_gpu_vm.sh"
+            ;;
+        7)
+            bash "$LOCAL_SCRIPTS/gpu_tpu/switch_gpu_mode.sh"
             ;;
         0)
             exec bash "$LOCAL_SCRIPTS/menus/main_menu.sh"

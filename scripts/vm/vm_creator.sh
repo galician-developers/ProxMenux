@@ -52,6 +52,11 @@ if [[ -f "$LOCAL_SCRIPTS_LOCAL/global/pci_passthrough_helpers.sh" ]]; then
 elif [[ -f "$LOCAL_SCRIPTS_DEFAULT/global/pci_passthrough_helpers.sh" ]]; then
   source "$LOCAL_SCRIPTS_DEFAULT/global/pci_passthrough_helpers.sh"
 fi
+if [[ -f "$LOCAL_SCRIPTS_LOCAL/global/gpu_hook_guard_helpers.sh" ]]; then
+  source "$LOCAL_SCRIPTS_LOCAL/global/gpu_hook_guard_helpers.sh"
+elif [[ -f "$LOCAL_SCRIPTS_DEFAULT/global/gpu_hook_guard_helpers.sh" ]]; then
+  source "$LOCAL_SCRIPTS_DEFAULT/global/gpu_hook_guard_helpers.sh"
+fi
 
 load_language
 initialize_cache
@@ -105,6 +110,34 @@ function select_interface_type() {
   esac
 
   msg_ok "$(translate "Disk interface selected:") $INTERFACE_TYPE"
+}
+
+function prompt_controller_conflict_policy() {
+  local pci="$1"
+  shift
+  local -a source_vms=("$@")
+  local msg vmid vm_name st ob
+  msg="$(translate "Selected controller/NVMe is already assigned to other VM(s):")\n\n"
+  for vmid in "${source_vms[@]}"; do
+    vm_name=$(_vm_name_by_id "$vmid")
+    st="stopped"; _vm_status_is_running "$vmid" && st="running"
+    ob="0"; _vm_onboot_is_enabled "$vmid" && ob="1"
+    msg+="  - VM ${vmid} (${vm_name}) [${st}, onboot=${ob}]\n"
+  done
+  msg+="\n$(translate "Choose action for this controller/NVMe:")"
+
+  local choice
+  choice=$(whiptail --title "$(translate "Controller/NVMe Conflict Policy")" --menu "$msg" 22 96 10 \
+    "1" "$(translate "Keep in source VM(s) + disable onboot + add to target VM")" \
+    "2" "$(translate "Move to target VM (remove from source VM config)")" \
+    "3" "$(translate "Skip this device")" \
+    3>&1 1>&2 2>&3) || { echo "skip"; return; }
+
+  case "$choice" in
+    1) echo "keep_disable_onboot" ;;
+    2) echo "move_remove_source" ;;
+    *) echo "skip" ;;
+  esac
 }
 
 
@@ -436,6 +469,7 @@ fi
       msg_error "$(translate "Controller + NVMe passthrough requires machine type q35. Skipping controller assignment.")"
     else
       local hostpci_idx=0
+      local need_hook_sync=false
       if declare -F _pci_next_hostpci_index >/dev/null 2>&1; then
         hostpci_idx=$(_pci_next_hostpci_index "$VMID" 2>/dev/null || echo 0)
       else
@@ -459,6 +493,47 @@ fi
           continue
         fi
 
+        local -a source_vms=()
+        mapfile -t source_vms < <(_pci_assigned_vm_ids "$pci" "$VMID" 2>/dev/null)
+        if [[ ${#source_vms[@]} -gt 0 ]]; then
+          local has_running=false vmid action slot_base
+          for vmid in "${source_vms[@]}"; do
+            if _vm_status_is_running "$vmid"; then
+              has_running=true
+              msg_warn "$(translate "Controller/NVMe is in use by running VM") ${vmid} ($(translate "stop source VM first"))"
+            fi
+          done
+          if $has_running; then
+            continue
+          fi
+
+          action=$(prompt_controller_conflict_policy "$pci" "${source_vms[@]}")
+          case "$action" in
+            keep_disable_onboot)
+              for vmid in "${source_vms[@]}"; do
+                if _vm_onboot_is_enabled "$vmid"; then
+                  if qm set "$vmid" -onboot 0 >/dev/null 2>&1; then
+                    msg_warn "$(translate "Start on boot disabled for VM") ${vmid}"
+                  fi
+                fi
+              done
+              need_hook_sync=true
+              ;;
+            move_remove_source)
+              slot_base=$(_pci_slot_base "$pci")
+              for vmid in "${source_vms[@]}"; do
+                if _remove_pci_slot_from_vm_config "$vmid" "$slot_base"; then
+                  msg_ok "$(translate "Controller/NVMe removed from source VM") ${vmid} (${pci})"
+                fi
+              done
+              ;;
+            *)
+              msg_info2 "$(translate "Skipped device"): ${pci}"
+              continue
+              ;;
+          esac
+        fi
+
         if qm set "$VMID" --hostpci${hostpci_idx} "${pci},pcie=1" >/dev/null 2>&1; then
           msg_ok "$(translate "Controller/NVMe assigned") (hostpci${hostpci_idx} → ${pci})"
           DISK_INFO+="<p>Controller/NVMe: ${pci}</p>"
@@ -467,6 +542,12 @@ fi
           msg_error "$(translate "Failed to assign Controller/NVMe") (${pci})"
         fi
       done
+
+      if $need_hook_sync && declare -F sync_proxmenux_gpu_guard_hooks >/dev/null 2>&1; then
+        ensure_proxmenux_gpu_guard_hookscript
+        sync_proxmenux_gpu_guard_hooks
+        msg_ok "$(translate "VM hook guard synced for shared controller/NVMe protection")"
+      fi
     fi
   fi
 

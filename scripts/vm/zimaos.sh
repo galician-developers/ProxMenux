@@ -49,6 +49,11 @@ if [[ -f "$LOCAL_SCRIPTS_LOCAL/global/pci_passthrough_helpers.sh" ]]; then
 elif [[ -f "$LOCAL_SCRIPTS_DEFAULT/global/pci_passthrough_helpers.sh" ]]; then
     source "$LOCAL_SCRIPTS_DEFAULT/global/pci_passthrough_helpers.sh"
 fi
+if [[ -f "$LOCAL_SCRIPTS_LOCAL/global/gpu_hook_guard_helpers.sh" ]]; then
+    source "$LOCAL_SCRIPTS_LOCAL/global/gpu_hook_guard_helpers.sh"
+elif [[ -f "$LOCAL_SCRIPTS_DEFAULT/global/gpu_hook_guard_helpers.sh" ]]; then
+    source "$LOCAL_SCRIPTS_DEFAULT/global/gpu_hook_guard_helpers.sh"
+fi
 load_language
 initialize_cache
 # ==========================================================
@@ -633,13 +638,20 @@ function select_controller_nvme() {
 
   local menu_items=()
   local blocked_report=""
-  local safe_count=0 blocked_count=0
-  local pci_path pci_full class_hex name controller_disks disk reason state controller_desc
+  local safe_count=0 blocked_count=0 hidden_target_count=0
+  local pci_path pci_full class_hex name controller_disks disk state controller_desc slot_base
+  local target_vmid="${VMID:-}"
 
   while IFS= read -r pci_path; do
     pci_full=$(basename "$pci_path")
     class_hex=$(cat "$pci_path/class" 2>/dev/null | sed 's/^0x//')
     [[ -z "$class_hex" || "${class_hex:0:2}" != "01" ]] && continue
+    slot_base=$(_pci_slot_base "$pci_full")
+
+    if [[ -n "$target_vmid" ]] && _vm_has_pci_slot "$target_vmid" "$slot_base"; then
+      hidden_target_count=$((hidden_target_count + 1))
+      continue
+    fi
 
     name=$(lspci -nn -s "${pci_full#0000:}" 2>/dev/null | sed 's/^[^ ]* //')
     [[ -z "$name" ]] && name="$(translate "Unknown storage controller")"
@@ -650,26 +662,43 @@ function select_controller_nvme() {
       _array_contains "$disk" "${controller_disks[@]}" || controller_disks+=("$disk")
     done < <(_controller_block_devices "$pci_full")
 
-    reason=""
+    local -a blocked_reasons=()
     for disk in "${controller_disks[@]}"; do
       if _disk_is_host_system_used "$disk"; then
-        reason+="${disk} (${DISK_USAGE_REASON}); "
+        blocked_reasons+=("${disk} (${DISK_USAGE_REASON})")
       elif _disk_used_in_guest_configs "$disk"; then
-        reason+="${disk} ($(translate "In use by VM/LXC config")); "
+        blocked_reasons+=("${disk} ($(translate "In use by VM/LXC config"))")
       fi
     done
 
-    if [[ -n "$reason" ]]; then
+    if [[ ${#blocked_reasons[@]} -gt 0 ]]; then
       blocked_count=$((blocked_count + 1))
-      blocked_report+="  • ${pci_full} — ${name}\n    $(translate "Blocked because protected/in-use disks are attached"): ${reason}\n"
+      blocked_report+="------------------------------------------------------------\n"
+      blocked_report+="PCI: ${pci_full}\n"
+      blocked_report+="Name: ${name}\n"
+      blocked_report+="$(translate "Blocked because protected/in-use disks are attached"):\n"
+      local reason
+      for reason in "${blocked_reasons[@]}"; do
+        blocked_report+="  - ${reason}\n"
+      done
+      blocked_report+="\n"
       continue
     fi
 
-    if [[ ${#controller_disks[@]} -gt 0 ]]; then
-      controller_desc="$(printf "%-48s [%s]" "$name" "$(IFS=,; echo "${controller_disks[*]}")")"
-    else
-      controller_desc="$(printf "%-48s [%s]" "$name" "$(translate "No attached disks detected")")"
+    local short_name
+    short_name=$(_shorten_text "$name" 42)
+
+    local assigned_suffix=""
+    if [[ -n "$(_pci_assigned_vm_ids "$pci_full" "$target_vmid" 2>/dev/null | head -1)" ]]; then
+      assigned_suffix=" | $(translate "Assigned to VM")"
     fi
+
+    if [[ ${#controller_disks[@]} -gt 0 ]]; then
+      controller_desc="$(printf "%-42s [%s: %d]" "$short_name" "$(translate "attached disks")" "${#controller_disks[@]}")"
+    else
+      controller_desc="$(printf "%-42s [%s]" "$short_name" "$(translate "No attached disks")")"
+    fi
+    controller_desc+="${assigned_suffix}"
 
     if _array_contains "$pci_full" "${CONTROLLER_NVME_PCIS[@]}"; then
       state="ON"
@@ -683,17 +712,23 @@ function select_controller_nvme() {
 
   stop_spinner
   if [[ $safe_count -eq 0 ]]; then
-    whiptail --title "Controller + NVMe" --msgbox "$(translate "No safe controllers/NVMe devices are available for passthrough.")\n\n${blocked_report}" 20 90
+    local msg
+    if [[ "$hidden_target_count" -gt 0 && "$blocked_count" -eq 0 ]]; then
+      msg="$(translate "All detected controllers/NVMe are already present in the selected VM.")\n\n$(translate "No additional device needs to be added.")"
+    else
+      msg="$(translate "No safe controllers/NVMe devices are available for passthrough.")\n\n${blocked_report}"
+    fi
+    whiptail --title "Controller + NVMe" --msgbox "$msg" 22 100
     return 1
   fi
 
   if [[ $blocked_count -gt 0 ]]; then
-    whiptail --title "Controller + NVMe" --msgbox "$(translate "Some controllers were hidden because they have host system disks attached.")\n\n${blocked_report}" 20 90
+    whiptail --title "Controller + NVMe" --msgbox "$(translate "Some controllers were hidden because they have host system disks attached.")\n\n${blocked_report}" 22 100
   fi
 
   local selected
   selected=$(whiptail --title "Controller + NVMe" --checklist \
-    "$(translate "Select controllers/NVMe to passthrough (safe devices only):")" 20 90 10 \
+    "$(translate "Select controllers/NVMe to passthrough (safe devices only):")\n\n$(translate "Only safe devices are shown in this list.")" 20 96 10 \
     "${menu_items[@]}" 3>&1 1>&2 2>&3) || return 1
 
   CONTROLLER_NVME_PCIS=()
@@ -708,6 +743,34 @@ function select_passthrough_disk() {
   select_import_disk
 }
 # ==========================================================
+
+function prompt_controller_conflict_policy() {
+  local pci="$1"
+  shift
+  local -a source_vms=("$@")
+  local msg vmid vm_name st ob
+  msg="$(translate "Selected controller/NVMe is already assigned to other VM(s):")\n\n"
+  for vmid in "${source_vms[@]}"; do
+    vm_name=$(_vm_name_by_id "$vmid")
+    st="stopped"; _vm_status_is_running "$vmid" && st="running"
+    ob="0"; _vm_onboot_is_enabled "$vmid" && ob="1"
+    msg+="  - VM ${vmid} (${vm_name}) [${st}, onboot=${ob}]\n"
+  done
+  msg+="\n$(translate "Choose action for this controller/NVMe:")"
+
+  local choice
+  choice=$(whiptail --title "$(translate "Controller/NVMe Conflict Policy")" --menu "$msg" 22 96 10 \
+    "1" "$(translate "Keep in source VM(s) + disable onboot + add to target VM")" \
+    "2" "$(translate "Move to target VM (remove from source VM config)")" \
+    "3" "$(translate "Skip this device")" \
+    3>&1 1>&2 2>&3) || { echo "skip"; return; }
+
+  case "$choice" in
+    1) echo "keep_disable_onboot" ;;
+    2) echo "move_remove_source" ;;
+    *) echo "skip" ;;
+  esac
+}
 
 
 
@@ -1235,6 +1298,7 @@ function create_vm() {
             msg_error "$(translate "Controller + NVMe passthrough requires machine type q35. Skipping controller assignment.")"
             ERROR_FLAG=true
         else
+            NEED_HOOK_SYNC=false
             HOSTPCI_INDEX=0
             if declare -F _pci_next_hostpci_index >/dev/null 2>&1; then
                 HOSTPCI_INDEX=$(_pci_next_hostpci_index "$VMID" 2>/dev/null || echo 0)
@@ -1259,6 +1323,48 @@ function create_vm() {
                     fi
                 fi
 
+                SOURCE_VMS=()
+                mapfile -t SOURCE_VMS < <(_pci_assigned_vm_ids "$PCI_DEV" "$VMID" 2>/dev/null)
+                if [[ ${#SOURCE_VMS[@]} -gt 0 ]]; then
+                    HAS_RUNNING=false
+                    for SRC_VMID in "${SOURCE_VMS[@]}"; do
+                        if _vm_status_is_running "$SRC_VMID"; then
+                            HAS_RUNNING=true
+                            msg_warn "$(translate "Controller/NVMe is in use by running VM") ${SRC_VMID} ($(translate "stop source VM first"))"
+                        fi
+                    done
+
+                    if [[ "$HAS_RUNNING" == "true" ]]; then
+                        continue
+                    fi
+
+                    CONFLICT_ACTION=$(prompt_controller_conflict_policy "$PCI_DEV" "${SOURCE_VMS[@]}")
+                    case "$CONFLICT_ACTION" in
+                        keep_disable_onboot)
+                            for SRC_VMID in "${SOURCE_VMS[@]}"; do
+                                if _vm_onboot_is_enabled "$SRC_VMID"; then
+                                    if qm set "$SRC_VMID" -onboot 0 >/dev/null 2>&1; then
+                                        msg_warn "$(translate "Start on boot disabled for VM") ${SRC_VMID}"
+                                    fi
+                                fi
+                            done
+                            NEED_HOOK_SYNC=true
+                            ;;
+                        move_remove_source)
+                            SLOT_BASE=$(_pci_slot_base "$PCI_DEV")
+                            for SRC_VMID in "${SOURCE_VMS[@]}"; do
+                                if _remove_pci_slot_from_vm_config "$SRC_VMID" "$SLOT_BASE"; then
+                                    msg_ok "$(translate "Controller/NVMe removed from source VM") ${SRC_VMID} (${PCI_DEV})"
+                                fi
+                            done
+                            ;;
+                        *)
+                            msg_info2 "$(translate "Skipped device"): ${PCI_DEV}"
+                            continue
+                            ;;
+                    esac
+                fi
+
                 if qm set "$VMID" --hostpci${HOSTPCI_INDEX} "${PCI_DEV},pcie=1" >/dev/null 2>&1; then
                     msg_ok "Configured controller/NVMe as hostpci${HOSTPCI_INDEX}: ${PCI_DEV}"
                     DISK_INFO="${DISK_INFO}<p>Controller/NVMe: ${PCI_DEV}</p>"
@@ -1269,6 +1375,12 @@ function create_vm() {
                     ERROR_FLAG=true
                 fi
             done
+
+            if [[ "$NEED_HOOK_SYNC" == "true" ]] && declare -F sync_proxmenux_gpu_guard_hooks >/dev/null 2>&1; then
+                ensure_proxmenux_gpu_guard_hookscript
+                sync_proxmenux_gpu_guard_hooks
+                msg_ok "$(translate "VM hook guard synced for shared controller/NVMe protection")"
+            fi
         fi
     fi
 

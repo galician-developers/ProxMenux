@@ -28,6 +28,11 @@ NVIDIA_VID_DID=""
 if [[ -f "$UTILS_FILE" ]]; then
   source "$UTILS_FILE"
 fi
+if [[ -f "$LOCAL_SCRIPTS/global/gpu_hook_guard_helpers.sh" ]]; then
+  source "$LOCAL_SCRIPTS/global/gpu_hook_guard_helpers.sh"
+elif [[ -f "$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)/global/gpu_hook_guard_helpers.sh" ]]; then
+  source "$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)/global/gpu_hook_guard_helpers.sh"
+fi
 
 load_language
 initialize_cache
@@ -827,7 +832,7 @@ _remove_vfio_modules() {
 }
 
 # Detects if any selected GPU is currently in GPU → VM mode (VFIO binding).
-# If so, guides the user through the switch to GPU → LXC mode and exits.
+# If so, delegates switch handling to switch_gpu_mode.sh and exits.
 check_vfio_switch_mode() {
   local vfio_conf="/etc/modprobe.d/vfio.conf"
   [[ ! -f "$vfio_conf" ]] && return 0
@@ -857,155 +862,39 @@ check_vfio_switch_mode() {
 
   [[ ${#vfio_types[@]} -eq 0 ]] && return 0
 
-  # ── One or more GPUs are in GPU → VM mode ─────────────────────
-
   local msg
-  msg="\n$(translate 'The following GPU(s) are currently in GPU → VM passthrough mode (VFIO)'):\n\n"
+  msg="\n$(translate 'The following selected GPU(s) are currently in GPU -> VM mode (vfio-pci):')\n\n"
   for i in "${!vfio_types[@]}"; do
     msg+="  •  ${vfio_names[$i]}  (${vfio_pcis[$i]})\n"
   done
-  msg+="\n$(translate 'VFIO gives the VM exclusive ownership of the GPU. The native driver is blacklisted.')\n"
-  msg+="$(translate 'To use this GPU in an LXC container the VFIO binding must be removed')\n"
-  msg+="$(translate 'and the native driver reloaded. This requires a system reboot.')\n"
-
-  # Check for VM configs that still reference this GPU
-  local -a affected_vms=() affected_vm_names=()
-  for pci in "${vfio_pcis[@]}"; do
-    local pci_slot="${pci#0000:}"
-    pci_slot="${pci_slot%.*}"
-    for conf in /etc/pve/qemu-server/*.conf; do
-      [[ -f "$conf" ]] || continue
-      if grep -qE "hostpci[0-9]+:.*${pci_slot}" "$conf"; then
-        local vmid vm_name
-        vmid=$(basename "$conf" .conf)
-        vm_name=$(grep "^name:" "$conf" 2>/dev/null | awk '{print $2}')
-        local dup=false
-        for v in "${affected_vms[@]}"; do [[ "$v" == "$vmid" ]] && dup=true && break; done
-        $dup || { affected_vms+=("$vmid"); affected_vm_names+=("${vm_name:-VM-${vmid}}"); }
-      fi
-    done
-  done
-
-  if [[ ${#affected_vms[@]} -gt 0 ]]; then
-    msg+="\n\Z1\Zb$(translate 'Warning: This GPU is assigned to the following VM(s)'):\Zn\n\n"
-    for i in "${!affected_vms[@]}"; do
-      msg+="  •  VM ${affected_vms[$i]} (${affected_vm_names[$i]})\n"
-    done
-    msg+="\n$(translate 'Starting those VMs after the switch will cause errors on the system and in the VM.')\n"
-    msg+="$(translate 'You will be asked to stop them or remove the GPU from their config.')\n"
-  fi
-
-  msg+="\n$(translate 'Do you want to switch to GPU → LXC mode?')"
+  msg+="\n$(translate 'To continue with Add GPU to LXC, first switch the host to GPU -> LXC mode and reboot.')\n"
+  msg+="$(translate 'Do you want to open Switch GPU Mode now?')"
 
   dialog --backtitle "ProxMenux" --colors \
-    --title "$(translate 'GPU → VM Mode Detected')" \
-    --yesno "$msg" 26 80
+    --title "$(translate 'GPU -> VM Mode Detected')" \
+    --yesno "$msg" 18 84
   [[ $? -ne 0 ]] && exit 0
 
-  # ── User confirmed switch — enter processing phase ─────────
-  LXC_SWITCH_MODE=true
-
-  # Handle VM conflicts: stop VM or remove GPU from config
-  if [[ ${#affected_vms[@]} -gt 0 ]]; then
-    local vm_msg
-    vm_msg="\n$(translate 'The following VM(s) have this GPU assigned'):\n\n"
-    for i in "${!affected_vms[@]}"; do
-      vm_msg+="  •  VM ${affected_vms[$i]} (${affected_vm_names[$i]})\n"
-    done
-    vm_msg+="\n$(translate 'YES — Stop the VM(s) now (GPU entry stays in config, reusable for passthrough later)')\n"
-    vm_msg+="$(translate 'NO  — Remove GPU from VM config (VM can start normally without GPU)')"
-
-    dialog --backtitle "ProxMenux" --colors \
-      --title "$(translate 'VM Conflict: Choose Action')" \
-      --yesno "$vm_msg" 18 78
-    local vm_action=$?
-
-  show_proxmenux_logo
-  msg_title "$(_get_lxc_run_title)"
-
-    for i in "${!affected_vms[@]}"; do
-      local vmid="${affected_vms[$i]}"
-      if [[ $vm_action -eq 0 ]]; then
-        if qm status "$vmid" 2>/dev/null | grep -q "running"; then
-          msg_info "$(translate 'Stopping VM') ${vmid}..."
-          qm stop "$vmid" >>"$LOG_FILE" 2>&1 || true
-          msg_ok "$(translate 'VM') ${vmid} $(translate 'stopped.')"
-        else
-          msg_ok "$(translate 'VM') ${vmid} $(translate 'is already stopped.')"
-        fi
-      else
-        local src_conf="/etc/pve/qemu-server/${vmid}.conf"
-        if [[ -f "$src_conf" ]]; then
-          for pci in "${vfio_pcis[@]}"; do
-            local pci_slot="${pci#0000:}"; pci_slot="${pci_slot%.*}"
-            sed -i "/^hostpci[0-9]\+:.*${pci_slot}/d" "$src_conf"
-          done
-          msg_ok "$(translate 'GPU removed from VM') ${vmid} $(translate 'configuration.')"
-        fi
-      fi
-    done
+  local switch_script="$LOCAL_SCRIPTS/gpu_tpu/switch_gpu_mode.sh"
+  local local_switch_script
+  local_switch_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/switch_gpu_mode.sh"
+  if [[ ! -f "$switch_script" && -f "$local_switch_script" ]]; then
+    switch_script="$local_switch_script"
   fi
 
-  # ── Remove VFIO config for each affected GPU ───────────────
-  msg_info "$(translate 'Removing VFIO configuration...')"
-
-  local -a all_ids_to_remove=()
-  for i in "${!vfio_types[@]}"; do
-    local gpu_type="${vfio_types[$i]}"
-    local pci="${vfio_pcis[$i]}"
-
-    # Collect all IOMMU group IDs (GPU + audio function, etc.)
-    local -a group_ids=()
-    mapfile -t group_ids < <(_get_iommu_group_ids "$pci")
-    if [[ ${#group_ids[@]} -gt 0 ]]; then
-      all_ids_to_remove+=("${group_ids[@]}")
-    else
-      # IOMMU not active: fall back to the GPU's own vendor:device ID
-      case "$gpu_type" in
-        intel)  all_ids_to_remove+=("$INTEL_VID_DID")  ;;
-        amd)    all_ids_to_remove+=("$AMD_VID_DID")    ;;
-        nvidia) all_ids_to_remove+=("$NVIDIA_VID_DID") ;;
-      esac
-    fi
-
-    _remove_gpu_blacklist "$gpu_type"
-    msg_ok "$(translate 'Driver blacklist removed for') ${gpu_type}"
-
-    if [[ "$gpu_type" == "amd" ]]; then
-      _remove_amd_softdep
-      msg_ok "$(translate 'AMD softdep entries removed')"
-    fi
-  done
-
-  local remaining_count
-  remaining_count=$(_remove_vfio_ids "${all_ids_to_remove[@]}")
-  msg_ok "$(translate 'VFIO device IDs removed from /etc/modprobe.d/vfio.conf')"
-
-  if [[ "$remaining_count" -eq 0 ]]; then
-    _remove_vfio_modules
-    msg_ok "$(translate 'VFIO modules removed from /etc/modules')"
-  else
-    msg_ok "$(translate 'VFIO modules kept (other GPUs remain in VFIO mode)')"
+  if [[ ! -f "$switch_script" ]]; then
+    dialog --backtitle "ProxMenux" \
+      --title "$(translate 'Switch Script Not Found')" \
+      --msgbox "\n$(translate 'switch_gpu_mode.sh was not found.')\n\n$(translate 'Expected path:')\n${LOCAL_SCRIPTS}/gpu_tpu/switch_gpu_mode.sh" 10 84
+    exit 0
   fi
 
-  msg_info "$(translate 'Updating initramfs (this may take a minute)...')"
-  update-initramfs -u -k all >>"$LOG_FILE" 2>&1
-  msg_ok "$(translate 'initramfs updated')"
+  bash "$switch_script"
 
-  echo
-  msg_success "$(translate 'GPU → LXC switch complete. A reboot is required to load the native GPU driver.')"
-  echo
-
-  whiptail --title "$(translate 'Reboot Required')" \
-    --yesno "$(translate 'A reboot is required to complete the switch to GPU → LXC mode. Do you want to restart now?')" 10 74
-  if [[ $? -eq 0 ]]; then
-    msg_warn "$(translate 'Rebooting the system...')"
-    reboot
-  else
-    msg_info2 "$(translate 'Please reboot manually before adding the GPU to an LXC container.')"
-    msg_success "$(translate 'Press Enter to continue...')"
-    read -r
-  fi
+  dialog --backtitle "ProxMenux" --colors \
+    --title "$(translate 'Next Step Required')" \
+    --msgbox "\n$(translate 'After switching mode, reboot the host if requested.')\n\n$(translate 'Then run this option again:')\n\n  Add GPU to LXC\n\n$(translate 'This guarantees that device nodes are available before applying LXC GPU config.')" \
+    12 84
   exit 0
 }
 
@@ -1034,6 +923,11 @@ main() {
   msg_title "$(_get_lxc_run_title)"
 
   configure_passthrough "$CONTAINER_ID"
+  if declare -F attach_proxmenux_gpu_guard_to_lxc >/dev/null 2>&1; then
+    ensure_proxmenux_gpu_guard_hookscript
+    attach_proxmenux_gpu_guard_to_lxc "$CONTAINER_ID"
+    sync_proxmenux_gpu_guard_hooks
+  fi
 
   if start_container_and_wait "$CONTAINER_ID"; then
     install_drivers "$CONTAINER_ID"

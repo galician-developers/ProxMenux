@@ -66,6 +66,11 @@ fi
 
 VMID=$(echo "$VMID" | tr -d '"')
 
+clear
+show_proxmenux_logo
+echo -e
+msg_title "$(translate "Import Disk to VM")"
+echo -e
 
 msg_ok "$(translate "VM selected successfully.")"
 

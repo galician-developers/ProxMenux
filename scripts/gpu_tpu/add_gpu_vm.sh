@@ -46,6 +46,11 @@ if [[ -f "$LOCAL_SCRIPTS_LOCAL/global/pci_passthrough_helpers.sh" ]]; then
 elif [[ -f "$LOCAL_SCRIPTS_DEFAULT/global/pci_passthrough_helpers.sh" ]]; then
     source "$LOCAL_SCRIPTS_DEFAULT/global/pci_passthrough_helpers.sh"
 fi
+if [[ -f "$LOCAL_SCRIPTS_LOCAL/global/gpu_hook_guard_helpers.sh" ]]; then
+    source "$LOCAL_SCRIPTS_LOCAL/global/gpu_hook_guard_helpers.sh"
+elif [[ -f "$LOCAL_SCRIPTS_DEFAULT/global/gpu_hook_guard_helpers.sh" ]]; then
+    source "$LOCAL_SCRIPTS_DEFAULT/global/gpu_hook_guard_helpers.sh"
+fi
 
 load_language
 initialize_cache
@@ -89,6 +94,12 @@ PRESELECT_VMID=""
 WIZARD_CALL=false
 GPU_WIZARD_RESULT_FILE=""
 
+declare -a LXC_AFFECTED_CTIDS=()
+declare -a LXC_AFFECTED_NAMES=()
+declare -a LXC_AFFECTED_RUNNING=()   # 1 or 0
+declare -a LXC_AFFECTED_ONBOOT=()    # 1 or 0
+LXC_SWITCH_ACTION=""                  # keep_gpu_disable_onboot | remove_gpu_keep_onboot
+
 
 # ==========================================================
 # Helpers
@@ -131,6 +142,42 @@ _vm_is_running() {
 _vm_onboot_enabled() {
     local vmid="$1"
     qm config "$vmid" 2>/dev/null | grep -qE "^onboot:\s*1"
+}
+
+_ct_is_running() {
+    local ctid="$1"
+    pct status "$ctid" 2>/dev/null | grep -q "status: running"
+}
+
+_ct_onboot_enabled() {
+    local ctid="$1"
+    pct config "$ctid" 2>/dev/null | grep -qE "^onboot:\s*1"
+}
+
+_lxc_conf_uses_selected_gpu() {
+    local conf="$1"
+    case "$SELECTED_GPU" in
+        nvidia)
+            grep -qE "dev[0-9]+:.*(/dev/nvidia|/dev/nvidia-caps)" "$conf" 2>/dev/null
+            ;;
+        amd)
+            grep -qE "dev[0-9]+:.*(/dev/dri|/dev/kfd)|lxc\.mount\.entry:.*dev/dri" "$conf" 2>/dev/null
+            ;;
+        intel)
+            grep -qE "dev[0-9]+:.*(/dev/dri)|lxc\.mount\.entry:.*dev/dri" "$conf" 2>/dev/null
+            ;;
+        *)
+            grep -qE "dev[0-9]+:.*(/dev/dri|/dev/nvidia|/dev/kfd)|lxc\.mount\.entry:.*dev/dri" "$conf" 2>/dev/null
+            ;;
+    esac
+}
+
+_lxc_switch_action_label() {
+    case "$LXC_SWITCH_ACTION" in
+        keep_gpu_disable_onboot) echo "$(translate 'Keep GPU in LXC config + disable Start on boot')" ;;
+        remove_gpu_keep_onboot) echo "$(translate 'Remove GPU from LXC config + keep Start on boot unchanged')" ;;
+        *) echo "$(translate 'No specific LXC action selected')" ;;
+    esac
 }
 
 _set_wizard_result() {
@@ -562,6 +609,7 @@ warn_single_gpu() {
     msg+="  •  Proxmox Web UI (https)\n"
     msg+="  •  Serial console\n\n"
     msg+="$(translate 'The VM guest will have exclusive access to the GPU.')\n\n"
+    msg+="\Z3$(translate 'Important: some GPUs may still fail in passthrough and can affect host stability or overall performance depending on hardware/firmware quality.')\Zn\n\n"
     msg+="$(translate 'Make sure you have SSH or Web UI access before rebooting.')\n\n"
     msg+="$(translate 'Do you want to continue?')"
 
@@ -645,11 +693,31 @@ _detect_intel_gpu_subtype() {
 
 check_intel_vm_compatibility() {
     local pci_full="$SELECTED_GPU_PCI"
-    local gpu_subtype reset_method power_state
+    local gpu_subtype reset_method power_state vendor device viddid
 
     gpu_subtype=$(_detect_intel_gpu_subtype)
     reset_method=$(_check_pci_reset_method "$pci_full")
     power_state=$(cat "/sys/bus/pci/devices/${pci_full}/power_state" 2>/dev/null | tr -d '[:space:]')
+    vendor=$(cat "/sys/bus/pci/devices/${pci_full}/vendor" 2>/dev/null | sed 's/0x//' | tr '[:upper:]' '[:lower:]')
+    device=$(cat "/sys/bus/pci/devices/${pci_full}/device" 2>/dev/null | sed 's/0x//' | tr '[:upper:]' '[:lower:]')
+    viddid="${vendor}:${device}"
+
+    # ── BLOCKER: Known unsupported Intel Apollo Lake iGPU IDs ────────────
+    if [[ "$viddid" == "8086:5a84" || "$viddid" == "8086:5a85" ]]; then
+        local msg
+        msg="\n\Zb\Z1$(translate 'GPU Not Compatible with VM Passthrough')\Zn\n\n"
+        msg+="$(translate 'The selected Intel GPU belongs to Apollo Lake generation and is blocked by policy for VM passthrough due to host instability risk.')\n\n"
+        msg+="  ${SELECTED_GPU_NAME}\n"
+        msg+="  ${SELECTED_GPU_PCI}\n"
+        msg+="  \ZbID: ${viddid}\Zn\n\n"
+        msg+="$(translate 'This GPU is considered incompatible with GPU passthrough to a VM in ProxMenux.')\n\n"
+        msg+="$(translate 'Recommended: use GPU with LXC workloads instead of VM passthrough on this hardware.')"
+
+        dialog --backtitle "ProxMenux" --colors \
+            --title "$(translate 'Blocked GPU ID')" \
+            --msgbox "$msg" 20 84
+        exit 0
+    fi
 
     # ── BLOCKER: Intel GPU in D3cold ──────────────────────────────────────
     if [[ "$power_state" == "D3cold" ]]; then
@@ -1016,35 +1084,78 @@ check_switch_mode() {
     pci_slot="${pci_slot%.*}"                   # 01:00
 
     # ── LXC conflict check ────────────────────────────────
+    LXC_AFFECTED_CTIDS=()
+    LXC_AFFECTED_NAMES=()
+    LXC_AFFECTED_RUNNING=()
+    LXC_AFFECTED_ONBOOT=()
+    LXC_SWITCH_ACTION=""
+
     local lxc_affected=()
+    local running_count=0
+    local onboot_count=0
+
     for conf in /etc/pve/lxc/*.conf; do
         [[ -f "$conf" ]] || continue
-        if grep -qE "dev[0-9]+:.*(/dev/dri|/dev/nvidia|/dev/kfd)" "$conf"; then
-            local ctid ct_name
-            ctid=$(basename "$conf" .conf)
-            ct_name=$(pct config "$ctid" 2>/dev/null | grep "^hostname:" | awk '{print $2}')
-            lxc_affected+=("CT ${ctid} (${ct_name:-CT-${ctid}})")
-        fi
+        _lxc_conf_uses_selected_gpu "$conf" || continue
+
+        local ctid ct_name running_flag onboot_flag
+        ctid=$(basename "$conf" .conf)
+        ct_name=$(pct config "$ctid" 2>/dev/null | awk '/^hostname:/ {print $2}')
+        [[ -z "$ct_name" ]] && ct_name="CT-${ctid}"
+
+        running_flag=0
+        onboot_flag=0
+        _ct_is_running "$ctid" && running_flag=1
+        _ct_onboot_enabled "$ctid" && onboot_flag=1
+
+        LXC_AFFECTED_CTIDS+=("$ctid")
+        LXC_AFFECTED_NAMES+=("$ct_name")
+        LXC_AFFECTED_RUNNING+=("$running_flag")
+        LXC_AFFECTED_ONBOOT+=("$onboot_flag")
+
+        lxc_affected+=("CT ${ctid} (${ct_name})")
+        [[ "$running_flag" == "1" ]] && running_count=$((running_count + 1))
+        [[ "$onboot_flag" == "1" ]] && onboot_count=$((onboot_count + 1))
     done
 
     if [[ ${#lxc_affected[@]} -gt 0 ]]; then
         SWITCH_FROM_LXC=true
         SWITCH_LXC_LIST=$(IFS=', '; echo "${lxc_affected[*]}")
 
-        local msg
-        msg="\n$(translate 'The selected GPU is currently shared with the following LXC containers via device passthrough:')\n\n"
-        for ct in "${lxc_affected[@]}"; do
-            msg+="  •  ${ct}\n"
+        local msg action_choice
+        msg="\n$(translate 'The selected GPU is currently used by the following LXC container(s):')\n\n"
+        local i
+        for i in "${!LXC_AFFECTED_CTIDS[@]}"; do
+            local status_txt onboot_txt
+            status_txt="$(translate 'stopped')"
+            onboot_txt="onboot=0"
+            [[ "${LXC_AFFECTED_RUNNING[$i]}" == "1" ]] && status_txt="$(translate 'running')"
+            [[ "${LXC_AFFECTED_ONBOOT[$i]}" == "1" ]] && onboot_txt="onboot=1"
+            msg+="  •  CT ${LXC_AFFECTED_CTIDS[$i]} (${LXC_AFFECTED_NAMES[$i]}) [${status_txt}, ${onboot_txt}]\n"
         done
         msg+="\n$(translate 'VM passthrough requires exclusive VFIO binding of the GPU.')\n"
-        msg+="$(translate 'GPU device access will be removed from those LXC containers.')\n\n"
-        msg+="\Z3$(translate 'After this LXC → VM switch, reboot the host so the new binding state is applied cleanly.')\Zn\n\n"
-        msg+="$(translate 'Do you want to continue?')"
+        msg+="$(translate 'Choose how to handle affected LXC containers before switching to VM mode.')\n\n"
+        [[ "$running_count" -gt 0 ]] && \
+            msg+="\Z3$(translate 'Running containers detected'): ${running_count}\Zn\n"
+        [[ "$onboot_count" -gt 0 ]] && \
+            msg+="\Z1\Zb$(translate 'Start on boot enabled (onboot=1)'): ${onboot_count}\Zn\n"
+        msg+="\n\Z3$(translate 'After this LXC → VM switch, reboot the host so the new binding state is applied cleanly.')\Zn"
 
-        dialog --backtitle "ProxMenux" \
+        action_choice=$(dialog --backtitle "ProxMenux" --colors \
             --title "$(translate 'GPU Used in LXC Containers')" \
-            --yesno "$msg" 18 76
-        [[ $? -ne 0 ]] && exit 0
+            --default-item "2" \
+            --menu "$msg" 25 96 8 \
+            "1" "$(translate 'Keep GPU in LXC config (disable Start on boot)')" \
+            "2" "$(translate 'Remove GPU from LXC config (keep Start on boot)')" \
+            2>&1 >/dev/tty) || exit 0
+
+        case "$action_choice" in
+            1) LXC_SWITCH_ACTION="keep_gpu_disable_onboot" ;;
+            2) LXC_SWITCH_ACTION="remove_gpu_keep_onboot" ;;
+            *) exit 0 ;;
+        esac
+    else
+        SWITCH_FROM_LXC=false
     fi
 
     # ── VM conflict check (different VM than selected) ────
@@ -1155,8 +1266,13 @@ confirm_summary() {
         msg+="  •  $(translate 'Additional GPU audio function will be added'): ${EXTRA_AUDIO_DEVICES[*]}\n"
     [[ "$SELECTED_GPU" == "nvidia" ]] && \
         msg+="  •  $(translate 'NVIDIA KVM hiding (cpu hidden=1)')\n"
-    [[ "$SWITCH_FROM_LXC" == "true" ]] && \
-        msg+="\n  \Z3•  $(translate 'GPU will be removed from LXC containers'): ${SWITCH_LXC_LIST}\Zn\n"
+    if [[ "$SWITCH_FROM_LXC" == "true" ]]; then
+        msg+="\n  \Z3•  $(translate 'Affected LXC containers'): ${SWITCH_LXC_LIST}\Zn\n"
+        msg+="  \Z3•  $(translate 'Selected LXC action'): $(_lxc_switch_action_label)\Zn\n"
+        if [[ "$LXC_SWITCH_ACTION" == "remove_gpu_keep_onboot" ]]; then
+            msg+="  \Z3•  $(translate 'To use the GPU again in LXC, run Add GPU to LXC from GPUs and Coral-TPU Menu')\Zn\n"
+        fi
+    fi
     [[ "$SWITCH_FROM_VM" == "true" ]] && \
         msg+="\n  \Z3•  $(translate 'GPU will be removed from VM') ${SWITCH_VM_SRC}\Zn\n"
     msg+="\n$(translate 'Do you want to proceed?')"
@@ -1350,24 +1466,76 @@ dump_amd_rom() {
 }
 
 
-# ── Remove GPU from LXC configs (switch mode) ────────────
-cleanup_lxc_configs() {
-    [[ "$SWITCH_FROM_LXC" != "true" ]] && return 0
-
-    msg_info "$(translate 'Removing GPU device access from LXC containers...')"
-    for conf in /etc/pve/lxc/*.conf; do
-        [[ -f "$conf" ]] || continue
-        if grep -qE "dev[0-9]+:.*(/dev/dri|/dev/nvidia|/dev/kfd)" "$conf"; then
-            sed -i '/dev[0-9]\+:.*\/dev\/dri/d'     "$conf"
-            sed -i '/dev[0-9]\+:.*\/dev\/nvidia/d'  "$conf"
-            sed -i '/dev[0-9]\+:.*\/dev\/kfd/d'     "$conf"
+_remove_selected_gpu_from_lxc_conf() {
+    local conf="$1"
+    case "$SELECTED_GPU" in
+        nvidia)
+            sed -i '/dev[0-9]\+:.*\/dev\/nvidia/d' "$conf"
+            ;;
+        amd)
+            sed -i '/dev[0-9]\+:.*\/dev\/dri/d' "$conf"
+            sed -i '/dev[0-9]\+:.*\/dev\/kfd/d' "$conf"
             sed -i '/lxc\.mount\.entry:.*dev\/dri/d' "$conf"
             sed -i '/lxc\.cgroup2\.devices\.allow:.*226/d' "$conf"
-            local ctid
-            ctid=$(basename "$conf" .conf)
-            msg_ok "$(translate 'GPU removed from LXC') ${ctid}" | tee -a "$screen_capture"
+            ;;
+        intel)
+            sed -i '/dev[0-9]\+:.*\/dev\/dri/d' "$conf"
+            sed -i '/lxc\.mount\.entry:.*dev\/dri/d' "$conf"
+            sed -i '/lxc\.cgroup2\.devices\.allow:.*226/d' "$conf"
+            ;;
+        *)
+            sed -i '/dev[0-9]\+:.*\/dev\/dri/d' "$conf"
+            sed -i '/dev[0-9]\+:.*\/dev\/nvidia/d' "$conf"
+            sed -i '/dev[0-9]\+:.*\/dev\/kfd/d' "$conf"
+            sed -i '/lxc\.mount\.entry:.*dev\/dri/d' "$conf"
+            sed -i '/lxc\.cgroup2\.devices\.allow:.*226/d' "$conf"
+            ;;
+    esac
+}
+
+# ── Apply selected action for affected LXC (switch mode) ─
+cleanup_lxc_configs() {
+    [[ "$SWITCH_FROM_LXC" != "true" ]] && return 0
+    [[ ${#LXC_AFFECTED_CTIDS[@]} -eq 0 ]] && return 0
+
+    msg_info "$(translate 'Applying selected LXC switch action...')"
+
+    local i
+    for i in "${!LXC_AFFECTED_CTIDS[@]}"; do
+        local ctid conf
+        ctid="${LXC_AFFECTED_CTIDS[$i]}"
+        conf="/etc/pve/lxc/${ctid}.conf"
+
+        if [[ "${LXC_AFFECTED_RUNNING[$i]}" == "1" ]]; then
+            msg_info "$(translate 'Stopping LXC') ${ctid}..."
+            if pct stop "$ctid" >>"$LOG_FILE" 2>&1; then
+                msg_ok "$(translate 'LXC stopped') ${ctid}" | tee -a "$screen_capture"
+            else
+                msg_warn "$(translate 'Could not stop LXC') ${ctid}" | tee -a "$screen_capture"
+            fi
+        else
+            msg_ok "$(translate 'LXC already stopped') ${ctid}" | tee -a "$screen_capture"
+        fi
+
+        if [[ "$LXC_SWITCH_ACTION" == "keep_gpu_disable_onboot" ]]; then
+            if [[ "${LXC_AFFECTED_ONBOOT[$i]}" == "1" ]]; then
+                if pct set "$ctid" -onboot 0 >>"$LOG_FILE" 2>&1; then
+                    msg_warn "$(translate 'Start on boot disabled for LXC') ${ctid}" | tee -a "$screen_capture"
+                else
+                    msg_error "$(translate 'Failed to disable Start on boot for LXC') ${ctid}" | tee -a "$screen_capture"
+                fi
+            fi
+        fi
+
+        if [[ "$LXC_SWITCH_ACTION" == "remove_gpu_keep_onboot" && -f "$conf" ]]; then
+            _remove_selected_gpu_from_lxc_conf "$conf"
+            msg_ok "$(translate 'GPU access removed from LXC') ${ctid}" | tee -a "$screen_capture"
         fi
     done
+
+    if [[ "$LXC_SWITCH_ACTION" == "remove_gpu_keep_onboot" ]]; then
+        msg_warn "$(translate 'If needed again, re-add GPU to LXC from GPUs and Coral-TPU Menu → Add GPU to LXC.')" | tee -a "$screen_capture"
+    fi
 }
 
 
@@ -1562,6 +1730,11 @@ main() {
     cleanup_vm_config
     ensure_vm_display_std
     configure_vm
+    if declare -F attach_proxmenux_gpu_guard_to_vm >/dev/null 2>&1; then
+        ensure_proxmenux_gpu_guard_hookscript
+        attach_proxmenux_gpu_guard_to_vm "$SELECTED_VMID"
+        sync_proxmenux_gpu_guard_hooks
+    fi
     [[ "$HOST_CONFIG_CHANGED" == "true" ]] && update_initramfs_host
 
     # ── Phase 3: summary ─────────────────────────────────
