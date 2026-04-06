@@ -131,10 +131,12 @@ if [[ -f "$vm_conf" ]]; then
       id="${id// /}"
       [[ -z "$id" ]] && continue
 
-      # Slot-only syntax (e.g. 01:00) is accepted by Proxmox.
-      if [[ "$id" =~ ^[0-9a-fA-F]{2}:[0-9a-fA-F]{2}$ ]]; then
+      # Slot-only syntax (e.g. 01:00 or 0000:01:00) is accepted by Proxmox.
+      if [[ "$id" =~ ^([0-9a-fA-F]{4}:)?[0-9a-fA-F]{2}:[0-9a-fA-F]{2}$ ]]; then
+        slot="${id,,}"
+        slot="${slot#0000:}"
         slot_has_gpu=false
-        for dev in /sys/bus/pci/devices/0000:${id}.*; do
+        for dev in /sys/bus/pci/devices/0000:${slot}.*; do
           [[ -e "$dev" ]] || continue
           class_hex="$(cat "$dev/class" 2>/dev/null | sed 's/^0x//')"
           [[ "${class_hex:0:2}" != "03" ]] && continue
