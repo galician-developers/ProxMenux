@@ -17494,7 +17494,9 @@
     "category_names": [
       "Media & Streaming"
     ],
-    "notes": [],
+    "notes": [
+      "There is no web interface for this service, it only serves as a backend for the UHF app."
+    ],
     "port": 7568,
     "website": "https://www.uhfapp.com/",
     "documentation": "https://www.uhfapp.com/server",
