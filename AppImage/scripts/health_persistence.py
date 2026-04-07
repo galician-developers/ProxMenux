@@ -1027,23 +1027,67 @@ class HealthPersistence:
                                OR reason LIKE '%killed%process%')
                     ''', (now_iso, stale_mem_cutoff))
                 
-                # ── 4. VMS category: Auto-resolve if VM/CT is now running ──
+                # ── 4. VMS category: Auto-resolve if VM/CT is now running or deleted ──
                 # Check all active VM/CT errors and resolve if the VM/CT is now running
+                # NOTE: We do this inline to avoid deadlock (check_vm_running uses _db_lock)
                 cursor.execute('''
-                    SELECT error_key, category FROM errors 
+                    SELECT error_key, category, reason FROM errors 
                     WHERE (category IN ('vms', 'vmct') OR error_key LIKE 'vm_%' OR error_key LIKE 'ct_%' OR error_key LIKE 'vmct_%')
                       AND resolved_at IS NULL 
                       AND acknowledged = 0
                 ''')
                 vm_errors = cursor.fetchall()
-                for error_key, cat in vm_errors:
+                for error_key, cat, reason in vm_errors:
                     # Extract VM/CT ID from error_key
-                    import re
                     vmid_match = re.search(r'(?:vm_|ct_|vmct_)(\d+)', error_key)
                     if vmid_match:
                         vmid = vmid_match.group(1)
-                        # Check if running - this auto-resolves if so
-                        self.check_vm_running(vmid)
+                        try:
+                            # Check if VM/CT exists and is running
+                            vm_running = False
+                            ct_running = False
+                            vm_exists = False
+                            ct_exists = False
+                            
+                            # Check VM
+                            result_vm = subprocess.run(
+                                ['qm', 'status', vmid],
+                                capture_output=True, text=True, timeout=2
+                            )
+                            if result_vm.returncode == 0:
+                                vm_exists = True
+                                vm_running = 'running' in result_vm.stdout.lower()
+                            
+                            # Check CT
+                            if not vm_exists:
+                                result_ct = subprocess.run(
+                                    ['pct', 'status', vmid],
+                                    capture_output=True, text=True, timeout=2
+                                )
+                                if result_ct.returncode == 0:
+                                    ct_exists = True
+                                    ct_running = 'running' in result_ct.stdout.lower()
+                            
+                            # Resolve if deleted
+                            if not vm_exists and not ct_exists:
+                                cursor.execute('''
+                                    UPDATE errors SET resolved_at = ?
+                                    WHERE error_key = ? AND resolved_at IS NULL
+                                ''', (now_iso, error_key))
+                            # Resolve transient errors if running (not persistent config errors)
+                            elif vm_running or ct_running:
+                                reason_lower = (reason or '').lower()
+                                is_persistent = any(x in reason_lower for x in [
+                                    'device', 'missing', 'does not exist', 'permission',
+                                    'not found', 'no such', 'invalid'
+                                ])
+                                if not is_persistent:
+                                    cursor.execute('''
+                                        UPDATE errors SET resolved_at = ?
+                                        WHERE error_key = ? AND resolved_at IS NULL
+                                    ''', (now_iso, error_key))
+                        except Exception:
+                            pass  # Skip this VM/CT if check fails
                 
                 # ── 5. GENERIC: Any error not seen in 30 minutes while system is healthy ──
                 # If CPU < 80% and Memory < 85% and error hasn't been seen in 30 min,
