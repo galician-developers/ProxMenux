@@ -29,6 +29,17 @@ export default function Home() {
       const response = await fetch(getApiUrl("/api/auth/status"), {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
+      
+      // Check if response is valid JSON before parsing
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+      
+      const contentType = response.headers.get("content-type")
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error("Response is not JSON")
+      }
+      
       const data = await response.json()
 
       const authenticated = data.auth_enabled ? data.authenticated : true
@@ -39,8 +50,8 @@ export default function Home() {
         authConfigured: data.auth_configured,
         authenticated,
       })
-    } catch (error) {
-      console.error("Failed to check auth status:", error)
+    } catch {
+      // API not available - assume no auth configured (silent fail, no console error)
       setAuthStatus({
         loading: false,
         authEnabled: false,

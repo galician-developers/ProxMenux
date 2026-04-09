@@ -299,6 +299,19 @@ export function NotificationSettings() {
     fallback_commands: string[]
     error: string
   }>({ status: "idle", fallback_commands: [], error: "" })
+  const [systemHostname, setSystemHostname] = useState<string>("")
+
+  // Load system hostname for display name placeholder
+  const loadSystemHostname = useCallback(async () => {
+    try {
+      const data = await fetchApi<{ hostname?: string }>("/api/system")
+      if (data.hostname) {
+        setSystemHostname(data.hostname)
+      }
+    } catch {
+      // Ignore - will show generic placeholder
+    }
+  }, [])
 
   const loadConfig = useCallback(async () => {
     try {
@@ -366,7 +379,8 @@ export function NotificationSettings() {
   useEffect(() => {
     loadConfig()
     loadStatus()
-  }, [loadConfig, loadStatus])
+    loadSystemHostname()
+  }, [loadConfig, loadStatus, loadSystemHostname])
 
   useEffect(() => {
     if (showHistory) loadHistory()
@@ -1503,6 +1517,25 @@ export function NotificationSettings() {
                 </div>
               )}
               </div>{/* close bordered channel container */}
+            </div>
+
+            {/* ── Display Name ── */}
+            <div className="space-y-2 pb-3 border-b border-border/50">
+              <div className="flex items-center gap-2">
+                <Server className="h-4 w-4 text-blue-400" />
+                <Label className="text-xs sm:text-sm text-foreground/80">Display Name</Label>
+              </div>
+              <Input
+                className={`h-9 text-sm ${!editMode ? "opacity-50 cursor-not-allowed" : ""}`}
+                placeholder={systemHostname || "System hostname"}
+                value={config.hostname || (editMode ? "" : systemHostname)}
+                onChange={e => updateConfig(p => ({ ...p, hostname: e.target.value }))}
+                disabled={!editMode}
+                readOnly={!editMode}
+              />
+              <p className="text-xs text-muted-foreground">
+                Name shown in notifications. Edit to customize, or leave empty to use the system hostname.
+              </p>
             </div>
 
             {/* ── Advanced: AI Enhancement ── */}

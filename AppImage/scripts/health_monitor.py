@@ -181,6 +181,20 @@ class HealthMonitor:
         # not a system problem.
         r'pvescheduler.*could not update job state',
         r'pvescheduler.*no such task',
+        
+        # ── GPU passthrough / vfio operational noise ──
+        # When a GPU is passed through to a VM using vfio-pci, the host
+        # NVIDIA driver will log errors because it cannot access the GPU.
+        # This is expected behavior, NOT an error - the passthrough is working.
+        r'NVRM.*GPU.*already bound to vfio-pci',
+        r'NVRM.*GPU.*is not supported',
+        r'NVRM.*failed to enable MSI',
+        r'NVRM.*RmInitAdapter failed',
+        r'NVRM.*rm_init_adapter failed',
+        r'nvidia.*probe.*failed',
+        r'vfio-pci.*\d+:\d+:\d+\.\d+.*reset',
+        r'vfio-pci.*enabling device',
+        r'vfio_pci.*cannot assign irq',
     ]
     
     CRITICAL_LOG_KEYWORDS = [
@@ -745,7 +759,13 @@ class HealthMonitor:
         }
     
     def _check_cpu_with_hysteresis(self) -> Dict[str, Any]:
-        """Check CPU with hysteresis to avoid flapping alerts - requires 5min sustained high usage"""
+        """Check CPU with hysteresis to avoid flapping alerts - requires sustained high usage.
+        
+        With samples every ~10 seconds:
+        - CRITICAL: 30 samples >= 95% in 300s window = 5 min sustained
+        - WARNING: 30 samples >= 85% in 300s window = 5 min sustained  
+        - RECOVERY: 12 samples < 75% in 120s window = 2 min below threshold
+        """
         try:
             cpu_percent = psutil.cpu_percent(interval=0.1)  # 100ms sample - sufficient for health check
             current_time = time.time()
@@ -765,6 +785,7 @@ class HealthMonitor:
                 if current_time - entry['time'] < 360
             ]
             
+            # Count samples in the monitoring windows
             critical_samples = [
                 entry for entry in self.state_history[state_key]
                 if entry['value'] >= self.CPU_CRITICAL and
@@ -783,27 +804,39 @@ class HealthMonitor:
                 current_time - entry['time'] <= self.CPU_RECOVERY_DURATION
             ]
             
-            if len(critical_samples) >= 3:
+            # Require enough samples to cover the sustained period
+            # With ~10s sampling interval: 300s = ~30 samples, 120s = ~12 samples
+            # Using slightly lower thresholds to account for timing variations
+            CRITICAL_MIN_SAMPLES = 25  # ~250s of sustained high CPU
+            WARNING_MIN_SAMPLES = 25   # ~250s of sustained elevated CPU
+            RECOVERY_MIN_SAMPLES = 10  # ~100s of recovery
+            
+            if len(critical_samples) >= CRITICAL_MIN_SAMPLES:
+                # Calculate actual duration from oldest to newest sample
+                oldest = min(s['time'] for s in critical_samples)
+                actual_duration = int(current_time - oldest)
                 status = 'CRITICAL'
-                reason = f'CPU >{self.CPU_CRITICAL}% sustained for {self.CPU_CRITICAL_DURATION}s'
+                reason = f'CPU >{self.CPU_CRITICAL}% sustained for {actual_duration}s'
                 # Record the error
                 health_persistence.record_error(
                     error_key='cpu_usage',
                     category='cpu',
                     severity='CRITICAL',
                     reason=reason,
-                    details={'cpu_percent': cpu_percent}
+                    details={'cpu_percent': cpu_percent, 'duration': actual_duration}
                 )
-            elif len(warning_samples) >= 3 and len(recovery_samples) < 2:
+            elif len(warning_samples) >= WARNING_MIN_SAMPLES and len(recovery_samples) < RECOVERY_MIN_SAMPLES:
+                oldest = min(s['time'] for s in warning_samples)
+                actual_duration = int(current_time - oldest)
                 status = 'WARNING'
-                reason = f'CPU >{self.CPU_WARNING}% sustained for {self.CPU_WARNING_DURATION}s'
+                reason = f'CPU >{self.CPU_WARNING}% sustained for {actual_duration}s'
                 # Record the warning
                 health_persistence.record_error(
                     error_key='cpu_usage',
                     category='cpu',
                     severity='WARNING',
                     reason=reason,
-                    details={'cpu_percent': cpu_percent}
+                    details={'cpu_percent': cpu_percent, 'duration': actual_duration}
                 )
             else:
                 status = 'OK'
@@ -921,9 +954,15 @@ class HealthMonitor:
                 
                 # Require at least 18 samples over 3 minutes (one every 10 seconds) to trigger alert
                 if len(high_temp_samples) >= 18:
-                    # Temperature has been >80°C for >3 minutes
+                    # Temperature has been >80°C for >3 minutes - calculate actual duration
+                    oldest = min(s['time'] for s in high_temp_samples)
+                    actual_duration = int(current_time - oldest)
+                    actual_minutes = actual_duration // 60
+                    actual_seconds = actual_duration % 60
+                    duration_str = f'{actual_minutes}m {actual_seconds}s' if actual_minutes > 0 else f'{actual_seconds}s'
+                    
                     status = 'WARNING'
-                    reason = f'CPU temperature {max_temp}°C >80°C sustained >3min'
+                    reason = f'CPU temperature {max_temp}°C >80°C sustained for {duration_str}'
                     
                     # Record non-dismissable error
                     health_persistence.record_error(
@@ -931,7 +970,7 @@ class HealthMonitor:
                         category='temperature',
                         severity='WARNING',
                         reason=reason,
-                        details={'temperature': max_temp, 'dismissable': False}
+                        details={'temperature': max_temp, 'duration': actual_duration, 'dismissable': False}
                     )
                 elif len(recovery_samples) >= 3:
                     # Temperature has been ≤80°C for 30 seconds - clear the error

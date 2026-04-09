@@ -137,6 +137,30 @@ class NotificationEvent:
 
 
 def _hostname() -> str:
+    """Get display hostname for notifications.
+    
+    Returns the custom display name from notification settings if configured,
+    otherwise falls back to the system hostname.
+    """
+    # Try to read custom display name from notification settings
+    try:
+        db_path = Path('/usr/local/share/proxmenux/health_monitor.db')
+        if db_path.exists():
+            conn = sqlite3.connect(str(db_path), timeout=5)
+            conn.execute('PRAGMA busy_timeout=3000')
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT setting_value FROM user_settings WHERE setting_key = ?",
+                ('notification.hostname',)
+            )
+            row = cursor.fetchone()
+            conn.close()
+            if row and row[0] and row[0].strip():
+                return row[0].strip()
+    except Exception:
+        pass  # Fall back to system hostname
+    
+    # Fall back to system hostname
     try:
         return socket.gethostname().split('.')[0]
     except Exception:

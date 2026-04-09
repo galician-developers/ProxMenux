@@ -641,11 +641,18 @@ export function Security() {
   const checkAuthStatus = async () => {
     try {
       const response = await fetch(getApiUrl("/api/auth/status"))
+      
+      // Check if response is valid JSON before parsing
+      if (!response.ok) return
+      
+      const contentType = response.headers.get("content-type")
+      if (!contentType || !contentType.includes("application/json")) return
+      
       const data = await response.json()
       setAuthEnabled(data.auth_enabled || false)
       setTotpEnabled(data.totp_enabled || false)
-    } catch (err) {
-      console.error("Failed to check auth status:", err)
+    } catch {
+      // API not available (preview environment)
     }
   }
 
