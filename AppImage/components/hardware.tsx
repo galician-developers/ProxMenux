@@ -256,9 +256,18 @@ export default function Hardware() {
   // Determine GPU mode based on driver (vfio-pci = VM, native driver = LXC)
   const getGpuSwitchMode = (gpu: GPU): "lxc" | "vm" | "unknown" => {
     const driver = gpu.pci_driver?.toLowerCase() || ""
+    const kernelModule = gpu.pci_kernel_module?.toLowerCase() || ""
+    
+    // Check driver first
     if (driver === "vfio-pci") return "vm"
-    if (driver === "nvidia" || driver === "amdgpu" || driver === "radeon" || driver === "i915" || driver === "xe" || driver === "nouveau") return "lxc"
-    if (driver && driver !== "none") return "lxc" // Any other driver = native = LXC mode
+    if (driver === "nvidia" || driver === "amdgpu" || driver === "radeon" || driver === "i915" || driver === "xe" || driver === "nouveau" || driver === "mgag200") return "lxc"
+    if (driver && driver !== "none" && driver !== "") return "lxc"
+    
+    // Fallback to kernel module if no driver
+    if (kernelModule.includes("vfio")) return "vm"
+    if (kernelModule.includes("nvidia") || kernelModule.includes("amdgpu") || kernelModule.includes("radeon") || kernelModule.includes("i915") || kernelModule.includes("xe") || kernelModule.includes("nouveau") || kernelModule.includes("mgag200")) return "lxc"
+    if (kernelModule && kernelModule !== "none" && kernelModule !== "") return "lxc"
+    
     return "unknown"
   }
 
