@@ -237,6 +237,7 @@ export default function Hardware() {
   const [editingSwitchModeGpu, setEditingSwitchModeGpu] = useState<string | null>(null) // GPU slot being edited
   const [pendingSwitchModes, setPendingSwitchModes] = useState<Record<string, "lxc" | "vm">>({})
   const [showSwitchModeModal, setShowSwitchModeModal] = useState(false)
+  const [switchModeParams, setSwitchModeParams] = useState<{ gpuSlot: string; targetMode: "lxc" | "vm" } | null>(null)
 
   const fetcher = async (url: string) => {
     const data = await fetchApi(url)
@@ -306,8 +307,12 @@ export default function Hardware() {
     const gpu = hardwareDataSWR?.gpus?.find(g => g.slot === gpuSlot)
     const currentMode = gpu ? getGpuSwitchMode(gpu) : "unknown"
     
-    if (pendingMode && pendingMode !== currentMode) {
-      // Mode has changed - launch the script
+    if (pendingMode && pendingMode !== currentMode && gpu) {
+      // Mode has changed - save params and launch the script
+      setSwitchModeParams({
+        gpuSlot: gpu.slot,
+        targetMode: pendingMode
+      })
       setShowSwitchModeModal(true)
     }
     setEditingSwitchModeGpu(null)
@@ -324,7 +329,8 @@ export default function Hardware() {
 
   const handleSwitchModeModalClose = () => {
     setShowSwitchModeModal(false)
-    // Clear all pending changes after script runs
+    // Clear params and pending changes after script runs
+    setSwitchModeParams(null)
     setPendingSwitchModes({})
     // Refresh hardware data
     mutateHardware()
@@ -2286,17 +2292,21 @@ title="AMD GPU Tools Installation"
   />
   
   {/* GPU Switch Mode Modal */}
-  <ScriptTerminalModal
-    open={showSwitchModeModal}
-    onClose={handleSwitchModeModalClose}
-    scriptPath="/usr/local/share/proxmenux/scripts/gpu_tpu/switch_gpu_mode.sh"
-    scriptName="switch_gpu_mode"
-    params={{
-      EXECUTION_MODE: "web",
-    }}
-    title="GPU Switch Mode"
-    description="Switching GPU between VM (VFIO passthrough) and LXC (native driver) modes..."
-  />
+  {switchModeParams && (
+    <ScriptTerminalModal
+      open={showSwitchModeModal}
+      onClose={handleSwitchModeModalClose}
+      scriptPath="/usr/local/share/proxmenux/scripts/gpu_tpu/switch_gpu_mode_direct.sh"
+      scriptName="switch_gpu_mode_direct"
+      params={{
+        EXECUTION_MODE: "web",
+        GPU_SLOT: switchModeParams.gpuSlot,
+        TARGET_MODE: switchModeParams.targetMode,
+      }}
+      title={`GPU Switch Mode → ${switchModeParams.targetMode.toUpperCase()}`}
+      description={`Switching GPU ${switchModeParams.gpuSlot} to ${switchModeParams.targetMode === "vm" ? "VM (VFIO passthrough)" : "LXC (native driver)"} mode...`}
+    />
+  )}
   </div>
   )
 }
