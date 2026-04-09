@@ -839,12 +839,21 @@ export default function Hardware() {
               const pciDevice = findPCIDeviceForGPU(gpu)
               const fullSlot = pciDevice?.slot || gpu.slot
 
-              return (
-                <div
-                  key={index}
-                  onClick={() => handleGPUClick(gpu)}
-                  className="cursor-pointer rounded-lg border border-white/10 sm:border-border bg-white/5 sm:bg-card sm:hover:bg-white/5 p-4 transition-colors"
-                >
+return (
+  <div
+  key={index}
+  onClick={() => {
+    // Don't open modal if we're editing this GPU's switch mode
+    if (editingSwitchModeGpu !== fullSlot) {
+      handleGPUClick(gpu)
+    }
+  }}
+  className={`rounded-lg border border-white/10 sm:border-border bg-white/5 sm:bg-card p-4 transition-colors ${
+    editingSwitchModeGpu === fullSlot 
+      ? "cursor-default" 
+      : "cursor-pointer sm:hover:bg-white/5"
+  }`}
+  >
                   <div className="mb-3 flex items-center justify-between">
                     <span className="font-medium text-sm">{gpu.name}</span>
                     <Badge className={getDeviceTypeColor("graphics")}>{gpu.vendor}</Badge>
@@ -880,10 +889,7 @@ export default function Hardware() {
 
 {/* GPU Switch Mode Indicator */}
   {getGpuSwitchMode(gpu) !== "unknown" && (
-  <div 
-    className="mt-3 pt-3 border-t border-border/30"
-    onClick={(e) => e.stopPropagation()}
-  >
+  <div className="mt-3 pt-3 border-t border-border/30">
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                           Switch Mode
@@ -893,13 +899,19 @@ export default function Hardware() {
                             <>
                               <button
                                 className="h-7 px-3 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors text-muted-foreground"
-                                onClick={(e) => handleSwitchModeCancel(fullSlot, e)}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleSwitchModeCancel(fullSlot, e)
+                                }}
                               >
                                 Cancel
                               </button>
                               <button
                                 className="h-7 px-3 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors flex items-center gap-1.5"
-                                onClick={(e) => handleSwitchModeSave(fullSlot, e)}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleSwitchModeSave(fullSlot, e)
+                                }}
                               >
                                 <CheckCircle2 className="h-3 w-3" />
                                 Save
@@ -908,7 +920,10 @@ export default function Hardware() {
                           ) : (
                             <button
                               className="h-7 px-3 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors flex items-center gap-1.5"
-                              onClick={(e) => handleSwitchModeEdit(fullSlot, e)}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleSwitchModeEdit(fullSlot, e)
+                              }}
                             >
                               <Settings2 className="h-3 w-3" />
                               Edit
