@@ -19,7 +19,7 @@ import {
 import { fetchApi } from "@/lib/api-config"
 import { ScriptTerminalModal } from "./script-terminal-modal"
 import { GpuSwitchModeIndicator } from "./gpu-switch-mode-indicator"
-import { Pencil, Check, X } from "lucide-react"
+import { Settings2, CheckCircle2 } from "lucide-react"
 
 const parseLsblkSize = (sizeStr: string | undefined): number => {
   if (!sizeStr) return 0
@@ -884,42 +884,35 @@ export default function Hardware() {
     className="mt-3 pt-3 border-t border-border/30"
     onClick={(e) => e.stopPropagation()}
   >
-                      <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center justify-between mb-3">
                         <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                           Switch Mode
                         </span>
                         <div className="flex items-center gap-2">
                           {editingSwitchModeGpu === fullSlot ? (
-                            <div className="flex items-center gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 w-6 p-0 text-green-500 hover:text-green-400 hover:bg-green-500/10"
-                                onClick={(e) => handleSwitchModeSave(fullSlot, e)}
-                                title="Save changes"
-                              >
-                                <Check className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 w-6 p-0 text-red-500 hover:text-red-400 hover:bg-red-500/10"
+                            <>
+                              <button
+                                className="h-7 px-3 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors text-muted-foreground"
                                 onClick={(e) => handleSwitchModeCancel(fullSlot, e)}
-                                title="Cancel"
                               >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </div>
+                                Cancel
+                              </button>
+                              <button
+                                className="h-7 px-3 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors flex items-center gap-1.5"
+                                onClick={(e) => handleSwitchModeSave(fullSlot, e)}
+                              >
+                                <CheckCircle2 className="h-3 w-3" />
+                                Save
+                              </button>
+                            </>
                           ) : (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 px-2 text-xs flex items-center gap-1"
+                            <button
+                              className="h-7 px-3 text-xs rounded-md border border-border bg-background hover:bg-muted transition-colors flex items-center gap-1.5"
                               onClick={(e) => handleSwitchModeEdit(fullSlot, e)}
                             >
-                              <Pencil className="h-3 w-3" />
+                              <Settings2 className="h-3 w-3" />
                               Edit
-                            </Button>
+                            </button>
                           )}
                         </div>
                       </div>
@@ -928,7 +921,6 @@ export default function Hardware() {
                         isEditing={editingSwitchModeGpu === fullSlot}
                         pendingMode={pendingSwitchModes[gpu.slot] || null}
                         onToggle={(e) => handleSwitchModeToggle(gpu, e)}
-                        compact
                       />
                     </div>
                   )}
