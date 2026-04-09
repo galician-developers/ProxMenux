@@ -319,6 +319,41 @@ class JournalWatcher:
         except Exception as e:
             print(f"[JournalWatcher] Failed to save disk_io_notified: {e}")
     
+    def _get_disk_io_cooldown_from_db(self, device: str) -> Optional[float]:
+        """
+        Get disk I/O cooldown timestamp from DB for a device.
+        
+        Used to re-check DB when user might have dismissed the error,
+        which clears the DB entry via health_persistence._clear_disk_io_cooldown().
+        
+        Returns the timestamp if found and within 24h window, None otherwise.
+        """
+        try:
+            db_path = Path('/usr/local/share/proxmenux/health_monitor.db')
+            if not db_path.exists():
+                return None
+            conn = sqlite3.connect(str(db_path), timeout=5)
+            conn.execute('PRAGMA busy_timeout=3000')
+            cursor = conn.cursor()
+            
+            # Check for the device with various prefixes
+            # JournalWatcher uses direct device names as keys
+            cursor.execute(
+                "SELECT last_sent_ts FROM notification_last_sent WHERE fingerprint = ?",
+                (device,)
+            )
+            row = cursor.fetchone()
+            conn.close()
+            
+            if row:
+                ts = float(row[0])
+                # Only return if within 24h window
+                if time.time() - ts < self._DISK_IO_COOLDOWN:
+                    return ts
+            return None
+        except Exception:
+            return None
+    
     def stop(self):
         """Stop the journal watcher."""
         self._running = False
@@ -589,7 +624,14 @@ class JournalWatcher:
                         fs_dedup_key = f'fs_{device}'
                     last_fs_notified = self._disk_io_notified.get(fs_dedup_key, 0)
                     if now_fs - last_fs_notified < self._DISK_IO_COOLDOWN:
-                        return  # Already notified for this device recently
+                        # In-memory says cooldown active. Re-check DB in case
+                        # user dismissed the error (which clears DB cooldowns).
+                        db_ts = self._get_disk_io_cooldown_from_db(fs_dedup_key)
+                        if db_ts is not None and now_fs - db_ts < self._DISK_IO_COOLDOWN:
+                            return  # DB confirms cooldown is still active
+                        # DB says cooldown was cleared - proceed
+                        if fs_dedup_key in self._disk_io_notified:
+                            del self._disk_io_notified[fs_dedup_key]
                     
                     # ── Device existence gating ──
                     device_exists = base_dev and _os.path.exists(f'/dev/{base_dev}')
@@ -842,10 +884,24 @@ class JournalWatcher:
                 return
             
             # ── Gate 2: 24-hour dedup per device ──
+            # Check both in-memory cache AND the DB (user dismiss clears DB cooldowns).
+            # If user dismissed the error, _clear_disk_io_cooldown() removed the DB
+            # entry, so we should refresh from DB to get the real state.
             now = time.time()
+            
+            # First check in-memory cache
             last_notified = self._disk_io_notified.get(resolved, 0)
+            
             if now - last_notified < self._DISK_IO_COOLDOWN:
-                return  # Already notified for this disk recently
+                # In-memory says we already notified. But user might have dismissed
+                # the error, which clears the DB. Re-check DB to be sure.
+                db_ts = self._get_disk_io_cooldown_from_db(resolved)
+                if db_ts is not None and now - db_ts < self._DISK_IO_COOLDOWN:
+                    return  # DB confirms cooldown is still active
+                # DB says cooldown was cleared (user dismissed) - proceed to notify
+                # Update in-memory cache
+                del self._disk_io_notified[resolved]
+            
             self._disk_io_notified[resolved] = now
             self._save_disk_io_notified(resolved, now)
             
@@ -2069,8 +2125,16 @@ class PollingCollector:
             # ── SAME ERROR COOLDOWN (24h) ──
             # The SAME error_key cannot be re-notified before 24 hours.
             # This is the PRIMARY deduplication mechanism.
+            # EXCEPTION: If user dismissed the error, the cooldown is cleared in DB
+            # and we should re-check DB to see if cooldown still applies.
             if time_since_last < self.SAME_ERROR_COOLDOWN:
-                continue
+                # Check if user dismissed this - clears DB cooldown
+                db_ts = self._get_cooldown_from_db(error_key)
+                if db_ts is not None and now - db_ts < self.SAME_ERROR_COOLDOWN:
+                    continue  # DB confirms cooldown still active
+                # DB says cooldown was cleared (user dismissed) - remove from memory
+                self._last_notified.pop(error_key, None)
+                # Continue to the next checks (category cooldown etc.)
             
             # ── CATEGORY COOLDOWN (varies) ──
             # DIFFERENT errors within the same category respect category cooldown.
@@ -2735,6 +2799,41 @@ class PollingCollector:
             conn.close()
         except Exception:
             pass
+    
+    def _get_cooldown_from_db(self, error_key: str) -> Optional[float]:
+        """
+        Get cooldown timestamp from DB for an error_key.
+        
+        Used to re-check DB when user might have dismissed the error,
+        which clears the DB entry via health_persistence._clear_disk_io_cooldown().
+        
+        Returns the timestamp if found and within 24h window, None otherwise.
+        """
+        try:
+            db_path = Path('/usr/local/share/proxmenux/health_monitor.db')
+            if not db_path.exists():
+                return None
+            conn = sqlite3.connect(str(db_path), timeout=5)
+            conn.execute('PRAGMA busy_timeout=3000')
+            cursor = conn.cursor()
+            
+            # PollingCollector uses 'health_' prefix for its fingerprints
+            fp = f'health_{error_key}'
+            cursor.execute(
+                "SELECT last_sent_ts FROM notification_last_sent WHERE fingerprint = ?",
+                (fp,)
+            )
+            row = cursor.fetchone()
+            conn.close()
+            
+            if row:
+                ts = float(row[0])
+                # Only return if within 24h window
+                if time.time() - ts < self.SAME_ERROR_COOLDOWN:
+                    return ts
+            return None
+        except Exception:
+            return None
 
 
 # ─── Proxmox Webhook Receiver ───────────────────────────────────

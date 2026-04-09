@@ -739,6 +739,14 @@ class HealthPersistence:
             }
             conn.commit()
             conn.close()
+            
+            # ── Clear cooldowns for newly dismissed errors too ──
+            if sup_hours != -1:
+                if category == 'disks':
+                    self._clear_disk_io_cooldown(error_key)
+                else:
+                    self._clear_notification_cooldown(error_key)
+            
             return result
         
         if row:
@@ -803,6 +811,19 @@ class HealthPersistence:
         
         conn.commit()
         conn.close()
+        
+        # ── Coordinate with notification cooldowns ──
+        # When an error is dismissed with non-permanent suppression,
+        # clear the corresponding cooldown in notification_last_sent
+        # so it can re-notify after the suppression period expires.
+        # This applies to ALL categories, not just disks.
+        if sup_hours != -1:
+            if category == 'disks':
+                self._clear_disk_io_cooldown(error_key)
+            else:
+                # For non-disk categories, clear the PollingCollector cooldown
+                self._clear_notification_cooldown(error_key)
+        
         return result
     
     def is_error_acknowledged(self, error_key: str) -> bool:
@@ -2730,6 +2751,124 @@ class HealthPersistence:
                 return {row[0] for row in cursor.fetchall()}
         except Exception:
             return set()
+
+
+    def _clear_notification_cooldown(self, error_key: str):
+        """
+        Clear notification cooldown from notification_last_sent for non-disk errors.
+        
+        This coordinates with PollingCollector's 24h cooldown system.
+        When any error is dismissed, we remove the corresponding cooldown entry
+        so the error can be re-detected and re-notified after the suppression period expires.
+        
+        The PollingCollector uses 'health_' prefix for all its fingerprints.
+        """
+        try:
+            conn = self._get_conn()
+            cursor = conn.cursor()
+            
+            # PollingCollector uses 'health_' prefix
+            fp = f'health_{error_key}'
+            cursor.execute(
+                'DELETE FROM notification_last_sent WHERE fingerprint = ?',
+                (fp,)
+            )
+            
+            # Also delete any fingerprints that match the error_key pattern
+            cursor.execute(
+                'DELETE FROM notification_last_sent WHERE fingerprint LIKE ?',
+                (f'%{error_key}%',)
+            )
+            
+            deleted_count = cursor.rowcount
+            conn.commit()
+            conn.close()
+            
+            if deleted_count > 0:
+                print(f"[HealthPersistence] Cleared notification cooldowns for {error_key}")
+        except Exception as e:
+            print(f"[HealthPersistence] Error clearing notification cooldown: {e}")
+    
+    def _clear_disk_io_cooldown(self, error_key: str):
+        """
+        Clear disk I/O cooldowns from notification_last_sent when an error is dismissed.
+        
+        This coordinates with BOTH:
+        1. JournalWatcher's 24h cooldown system (prefixes: diskio_, fs_, fs_serial_)
+        2. PollingCollector's 24h cooldown system (prefix: health_)
+        
+        When a disk error is dismissed, we remove the corresponding cooldown entries
+        so the error can be re-detected and re-notified after the suppression period expires.
+        
+        Matches fingerprints like:
+        - diskio_sdh, diskio_sda, diskio_nvme0n1
+        - fs_sdh1, fs_sda2, fs_serial_XXXXX
+        - health_disk_smart_sdh, health_disk_io_error_sdh
+        - sdh (direct device name used by JournalWatcher)
+        """
+        try:
+            # Extract device name from error_key
+            # Common patterns: disk_fs_sdh, disk_smart_sda, disk_io_error_sdh, smart_sdh
+            import re
+            device_match = re.search(r'(?:disk_fs_|disk_smart_|disk_io_error_|disk_|smart_|io_error_)(?:/dev/)?([a-z]{2,4}[a-z0-9]*)', error_key)
+            if not device_match:
+                # Try to extract device from error_key directly if no pattern matches
+                # e.g., error_key might just be the device name
+                device_match = re.match(r'^([a-z]{2,4}[a-z0-9]*)$', error_key)
+                if not device_match:
+                    return
+            
+            device = device_match.group(1)
+            base_device = re.sub(r'\d+$', '', device)  # sdh1 -> sdh
+            
+            # Build patterns to match in notification_last_sent
+            # JournalWatcher uses: direct device name, diskio_, fs_, fs_serial_
+            # PollingCollector uses: health_ prefix
+            patterns = [
+                # JournalWatcher patterns
+                device,  # Direct device name (JournalWatcher._check_disk_io uses this)
+                base_device,
+                f'diskio_{device}',
+                f'diskio_{base_device}',
+                f'fs_{device}',
+                f'fs_{base_device}',
+                # PollingCollector patterns (uses health_ prefix)
+                f'health_{error_key}',
+                f'health_disk_smart_{device}',
+                f'health_disk_smart_{base_device}',
+                f'health_disk_io_error_{device}',
+                f'health_disk_io_error_{base_device}',
+                f'health_disk_fs_{device}',
+                f'health_disk_fs_{base_device}',
+            ]
+            
+            conn = self._get_conn()
+            cursor = conn.cursor()
+            
+            # Delete matching cooldown entries
+            for pattern in patterns:
+                cursor.execute(
+                    'DELETE FROM notification_last_sent WHERE fingerprint = ?',
+                    (pattern,)
+                )
+                # Also match with wildcards for serial-based keys
+                cursor.execute(
+                    'DELETE FROM notification_last_sent WHERE fingerprint LIKE ?',
+                    (f'{pattern}%',)
+                )
+            
+            # Also clear fingerprints that contain the device name anywhere
+            # This catches edge cases like different fingerprint formats
+            cursor.execute(
+                'DELETE FROM notification_last_sent WHERE fingerprint LIKE ? OR fingerprint LIKE ?',
+                (f'%{device}%', f'%{base_device}%' if base_device != device else f'%{device}%')
+            )
+            
+            conn.commit()
+            conn.close()
+            print(f"[HealthPersistence] Cleared disk I/O cooldowns for {error_key} (device: {device})")
+        except Exception as e:
+            print(f"[HealthPersistence] Error clearing disk I/O cooldown: {e}")
 
 
 # Global instance
