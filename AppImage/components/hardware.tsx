@@ -2300,8 +2300,7 @@ title="AMD GPU Tools Installation"
       scriptName="switch_gpu_mode_direct"
       params={{
         EXECUTION_MODE: "web",
-        GPU_SLOT: switchModeParams.gpuSlot,
-        TARGET_MODE: switchModeParams.targetMode,
+        GPU_SWITCH_PARAMS: `${switchModeParams.gpuSlot}|${switchModeParams.targetMode}`,
       }}
       title={`GPU Switch Mode → ${switchModeParams.targetMode.toUpperCase()}`}
       description={`Switching GPU ${switchModeParams.gpuSlot} to ${switchModeParams.targetMode === "vm" ? "VM (VFIO passthrough)" : "LXC (native driver)"} mode...`}

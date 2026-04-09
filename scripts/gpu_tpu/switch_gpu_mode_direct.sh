@@ -878,7 +878,14 @@ final_summary() {
 # Parse Arguments (supports both CLI args and env vars)
 # ==========================================================
 parse_arguments() {
-  # First, check environment variables (set by ScriptTerminalModal)
+  # First, check combined parameter (format: "SLOT|MODE")
+  # This is the primary method used by ProxMenux Monitor
+  if [[ -n "$GPU_SWITCH_PARAMS" ]]; then
+    PARAM_GPU_SLOT="${GPU_SWITCH_PARAMS%%|*}"
+    PARAM_TARGET_MODE="${GPU_SWITCH_PARAMS##*|}"
+  fi
+  
+  # Also check individual environment variables as fallback
   [[ -n "$GPU_SLOT" ]] && PARAM_GPU_SLOT="$GPU_SLOT"
   [[ -n "$TARGET_MODE" ]] && PARAM_TARGET_MODE="$TARGET_MODE"
   
@@ -908,8 +915,7 @@ main() {
 
   # Debug: Show received environment variables
   echo "[DEBUG] Environment variables received:"
-  echo "[DEBUG] GPU_SLOT='$GPU_SLOT'"
-  echo "[DEBUG] TARGET_MODE='$TARGET_MODE'"
+  echo "[DEBUG] GPU_SWITCH_PARAMS='$GPU_SWITCH_PARAMS'"
   echo "[DEBUG] EXECUTION_MODE='$EXECUTION_MODE'"
   echo ""
 
