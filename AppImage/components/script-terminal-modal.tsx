@@ -283,12 +283,15 @@ const initMessage = {
         }
       }, 30000)
 
-      const initMessage = {
-        script_path: scriptPath,
-        params,
-      }
-
-      ws.send(JSON.stringify(initMessage))
+      // Small delay to ensure paramsRef is updated with latest props
+      setTimeout(() => {
+        const initMessage = {
+          script_path: scriptPath,
+          params: paramsRef.current,
+        }
+        console.log("[v0] WS onopen - Sending params:", paramsRef.current)
+        ws.send(JSON.stringify(initMessage))
+      }, 50)
 
       setTimeout(() => {
         if (fitAddonRef.current && termRef.current && ws.readyState === WebSocket.OPEN) {
