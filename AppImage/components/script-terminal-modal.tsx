@@ -80,6 +80,12 @@ export function ScriptTerminalModal({
   const modalHeightRef = useRef(600)
 
   const terminalContainerRef = useRef<HTMLDivElement>(null)
+  const paramsRef = useRef(params)
+  
+  // Keep paramsRef updated with latest params
+  useEffect(() => {
+    paramsRef.current = params
+  }, [params])
 
   const attemptReconnect = useCallback(() => {
     if (!isOpen || isComplete || reconnectAttemptsRef.current >= 3) {
@@ -118,7 +124,7 @@ export function ScriptTerminalModal({
 
 const initMessage = {
           script_path: scriptPath,
-          params,
+          params: paramsRef.current,
         }
         ws.send(JSON.stringify(initMessage))
 
