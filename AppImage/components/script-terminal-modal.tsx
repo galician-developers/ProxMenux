@@ -43,6 +43,8 @@ interface ScriptTerminalModalProps {
   scriptPath: string
   title: string
   description: string
+  scriptName?: string
+  params?: Record<string, string>
 }
 
 export function ScriptTerminalModal({
@@ -51,6 +53,7 @@ export function ScriptTerminalModal({
   scriptPath,
   title,
   description,
+  params = { EXECUTION_MODE: "web" },
 }: ScriptTerminalModalProps) {
   const termRef = useRef<any>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -113,13 +116,11 @@ export function ScriptTerminalModal({
             }
           }, 30000)
 
-          const initMessage = {
-            script_path: scriptPath,
-            params: {
-              EXECUTION_MODE: "web",
-            },
-          }
-          ws.send(JSON.stringify(initMessage))
+const initMessage = {
+          script_path: scriptPath,
+          params,
+        }
+        ws.send(JSON.stringify(initMessage))
 
           setTimeout(() => {
             if (fitAddonRef.current && termRef.current && ws.readyState === WebSocket.OPEN) {

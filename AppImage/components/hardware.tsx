@@ -18,6 +18,8 @@ import {
 } from "../types/hardware"
 import { fetchApi } from "@/lib/api-config"
 import { ScriptTerminalModal } from "./script-terminal-modal"
+import { GpuSwitchModeIndicator } from "./gpu-switch-mode-indicator"
+import { Pencil, Check, X } from "lucide-react"
 
 const parseLsblkSize = (sizeStr: string | undefined): number => {
   if (!sizeStr) return 0
@@ -230,6 +232,11 @@ export default function Hardware() {
   const [installingNvidiaDriver, setInstallingNvidiaDriver] = useState(false)
   const [showAmdInstaller, setShowAmdInstaller] = useState(false)
   const [showIntelInstaller, setShowIntelInstaller] = useState(false)
+  
+  // GPU Switch Mode states
+  const [editingSwitchModeGpu, setEditingSwitchModeGpu] = useState<string | null>(null) // GPU slot being edited
+  const [pendingSwitchModes, setPendingSwitchModes] = useState<Record<string, "lxc" | "vm">>({})
+  const [showSwitchModeModal, setShowSwitchModeModal] = useState(false)
 
   const fetcher = async (url: string) => {
     const data = await fetchApi(url)
@@ -245,6 +252,74 @@ export default function Hardware() {
     refreshInterval: 30000,
     revalidateOnFocus: false,
   })
+
+  // Determine GPU mode based on driver (vfio-pci = VM, native driver = LXC)
+  const getGpuSwitchMode = (gpu: GPU): "lxc" | "vm" | "unknown" => {
+    const driver = gpu.pci_driver?.toLowerCase() || ""
+    if (driver === "vfio-pci") return "vm"
+    if (driver === "nvidia" || driver === "amdgpu" || driver === "radeon" || driver === "i915" || driver === "xe" || driver === "nouveau") return "lxc"
+    if (driver && driver !== "none") return "lxc" // Any other driver = native = LXC mode
+    return "unknown"
+  }
+
+  const handleSwitchModeEdit = (gpuSlot: string, e: React.MouseEvent) => {
+    e.stopPropagation() // Prevent opening GPU modal
+    setEditingSwitchModeGpu(gpuSlot)
+  }
+
+  const handleSwitchModeToggle = (gpu: GPU, e?: React.MouseEvent) => {
+    const slot = gpu.slot
+    const currentMode = getGpuSwitchMode(gpu)
+    const pendingMode = pendingSwitchModes[slot]
+    
+    // Toggle between modes
+    if (pendingMode) {
+      // Already has pending - toggle it
+      const newMode = pendingMode === "lxc" ? "vm" : "lxc"
+      if (newMode === currentMode) {
+        // Back to original - remove pending
+        const newPending = { ...pendingSwitchModes }
+        delete newPending[slot]
+        setPendingSwitchModes(newPending)
+      } else {
+        setPendingSwitchModes({ ...pendingSwitchModes, [slot]: newMode })
+      }
+    } else {
+      // No pending - set opposite of current
+      const newMode = currentMode === "lxc" ? "vm" : "lxc"
+      setPendingSwitchModes({ ...pendingSwitchModes, [slot]: newMode })
+    }
+  }
+
+  const handleSwitchModeSave = (gpuSlot: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const pendingMode = pendingSwitchModes[gpuSlot]
+    const gpu = hardwareDataSWR?.gpus?.find(g => g.slot === gpuSlot)
+    const currentMode = gpu ? getGpuSwitchMode(gpu) : "unknown"
+    
+    if (pendingMode && pendingMode !== currentMode) {
+      // Mode has changed - launch the script
+      setShowSwitchModeModal(true)
+    }
+    setEditingSwitchModeGpu(null)
+  }
+
+  const handleSwitchModeCancel = (gpuSlot: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    // Remove pending change for this GPU
+    const newPending = { ...pendingSwitchModes }
+    delete newPending[gpuSlot]
+    setPendingSwitchModes(newPending)
+    setEditingSwitchModeGpu(null)
+  }
+
+  const handleSwitchModeModalClose = () => {
+    setShowSwitchModeModal(false)
+    // Clear all pending changes after script runs
+    setPendingSwitchModes({})
+    // Refresh hardware data
+    mutateHardware()
+  }
 
   const handleInstallNvidiaDriver = () => {
     console.log("[v0] Opening NVIDIA installer terminal")
@@ -793,6 +868,61 @@ export default function Hardware() {
                       </div>
                     )}
                   </div>
+
+{/* GPU Switch Mode Indicator */}
+  {getGpuSwitchMode(gpu) !== "unknown" && (
+  <div 
+    className="mt-3 pt-3 border-t border-border/30"
+    onClick={(e) => e.stopPropagation()}
+  >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                          Switch Mode
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {editingSwitchModeGpu === fullSlot ? (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-green-500 hover:text-green-400 hover:bg-green-500/10"
+                                onClick={(e) => handleSwitchModeSave(fullSlot, e)}
+                                title="Save changes"
+                              >
+                                <Check className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-red-500 hover:text-red-400 hover:bg-red-500/10"
+                                onClick={(e) => handleSwitchModeCancel(fullSlot, e)}
+                                title="Cancel"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </Button>
+                            </>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                              onClick={(e) => handleSwitchModeEdit(fullSlot, e)}
+                              title="Edit switch mode"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      <GpuSwitchModeIndicator
+                        mode={getGpuSwitchMode(gpu)}
+                        isEditing={editingSwitchModeGpu === fullSlot}
+                        pendingMode={pendingSwitchModes[gpu.slot] || null}
+                        onToggle={(e) => handleSwitchModeToggle(gpu, e)}
+                        compact
+                      />
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -2137,6 +2267,19 @@ title="AMD GPU Tools Installation"
   }}
   title="Intel GPU Tools Installation"
   description="Installing intel-gpu-tools for Intel GPU monitoring..."
+  />
+  
+  {/* GPU Switch Mode Modal */}
+  <ScriptTerminalModal
+    open={showSwitchModeModal}
+    onClose={handleSwitchModeModalClose}
+    scriptPath="/usr/local/share/proxmenux/scripts/gpu_tpu/switch_gpu_mode.sh"
+    scriptName="switch_gpu_mode"
+    params={{
+      EXECUTION_MODE: "web",
+    }}
+    title="GPU Switch Mode"
+    description="Switching GPU between VM (VFIO passthrough) and LXC (native driver) modes..."
   />
   </div>
   )
