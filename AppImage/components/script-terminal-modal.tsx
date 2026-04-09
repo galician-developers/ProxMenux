@@ -126,6 +126,7 @@ const initMessage = {
           script_path: scriptPath,
           params: paramsRef.current,
         }
+        console.log("[v0] Sending initMessage with params:", paramsRef.current)
         ws.send(JSON.stringify(initMessage))
 
           setTimeout(() => {
