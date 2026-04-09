@@ -278,9 +278,7 @@ const initMessage = {
 
       const initMessage = {
         script_path: scriptPath,
-        params: {
-          EXECUTION_MODE: "web",
-        },
+        params,
       }
 
       ws.send(JSON.stringify(initMessage))

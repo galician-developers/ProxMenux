@@ -29,10 +29,14 @@ export function GpuSwitchModeIndicator({
   const vmColor = isVmActive ? "#a855f7" : inactiveColor
 
   const handleClick = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (isEditing && onToggle) {
-      onToggle(e)
+    // Only stop propagation and handle toggle when in editing mode
+    if (isEditing) {
+      e.stopPropagation()
+      if (onToggle) {
+        onToggle(e)
+      }
     }
+    // When not editing, let the click propagate to the card to open the modal
   }
 
   return (
