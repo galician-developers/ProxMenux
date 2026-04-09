@@ -1020,13 +1020,7 @@ main() {
     exit 1
   fi
 
-  # Show info about selected GPU
-  local gpu_idx="${SELECTED_GPU_IDX[0]}"
-  msg_info "$(translate 'GPU selected'): ${ALL_GPU_NAMES[$gpu_idx]} (${ALL_GPU_PCIS[$gpu_idx]})"
-  msg_info "$(translate 'Current driver'): ${ALL_GPU_DRIVERS[$gpu_idx]}"
-  msg_info "$(translate 'Target mode'): $TARGET_MODE"
-  echo
-
+ 
   # Confirm the operation
   confirm_plan
 
