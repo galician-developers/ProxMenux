@@ -906,7 +906,20 @@ main() {
   : >"$LOG_FILE"
   : >"$screen_capture"
 
+  # Debug: Show received environment variables
+  echo "[DEBUG] Environment variables received:"
+  echo "[DEBUG] GPU_SLOT='$GPU_SLOT'"
+  echo "[DEBUG] TARGET_MODE='$TARGET_MODE'"
+  echo "[DEBUG] EXECUTION_MODE='$EXECUTION_MODE'"
+  echo ""
+
   parse_arguments "$@"
+
+  # Debug: Show parsed parameters
+  echo "[DEBUG] After parsing:"
+  echo "[DEBUG] PARAM_GPU_SLOT='$PARAM_GPU_SLOT'"
+  echo "[DEBUG] PARAM_TARGET_MODE='$PARAM_TARGET_MODE'"
+  echo ""
 
   # Validate required parameters
   if [[ -z "$PARAM_GPU_SLOT" ]]; then
