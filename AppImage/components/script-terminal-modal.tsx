@@ -126,7 +126,6 @@ const initMessage = {
           script_path: scriptPath,
           params: paramsRef.current,
         }
-        console.log("[v0] Sending initMessage with params:", paramsRef.current)
         ws.send(JSON.stringify(initMessage))
 
           setTimeout(() => {
@@ -289,7 +288,6 @@ const initMessage = {
           script_path: scriptPath,
           params: paramsRef.current,
         }
-        console.log("[v0] WS onopen - Sending params:", paramsRef.current)
         ws.send(JSON.stringify(initMessage))
       }, 50)
 

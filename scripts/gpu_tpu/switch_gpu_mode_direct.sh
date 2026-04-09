@@ -359,6 +359,44 @@ _remove_amd_softdep() {
   $changed
 }
 
+_add_vfio_modules() {
+  local modules=("vfio" "vfio_iommu_type1" "vfio_pci")
+  local kernel_major kernel_minor
+  kernel_major=$(uname -r | cut -d. -f1)
+  kernel_minor=$(uname -r | cut -d. -f2)
+  if (( kernel_major < 6 || ( kernel_major == 6 && kernel_minor < 2 ) )); then
+    modules+=("vfio_virqfd")
+  fi
+  local mod
+  for mod in "${modules[@]}"; do
+    _add_line_if_missing "$mod" /etc/modules
+  done
+}
+
+_remove_vfio_modules_if_unused() {
+  local vfio_count
+  vfio_count=$(_read_vfio_ids | wc -l | tr -d '[:space:]')
+  [[ "$vfio_count" != "0" ]] && return 1
+  local modules_file="/etc/modules"
+  [[ ! -f "$modules_file" ]] && return 1
+  local had_any=false
+  grep -qE '^vfio$|^vfio_iommu_type1$|^vfio_pci$|^vfio_virqfd$' "$modules_file" 2>/dev/null && had_any=true
+  sed -i '/^vfio$/d' "$modules_file"
+  sed -i '/^vfio_iommu_type1$/d' "$modules_file"
+  sed -i '/^vfio_pci$/d' "$modules_file"
+  sed -i '/^vfio_virqfd$/d' "$modules_file"
+  if $had_any; then
+    HOST_CONFIG_CHANGED=true
+    return 0
+  fi
+  return 1
+}
+
+_configure_iommu_options() {
+  _add_line_if_missing "options vfio_iommu_type1 allow_unsafe_interrupts=1" /etc/modprobe.d/iommu_unsafe_interrupts.conf
+  _add_line_if_missing "options kvm ignore_msrs=1" /etc/modprobe.d/kvm.conf
+}
+
 _selected_types_unique() {
   local idx t
   local -a seen=()
@@ -428,6 +466,40 @@ find_gpu_by_slot() {
   done
   
   msg_error "$(translate 'GPU not found with slot'): $target_slot"
+  return 1
+}
+
+validate_vm_mode_blocked_ids() {
+  [[ "$TARGET_MODE" != "vm" ]] && return 0
+
+  local -a blocked_lines=()
+  local idx viddid name pci
+  for idx in "${SELECTED_GPU_IDX[@]}"; do
+    viddid="${ALL_GPU_VIDDID[$idx]}"
+    name="${ALL_GPU_NAMES[$idx]}"
+    pci="${ALL_GPU_PCIS[$idx]}"
+
+    case "$viddid" in
+      8086:5a84|8086:5a85)
+        blocked_lines+=("  - ${name} (${pci}) [ID: ${viddid}]")
+        ;;
+    esac
+  done
+
+  [[ ${#blocked_lines[@]} -eq 0 ]] && return 0
+
+  local msg
+  msg="<div style='color:#ff6b6b;font-weight:bold;margin-bottom:10px;'>$(translate 'Blocked GPU ID for VM Mode')</div>"
+  msg+="<p>$(translate 'At least one selected GPU is blocked by policy for GPU -> VM mode due to passthrough instability risk.')</p>"
+  msg+="<p><strong>$(translate 'Blocked device(s)'):</strong></p><ul>"
+  local line
+  for line in "${blocked_lines[@]}"; do
+    msg+="<li>${line}</li>"
+  done
+  msg+="</ul>"
+  msg+="<p>$(translate 'Recommended: use GPU -> LXC mode for these devices.')</p>"
+
+  hybrid_msgbox "$(translate 'GPU Switch Mode Blocked')" "$msg"
   return 1
 }
 
@@ -913,19 +985,7 @@ main() {
   : >"$LOG_FILE"
   : >"$screen_capture"
 
-  # Debug: Show received environment variables
-  echo "[DEBUG] Environment variables received:"
-  echo "[DEBUG] GPU_SWITCH_PARAMS='$GPU_SWITCH_PARAMS'"
-  echo "[DEBUG] EXECUTION_MODE='$EXECUTION_MODE'"
-  echo ""
-
   parse_arguments "$@"
-
-  # Debug: Show parsed parameters
-  echo "[DEBUG] After parsing:"
-  echo "[DEBUG] PARAM_GPU_SLOT='$PARAM_GPU_SLOT'"
-  echo "[DEBUG] PARAM_TARGET_MODE='$PARAM_TARGET_MODE'"
-  echo ""
 
   # Validate required parameters
   if [[ -z "$PARAM_GPU_SLOT" ]]; then
@@ -952,6 +1012,11 @@ main() {
 
   # Find the specific GPU by slot
   if ! find_gpu_by_slot "$PARAM_GPU_SLOT"; then
+    exit 1
+  fi
+
+  # Validate if GPU is blocked for VM mode (certain Intel GPUs)
+  if ! validate_vm_mode_blocked_ids; then
     exit 1
   fi
 
