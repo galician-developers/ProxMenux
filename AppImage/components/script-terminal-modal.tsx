@@ -138,6 +138,11 @@ const initMessage = {
         }
 
         ws.onmessage = (event) => {
+          // Filter out pong responses from heartbeat
+          if (event.data === '{"type": "pong"}' || event.data === '{"type":"pong"}') {
+            return
+          }
+          
           try {
             const msg = JSON.parse(event.data)
             if (msg.type === "web_interaction" && msg.interaction) {
@@ -282,14 +287,11 @@ const initMessage = {
         }
       }, 30000)
 
-      // Small delay to ensure paramsRef is updated with latest props
-      setTimeout(() => {
-        const initMessage = {
-          script_path: scriptPath,
-          params: paramsRef.current,
-        }
-        ws.send(JSON.stringify(initMessage))
-      }, 50)
+      const initMessage = {
+        script_path: scriptPath,
+        params: paramsRef.current,
+      }
+      ws.send(JSON.stringify(initMessage))
 
       setTimeout(() => {
         if (fitAddonRef.current && termRef.current && ws.readyState === WebSocket.OPEN) {
@@ -307,6 +309,11 @@ const initMessage = {
     }
 
     ws.onmessage = (event) => {
+      // Filter out pong responses from heartbeat - don't display in terminal
+      if (event.data === '{"type": "pong"}' || event.data === '{"type":"pong"}') {
+        return
+      }
+      
       try {
         const msg = JSON.parse(event.data)
 
