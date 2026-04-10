@@ -1543,6 +1543,28 @@ sanitize_nvidia_host_stack_for_vfio() {
         changed=true
     fi
 
+    # Disable NVIDIA udev rules that trigger nvidia-smi (causes conflict with vfio-pci)
+    local udev_rules="/etc/udev/rules.d/70-nvidia.rules"
+    if [[ -f "$udev_rules" ]]; then
+        mv "$udev_rules" "${udev_rules}.proxmenux-disabled" >>"$LOG_FILE" 2>&1 || true
+        udevadm control --reload-rules >>"$LOG_FILE" 2>&1 || true
+        changed=true
+    fi
+
+    # Create hard blacklist to prevent ANY nvidia module loading (even via modprobe/nvidia-smi)
+    local nvidia_blacklist="/etc/modprobe.d/nvidia-blacklist.conf"
+    if [[ ! -f "$nvidia_blacklist" ]]; then
+        cat > "$nvidia_blacklist" <<'EOF'
+# ProxMenux: Hard blacklist to prevent ANY nvidia module loading in VFIO mode
+# This prevents nvidia-smi and other tools from triggering module load attempts
+install nvidia /bin/false
+install nvidia_uvm /bin/false
+install nvidia_drm /bin/false
+install nvidia_modeset /bin/false
+EOF
+        changed=true
+    fi
+
     if $changed; then
         HOST_CONFIG_CHANGED=true
         msg_ok "$(translate 'NVIDIA host services/autoload disabled for VFIO mode')" | tee -a "$screen_capture"

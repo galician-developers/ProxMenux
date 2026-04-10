@@ -804,6 +804,20 @@ _remove_gpu_blacklist() {
       sed -i '/^blacklist nvidia_uvm$/d'        "$blacklist_file"
       sed -i '/^blacklist lbm-nouveau$/d'       "$blacklist_file"
       sed -i '/^options nouveau modeset=0$/d'   "$blacklist_file"
+      
+      # Remove hard blacklist file created for VFIO mode
+      local nvidia_blacklist="/etc/modprobe.d/nvidia-blacklist.conf"
+      if [[ -f "$nvidia_blacklist" ]]; then
+        rm -f "$nvidia_blacklist"
+      fi
+      
+      # Restore NVIDIA udev rules if they were disabled for VFIO mode
+      local udev_disabled="/etc/udev/rules.d/70-nvidia.rules.proxmenux-disabled"
+      local udev_rules="/etc/udev/rules.d/70-nvidia.rules"
+      if [[ -f "$udev_disabled" ]]; then
+        mv "$udev_disabled" "$udev_rules"
+        udevadm control --reload-rules >/dev/null 2>&1 || true
+      fi
       ;;
     amd)
       sed -i '/^blacklist radeon$/d'    "$blacklist_file"
