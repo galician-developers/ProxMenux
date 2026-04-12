@@ -1501,19 +1501,19 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
   
   // Build attributes table
   const attributeRows = smartAttributes.map((attr, i) => {
-    const statusColor = attr.status === 'ok' ? '#16a34a' : attr.status === 'warning' ? '#ca8a04' : '#dc2626'
-    const statusBg = attr.status === 'ok' ? '#16a34a15' : attr.status === 'warning' ? '#ca8a0415' : '#dc262615'
-    return `
-      <tr>
-        <td style="font-weight:600;">${attr.id}</td>
-        <td>${attr.name}</td>
-        <td style="text-align:center;">${attr.value}</td>
-        <td style="text-align:center;">${attr.worst}</td>
-        <td style="text-align:center;">${attr.threshold}</td>
-        <td style="font-family:monospace;font-size:11px;">${attr.raw_value}</td>
-        <td><span class="f-tag" style="background:${statusBg};color:${statusColor}">${attr.status.toUpperCase()}</span></td>
-      </tr>
-    `
+  const statusColor = attr.status === 'ok' ? '#16a34a' : attr.status === 'warning' ? '#ca8a04' : '#dc2626'
+  const statusBg = attr.status === 'ok' ? '#16a34a15' : attr.status === 'warning' ? '#ca8a0415' : '#dc262615'
+  return `
+  <tr>
+  <td style="font-weight:600;">${attr.id}</td>
+  <td class="col-name">${attr.name.replace(/_/g, ' ')}</td>
+  <td style="text-align:center;">${attr.value}</td>
+  <td style="text-align:center;">${attr.worst}</td>
+  <td class="hide-mobile" style="text-align:center;">${attr.threshold}</td>
+  <td class="col-raw">${attr.raw_value}</td>
+  <td><span class="f-tag" style="background:${statusBg};color:${statusColor}">${attr.status === 'ok' ? 'OK' : attr.status.toUpperCase()}</span></td>
+  </tr>
+  `
   }).join('')
   
   // Critical attributes to highlight
@@ -1567,7 +1567,13 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
     .section { page-break-inside: avoid; break-inside: avoid; }
   }
   @media screen {
-    body { max-width: 1000px; margin: 0 auto; padding: 24px 32px; padding-top: 64px; }
+    body { max-width: 1000px; margin: 0 auto; padding: 24px 32px; padding-top: 64px; overflow-x: hidden; }
+  }
+  @media screen and (max-width: 640px) {
+    body { padding: 16px; padding-top: 64px; }
+    .grid-4 { grid-template-columns: 1fr 1fr; }
+    .rpt-header { flex-direction: column; gap: 12px; align-items: flex-start; }
+    .rpt-header-right { text-align: left; }
   }
   
   /* Top bar */
@@ -1635,9 +1641,18 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
 
   /* Tables */
   .attr-tbl { width: 100%; border-collapse: collapse; font-size: 11px; }
-  .attr-tbl th { text-align: left; padding: 8px; font-size: 10px; color: #64748b; font-weight: 600; border-bottom: 2px solid #e2e8f0; background: #f1f5f9; }
-  .attr-tbl td { padding: 6px 8px; border-bottom: 1px solid #f1f5f9; color: #1e293b; }
+  .attr-tbl th { text-align: left; padding: 6px 4px; font-size: 10px; color: #64748b; font-weight: 600; border-bottom: 2px solid #e2e8f0; background: #f1f5f9; }
+  .attr-tbl td { padding: 5px 4px; border-bottom: 1px solid #f1f5f9; color: #1e293b; }
   .attr-tbl tr:hover { background: #f8fafc; }
+  .attr-tbl .col-name { word-break: break-word; }
+  .attr-tbl .col-raw { font-family: monospace; font-size: 10px; }
+  .hide-mobile { display: table-cell; }
+  @media screen and (max-width: 640px) {
+    .hide-mobile { display: none !important; }
+    .attr-tbl { font-size: 10px; }
+    .attr-tbl th, .attr-tbl td { padding: 4px 2px; }
+    .attr-tbl .col-raw { font-size: 9px; word-break: break-all; }
+  }
 
   /* Recommendations */
   .rec-item { display: flex; align-items: flex-start; gap: 12px; padding: 12px; border-radius: 6px; margin-bottom: 8px; }
@@ -1748,27 +1763,28 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
 </div>
 
 <!-- 3. SMART Attributes -->
-<div class="section">
-  <div class="section-title">3. SMART Attributes (${smartAttributes.length} total${hasCritical ? `, ${criticalAttrs.length} warning(s)` : ''})</div>
+  <div class="section">
+  <div class="section-title">3. SMART Attributes (\${smartAttributes.length} total\${hasCritical ? \`, \${criticalAttrs.length} warning(s)\` : ''})</div>
   <table class="attr-tbl">
     <thead>
       <tr>
-        <th>ID</th>
-        <th>Attribute</th>
-        <th style="text-align:center;">Value</th>
-        <th style="text-align:center;">Worst</th>
-        <th style="text-align:center;">Thresh</th>
-        <th>Raw Value</th>
-        <th>Status</th>
+        <th style="width:28px;">ID</th>
+        <th class="col-name">Attribute</th>
+        <th style="text-align:center;width:40px;">Val</th>
+        <th style="text-align:center;width:40px;">Worst</th>
+        <th class="hide-mobile" style="text-align:center;width:40px;">Thr</th>
+        <th class="col-raw" style="width:60px;">Raw</th>
+        <th style="width:36px;"></th>
       </tr>
     </thead>
     <tbody>
-      ${attributeRows || '<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:20px;">No SMART attributes available</td></tr>'}
-    </tbody>
+      \${attributeRows || '<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:20px;">No SMART attributes available</td></tr>'}
+  </tbody>
   </table>
-</div>
-
-<!-- 4. Last Test Result -->
+  </div>
+  </div>
+  
+  <!-- 4. Last Test Result -->
 <div class="section">
   <div class="section-title">4. Last Self-Test Result</div>
   ${testStatus.last_test ? `
