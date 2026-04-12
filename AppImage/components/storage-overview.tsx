@@ -1913,19 +1913,18 @@ function SmartTestTab({ disk }: SmartTestTabProps) {
     try {
       setInstalling(true)
       setTestError(null)
-      const res = await fetch('/api/storage/smart/tools/install', {
+      const data = await fetchApi<{ success: boolean; error?: string }>('/api/storage/smart/tools/install', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ install_all: true })
       })
-      const data = await res.json()
       if (data.success) {
         fetchSmartStatus()
       } else {
         setTestError(data.error || 'Installation failed. Try manually: apt-get install smartmontools nvme-cli')
       }
-    } catch {
-      setTestError('Failed to install tools. Try manually: apt-get install smartmontools nvme-cli')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to install tools'
+      setTestError(`${message}. Try manually: apt-get install smartmontools nvme-cli`)
     } finally {
       setInstalling(false)
     }
@@ -1935,18 +1934,10 @@ function SmartTestTab({ disk }: SmartTestTabProps) {
     try {
       setRunningTest(testType)
       setTestError(null)
-      const response = await fetch(`/api/storage/smart/${disk.name}/test`, {
+      await fetchApi(`/api/storage/smart/${disk.name}/test`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ test_type: testType })
       })
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-        setTestError(errorData.error || 'Failed to start test')
-        setRunningTest(null)
-        return
-      }
       
       // Poll for status updates
       const pollInterval = setInterval(async () => {
@@ -1963,7 +1954,8 @@ function SmartTestTab({ disk }: SmartTestTabProps) {
         }
       }, 5000)
     } catch (err) {
-      setTestError('Failed to connect to server')
+      const message = err instanceof Error ? err.message : 'Failed to start test'
+      setTestError(message)
       setRunningTest(null)
     }
   }
