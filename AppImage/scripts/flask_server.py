@@ -6368,8 +6368,18 @@ def _ensure_smart_tools(install_if_missing=False):
     has_nvme = shutil.which('nvme') is not None
     
     installed = {'smartctl': False, 'nvme': False}
+    install_errors = []
     
-    if install_if_missing:
+    if install_if_missing and (not has_smartctl or not has_nvme):
+        # Run apt-get update first
+        try:
+            subprocess.run(
+                ['apt-get', 'update'],
+                capture_output=True, text=True, timeout=60
+            )
+        except Exception:
+            pass
+        
         if not has_smartctl:
             try:
                 # Install smartmontools
@@ -6380,8 +6390,10 @@ def _ensure_smart_tools(install_if_missing=False):
                 if proc.returncode == 0:
                     has_smartctl = shutil.which('smartctl') is not None
                     installed['smartctl'] = has_smartctl
-            except Exception:
-                pass
+                else:
+                    install_errors.append(f"smartmontools: {proc.stderr.strip()}")
+            except Exception as e:
+                install_errors.append(f"smartmontools: {str(e)}")
         
         if not has_nvme:
             try:
@@ -6393,13 +6405,16 @@ def _ensure_smart_tools(install_if_missing=False):
                 if proc.returncode == 0:
                     has_nvme = shutil.which('nvme') is not None
                     installed['nvme'] = has_nvme
-            except Exception:
-                pass
+                else:
+                    install_errors.append(f"nvme-cli: {proc.stderr.strip()}")
+            except Exception as e:
+                install_errors.append(f"nvme-cli: {str(e)}")
     
     return {
         'smartctl': has_smartctl, 
         'nvme': has_nvme,
-        'just_installed': installed
+        'just_installed': installed,
+        'install_errors': install_errors
     }
 
 def _parse_smart_attributes(output_lines):
@@ -6697,25 +6712,50 @@ def api_smart_tools_install():
     """Install SMART tools (smartmontools and nvme-cli)."""
     try:
         data = request.get_json() or {}
-        packages = data.get('packages', ['smartmontools', 'nvme-cli'])
+        install_all = data.get('install_all', False)
+        packages = data.get('packages', ['smartmontools', 'nvme-cli'] if install_all else [])
+        
+        if not packages and install_all:
+            packages = ['smartmontools', 'nvme-cli']
+        
+        if not packages:
+            return jsonify({'error': 'No packages specified'}), 400
+        
+        # Run apt-get update first
+        update_proc = subprocess.run(
+            ['apt-get', 'update'],
+            capture_output=True, text=True, timeout=60
+        )
         
         results = {}
+        all_success = True
         for pkg in packages:
             if pkg not in ('smartmontools', 'nvme-cli'):
                 results[pkg] = {'success': False, 'error': 'Invalid package name'}
+                all_success = False
                 continue
             
-            # Update apt cache and install
+            # Install package
             proc = subprocess.run(
                 ['apt-get', 'install', '-y', pkg],
                 capture_output=True, text=True, timeout=120
             )
+            success = proc.returncode == 0
             results[pkg] = {
-                'success': proc.returncode == 0,
-                'output': proc.stdout if proc.returncode == 0 else proc.stderr
+                'success': success,
+                'output': proc.stdout if success else proc.stderr
             }
+            if not success:
+                all_success = False
         
-        return jsonify(results)
+        # Check what's now installed
+        tools = _ensure_smart_tools()
+        
+        return jsonify({
+            'success': all_success,
+            'results': results,
+            'tools': tools
+        })
     except subprocess.TimeoutExpired:
         return jsonify({'error': 'Installation timeout'}), 504
     except Exception as e:

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { HardDrive, Database, AlertTriangle, CheckCircle2, XCircle, Square, Thermometer, Archive, Info, Clock, Usb, Server, Activity, FileText, Play, Loader2 } from "lucide-react"
+import { HardDrive, Database, AlertTriangle, CheckCircle2, XCircle, Square, Thermometer, Archive, Info, Clock, Usb, Server, Activity, FileText, Play, Loader2, Download } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -1869,6 +1869,10 @@ interface SmartTestStatus {
       status: 'ok' | 'warning' | 'critical'
     }>
   }
+  tools_installed?: {
+    smartctl: boolean
+    nvme: boolean
+  }
 }
 
 function SmartTestTab({ disk }: SmartTestTabProps) {
@@ -1897,6 +1901,35 @@ function SmartTestTab({ disk }: SmartTestTabProps) {
   }
   
   const [testError, setTestError] = useState<string | null>(null)
+  const [installing, setInstalling] = useState(false)
+  
+  // Check if required tools are installed for this disk type
+  const isNvme = disk.name.startsWith('nvme')
+  const toolsAvailable = testStatus.tools_installed 
+    ? (isNvme ? testStatus.tools_installed.nvme : testStatus.tools_installed.smartctl)
+    : true // Assume true until we get the status
+  
+  const installSmartTools = async () => {
+    try {
+      setInstalling(true)
+      setTestError(null)
+      const res = await fetch('/api/storage/smart/tools/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ install_all: true })
+      })
+      const data = await res.json()
+      if (data.success) {
+        fetchSmartStatus()
+      } else {
+        setTestError(data.error || 'Installation failed. Try manually: apt-get install smartmontools nvme-cli')
+      }
+    } catch {
+      setTestError('Failed to install tools. Try manually: apt-get install smartmontools nvme-cli')
+    } finally {
+      setInstalling(false)
+    }
+  }
   
   const runSmartTest = async (testType: 'short' | 'long') => {
     try {
@@ -1940,6 +1973,50 @@ function SmartTestTab({ disk }: SmartTestTabProps) {
       <div className="flex flex-col items-center justify-center py-12 gap-3">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         <p className="text-sm text-muted-foreground">Loading SMART data...</p>
+      </div>
+    )
+  }
+  
+  // If tools not available, show install button only
+  if (!toolsAvailable && !loading) {
+    return (
+      <div className="space-y-6">
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="font-medium text-amber-500">SMART Tools Not Installed</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                {isNvme 
+                  ? 'nvme-cli is required to run SMART tests on NVMe disks.'
+                  : 'smartmontools is required to run SMART tests on this disk.'}
+              </p>
+            </div>
+          </div>
+          
+          <Button
+            onClick={installSmartTools}
+            disabled={installing}
+            className="w-full gap-2 bg-[#4A9BA8] hover:bg-[#3d8591] text-white border-0"
+          >
+            {installing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            {installing ? 'Installing SMART Tools...' : 'Install SMART Tools'}
+          </Button>
+          
+          {testError && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">
+              <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium">Installation Failed</p>
+                <p className="text-xs opacity-80">{testError}</p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     )
   }
@@ -2001,25 +2078,9 @@ function SmartTestTab({ disk }: SmartTestTabProps) {
         {testError && (
           <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">
             <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-            <div>
+            <div className="flex-1">
               <p className="text-sm font-medium">Failed to start test</p>
               <p className="text-xs opacity-80">{testError}</p>
-            </div>
-          </div>
-        )}
-        
-        {/* Tools not installed warning */}
-        {testStatus.tools_installed && (!testStatus.tools_installed.smartctl || !testStatus.tools_installed.nvme) && (
-          <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400">
-            <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="text-sm font-medium">SMART tools not fully installed</p>
-              <p className="text-xs opacity-80">
-                {!testStatus.tools_installed.smartctl && 'smartmontools (for SATA/SAS) '}
-                {!testStatus.tools_installed.smartctl && !testStatus.tools_installed.nvme && 'and '}
-                {!testStatus.tools_installed.nvme && 'nvme-cli (for NVMe) '}
-                not found. Click a test button to auto-install.
-              </p>
             </div>
           </div>
         )}
