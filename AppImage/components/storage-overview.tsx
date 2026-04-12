@@ -1904,7 +1904,7 @@ function SmartTestTab({ disk }: SmartTestTabProps) {
   const [installing, setInstalling] = useState(false)
   
   // Check if required tools are installed for this disk type
-  const isNvme = disk.name.startsWith('nvme')
+  const isNvme = disk.name.includes('nvme')
   const toolsAvailable = testStatus.tools_installed 
     ? (isNvme ? testStatus.tools_installed.nvme : testStatus.tools_installed.smartctl)
     : true // Assume true until we get the status

@@ -6355,8 +6355,8 @@ def api_proxmox_storage():
 SMART_DIR = '/usr/local/share/proxmenux/smart'
 
 def _is_nvme(disk_name):
-    """Check if disk is NVMe."""
-    return disk_name.startswith('nvme')
+    """Check if disk is NVMe (supports names like nvme0n1, nvme0n1p1)."""
+    return 'nvme' in disk_name
 
 def _get_smart_json_path(disk_name):
     """Get path to SMART JSON file for a disk."""
@@ -6497,31 +6497,39 @@ def api_smart_status(disk_name):
         # Get current SMART status
         if is_nvme:
             # NVMe: Check for running test
-            proc = subprocess.run(
-                ['nvme', 'self-test-log', device],
-                capture_output=True, text=True, timeout=10
-            )
-            if 'in progress' in proc.stdout.lower():
-                result['status'] = 'running'
-                result['test_type'] = 'nvme'
+            try:
+                proc = subprocess.run(
+                    ['nvme', 'self-test-log', device],
+                    capture_output=True, text=True, timeout=10
+                )
+                if proc.returncode == 0 and 'in progress' in proc.stdout.lower():
+                    result['status'] = 'running'
+                    result['test_type'] = 'nvme'
+            except subprocess.TimeoutExpired:
+                pass
             
             # Get smart-log data
-            proc = subprocess.run(
-                ['nvme', 'smart-log', device],
-                capture_output=True, text=True, timeout=10
-            )
-            if proc.returncode == 0:
-                lines = proc.stdout.strip().split('\n')
-                smart_data = {}
-                for line in lines:
-                    if ':' in line:
-                        key, value = line.split(':', 1)
-                        smart_data[key.strip().lower().replace(' ', '_')] = value.strip()
-                result['smart_data'] = smart_data
-                
-                # Check health
-                crit_warn = smart_data.get('critical_warning', '0')
-                result['smart_status'] = 'passed' if crit_warn == '0' else 'warning'
+            try:
+                proc = subprocess.run(
+                    ['nvme', 'smart-log', device],
+                    capture_output=True, text=True, timeout=10
+                )
+                if proc.returncode == 0:
+                    lines = proc.stdout.strip().split('\n')
+                    smart_data = {}
+                    for line in lines:
+                        if ':' in line:
+                            key, value = line.split(':', 1)
+                            smart_data[key.strip().lower().replace(' ', '_')] = value.strip()
+                    result['smart_data'] = smart_data
+                    
+                    # Check health
+                    crit_warn = smart_data.get('critical_warning', '0')
+                    result['smart_status'] = 'passed' if crit_warn == '0' else 'warning'
+                else:
+                    result['nvme_error'] = proc.stderr.strip() or 'Failed to read SMART data'
+            except subprocess.TimeoutExpired:
+                result['nvme_error'] = 'Command timeout'
         else:
             # SATA/SAS: Check for running test
             proc = subprocess.run(
@@ -6638,13 +6646,26 @@ def api_smart_run_test(disk_name):
             
             # NVMe: self-test-code 1=short, 2=long
             code = 1 if test_type == 'short' else 2
+            
+            # First check if device supports self-test
+            check_proc = subprocess.run(
+                ['nvme', 'id-ctrl', device],
+                capture_output=True, text=True, timeout=10
+            )
+            if check_proc.returncode != 0:
+                return jsonify({'error': f'Cannot access NVMe device: {check_proc.stderr.strip() or "Device not responding"}'}), 500
+            
             proc = subprocess.run(
                 ['nvme', 'device-self-test', device, f'--self-test-code={code}'],
                 capture_output=True, text=True, timeout=30
             )
             
             if proc.returncode != 0:
-                return jsonify({'error': f'Failed to start test: {proc.stderr}'}), 500
+                error_msg = proc.stderr.strip() or proc.stdout.strip() or 'Unknown error'
+                # Some NVMe devices don't support self-test
+                if 'not support' in error_msg.lower() or 'invalid' in error_msg.lower():
+                    return jsonify({'error': f'This NVMe device does not support self-test: {error_msg}'}), 400
+                return jsonify({'error': f'Failed to start test: {error_msg}'}), 500
             
             # Start background monitor to save JSON when test completes
             sleep_interval = 10 if test_type == 'short' else 60
