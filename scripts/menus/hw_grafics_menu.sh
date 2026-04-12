@@ -27,20 +27,24 @@ initialize_cache
 while true; do
     OPTION=$(dialog --colors --backtitle "ProxMenux" \
         --title "$(translate "GPUs and Coral-TPU Menu")" \
-        --menu "\n$(translate "Select an option:")" 25 80 15 \
+        --menu "\n$(translate "Select an option:")" 26 78 18 \
             ""  "\Z4──────────────────────── HOST ─────────────────────────\Zn" \
             "1"         "$(translate "Install NVIDIA Drivers on Host")" \
             "2"         "$(translate "Update NVIDIA Drivers (Host + LXC)")" \
             "3"         "$(translate "Install/Update Coral TPU on Host")" \
+            ""          "" \
             ""  "\Z4──────────────────────── LXC ──────────────────────────\Zn" \
             "4"         "$(translate "Add GPU to LXC   (Intel | AMD | NVIDIA)")  \Zb\Z4Switch Mode\Zn" \
             "5"         "$(translate "Add Coral TPU to LXC")" \
+            ""          "" \
             ""  "\Z4──────────────────────── VM ───────────────────────────\Zn" \
             "6"         "$(translate "Add GPU to VM    (Intel | AMD | NVIDIA)")  \Zb\Z4Switch Mode\Zn" \
             ""          "" \
             ""  "\Z4──────────────────── SWICHT MODE ───────────────────────\Zn" \
             "7"         "$(translate "Switch GPU Mode  (VM <-> LXC)")" \
-            ""          "" \
+            ""  "" \
+            ""  "\Z4────────────────────── Utilities ───────────────────────\Zn" \
+            "8"         "$(translate "Manual CLI Guide (GPU/TPU)")" \
             "0"         "$(translate "Return to Main Menu")" \
             2>&1 >/dev/tty
     ) || { exec bash "$LOCAL_SCRIPTS/menus/main_menu.sh"; }
@@ -66,6 +70,9 @@ while true; do
             ;;
         7)
             bash "$LOCAL_SCRIPTS/gpu_tpu/switch_gpu_mode.sh"
+            ;;
+        8)
+            bash "$LOCAL_SCRIPTS/gpu_tpu/gpu-tpu-manual-guide.sh"
             ;;
         0)
             exec bash "$LOCAL_SCRIPTS/menus/main_menu.sh"

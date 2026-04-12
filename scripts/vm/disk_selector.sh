@@ -80,21 +80,21 @@ function select_disk_type() {
   while true; do
     local choice
     choice=$(whiptail --backtitle "ProxMenux" --title "STORAGE PLAN" --menu "$(_build_storage_plan_summary)" 18 78 5 \
-      "1" "$(translate "Add virtual disk")" \
-      "2" "$(translate "Add import disk")" \
-      "3" "$(translate "Add Controller or NVMe (PCI passthrough)")" \
+      "a" "$(translate "Add virtual disk")" \
+      "b" "$(translate "Add import disk")" \
+      "c" "$(translate "Add Controller or NVMe (PCI passthrough)")" \
       "r" "$(translate "Reset current storage selection")" \
-      "d" "$(translate "[ Finish and continue ]")" \
+      "d" "$(translate "──── [ Finish and continue ] ────")" \
       --ok-button "Select" --cancel-button "Cancel" 3>&1 1>&2 2>&3) || return 1
 
     case "$choice" in
-      1)
+      a)
         select_virtual_disk
         ;;
-      2)
+      b)
         select_import_disk
         ;;
-      3)
+      c)
         select_controller_nvme
         ;;
       r)

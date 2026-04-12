@@ -118,7 +118,7 @@ function prompt_controller_conflict_policy() {
   shift
   local -a source_vms=("$@")
   local msg vmid vm_name st ob
-  msg="$(translate "Selected controller/NVMe is already assigned to other VM(s):")\n\n"
+  msg="\n$(translate "Selected controller/NVMe is already assigned to other VM(s):")\n\n"
   for vmid in "${source_vms[@]}"; do
     vm_name=$(_vm_name_by_id "$vmid")
     st="stopped"; _vm_status_is_running "$vmid" && st="running"
@@ -128,7 +128,7 @@ function prompt_controller_conflict_policy() {
   msg+="\n$(translate "Choose action for this controller/NVMe:")"
 
   local choice
-  choice=$(whiptail --title "$(translate "Controller/NVMe Conflict Policy")" --menu "$msg" 22 96 10 \
+  choice=$(whiptail --title "$(translate "Controller/NVMe Conflict Policy")" --menu "$msg" 20 80 10 \
     "1" "$(translate "Keep in source VM(s) + disable onboot + add to target VM")" \
     "2" "$(translate "Move to target VM (remove from source VM config)")" \
     "3" "$(translate "Skip this device")" \
@@ -554,6 +554,7 @@ fi
         if qm set "$VMID" --hostpci${hostpci_idx} "${pci},pcie=1" >/dev/null 2>&1; then
           msg_ok "$(translate "Controller/NVMe assigned") (hostpci${hostpci_idx} → ${pci})"
           DISK_INFO+="<p>Controller/NVMe: ${pci}</p>"
+          BOOT_ORDER="${BOOT_ORDER:+$BOOT_ORDER;}hostpci${hostpci_idx}"
           hostpci_idx=$((hostpci_idx + 1))
         else
           msg_error "$(translate "Failed to assign Controller/NVMe") (${pci})"
@@ -769,18 +770,26 @@ if [[ "${WIZARD_ADD_GPU:-no}" == "yes" ]]; then
     echo -e
   fi
   local HOST_REBOOT_REQUIRED="no"
+  local REBOOT_REASONS=""
   if [[ "${VM_STORAGE_IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
     HOST_REBOOT_REQUIRED="yes"
-    msg_warn "$(translate "IOMMU was enabled during this wizard. Reboot the host to apply it.")"
+    msg_ok "$(translate "IOMMU has been enabled — a system reboot is required")"
+    REBOOT_REASONS+="$(translate "IOMMU has been enabled on this system.")\n"
   fi
   if [[ "$GPU_WIZARD_REBOOT_REQUIRED" == "yes" ]]; then
     HOST_REBOOT_REQUIRED="yes"
+    REBOOT_REASONS+="$(translate "GPU passthrough changes require a host reboot.")\n"
   fi
   if [[ "$HOST_REBOOT_REQUIRED" == "yes" ]]; then
-    if whiptail --title "$(translate "Reboot Recommended")" --yesno \
-"$(translate "A host reboot is required to apply passthrough changes before starting the VM.")\n\n$(translate "Do you want to reboot now?")" 11 78; then
+    echo ""
+    if whiptail --title "$(translate "Reboot Required")" --yesno \
+"\n${REBOOT_REASONS}\n$(translate "A host reboot is required before starting the VM. Reboot now?")" 13 78; then
       msg_warn "$(translate "Rebooting the system...")"
       reboot
+    else
+      echo ""
+      msg_info2 "$(translate "To use the VM without issues, the host must be restarted before starting it.")"
+      msg_info2 "$(translate "Do not start the VM until the system has been rebooted.")"
     fi
   fi
   msg_success "$(translate "Press Enter to return to the main menu...")"
@@ -805,10 +814,6 @@ elif [[ "$OS_TYPE" == "3" ]]; then
   echo -e "${TAB}$(translate "Run the following inside the VM:")"
   echo -e "${TAB}apt install qemu-guest-agent -y && systemctl enable --now qemu-guest-agent"
   echo -e
-fi
-
-if [[ "${VM_STORAGE_IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
-  msg_warn "$(translate "IOMMU was enabled during this wizard. Reboot the host to apply it.")"
 fi
 
 msg_success "$(translate "Press Enter to return to the main menu...")"

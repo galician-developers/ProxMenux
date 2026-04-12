@@ -55,7 +55,6 @@ ensure_iscsi_tools() {
     fi
 
     if ! systemctl is-active --quiet iscsid 2>/dev/null; then
-        msg_info "$(translate "Starting iSCSI daemon...")"
         systemctl start iscsid 2>/dev/null || true
     fi
 }
@@ -65,10 +64,9 @@ ensure_iscsi_tools() {
 # ==========================================================
 
 select_iscsi_portal() {
-    ISCSI_PORTAL=$(whiptail --inputbox \
+    ISCSI_PORTAL=$(dialog --backtitle "ProxMenux" --title "$(translate "iSCSI Portal")" --inputbox \
         "$(translate "Enter iSCSI target portal IP or hostname:")\n\n$(translate "Examples:")\n  192.168.1.100\n  192.168.1.100:3260\n  nas.local" \
-        14 65 \
-        --title "$(translate "iSCSI Portal")" 3>&1 1>&2 2>&3)
+        14 65 3>&1 1>&2 2>&3)
     [[ $? -ne 0 || -z "$ISCSI_PORTAL" ]] && return 1
 
     # Normalise: if no port specified, add default 3260

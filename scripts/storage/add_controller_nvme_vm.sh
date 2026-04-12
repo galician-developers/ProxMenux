@@ -14,6 +14,7 @@ LOCAL_SCRIPTS_LOCAL="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOCAL_SCRIPTS_DEFAULT="/usr/local/share/proxmenux/scripts"
 LOCAL_SCRIPTS="$LOCAL_SCRIPTS_DEFAULT"
 BASE_DIR="/usr/local/share/proxmenux"
+TOOLS_JSON="$BASE_DIR/installed_tools.json"
 UTILS_FILE="$LOCAL_SCRIPTS/utils.sh"
 if [[ -f "$LOCAL_SCRIPTS_LOCAL/utils.sh" ]]; then
   LOCAL_SCRIPTS="$LOCAL_SCRIPTS_LOCAL"
@@ -51,22 +52,45 @@ SELECTED_VMID=""
 SELECTED_VM_NAME=""
 declare -a SELECTED_CONTROLLER_PCIS=()
 IOMMU_PENDING_REBOOT=0
+IOMMU_ALREADY_ACTIVE=0
+NEED_HOOK_SYNC=false
+WIZARD_CONFLICT_POLICY=""
+WIZARD_CONFLICT_SCOPE=""
 
 set_title() {
   show_proxmenux_logo
   msg_title "$(translate "Add Controller or NVMe PCIe to VM")"
 }
 
+ensure_tools_json() {
+  [[ -f "$TOOLS_JSON" ]] || echo "{}" > "$TOOLS_JSON"
+}
+
+register_tool() {
+  local tool="$1"
+  local state="$2"
+  command -v jq >/dev/null 2>&1 || return 0
+  ensure_tools_json
+  jq --arg t "$tool" --argjson v "$state" \
+    '.[$t]=$v' "$TOOLS_JSON" > "$TOOLS_JSON.tmp" \
+    && mv "$TOOLS_JSON.tmp" "$TOOLS_JSON"
+}
+
+register_vfio_iommu_tool() {
+  register_tool "vfio_iommu" true || true
+}
+
 enable_iommu_cmdline() {
+  local silent="${1:-}"
   local cpu_vendor iommu_param
   cpu_vendor=$(grep -m1 "vendor_id" /proc/cpuinfo 2>/dev/null | awk '{print $3}')
 
   if [[ "$cpu_vendor" == "GenuineIntel" ]]; then
     iommu_param="intel_iommu=on"
-    msg_info "$(translate "Intel CPU detected")"
+    [[ "$silent" != "silent" ]] && msg_info "$(translate "Intel CPU detected")"
   elif [[ "$cpu_vendor" == "AuthenticAMD" ]]; then
     iommu_param="amd_iommu=on"
-    msg_info "$(translate "AMD CPU detected")"
+    [[ "$silent" != "silent" ]] && msg_info "$(translate "AMD CPU detected")"
   else
     msg_error "$(translate "Unknown CPU vendor. Cannot determine IOMMU parameter.")"
     return 1
@@ -76,22 +100,22 @@ enable_iommu_cmdline() {
   local grub_file="/etc/default/grub"
 
   if [[ -f "$cmdline_file" ]] && grep -qE 'root=ZFS=|root=ZFS/' "$cmdline_file" 2>/dev/null; then
-    if ! grep -q "$iommu_param" "$cmdline_file"; then
+    if ! grep -q "$iommu_param" "$cmdline_file" || ! grep -q "iommu=pt" "$cmdline_file"; then
       cp "$cmdline_file" "${cmdline_file}.bak.$(date +%Y%m%d_%H%M%S)"
       sed -i "s|\\s*$| ${iommu_param} iommu=pt|" "$cmdline_file"
       proxmox-boot-tool refresh >/dev/null 2>&1 || true
-      msg_ok "$(translate "IOMMU parameters added to /etc/kernel/cmdline")"
+      [[ "$silent" != "silent" ]] && msg_ok "$(translate "IOMMU parameters added to /etc/kernel/cmdline")"
     else
-      msg_ok "$(translate "IOMMU already configured in /etc/kernel/cmdline")"
+      [[ "$silent" != "silent" ]] && msg_ok "$(translate "IOMMU already configured in /etc/kernel/cmdline")"
     fi
   elif [[ -f "$grub_file" ]]; then
-    if ! grep -q "$iommu_param" "$grub_file"; then
+    if ! grep -q "$iommu_param" "$grub_file" || ! grep -q "iommu=pt" "$grub_file"; then
       cp "$grub_file" "${grub_file}.bak.$(date +%Y%m%d_%H%M%S)"
       sed -i "/GRUB_CMDLINE_LINUX_DEFAULT=/ s|\"$| ${iommu_param} iommu=pt\"|" "$grub_file"
       update-grub >/dev/null 2>&1 || true
-      msg_ok "$(translate "IOMMU parameters added to GRUB")"
+      [[ "$silent" != "silent" ]] && msg_ok "$(translate "IOMMU parameters added to GRUB")"
     else
-      msg_ok "$(translate "IOMMU already configured in GRUB")"
+      [[ "$silent" != "silent" ]] && msg_ok "$(translate "IOMMU already configured in GRUB")"
     fi
   else
     msg_error "$(translate "Neither /etc/kernel/cmdline nor /etc/default/grub found.")"
@@ -101,24 +125,29 @@ enable_iommu_cmdline() {
 
 check_iommu_or_offer_enable() {
   if [[ "${IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
+    register_vfio_iommu_tool
     return 0
   fi
 
   if grep -qE 'intel_iommu=on|amd_iommu=on' /etc/kernel/cmdline 2>/dev/null || \
      grep -qE 'intel_iommu=on|amd_iommu=on' /etc/default/grub 2>/dev/null; then
     IOMMU_PENDING_REBOOT=1
-    msg_warn "$(translate "IOMMU is configured for next boot, but not active yet.")"
-    msg_info2 "$(translate "Controller/NVMe assignment can continue now and will be effective after reboot.")"
+    register_vfio_iommu_tool
+
     return 0
   fi
 
   if declare -F _pci_is_iommu_active >/dev/null 2>&1 && _pci_is_iommu_active; then
+    IOMMU_ALREADY_ACTIVE=1
+    register_vfio_iommu_tool
     return 0
   fi
 
   if grep -qE 'intel_iommu=on|amd_iommu=on' /proc/cmdline 2>/dev/null && \
      [[ -d /sys/kernel/iommu_groups ]] && \
      [[ -n "$(ls /sys/kernel/iommu_groups/ 2>/dev/null)" ]]; then
+    IOMMU_ALREADY_ACTIVE=1
+    register_vfio_iommu_tool
     return 0
   fi
 
@@ -133,13 +162,11 @@ check_iommu_or_offer_enable() {
     --title "$(translate "IOMMU Required")" \
     --yesno "$msg" 15 74
   local response=$?
-  clear
 
   [[ $response -ne 0 ]] && return 1
 
   set_title
   msg_title "$(translate "Enabling IOMMU")"
-  echo
   if ! enable_iommu_cmdline; then
     echo
     msg_error "$(translate "Failed to configure IOMMU automatically.")"
@@ -148,37 +175,36 @@ check_iommu_or_offer_enable() {
     return 1
   fi
 
-  echo
-  msg_success "$(translate "IOMMU configured. Reboot required before using Controller/NVMe passthrough.")"
-  echo
-  if whiptail --title "$(translate "Reboot Required")" \
-    --yesno "$(translate "Do you want to reboot now?")" 10 64; then
-    msg_warn "$(translate "Rebooting the system...")"
-    reboot
-  else
-    IOMMU_PENDING_REBOOT=1
-    msg_warn "$(translate "Reboot postponed by user.")"
-    msg_info2 "$(translate "You can continue assigning Controller/NVMe now, but reboot the host before starting the VM.")"
-    msg_success "$(translate "Press Enter to continue...")"
-    read -r
-  fi
+  register_vfio_iommu_tool
+  IOMMU_PENDING_REBOOT=1
   return 0
 }
 
 select_target_vm() {
   local -a vm_menu=()
   local line vmid vmname vmstatus vm_machine status_label
+  local max_name_len=0 padded_name
+
+  while IFS= read -r line; do
+    vmid=$(awk '{print $1}' <<< "$line")
+    vmname=$(awk '{print $2}' <<< "$line")
+    [[ -z "$vmid" || "$vmid" == "VMID" ]] && continue
+    [[ -f "/etc/pve/qemu-server/${vmid}.conf" ]] || continue
+    [[ ${#vmname} -gt $max_name_len ]] && max_name_len=${#vmname}
+  done < <(qm list 2>/dev/null)
 
   while IFS= read -r line; do
     vmid=$(awk '{print $1}' <<< "$line")
     vmname=$(awk '{print $2}' <<< "$line")
     vmstatus=$(awk '{print $3}' <<< "$line")
     [[ -z "$vmid" || "$vmid" == "VMID" ]] && continue
+    [[ -f "/etc/pve/qemu-server/${vmid}.conf" ]] || continue
 
     vm_machine=$(qm config "$vmid" 2>/dev/null | awk -F': ' '/^machine:/ {print $2}')
     [[ -z "$vm_machine" ]] && vm_machine="unknown"
     status_label="${vmstatus}, ${vm_machine}"
-    vm_menu+=("$vmid" "${vmname} [${status_label}]")
+    printf -v padded_name "%-${max_name_len}s" "$vmname"
+    vm_menu+=("$vmid" "${padded_name}  [${status_label}]")
   done < <(qm list 2>/dev/null)
   if [[ ${#vm_menu[@]} -eq 0 ]]; then
     dialog --backtitle "ProxMenux" \
@@ -221,6 +247,10 @@ validate_vm_requirements() {
 }
 
 select_controller_nvme() {
+  # Show progress during potentially slow PCIe + disk detection
+  set_title
+  msg_info "$(translate "Analyzing system for available PCIe storage devices...")"
+
   _refresh_host_storage_cache
 
   local -a menu_items=()
@@ -251,12 +281,19 @@ select_controller_nvme() {
       _array_contains "$disk" "${controller_disks[@]}" || controller_disks+=("$disk")
     done < <(_controller_block_devices "$pci_full")
 
+    # blocked_reasons: system disk OR disk in RUNNING guest → hide controller
+    # warn_reasons:   disk in STOPPED guest only → show with ⚠ but allow selection
     local -a blocked_reasons=()
+    local -a warn_reasons=()
     for disk in "${controller_disks[@]}"; do
       if _disk_is_host_system_used "$disk"; then
         blocked_reasons+=("${disk} (${DISK_USAGE_REASON})")
       elif _disk_used_in_guest_configs "$disk"; then
-        blocked_reasons+=("${disk} ($(translate "In use by VM/LXC config"))")
+        if _disk_used_in_running_guest "$disk"; then
+          blocked_reasons+=("${disk} ($(translate "In use by running VM/LXC — stop it first"))")
+        else
+          warn_reasons+=("$disk")
+        fi
       fi
     done
 
@@ -266,20 +303,29 @@ select_controller_nvme() {
       continue
     fi
 
-    local short_name
-    short_name=$(_shorten_text "$name" 42)
+    local short_name display_name
+    display_name=$(_pci_storage_display_name "$pci_full")
+    short_name=$(_shorten_text "$display_name" 56)
 
     local assigned_suffix=""
     if [[ -n "$(_pci_assigned_vm_ids "$pci_full" "$SELECTED_VMID" 2>/dev/null | head -1)" ]]; then
       assigned_suffix=" | $(translate "Assigned to VM")"
     fi
 
-    controller_desc="${short_name}${assigned_suffix}"
+    # Warn if some disks are referenced in stopped VM/CT configs
+    local warn_suffix=""
+    if [[ ${#warn_reasons[@]} -gt 0 ]]; then
+      warn_suffix=" ⚠"
+    fi
+
+    controller_desc="${short_name}${assigned_suffix}${warn_suffix}"
 
     state="off"
     menu_items+=("$pci_full" "$controller_desc" "$state")
     safe_count=$((safe_count + 1))
   done < <(ls -d /sys/bus/pci/devices/* 2>/dev/null | sort)
+
+  stop_spinner
 
   if [[ "$safe_count" -eq 0 ]]; then
     local msg
@@ -318,29 +364,100 @@ select_controller_nvme() {
     return 1
   fi
 
-  if declare -F _vm_storage_confirm_controller_passthrough_risk >/dev/null 2>&1; then
-    if ! _vm_storage_confirm_controller_passthrough_risk "$SELECTED_VMID" "$SELECTED_VM_NAME" "$(translate "Controller + NVMe")"; then
-      return 1
-    fi
-  fi
-
   return 0
 }
 
-confirm_summary() {
-  local msg
-  msg="\n$(translate "The following devices will be added to VM") ${SELECTED_VMID} (${SELECTED_VM_NAME}):\n\n"
-  local pci info
-  for pci in "${SELECTED_CONTROLLER_PCIS[@]}"; do
-    info=$(lspci -nn -s "${pci#0000:}" 2>/dev/null | sed 's/^[^ ]* //')
-    msg+="  - ${pci}${info:+ (${info})}\n"
-  done
-  msg+="\n$(translate "Do you want to continue?")"
+_prompt_raw_disk_conflict_policy() {
+  local disk="$1"
+  shift
+  local -a guest_ids=("$@")
+  local msg gid gtype gid_num gname gstatus
 
-  dialog --backtitle "ProxMenux" --colors \
+  msg="$(translate "Disk") ${disk} $(translate "is referenced in the following stopped VM(s)/CT(s):")\\n\\n"
+  for gid in "${guest_ids[@]}"; do
+    gtype="${gid%%:*}"; gid_num="${gid##*:}"
+    if [[ "$gtype" == "VM" ]]; then
+      gname=$(_vm_name_by_id "$gid_num")
+      gstatus=$(qm status "$gid_num" 2>/dev/null | awk '{print $2}')
+      msg+="  - VM $gid_num ($gname) [${gstatus}]\\n"
+    else
+      gname=$(pct config "$gid_num" 2>/dev/null | awk '/^hostname:/ {print $2}')
+      [[ -z "$gname" ]] && gname="CT-$gid_num"
+      gstatus=$(pct status "$gid_num" 2>/dev/null | awk '{print $2}')
+      msg+="  - CT $gid_num ($gname) [${gstatus}]\\n"
+    fi
+  done
+  msg+="\\n$(translate "Choose action:")"
+
+  local choice
+  choice=$(dialog --backtitle "ProxMenux" \
+    --title "$(translate "Disk Reference Conflict")" \
+    --menu "$msg" 22 84 3 \
+    "1" "$(translate "Disable onboot on affected VM(s)/CT(s)")" \
+    "2" "$(translate "Remove disk references from affected VM(s)/CT(s) config")" \
+    "3" "$(translate "Skip — leave as-is")" \
+    2>&1 >/dev/tty) || { echo "skip"; return; }
+
+  case "$choice" in
+    1) echo "disable_onboot" ;;
+    2) echo "remove_refs" ;;
+    *) echo "skip" ;;
+  esac
+}
+
+confirm_summary() {
+  # ── Risk detection ─────────────────────────────────────────────────────────
+  local reinforce_limited_firmware="no"
+  local bios_date bios_year current_year bios_age cpu_model risk_detail=""
+  bios_date=$(cat /sys/class/dmi/id/bios_date 2>/dev/null)
+  bios_year=$(echo "$bios_date" | grep -oE '[0-9]{4}' | tail -n1)
+  current_year=$(date +%Y 2>/dev/null)
+  if [[ -n "$bios_year" && -n "$current_year" ]]; then
+    bios_age=$(( current_year - bios_year ))
+    if (( bios_age >= 7 )); then
+      reinforce_limited_firmware="yes"
+      risk_detail="$(translate "BIOS from") ${bios_year} (${bios_age} $(translate "years old")) — $(translate "older firmware may increase passthrough instability")"
+    fi
+  fi
+  cpu_model=$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | xargs)
+  if echo "$cpu_model" | grep -qiE 'J4[0-9]{3}|J3[0-9]{3}|N4[0-9]{3}|N3[0-9]{3}|Apollo Lake'; then
+    reinforce_limited_firmware="yes"
+    [[ -z "$risk_detail" ]] && risk_detail="$(translate "Low-power CPU platform"): ${cpu_model}"
+  fi
+
+  # ── Build unified message ──────────────────────────────────────────────────
+  local msg pci display_name
+  msg="\n"
+
+  # Devices to add
+  msg+="\Zb$(translate "Devices to add to VM") ${SELECTED_VMID} (${SELECTED_VM_NAME}):\Zn\n"
+  for pci in "${SELECTED_CONTROLLER_PCIS[@]}"; do
+    display_name=$(_pci_storage_display_name "$pci")
+    msg+="  \Zb•\Zn  ${pci}   ${display_name}\n"
+  done
+  msg+="\n"
+
+  # Compatibility notice (always shown)
+  msg+="\Zb\Z4⚠  $(translate "Controller/NVMe passthrough — compatibility notice")\Zn\n\n"
+  msg+="$(translate "Not all platforms support Controller/NVMe passthrough reliably.")\n"
+  msg+="$(translate "On some systems, when starting the VM the host may slow down for several minutes until it stabilizes, or freeze completely.")\n"
+
+  # Detected risk (only when applicable)
+  if [[ "$reinforce_limited_firmware" == "yes" && -n "$risk_detail" ]]; then
+    msg+="\n\Z1$(translate "Detected risk factor"): ${risk_detail}\Zn\n"
+  fi
+
+  msg+="\n$(translate "If the host freezes, remove hostpci entries from") /etc/pve/qemu-server/${SELECTED_VMID}.conf\n"
+  msg+="\n\Zb$(translate "Do you want to continue?")\Zn"
+
+  local height=22
+  [[ "$reinforce_limited_firmware" == "yes" ]] && height=25
+
+  if ! dialog --backtitle "ProxMenux" --colors \
     --title "$(translate "Confirm Controller + NVMe Assignment")" \
-    --yesno "$msg" 18 90
-  [[ $? -ne 0 ]] && return 1
+    --yesno "$msg" $height 90; then
+    return 1
+  fi
   return 0
 }
 
@@ -349,7 +466,7 @@ prompt_controller_conflict_policy() {
   shift
   local -a source_vms=("$@")
   local msg vmid vm_name st ob
-  msg="$(translate "Selected device is already assigned to other VM(s):")\n\n"
+  msg="\n$(translate "Selected device is already assigned to other VM(s):")\n\n"
   for vmid in "${source_vms[@]}"; do
     vm_name=$(_vm_name_by_id "$vmid")
     st="stopped"; _vm_status_is_running "$vmid" && st="running"
@@ -359,11 +476,13 @@ prompt_controller_conflict_policy() {
   msg+="\n$(translate "Choose action for this controller/NVMe:")"
 
   local choice
-  choice=$(whiptail --title "$(translate "Controller/NVMe Conflict Policy")" --menu "$msg" 22 96 10 \
+  choice=$(dialog --backtitle "ProxMenux" \
+    --title "$(translate "Controller/NVMe Conflict Policy")" \
+    --menu "$msg" 20 80 10 \
     "1" "$(translate "Keep in source VM(s) + disable onboot + add to target VM")" \
     "2" "$(translate "Move to target VM (remove from source VM config)")" \
     "3" "$(translate "Skip this device")" \
-    3>&1 1>&2 2>&3) || { echo "skip"; return; }
+    2>&1 >/dev/tty) || { echo "skip"; return; }
 
   case "$choice" in
     1) echo "keep_disable_onboot" ;;
@@ -372,17 +491,143 @@ prompt_controller_conflict_policy() {
   esac
 }
 
+# ── DIALOG PHASE: resolve all conflicts before terminal ───────────────────────
+resolve_disk_conflicts() {
+  local -a new_pci_list=()
+  local pci vmid action slot_base scope_key has_running
+
+  # ── hostpci conflicts: controller already assigned to another VM ──────────
+  for pci in "${SELECTED_CONTROLLER_PCIS[@]}"; do
+    local -a source_vms=()
+    mapfile -t source_vms < <(_pci_assigned_vm_ids "$pci" "$SELECTED_VMID" 2>/dev/null)
+
+    if [[ ${#source_vms[@]} -eq 0 ]]; then
+      new_pci_list+=("$pci")
+      continue
+    fi
+
+    has_running=false
+    for vmid in "${source_vms[@]}"; do
+      if _vm_status_is_running "$vmid"; then
+        has_running=true
+        dialog --backtitle "ProxMenux" \
+          --title "$(translate "Device In Use")" \
+          --msgbox "\n$(translate "Controller") $pci $(translate "is in use by running VM") $vmid.\n\n$(translate "Stop it first and run this option again.")" \
+          10 72
+        break
+      fi
+    done
+    $has_running && continue
+
+    scope_key=$(printf '%s,' "${source_vms[@]}")
+    if [[ -n "$WIZARD_CONFLICT_POLICY" && "$WIZARD_CONFLICT_SCOPE" == "$scope_key" ]]; then
+      action="$WIZARD_CONFLICT_POLICY"
+    else
+      action=$(prompt_controller_conflict_policy "$pci" "${source_vms[@]}")
+      WIZARD_CONFLICT_POLICY="$action"
+      WIZARD_CONFLICT_SCOPE="$scope_key"
+    fi
+
+    case "$action" in
+      keep_disable_onboot)
+        for vmid in "${source_vms[@]}"; do
+          _vm_onboot_is_enabled "$vmid" && qm set "$vmid" -onboot 0 >/dev/null 2>&1
+        done
+        NEED_HOOK_SYNC=true
+        new_pci_list+=("$pci")
+        ;;
+      move_remove_source)
+        slot_base=$(_pci_slot_base "$pci")
+        for vmid in "${source_vms[@]}"; do
+          _remove_pci_slot_from_vm_config "$vmid" "$slot_base"
+        done
+        new_pci_list+=("$pci")
+        ;;
+      *) ;; # skip — do not add to new_pci_list
+    esac
+  done
+
+  SELECTED_CONTROLLER_PCIS=("${new_pci_list[@]}")
+
+  if [[ ${#SELECTED_CONTROLLER_PCIS[@]} -eq 0 ]]; then
+    dialog --backtitle "ProxMenux" \
+      --title "$(translate "Controller + NVMe")" \
+      --msgbox "\n$(translate "No controllers remaining after conflict resolution.")" 8 64
+    return 1
+  fi
+
+  # ── Raw disk passthrough conflicts ───────────────────────────────────────
+  local raw_disk_policy="" raw_disk_scope=""
+  for pci in "${SELECTED_CONTROLLER_PCIS[@]}"; do
+    local -a cdisks=()
+    while IFS= read -r disk; do
+      [[ -z "$disk" ]] && continue
+      _array_contains "$disk" "${cdisks[@]}" || cdisks+=("$disk")
+    done < <(_controller_block_devices "$pci")
+
+    for disk in "${cdisks[@]}"; do
+      _disk_used_in_guest_configs "$disk" || continue
+      _disk_used_in_running_guest "$disk" && continue
+
+      local -a guest_ids=()
+      mapfile -t guest_ids < <(_disk_guest_ids "$disk")
+      [[ ${#guest_ids[@]} -eq 0 ]] && continue
+
+      local gscope gaction
+      gscope=$(printf '%s,' "${guest_ids[@]}")
+      if [[ -n "$raw_disk_policy" && "$raw_disk_scope" == "$gscope" ]]; then
+        gaction="$raw_disk_policy"
+      else
+        gaction=$(_prompt_raw_disk_conflict_policy "$disk" "${guest_ids[@]}")
+        raw_disk_policy="$gaction"
+        raw_disk_scope="$gscope"
+      fi
+
+      local gid gtype gid_num slot
+      case "$gaction" in
+        disable_onboot)
+          for gid in "${guest_ids[@]}"; do
+            gtype="${gid%%:*}"; gid_num="${gid##*:}"
+            if [[ "$gtype" == "VM" ]]; then
+              _vm_onboot_is_enabled "$gid_num" && qm set "$gid_num" -onboot 0 >/dev/null 2>&1
+            else
+              grep -qE '^onboot:\s*1' "/etc/pve/lxc/$gid_num.conf" 2>/dev/null && \
+                pct set "$gid_num" -onboot 0 >/dev/null 2>&1
+            fi
+          done
+          ;;
+        remove_refs)
+          for gid in "${guest_ids[@]}"; do
+            gtype="${gid%%:*}"; gid_num="${gid##*:}"
+            if [[ "$gtype" == "VM" ]]; then
+              while IFS= read -r slot; do
+                [[ -z "$slot" ]] && continue
+                qm set "$gid_num" -delete "$slot" >/dev/null 2>&1
+              done < <(_find_disk_slots_in_vm "$gid_num" "$disk")
+            else
+              while IFS= read -r slot; do
+                [[ -z "$slot" ]] && continue
+                pct set "$gid_num" -delete "$slot" >/dev/null 2>&1
+              done < <(_find_disk_slots_in_ct "$gid_num" "$disk")
+            fi
+          done
+          ;;
+      esac
+    done
+  done
+
+  return 0
+}
+
 apply_assignment() {
   : >"$LOG_FILE"
   set_title
-  echo
 
   msg_info "$(translate "Applying Controller/NVMe passthrough to VM") ${SELECTED_VMID}..."
   msg_ok "$(translate "Target VM validated") (${SELECTED_VM_NAME} / ${SELECTED_VMID})"
   msg_ok "$(translate "Selected devices"): ${#SELECTED_CONTROLLER_PCIS[@]}"
 
   local hostpci_idx=0
-  msg_info "$(translate "Calculating next available hostpci slot...")"
   if declare -F _pci_next_hostpci_index >/dev/null 2>&1; then
     hostpci_idx=$(_pci_next_hostpci_index "$SELECTED_VMID" 2>/dev/null || echo 0)
   else
@@ -392,10 +637,8 @@ apply_assignment() {
       hostpci_idx=$((hostpci_idx + 1))
     done
   fi
-  msg_ok "$(translate "Next available hostpci slot"): hostpci${hostpci_idx}"
 
   local pci bdf assigned_count=0
-  local need_hook_sync=false
   for pci in "${SELECTED_CONTROLLER_PCIS[@]}"; do
     bdf="${pci#0000:}"
     if declare -F _pci_function_assigned_to_vm >/dev/null 2>&1; then
@@ -408,50 +651,11 @@ apply_assignment() {
       continue
     fi
 
-    local -a source_vms=()
-    mapfile -t source_vms < <(_pci_assigned_vm_ids "$pci" "$SELECTED_VMID" 2>/dev/null)
-    if [[ ${#source_vms[@]} -gt 0 ]]; then
-      local has_running=false vmid action slot_base
-      for vmid in "${source_vms[@]}"; do
-        if _vm_status_is_running "$vmid"; then
-          has_running=true
-          msg_warn "$(translate "Controller/NVMe is in use by running VM") ${vmid} ($(translate "stop source VM first"))"
-        fi
-      done
-
-      if $has_running; then
-        continue
-      fi
-
-      action=$(prompt_controller_conflict_policy "$pci" "${source_vms[@]}")
-      case "$action" in
-        keep_disable_onboot)
-          for vmid in "${source_vms[@]}"; do
-            if _vm_onboot_is_enabled "$vmid"; then
-              if qm set "$vmid" -onboot 0 >>"$LOG_FILE" 2>&1; then
-                msg_warn "$(translate "Start on boot disabled for VM") ${vmid}"
-              fi
-            fi
-          done
-          need_hook_sync=true
-          ;;
-        move_remove_source)
-          slot_base=$(_pci_slot_base "$pci")
-          for vmid in "${source_vms[@]}"; do
-            if _remove_pci_slot_from_vm_config "$vmid" "$slot_base"; then
-              msg_ok "$(translate "Controller/NVMe removed from source VM") ${vmid} (${pci})"
-            fi
-          done
-          ;;
-        *)
-          msg_info2 "$(translate "Skipped device"): ${pci}"
-          continue
-          ;;
-      esac
-    fi
-
-    if qm set "$SELECTED_VMID" --hostpci${hostpci_idx} "${pci},pcie=1" >>"$LOG_FILE" 2>&1; then
-      msg_ok "$(translate "Controller/NVMe assigned") (hostpci${hostpci_idx} -> ${pci})"
+    local display_name
+    display_name=$(_pci_storage_display_name "$pci")
+    msg_info "$(translate "Adding") ${display_name} (${pci}) → hostpci${hostpci_idx}..."
+    if qm set "$SELECTED_VMID" "--hostpci${hostpci_idx}" "${pci},pcie=1" >>"$LOG_FILE" 2>&1; then
+      msg_ok "$(translate "Controller/NVMe assigned") (hostpci${hostpci_idx} → ${pci})"
       assigned_count=$((assigned_count + 1))
       hostpci_idx=$((hostpci_idx + 1))
     else
@@ -459,33 +663,50 @@ apply_assignment() {
     fi
   done
 
-  if $need_hook_sync && declare -F sync_proxmenux_gpu_guard_hooks >/dev/null 2>&1; then
+  if $NEED_HOOK_SYNC && declare -F sync_proxmenux_gpu_guard_hooks >/dev/null 2>&1; then
     ensure_proxmenux_gpu_guard_hookscript
     sync_proxmenux_gpu_guard_hooks
     msg_ok "$(translate "VM hook guard synced for shared controller/NVMe protection")"
   fi
 
-  echo
+  echo ""
   echo -e "${TAB}${BL}Log: ${LOG_FILE}${CL}"
 
   if [[ "$assigned_count" -gt 0 ]]; then
-    msg_success "$(translate "Completed. Controller/NVMe passthrough configured for VM") ${SELECTED_VMID}."
-    if [[ "${IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
-      msg_warn "$(translate "IOMMU was configured during this run. Reboot the host before starting the VM.")"
-    fi
+    msg_ok "$(translate "Completed.") $assigned_count $(translate "device(s) added to VM") ${SELECTED_VMID}."
   else
     msg_warn "$(translate "No new Controller/NVMe entries were added.")"
   fi
+
+  if [[ "${IOMMU_ALREADY_ACTIVE:-0}" == "1" ]]; then
+    msg_ok "$(translate "IOMMU is enabled on the system")"
+  elif [[ "${IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
+    msg_ok "$(translate "IOMMU has been enabled — a system reboot is required")"
+    echo ""
+    if whiptail --title "$(translate "Reboot Required")" \
+      --yesno "\n$(translate "IOMMU has been enabled on this system. A reboot is required to apply the changes. Reboot now?")" 11 64; then
+      msg_success "$(translate "Press Enter to continue...")"
+      read -r
+      msg_warn "$(translate "Rebooting the system...")"
+      reboot
+    else
+      msg_info2 "$(translate "To use the VM without issues, the host must be restarted before starting it.")"
+      msg_info2 "$(translate "Do not start the VM until the system has been rebooted.")"
+    fi
+  fi
+  echo ""
   msg_success "$(translate "Press Enter to continue...")"
   read -r
 }
 
 main() {
-  select_target_vm || exit 0
+  export WIZARD_CONFLICT_POLICY
+  export WIZARD_CONFLICT_SCOPE
+  select_target_vm         || exit 0
   validate_vm_requirements || exit 0
-  select_controller_nvme || exit 0
-  confirm_summary || exit 0
-  clear
+  select_controller_nvme   || exit 0
+  resolve_disk_conflicts   || exit 0
+  confirm_summary          || exit 0
   apply_assignment
 }
 

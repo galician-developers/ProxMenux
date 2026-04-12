@@ -24,6 +24,37 @@ initialize_cache
 
 
 # ============================================================
+# GPU passthrough guard — block update when GPU is in VM passthrough mode
+# ============================================================
+check_gpu_not_in_vm_passthrough() {
+  local dev vendor driver vfio_list=""
+  for dev in /sys/bus/pci/devices/*; do
+    vendor=$(cat "$dev/vendor" 2>/dev/null)
+    [[ "$vendor" != "0x10de" ]] && continue
+    if [[ -L "$dev/driver" ]]; then
+      driver=$(basename "$(readlink "$dev/driver")")
+      if [[ "$driver" == "vfio-pci" ]]; then
+        vfio_list+="  • $(basename "$dev")\n"
+      fi
+    fi
+  done
+
+  [[ -z "$vfio_list" ]] && return 0
+
+  local msg
+  msg="\n$(translate "One or more NVIDIA GPUs are currently configured for VM passthrough (vfio-pci):")\n\n"
+  msg+="${vfio_list}\n"
+  msg+="$(translate "Updating host drivers while the GPU is assigned to a VM could break passthrough and destabilize the system.")\n\n"
+  msg+="$(translate "To update host drivers, first remove the GPU from VM passthrough configuration and reboot.")"
+
+  dialog --backtitle "ProxMenux" \
+    --title "$(translate "GPU in VM Passthrough Mode")" \
+    --msgbox "$msg" 16 78
+  exit 0
+}
+
+
+# ============================================================
 # Host NVIDIA state detection
 # ============================================================
 detect_host_nvidia() {
@@ -436,13 +467,25 @@ show_current_state_dialog() {
 # Restart prompt
 # ============================================================
 restart_prompt() {
-  if whiptail --title "$(translate 'NVIDIA Update')" --yesno \
-    "$(translate 'The host driver update requires a reboot to take effect. Reboot now?')" 10 70; then
-    msg_warn "$(translate 'Restarting the server...')"
+  echo
+  msg_success "$(translate 'NVIDIA driver update completed.')"
+  echo
+  msg_info "$(translate 'Removing no longer required packages and purging old cached updates...')"
+  apt-get -y autoremove >/dev/null 2>&1
+  apt-get -y autoclean >/dev/null 2>&1
+  msg_ok "$(translate 'Cleanup finished.')"
+  echo -e "${TAB}${BL}Log: ${LOG_FILE}${CL}"
+  echo
+
+  if whiptail --title "$(translate 'Reboot Required')" \
+    --yesno "$(translate 'The host driver update requires a reboot to take effect. Do you want to restart now?')" 10 70; then
+    msg_success "$(translate 'Press Enter to continue...')"
+    read -r
+    msg_warn "$(translate 'Rebooting the system...')"
     reboot
   else
-    msg_success "$(translate 'Update complete. Please reboot the server manually.')"
-    msg_success "$(translate 'Completed. Press Enter to return to menu...')"
+    msg_info2 "$(translate 'You can reboot later manually.')"
+    msg_success "$(translate 'Press Enter to continue...')"
     read -r
   fi
 }
@@ -455,6 +498,7 @@ main() {
   : >"$LOG_FILE"
 
   # ---- Phase 1: dialogs ----
+  check_gpu_not_in_vm_passthrough
   detect_host_nvidia
   show_current_state_dialog
   select_target_version

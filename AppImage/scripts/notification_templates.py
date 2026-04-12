@@ -678,6 +678,59 @@ TEMPLATES = {
         'group': 'storage',
         'default_enabled': True,
     },
+    'smart_test_complete': {
+        'title': '{hostname}: SMART test completed — {device}',
+        'body': 'SMART {test_type} test on /dev/{device} has completed.\nResult: {result}\nDuration: {duration}',
+        'label': 'SMART test completed',
+        'group': 'storage',
+        'default_enabled': True,
+    },
+    'smart_test_failed': {
+        'title': '{hostname}: SMART test FAILED — {device}',
+        'body': 'SMART {test_type} test on /dev/{device} has failed.\nResult: {result}\nReason: {reason}',
+        'label': 'SMART test FAILED',
+        'group': 'storage',
+        'default_enabled': True,
+    },
+    
+    # ── GPU / PCIe passthrough events ──
+    'gpu_mode_switch': {
+        'title': '{hostname}: GPU mode changed to {new_mode}',
+        'body': (
+            'GPU passthrough mode has been switched.\n'
+            'GPU: {gpu_name} ({gpu_pci})\n'
+            'Previous mode: {old_mode}\n'
+            'New mode: {new_mode}\n'
+            '{details}'
+        ),
+        'label': 'GPU mode switched',
+        'group': 'hardware',
+        'default_enabled': True,
+    },
+    'gpu_passthrough_blocked': {
+        'title': '{hostname}: {guest_type} {guest_id} blocked at startup',
+        'body': (
+            'PCIe passthrough guard prevented {guest_type} {guest_id} ({guest_name}) from starting.\n'
+            'Reason: {reason}\n'
+            '{details}'
+        ),
+        'label': 'GPU passthrough blocked',
+        'group': 'hardware',
+        'default_enabled': True,
+    },
+    'pci_passthrough_conflict': {
+        'title': '{hostname}: PCIe device conflict detected',
+        'body': (
+            'A PCIe device is assigned to multiple guests.\n'
+            'Device: {device_pci}\n'
+            'Conflicting guests: {guest_list}\n'
+            'Action required: Stop one of the guests or reassign the device.'
+        ),
+        'label': 'PCIe device conflict',
+        'group': 'hardware',
+        'default_enabled': True,
+    },
+    
     'load_high': {
         'title': '{hostname}: High system load — {value}',
         'body': 'System load average is {value} on {cores} cores.\n{details}',
@@ -1203,6 +1256,7 @@ CATEGORY_EMOJI = {
     'services':  '\u2699\uFE0F',         # gear
     'health':    '\U0001FA7A',           # stethoscope
     'updates':   '\U0001F504',           # counterclockwise arrows (update)
+    'hardware':  '\U0001F3AE',           # video game controller (GPU/PCIe hardware)
     'other':     '\U0001F4E8',           # incoming envelope
 }
 
@@ -1275,6 +1329,10 @@ EVENT_EMOJI = {
     'proxmenux_update':     '\U0001F195',         # NEW
     # AI
     'ai_model_migrated':    '\U0001F504',         # arrows counterclockwise (refresh/update)
+    # GPU / PCIe
+    'gpu_mode_switch':      '\U0001F3AE',         # video game controller (represents GPU)
+    'gpu_passthrough_blocked': '\U0001F6AB',      # prohibited sign (blocked)
+    'pci_passthrough_conflict': '\u26A0\uFE0F',   # warning triangle (conflict)
 }
 
 # Decorative field-level icons for body text enrichment

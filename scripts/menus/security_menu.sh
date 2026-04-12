@@ -26,13 +26,12 @@ initialize_cache
 security_menu() {
   while true; do
     local menu_text
-    menu_text="\n$(translate 'Security tools for hardening and auditing your Proxmox VE system.')\n\n"
-    menu_text+="$(translate 'Select an option:')"
+    menu_text+="\n$(translate 'Select an option:')"
 
     local OPTION
     OPTION=$(dialog --backtitle "ProxMenux" \
       --title "$(translate "$SCRIPT_TITLE")" \
-      --menu "$menu_text" 18 70 4 \
+      --menu "$menu_text" 20 70 10 \
       "1" "$(translate 'Fail2Ban - Intrusion Prevention')" \
       "2" "$(translate 'Lynis - Security Audit')" \
       3>&1 1>&2 2>&3) || OPTION="0"

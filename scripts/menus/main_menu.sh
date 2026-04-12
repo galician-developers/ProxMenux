@@ -94,12 +94,12 @@ show_menu() {
         dialog --clear \
             --backtitle "ProxMenux" \
             --title "$(translate "$menu_title")" \
-            --menu "$(translate "Select an option:")" 20 70 11 \
+            --menu "\n$(translate "Select an option:")" 20 70 11 \
             1 "$(translate "Settings post-install Proxmox")" \
             2 "$(translate "Hardware: GPUs and Coral-TPU")" \
             3 "$(translate "Create VM from template or script")" \
-            4 "$(translate "Disk and Storage Manager")" \
-            5 "$(translate "Mount and Share Manager")" \
+            4 "$(translate "Disk Manager")" \
+            5 "$(translate "Storage & Share Manager")" \
             6 "$(translate "Proxmox VE Helper Scripts")" \
             7 "$(translate "Network Management")" \
             8 "$(translate "Security")" \

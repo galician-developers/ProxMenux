@@ -398,7 +398,7 @@ while true; do
   SELECTED_IDX=$(dialog --backtitle "ProxMenux" \
     --title "Proxmox VE Helper-Scripts" \
     --menu "$(translate "Select a category or search for scripts:"):" \
-    20 70 14 "${MENU_ITEMS[@]}" 3>&1 1>&2 2>&3) || {
+    22 75 15 "${MENU_ITEMS[@]}" 3>&1 1>&2 2>&3) || {
       dialog --clear --title "ProxMenux" \
         --msgbox "\n\n$(translate "Visit the website to discover more scripts, stay updated with the latest updates, and support the project:")\n\nhttps://community-scripts.github.io/ProxmoxVE" 15 70
       exec bash "$LOCAL_SCRIPTS/menus/main_menu.sh"
@@ -440,7 +440,7 @@ while true; do
     SCRIPT_INDEX=$(dialog --colors --backtitle "ProxMenux" \
       --title "$(translate "Scripts in") ${CATEGORY_NAMES[$SELECTED]}" \
       --menu "$(translate "Choose a script to execute:"):" \
-      20 70 14 "${SCRIPTS[@]}" 3>&1 1>&2 2>&3) || break
+      22 75 15 "${SCRIPTS[@]}" 3>&1 1>&2 2>&3) || break
 
     SCRIPT_SELECTED="${INDEX_TO_SLUG[$SCRIPT_INDEX]}"
     run_script_by_slug "$SCRIPT_SELECTED"

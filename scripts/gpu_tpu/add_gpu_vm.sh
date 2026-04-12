@@ -28,6 +28,7 @@ LOCAL_SCRIPTS_LOCAL="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOCAL_SCRIPTS_DEFAULT="/usr/local/share/proxmenux/scripts"
 LOCAL_SCRIPTS="$LOCAL_SCRIPTS_DEFAULT"
 BASE_DIR="/usr/local/share/proxmenux"
+TOOLS_JSON="$BASE_DIR/installed_tools.json"
 UTILS_FILE="$LOCAL_SCRIPTS/utils.sh"
 if [[ -f "$LOCAL_SCRIPTS_LOCAL/utils.sh" ]]; then
     LOCAL_SCRIPTS="$LOCAL_SCRIPTS_LOCAL"
@@ -190,10 +191,78 @@ _vm_switch_action_label() {
     esac
 }
 
+_gpu_register_vfio_iommu_tool() {
+    command -v jq >/dev/null 2>&1 || return 0
+    [[ -f "$TOOLS_JSON" ]] || echo "{}" > "$TOOLS_JSON"
+    jq '.vfio_iommu=true' "$TOOLS_JSON" > "$TOOLS_JSON.tmp" \
+        && mv "$TOOLS_JSON.tmp" "$TOOLS_JSON" || true
+}
+
 _set_wizard_result() {
     local result="$1"
     [[ -z "${GPU_WIZARD_RESULT_FILE:-}" ]] && return 0
     printf '%s\n' "$result" >"$GPU_WIZARD_RESULT_FILE" 2>/dev/null || true
+}
+
+# ==========================================================
+# UI wrapper helpers — dialog in standalone, whiptail in wizard
+# ==========================================================
+# Strips dialog color sequences (\Zb, \Z1, \Zn, etc.) from a string
+_strip_colors() {
+    printf '%s' "$1" | sed 's/\\Z[0-9a-zA-Z]//g'
+}
+
+# Msgbox: dialog in standalone mode, whiptail in wizard mode
+_pmx_msgbox() {
+    local title="$1" msg="$2" h="${3:-10}" w="${4:-72}"
+    if [[ "$WIZARD_CALL" == "true" ]]; then
+        whiptail --backtitle "ProxMenux" --title "$title" \
+            --msgbox "$(_strip_colors "$msg")" "$h" "$w"
+    else
+        dialog --backtitle "ProxMenux" --colors \
+            --title "$title" --msgbox "$msg" "$h" "$w"
+    fi
+}
+
+# Yesno: dialog in standalone mode, whiptail in wizard mode
+# Returns 0 for yes, 1 for no (same as dialog/whiptail)
+_pmx_yesno() {
+    local title="$1" msg="$2" h="${3:-10}" w="${4:-72}"
+    if [[ "$WIZARD_CALL" == "true" ]]; then
+        whiptail --backtitle "ProxMenux" --title "$title" \
+            --yesno "$(_strip_colors "$msg")" "$h" "$w"
+    else
+        dialog --backtitle "ProxMenux" --colors \
+            --title "$title" --yesno "$msg" "$h" "$w"
+    fi
+    return $?
+}
+
+# Menu: dialog in standalone mode, whiptail in wizard mode
+# Accepts optional --default-item VALUE before title
+# Usage: _pmx_menu [--default-item VAL] title msg h w list_h item desc ...
+_pmx_menu() {
+    local -a extra_opts=()
+    while [[ "${1:-}" == --* ]]; do
+        case "$1" in
+            --default-item) extra_opts+=("--default-item" "$2"); shift 2 ;;
+            *) shift ;;
+        esac
+    done
+    local title="$1" msg="$2" h="$3" w="$4" lh="$5"
+    shift 5
+    if [[ "$WIZARD_CALL" == "true" ]]; then
+        whiptail --backtitle "ProxMenux" "${extra_opts[@]}" \
+            --title "$title" \
+            --menu "$(_strip_colors "$msg")" "$h" "$w" "$lh" \
+            "$@" 3>&1 1>&2 2>&3
+    else
+        dialog --backtitle "ProxMenux" --colors "${extra_opts[@]}" \
+            --title "$title" \
+            --menu "$msg" "$h" "$w" "$lh" \
+            "$@" 2>&1 >/dev/tty
+    fi
+    return $?
 }
 
 _file_has_exact_line() {
@@ -398,18 +467,16 @@ ensure_selected_gpu_not_already_in_target_vm() {
             TARGET_VM_ALREADY_HAS_GPU=true
             local popup_title
             popup_title=$(_get_vm_run_title)
-            dialog --backtitle "ProxMenux" \
-                --title "${popup_title}" \
-                --msgbox "\n$(translate 'The selected GPU is already assigned to this VM, but the host is not currently using vfio-pci for this device.')\n\n$(translate 'Current driver'): ${current_driver}\n\n$(translate 'The script will continue to restore VM passthrough mode on the host and reuse existing hostpci entries.')" \
+            _pmx_msgbox "${popup_title}" \
+                "\n$(translate 'The selected GPU is already assigned to this VM, but the host is not currently using vfio-pci for this device.')\n\n$(translate 'Current driver'): ${current_driver}\n\n$(translate 'The script will continue to restore VM passthrough mode on the host and reuse existing hostpci entries.')" \
                 13 78
             return 0
         fi
 
         # Single GPU system: nothing else to choose
         if [[ $GPU_COUNT -le 1 ]]; then
-            dialog --backtitle "ProxMenux" \
-                --title "$(translate 'GPU Already Added')" \
-                --msgbox "\n$(translate 'The selected GPU is already assigned to this VM.')\n\n$(translate 'No changes are required.')" \
+            _pmx_msgbox "$(translate 'GPU Already Added')" \
+                "\n$(translate 'The selected GPU is already assigned to this VM.')\n\n$(translate 'No changes are required.')" \
                 9 66
             exit 0
         fi
@@ -428,22 +495,18 @@ ensure_selected_gpu_not_already_in_target_vm() {
         done
 
         if [[ $available -eq 0 ]]; then
-            dialog --backtitle "ProxMenux" \
-                --title "$(translate 'All GPUs Already Assigned')" \
-                --msgbox "\n$(translate 'All detected GPUs are already assigned to this VM.')\n\n$(translate 'No additional GPU can be added.')" \
+            _pmx_msgbox "$(translate 'All GPUs Already Assigned')" \
+                "\n$(translate 'All detected GPUs are already assigned to this VM.')\n\n$(translate 'No additional GPU can be added.')" \
                 10 70
             exit 0
         fi
 
         local choice
-        local -a clear_opt=()
-        [[ "$WIZARD_CALL" != "true" ]] && clear_opt+=(--clear)
-        choice=$(dialog "${clear_opt[@]}" --backtitle "ProxMenux" --colors \
-            --title "$(translate 'GPU Already Assigned to This VM')" \
-            --menu "\n$(translate 'The selected GPU is already present in this VM. Select another GPU to continue:')" \
+        choice=$(_pmx_menu \
+            "$(translate 'GPU Already Assigned to This VM')" \
+            "\n$(translate 'The selected GPU is already present in this VM. Select another GPU to continue:')" \
             18 82 10 \
-            "${menu_items[@]}" \
-            2>&1 >/dev/tty) || exit 0
+            "${menu_items[@]}") || exit 0
 
         SELECTED_GPU="${ALL_GPU_TYPES[$choice]}"
         SELECTED_GPU_PCI="${ALL_GPU_PCIS[$choice]}"
@@ -492,9 +555,8 @@ detect_host_gpus() {
 
     if [[ $GPU_COUNT -eq 0 ]]; then
         _set_wizard_result "no_gpu"
-        dialog --backtitle "ProxMenux" \
-            --title "$(translate 'No GPU Detected')" \
-            --msgbox "\n$(translate 'No compatible GPU was detected on this host.')" 8 60
+        _pmx_msgbox "$(translate 'No GPU Detected')" \
+            "\n$(translate 'No compatible GPU was detected on this host.')" 8 60
         exit 0
     fi
 
@@ -506,7 +568,16 @@ detect_host_gpus() {
 # Phase 1 — Step 2: Check IOMMU, offer to enable it
 # ==========================================================
 check_iommu_enabled() {
+    # Dedup: if IOMMU was already configured by another script in this wizard run, skip prompt
+    if [[ "${VM_STORAGE_IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
+        IOMMU_PENDING_REBOOT=true
+        HOST_CONFIG_CHANGED=true
+        _gpu_register_vfio_iommu_tool
+        return 0
+    fi
+
     if declare -F _pci_is_iommu_active >/dev/null 2>&1 && _pci_is_iommu_active; then
+        _gpu_register_vfio_iommu_tool
         return 0
     fi
 
@@ -519,9 +590,11 @@ check_iommu_enabled() {
     if [[ "$configured_next_boot" == "true" ]]; then
         IOMMU_PENDING_REBOOT=true
         HOST_CONFIG_CHANGED=true
-        dialog --backtitle "ProxMenux" \
-            --title "$(translate 'IOMMU Pending Reboot')" \
-            --msgbox "\n$(translate 'IOMMU is already configured for next boot, but it is not active yet.')\n\n$(translate 'GPU passthrough configuration will continue now and will become effective after host reboot.')" \
+        _gpu_register_vfio_iommu_tool
+        VM_STORAGE_IOMMU_PENDING_REBOOT=1
+        export VM_STORAGE_IOMMU_PENDING_REBOOT
+        _pmx_msgbox "$(translate 'IOMMU Pending Reboot')" \
+            "\n$(translate 'IOMMU is already configured for next boot, but it is not active yet.')\n\n$(translate 'GPU passthrough configuration will continue now and will become effective after host reboot.')" \
             11 78
         return 0
     fi
@@ -533,9 +606,7 @@ check_iommu_enabled() {
     msg+="$(translate 'Note: A system reboot will be required after enabling IOMMU.')\n"
     msg+="$(translate 'Configuration will continue now and be effective after reboot.')"
 
-    dialog --backtitle "ProxMenux" \
-        --title "$(translate 'IOMMU Required')" \
-        --yesno "$msg" 15 72
+    _pmx_yesno "$(translate 'IOMMU Required')" "$msg" 15 72
 
     local response=$?
     [[ "$WIZARD_CALL" != "true" ]] && clear
@@ -553,6 +624,9 @@ check_iommu_enabled() {
         fi
         IOMMU_PENDING_REBOOT=true
         HOST_CONFIG_CHANGED=true
+        _gpu_register_vfio_iommu_tool
+        VM_STORAGE_IOMMU_PENDING_REBOOT=1
+        export VM_STORAGE_IOMMU_PENDING_REBOOT
         echo
         msg_success "$(translate 'IOMMU configured. GPU passthrough setup will continue now and will be effective after reboot.')"
         echo
@@ -632,14 +706,11 @@ select_gpu() {
     done
 
     local choice
-    local -a clear_opt=()
-    [[ "$WIZARD_CALL" != "true" ]] && clear_opt+=(--clear)
-    choice=$(dialog "${clear_opt[@]}" --backtitle "ProxMenux" --colors \
-        --title "$(translate 'Select GPU for VM Passthrough')" \
-        --menu "\n$(translate 'Select the GPU to pass through to the VM:')" \
+    choice=$(_pmx_menu \
+        "$(translate 'Select GPU for VM Passthrough')" \
+        "\n$(translate 'Select the GPU to pass through to the VM:')" \
         18 82 10 \
-        "${menu_items[@]}" \
-        2>&1 >/dev/tty) || exit 0
+        "${menu_items[@]}") || exit 0
 
     SELECTED_GPU="${ALL_GPU_TYPES[$choice]}"
     SELECTED_GPU_PCI="${ALL_GPU_PCIS[$choice]}"
@@ -665,9 +736,7 @@ warn_single_gpu() {
     msg+="$(translate 'Make sure you have SSH or Web UI access before rebooting.')\n\n"
     msg+="$(translate 'Do you want to continue?')"
 
-    dialog --backtitle "ProxMenux" --colors \
-        --title "$(translate 'Single GPU Warning')" \
-        --yesno "$msg" 22 76
+    _pmx_yesno "$(translate 'Single GPU Warning')" "$msg" 22 76
 
     [[ $? -ne 0 ]] && exit 0
 }
@@ -765,9 +834,7 @@ check_intel_vm_compatibility() {
         msg+="$(translate 'This GPU is considered incompatible with GPU passthrough to a VM in ProxMenux.')\n\n"
         msg+="$(translate 'Recommended: use GPU with LXC workloads instead of VM passthrough on this hardware.')"
 
-        dialog --backtitle "ProxMenux" --colors \
-            --title "$(translate 'Blocked GPU ID')" \
-            --msgbox "$msg" 20 84
+        _pmx_msgbox "$(translate 'Blocked GPU ID')" "$msg" 20 84
         exit 0
     fi
 
@@ -782,9 +849,7 @@ check_intel_vm_compatibility() {
         msg+="$(translate 'This state has a high probability of VM startup/reset failures.')\n\n"
         msg+="\Zb$(translate 'Configuration has been stopped to prevent an unusable VM state.')\Zn"
 
-        dialog --backtitle "ProxMenux" --colors \
-            --title "$(translate 'High-Risk GPU Power State')" \
-            --msgbox "$msg" 20 80
+        _pmx_msgbox "$(translate 'High-Risk GPU Power State')" "$msg" 20 80
         exit 0
     fi
 
@@ -800,9 +865,7 @@ check_intel_vm_compatibility() {
         msg+="$(translate 'startup/restart errors are likely.')\n\n"
         msg+="\Zb$(translate 'Configuration has been stopped due to high reset risk.')\Zn"
 
-        dialog --backtitle "ProxMenux" --colors \
-            --title "$(translate 'Reset Capability Blocked')" \
-            --msgbox "$msg" 20 80
+        _pmx_msgbox "$(translate 'Reset Capability Blocked')" "$msg" 20 80
         exit 0
     fi
 
@@ -818,9 +881,7 @@ check_intel_vm_compatibility() {
         msg+="$(translate 'start/restart failures and reset instability.')\n\n"
         msg+="\Zb$(translate 'Configuration has been stopped due to high reset risk.')\Zn"
 
-        dialog --backtitle "ProxMenux" --colors \
-            --title "$(translate 'Reset Capability Blocked')" \
-            --msgbox "$msg" 20 80
+        _pmx_msgbox "$(translate 'Reset Capability Blocked')" "$msg" 20 80
         exit 0
     fi
 
@@ -834,9 +895,7 @@ check_intel_vm_compatibility() {
         msg+="$(translate 'Passthrough may work, but startup/restart reliability is not guaranteed.')\n\n"
         msg+="$(translate 'Do you want to continue anyway?')"
 
-        dialog --backtitle "ProxMenux" --colors \
-            --title "$(translate 'Reset Capability Warning')" \
-            --yesno "$msg" 18 78
+        _pmx_yesno "$(translate 'Reset Capability Warning')" "$msg" 18 78
         [[ $? -ne 0 ]] && exit 0
     fi
 }
@@ -872,9 +931,7 @@ check_gpu_vm_compatibility() {
         msg+="  •  $(translate 'Potential QEMU startup/assertion failures')\n\n"
         msg+="\Zb$(translate 'Configuration has been stopped to prevent an unusable VM state.')\Zn"
 
-        dialog --backtitle "ProxMenux" --colors \
-            --title "$(translate 'High-Risk GPU Power State')" \
-            --msgbox "$msg" 22 80
+        _pmx_msgbox "$(translate 'High-Risk GPU Power State')" "$msg" 22 80
         exit 0
     fi
 
@@ -903,9 +960,7 @@ check_gpu_vm_compatibility() {
         msg+="  —  QEMU IRQ assertion failure → VM does not start\n\n"
         msg+="\Zb$(translate 'Configuration has been stopped to prevent leaving the VM in an unusable state.')\Zn"
 
-        dialog --backtitle "ProxMenux" --colors \
-            --title "$(translate 'Incompatible GPU for VM Passthrough')" \
-            --msgbox "$msg" 26 80
+        _pmx_msgbox "$(translate 'Incompatible GPU for VM Passthrough')" "$msg" 26 80
         exit 0
     fi
 
@@ -922,9 +977,7 @@ check_gpu_vm_compatibility() {
         msg+="$(translate 'for this policy and may fail after first use or on subsequent VM starts.')\n\n"
         msg+="\Zb$(translate 'Configuration has been stopped due to high reset risk.')\Zn"
 
-        dialog --backtitle "ProxMenux" --colors \
-            --title "$(translate 'Reset Capability Blocked')" \
-            --msgbox "$msg" 20 80
+        _pmx_msgbox "$(translate 'Reset Capability Blocked')" "$msg" 20 80
         exit 0
     fi
 
@@ -939,9 +992,7 @@ check_gpu_vm_compatibility() {
         msg+="$(translate 'Passthrough may fail depending on hardware/firmware implementation.')\n\n"
         msg+="$(translate 'Do you want to continue anyway?')"
 
-        dialog --backtitle "ProxMenux" --colors \
-            --title "$(translate 'Reset Capability Warning')" \
-            --yesno "$msg" 18 78
+        _pmx_yesno "$(translate 'Reset Capability Warning')" "$msg" 18 78
         [[ $? -ne 0 ]] && exit 0
     fi
 }
@@ -965,16 +1016,14 @@ analyze_iommu_group() {
             did=$(cat "/sys/bus/pci/devices/${pci_full}/device" 2>/dev/null | sed 's/0x//')
             [[ -n "$vid" && -n "$did" ]] && IOMMU_VFIO_IDS+=("${vid}:${did}")
 
-            dialog --backtitle "ProxMenux" --colors \
-                --title "$(translate 'IOMMU Group Pending')" \
-                --msgbox "\n$(translate 'IOMMU groups are not available yet because reboot is pending.')\n\n$(translate 'The script will preconfigure the selected GPU now and finalize hardware binding after reboot.')\n\n$(translate 'Selected GPU function'):\n  • ${pci_full}" \
+            _pmx_msgbox "$(translate 'IOMMU Group Pending')" \
+                "\n$(translate 'IOMMU groups are not available yet because reboot is pending.')\n\n$(translate 'The script will preconfigure the selected GPU now and finalize hardware binding after reboot.')\n\n$(translate 'Selected GPU function'):\n  • ${pci_full}" \
                 14 82
             return 0
         fi
 
-        dialog --backtitle "ProxMenux" \
-            --title "$(translate 'IOMMU Group Error')" \
-            --msgbox "\n$(translate 'Could not determine the IOMMU group for the selected GPU.')\n\n$(translate 'Make sure IOMMU is properly enabled and the system has been rebooted after activation.')" \
+        _pmx_msgbox "$(translate 'IOMMU Group Error')" \
+            "\n$(translate 'Could not determine the IOMMU group for the selected GPU.')\n\n$(translate 'Make sure IOMMU is properly enabled and the system has been rebooted after activation.')" \
             10 72
         exit 1
     fi
@@ -1016,19 +1065,6 @@ analyze_iommu_group() {
         [[ "$dev" != "$pci_full" ]] && extra_devices=$((extra_devices + 1))
     done
 
-    local msg
-    msg="$(translate 'IOMMU Group'): ${IOMMU_GROUP}\n\n"
-    msg+="$(translate 'The following devices will all be passed to the VM') "
-    msg+="($(translate 'IOMMU isolation rule')):\n\n"
-    msg+="${display_lines}"
-
-    if [[ $extra_devices -gt 0 ]]; then
-        msg+="\n\Z1$(translate 'All devices in the same IOMMU group must be passed together.')\Zn"
-    fi
-
-    dialog --backtitle "ProxMenux" --colors \
-        --title "$(translate 'IOMMU Group') ${IOMMU_GROUP}" \
-        --msgbox "\n${msg}" 22 82
 }
 
 detect_optional_gpu_audio() {
@@ -1078,9 +1114,8 @@ select_vm() {
             VM_NAME=$(qm config "$SELECTED_VMID" 2>/dev/null | grep "^name:" | awk '{print $2}')
             return 0
         fi
-        dialog --backtitle "ProxMenux" \
-            --title "$(translate 'Invalid VMID')" \
-            --msgbox "\n$(translate 'The preselected VMID does not exist on this host:') ${PRESELECT_VMID}" 9 72
+        _pmx_msgbox "$(translate 'Invalid VMID')" \
+            "\n$(translate 'The preselected VMID does not exist on this host:') ${PRESELECT_VMID}" 9 72
         exit 1
     fi
 
@@ -1097,19 +1132,17 @@ select_vm() {
     done < <(qm list 2>/dev/null)
 
     if [[ ${#menu_items[@]} -eq 0 ]]; then
-        dialog --backtitle "ProxMenux" \
-            --title "$(translate 'No VMs Found')" \
-            --msgbox "\n$(translate 'No Virtual Machines found on this system.')\n\n$(translate 'Create a VM first (machine type q35 + UEFI BIOS), then run this option again.')" \
+        _pmx_msgbox "$(translate 'No VMs Found')" \
+            "\n$(translate 'No Virtual Machines found on this system.')\n\n$(translate 'Create a VM first (machine type q35 + UEFI BIOS), then run this option again.')" \
             10 68
         exit 0
     fi
 
-    SELECTED_VMID=$(dialog --backtitle "ProxMenux" \
-        --title "$(translate 'Select Virtual Machine')" \
-        --menu "\n$(translate 'Select the VM to add the GPU to:')" \
+    SELECTED_VMID=$(_pmx_menu \
+        "$(translate 'Select Virtual Machine')" \
+        "\n$(translate 'Select the VM to add the GPU to:')" \
         20 72 12 \
-        "${menu_items[@]}" \
-        2>&1 >/dev/tty) || exit 0
+        "${menu_items[@]}") || exit 0
 
     VM_NAME=$(qm config "$SELECTED_VMID" 2>/dev/null | grep "^name:" | awk '{print $2}')
 }
@@ -1138,9 +1171,7 @@ check_vm_machine_type() {
     msg+="  •  $(translate 'BIOS: OVMF (UEFI)')\n"
     msg+="  •  $(translate 'Storage controller: VirtIO SCSI')"
 
-    dialog --backtitle "ProxMenux" \
-        --title "$(translate 'Incompatible Machine Type')" \
-        --msgbox "$msg" 20 78
+    _pmx_msgbox "$(translate 'Incompatible Machine Type')" "$msg" 20 78
     exit 0
 }
 
@@ -1210,13 +1241,11 @@ check_switch_mode() {
             msg+="\Z1\Zb$(translate 'Start on boot enabled (onboot=1)'): ${onboot_count}\Zn\n"
         msg+="\n\Z1$(translate 'After this LXC → VM switch, reboot the host so the new binding state is applied cleanly.')\Zn"
 
-        action_choice=$(dialog --backtitle "ProxMenux" --colors \
-            --title "$(translate 'GPU Used in LXC Containers')" \
-            --default-item "2" \
-            --menu "$msg" 25 96 8 \
+        action_choice=$(_pmx_menu --default-item "2" \
+            "$(translate 'GPU Used in LXC Containers')" \
+            "$msg" 25 96 8 \
             "1" "$(translate 'Keep GPU in LXC config (disable Start on boot)')" \
-            "2" "$(translate 'Remove GPU from LXC config (keep Start on boot)')" \
-            2>&1 >/dev/tty) || exit 0
+            "2" "$(translate 'Remove GPU from LXC config (keep Start on boot)')") || exit 0
 
         case "$action_choice" in
             1) LXC_SWITCH_ACTION="keep_gpu_disable_onboot" ;;
@@ -1254,9 +1283,7 @@ check_switch_mode() {
             msg+="  Hardware Graphics → Add GPU to VM\n"
             msg+="$(translate 'to move the GPU safely.')"
 
-            dialog --backtitle "ProxMenux" \
-                --title "$(translate 'GPU Busy in Running VM')" \
-                --msgbox "$msg" 16 78
+            _pmx_msgbox "$(translate 'GPU Busy in Running VM')" "$msg" 16 78
             exit 0
         fi
 
@@ -1292,13 +1319,11 @@ check_switch_mode() {
         msg+="$(translate 'Choose conflict policy for the source VM:')"
 
         local vm_action_choice
-        vm_action_choice=$(dialog --clear --backtitle "ProxMenux" --colors \
-            --title "$(translate 'GPU Already Assigned to Another VM')" \
-            --default-item "1" \
-            --menu "$msg" 24 98 8 \
+        vm_action_choice=$(_pmx_menu --default-item "1" \
+            "$(translate 'GPU Already Assigned to Another VM')" \
+            "$msg" 24 84 8 \
             "1" "$(translate 'Keep GPU in source VM config (disable Start on boot if enabled)')" \
-            "2" "$(translate 'Remove GPU from source VM config (keep Start on boot)')" \
-            2>&1 >/dev/tty) || exit 0
+            "2" "$(translate 'Remove GPU from source VM config (keep Start on boot)')") || exit 0
 
         case "$vm_action_choice" in
             1) SWITCH_VM_ACTION="keep_gpu_disable_onboot" ;;
@@ -1376,9 +1401,7 @@ confirm_summary() {
     local run_title
     run_title=$(_get_vm_run_title)
 
-    dialog --clear --backtitle "ProxMenux" --colors \
-        --title "${run_title}" \
-        --yesno "$msg" 28 78
+    _pmx_yesno "${run_title}" "$msg" 28 78
     [[ $? -ne 0 ]] && exit 0
 }
 
@@ -1724,7 +1747,7 @@ cleanup_vm_config() {
     local pci_slot="${SELECTED_GPU_PCI#0000:}"
     pci_slot="${pci_slot%.*}"   # 01:00
 
-    if [[ "$VM_SWITCH_ACTION" == "keep_gpu_disable_onboot" ]]; then
+    if [[ "$SWITCH_VM_ACTION" == "keep_gpu_disable_onboot" ]]; then
         msg_info "$(translate 'Keeping GPU in source VM config') ${SWITCH_VM_SRC}..."
         if _vm_onboot_enabled "$SWITCH_VM_SRC"; then
             if qm set "$SWITCH_VM_SRC" -onboot 0 >>"$LOG_FILE" 2>&1; then
@@ -1916,7 +1939,6 @@ main() {
     if [[ "$WIZARD_CALL" == "true" ]]; then
         echo
     else
-        clear
         show_proxmenux_logo
         msg_title "${run_title}"
     fi

@@ -44,6 +44,11 @@ if [[ -f "$LOCAL_SCRIPTS_LOCAL/global/vm_storage_helpers.sh" ]]; then
 elif [[ -f "$LOCAL_SCRIPTS_DEFAULT/global/vm_storage_helpers.sh" ]]; then
     source "$LOCAL_SCRIPTS_DEFAULT/global/vm_storage_helpers.sh"
 fi
+if [[ -f "$LOCAL_SCRIPTS_LOCAL/vm/disk_selector.sh" ]]; then
+    source "$LOCAL_SCRIPTS_LOCAL/vm/disk_selector.sh"
+elif [[ -f "$LOCAL_SCRIPTS_DEFAULT/vm/disk_selector.sh" ]]; then
+    source "$LOCAL_SCRIPTS_DEFAULT/vm/disk_selector.sh"
+fi
 if [[ -f "$LOCAL_SCRIPTS_LOCAL/global/pci_passthrough_helpers.sh" ]]; then
     source "$LOCAL_SCRIPTS_LOCAL/global/pci_passthrough_helpers.sh"
 elif [[ -f "$LOCAL_SCRIPTS_DEFAULT/global/pci_passthrough_helpers.sh" ]]; then
@@ -490,24 +495,24 @@ function select_disk_type() {
   while true; do
     local choice
     choice=$(whiptail --backtitle "ProxMenuX" --title "STORAGE PLAN" --menu "$(_build_storage_plan_summary)" 18 78 5 \
-      "1" "$(translate "Add virtual disk")" \
-      "2" "$(translate "Add import disk")" \
-      "3" "$(translate "Add Controller or NVMe (PCI passthrough)")" \
+      "a" "$(translate "Add virtual disk")" \
+      "b" "$(translate "Add import disk")" \
+      "c" "$(translate "Add Controller or NVMe (PCI passthrough)")" \
       "r" "$(translate "Reset current storage selection")" \
-      "d" "$(translate "[ Finish and continue ]")" \
+      "d" "$(translate "──── [ Finish and continue ] ────")" \
       --ok-button "Select" --cancel-button "Cancel" 3>&1 1>&2 2>&3) || {
       msg_warn "$(translate "Storage plan selection cancelled.")"
       return 1
     }
 
     case "$choice" in
-      1)
+      a)
         select_virtual_disk
         ;;
-      2)
+      b)
         select_import_disk
         ;;
-      3)
+      c)
         select_controller_nvme
         ;;
       r)
@@ -588,49 +593,6 @@ function select_virtual_disk() {
   [[ -z "$DISK_SIZE" ]] && DISK_SIZE="64"
   VIRTUAL_DISKS+=("${STORAGE}:${DISK_SIZE}")
 
-}
-
-function select_import_disk() {
-  msg_info "$(translate "Detecting available disks...")"
-  _refresh_host_storage_cache
-
-  local FREE_DISKS=()
-  local DISK INFO MODEL SIZE LABEL DESCRIPTION
-  while read -r DISK; do
-    [[ "$DISK" =~ /dev/zd ]] && continue
-    _disk_is_host_system_used "$DISK" && continue
-
-    INFO=($(lsblk -dn -o MODEL,SIZE "$DISK"))
-    MODEL="${INFO[@]::${#INFO[@]}-1}"
-    SIZE="${INFO[-1]}"
-    LABEL=""
-    if _disk_used_in_guest_configs "$DISK"; then
-      LABEL+=" [⚠ $(translate "In use by VM/LXC config")]"
-    fi
-    DESCRIPTION=$(printf "%-30s %10s%s" "$MODEL" "$SIZE" "$LABEL")
-    if _array_contains "$DISK" "${IMPORT_DISKS[@]}"; then
-      FREE_DISKS+=("$DISK" "$DESCRIPTION" "ON")
-    else
-      FREE_DISKS+=("$DISK" "$DESCRIPTION" "OFF")
-    fi
-  done < <(lsblk -dn -e 7,11 -o PATH)
-  stop_spinner
-  if [[ ${#FREE_DISKS[@]} -eq 0 ]]; then
-    whiptail --title "Error" --msgbox "$(translate "No importable disks available. System disks and protected disks are hidden.")" 9 70
-    return 1
-  fi
-
-  local selected
-  selected=$(whiptail --title "Select Import Disks" --checklist \
-    "$(translate "Select the disks you want to import (use spacebar to toggle):")" 20 78 10 \
-    "${FREE_DISKS[@]}" 3>&1 1>&2 2>&3) || return 1
-
-  IMPORT_DISKS=()
-  local item
-  for item in $(echo "$selected" | tr -d '"'); do
-    IMPORT_DISKS+=("$item")
-  done
-  export IMPORT_DISKS
 }
 
 function select_controller_nvme() {
@@ -761,7 +723,7 @@ function prompt_controller_conflict_policy() {
   shift
   local -a source_vms=("$@")
   local msg vmid vm_name st ob
-  msg="$(translate "Selected controller/NVMe is already assigned to other VM(s):")\n\n"
+  msg="\n$(translate "Selected controller/NVMe is already assigned to other VM(s):")\n\n"
   for vmid in "${source_vms[@]}"; do
     vm_name=$(_vm_name_by_id "$vmid")
     st="stopped"; _vm_status_is_running "$vmid" && st="running"
@@ -771,7 +733,7 @@ function prompt_controller_conflict_policy() {
   msg+="\n$(translate "Choose action for this controller/NVMe:")"
 
   local choice
-  choice=$(whiptail --title "$(translate "Controller/NVMe Conflict Policy")" --menu "$msg" 22 96 10 \
+  choice=$(whiptail --title "$(translate "Controller/NVMe Conflict Policy")" --menu "$msg" 20 80 10 \
     "1" "$(translate "Keep in source VM(s) + disable onboot + add to target VM")" \
     "2" "$(translate "Move to target VM (remove from source VM config)")" \
     "3" "$(translate "Skip this device")" \
@@ -1398,6 +1360,7 @@ function create_vm() {
                     msg_ok "Configured controller/NVMe as hostpci${HOSTPCI_INDEX}: ${PCI_DEV}"
                     DISK_INFO="${DISK_INFO}<p>Controller/NVMe: ${PCI_DEV}</p>"
                     CONSOLE_DISK_INFO="${CONSOLE_DISK_INFO}- Controller/NVMe: ${PCI_DEV} (hostpci${HOSTPCI_INDEX})\n"
+                    BOOT_ORDER_LIST+=("hostpci${HOSTPCI_INDEX}")
                     HOSTPCI_INDEX=$((HOSTPCI_INDEX + 1))
                 else
                     msg_error "Failed to configure controller/NVMe: ${PCI_DEV}"
@@ -1511,18 +1474,26 @@ else
     echo -e "${TAB}• $(translate "Then change the VM display to none (vga: none) when the system is stable.")"
   fi
   local HOST_REBOOT_REQUIRED="no"
+  local REBOOT_REASONS=""
   if [[ "${VM_STORAGE_IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
     HOST_REBOOT_REQUIRED="yes"
-    msg_warn "$(translate "IOMMU was enabled during this wizard. Reboot the host to apply it.")"
+    msg_ok "$(translate "IOMMU has been enabled — a system reboot is required")"
+    REBOOT_REASONS+="$(translate "IOMMU has been enabled on this system.")\n"
   fi
   if [[ "$GPU_WIZARD_REBOOT_REQUIRED" == "yes" ]]; then
     HOST_REBOOT_REQUIRED="yes"
+    REBOOT_REASONS+="$(translate "GPU passthrough changes require a host reboot.")\n"
   fi
   if [[ "$HOST_REBOOT_REQUIRED" == "yes" ]]; then
-    if whiptail --title "$(translate "Reboot Recommended")" --yesno \
-"$(translate "A host reboot is required to apply passthrough changes before starting the VM.")\n\n$(translate "Do you want to reboot now?")" 11 78; then
+    echo ""
+    if whiptail --title "$(translate "Reboot Required")" --yesno \
+"\n${REBOOT_REASONS}\n$(translate "A host reboot is required before starting the VM. Reboot now?")" 13 78; then
       msg_warn "$(translate "Rebooting the system...")"
       reboot
+    else
+      echo ""
+      msg_info2 "$(translate "To use the VM without issues, the host must be restarted before starting it.")"
+      msg_info2 "$(translate "Do not start the VM until the system has been rebooted.")"
     fi
   fi
   echo -e

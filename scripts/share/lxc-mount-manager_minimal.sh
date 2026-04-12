@@ -229,15 +229,13 @@ select_host_directory_unified() {
         return 1
     fi
 
-    # Warn about CIFS Proxmox-GUI storage (read-only limitation)
+    # Store the storage type as a global so the main flow can act on it later.
+    # We don't block the user here — the active fix happens after we know the container type.
+    LMM_HOST_DIR_TYPE="local"
     if detect_problematic_storage "$result" "Proxmox-Storage" "CIFS/SMB"; then
-        dialog --clear --title "$(translate "CIFS Storage Notice")" --yesno "\
-$(translate "This directory is a CIFS storage managed by Proxmox.")\n\n\
-$(translate "CIFS storage configured through Proxmox GUI applies restrictive permissions.")\n\
-$(translate "LXC containers can usually READ but may NOT be able to WRITE.")\n\n\
-$(translate "For write access, use 'Add Samba Share as Proxmox Storage' option instead.")\n\n\
-$(translate "Do you want to continue anyway?")" 14 80 3>&1 1>&2 2>&3
-        [[ $? -ne 0 ]] && return 1
+        LMM_HOST_DIR_TYPE="cifs"
+    elif detect_problematic_storage "$result" "Proxmox-Storage" "NFS"; then
+        LMM_HOST_DIR_TYPE="nfs"
     fi
 
     echo "$result"
@@ -314,7 +312,7 @@ select_container_mount_point() {
         fi
 
         # Check if path is already used as a mount point in this CT
-        if pct config "$ctid" 2>/dev/null | grep -q "mp=.*$mount_point"; then
+        if pct config "$ctid" 2>/dev/null | grep -qE "mp=${mount_point}(,|$)"; then
             whiptail --msgbox "$(translate "This path is already used as a mount point in this container.")" 8 70
             continue
         fi
@@ -364,7 +362,7 @@ add_bind_mount() {
     fi
 
     # Check if this host path is already mounted in this CT
-    if pct config "$ctid" 2>/dev/null | grep -q "^mp[0-9]*:.*${host_path},"; then
+    if pct config "$ctid" 2>/dev/null | grep -qF " ${host_path},"; then
         msg_warn "$(translate "Mount already exists for this path in container") $ctid"
         return 1
     fi
@@ -556,6 +554,199 @@ $(translate "Proceed with removal")?"
 }
 
 # ==========================================================
+# ACTIVE FIXES FOR NETWORK STORAGE (CIFS / NFS)
+# These functions act on problems instead of just warning about them.
+# ==========================================================
+
+lmm_fix_cifs_access() {
+    local host_dir="$1"
+    local is_unprivileged="$2"
+
+    # CIFS mounted by Proxmox GUI uses uid=0/gid=0 by default (root only).
+    # The fix: remount with uid/gid that the LXC can access.
+    # We detect the current mount options and propose a corrected remount.
+
+    local mount_src mount_opts
+    mount_src=$(findmnt -n -o SOURCE --target "$host_dir" 2>/dev/null)
+    mount_opts=$(findmnt -n -o OPTIONS --target "$host_dir" 2>/dev/null)
+
+    if [[ -z "$mount_src" ]]; then
+        dialog --backtitle "ProxMenux" \
+            --title "$(translate "CIFS Mount Not Found")" \
+            --msgbox "$(translate "Could not detect the CIFS mount for this directory. Try accessing it manually.")" 8 70
+        return 0
+    fi
+
+    # Determine which uid/gid to use
+    local target_uid target_gid
+    if [[ "$is_unprivileged" == "1" ]]; then
+        # Unprivileged LXC: container root (UID 0) maps to host UID 100000.
+        # Use file_mode/dir_mode 0777 + uid=0/gid=0 — CIFS maps them to everyone.
+        target_uid=0
+        target_gid=0
+    else
+        target_uid=0
+        target_gid=0
+    fi
+
+    # Build new options: strip existing uid/gid/file_mode/dir_mode, add ours
+    local new_opts
+    new_opts=$(echo "$mount_opts" | sed -E \
+        's/(^|,)(uid|gid|file_mode|dir_mode)=[^,]*//g' | \
+        sed 's/^,//')
+    new_opts="${new_opts},uid=${target_uid},gid=${target_gid},file_mode=0777,dir_mode=0777"
+    new_opts="${new_opts/#,/}"
+
+    if dialog --backtitle "ProxMenux" \
+        --title "$(translate "Fix CIFS Permissions")" \
+        --yesno \
+"$(translate "This CIFS share is mounted with restrictive permissions.")\n\n\
+$(translate "ProxMenux can remount it with open permissions so any LXC can read and write.")\n\n\
+$(translate "Current mount options:")\n${mount_opts}\n\n\
+$(translate "New mount options to apply:")\n${new_opts}\n\n\
+$(translate "Apply fix now? (The share will be briefly remounted)")" \
+        18 84 3>&1 1>&2 2>&3; then
+
+        msg_info "$(translate "Remounting CIFS share with open permissions...")"
+        if umount "$host_dir" 2>/dev/null && \
+           mount -t cifs "$mount_src" "$host_dir" -o "$new_opts" 2>/dev/null; then
+            msg_ok "$(translate "CIFS share remounted — LXC containers can now read and write")"
+
+            # Update fstab if the mount is there
+            if grep -qF "$host_dir" /etc/fstab 2>/dev/null; then
+                sed -i "s|^\(${mount_src}[[:space:]].*${host_dir}.*cifs[[:space:]]\).*|\1${new_opts} 0 0|" /etc/fstab 2>/dev/null || true
+                msg_ok "$(translate "/etc/fstab updated — permissions will persist after reboot")"
+            fi
+        else
+            msg_warn "$(translate "Could not remount automatically. Try manually or check credentials.")"
+        fi
+    fi
+}
+
+lmm_fix_nfs_access() {
+    local host_dir="$1"
+    local is_unprivileged="$2"
+    local uid_shift="${3:-100000}"
+
+    # NFS: the host cannot override server-side permissions.
+    # BUT: if the server exports with root_squash (default), we can check
+    # if no_root_squash or all_squash is possible, and guide the user.
+    # What we CAN do on the host: apply a sticky+open directory as a cache layer
+    # if the NFS mount allows it.
+
+    local mount_src mount_opts
+    mount_src=$(findmnt -n -o SOURCE --target "$host_dir" 2>/dev/null)
+    mount_opts=$(findmnt -n -o OPTIONS --target "$host_dir" 2>/dev/null)
+
+    # Try to detect if we can write to the NFS share as root
+    local can_write=false
+    local testfile="${host_dir}/.proxmenux_write_test_$$"
+    if touch "$testfile" 2>/dev/null; then
+        rm -f "$testfile" 2>/dev/null
+        can_write=true
+    fi
+
+    local server_hint=""
+    if [[ -n "$mount_src" ]]; then
+        server_hint="${mount_src%%:*}"
+    fi
+
+    if [[ "$can_write" == "true" && "$is_unprivileged" == "1" ]]; then
+        # Root on host CAN write to NFS, but unprivileged LXC UIDs (100000+)
+        # will be squashed by the NFS server. We can set a world-writable sticky
+        # dir on the share itself so the container can write to it.
+        if dialog --backtitle "ProxMenux" \
+            --title "$(translate "Fix NFS Access for Unprivileged LXC")" \
+            --yesno \
+"$(translate "NFS server export is writable from the host, but unprivileged LXC containers use mapped UIDs (${uid_shift}+) which the NFS server will squash.")\n\n\
+$(translate "ProxMenux can apply open permissions on this NFS directory from the host so the container can read and write:")\n\n\
+$(translate "  chmod 1777 + setfacl o::rwx (applied on the NFS share from this host)")\n\n\
+$(translate "Note: this only works if the NFS server does NOT use 'all_squash' for root.")\n\
+$(translate "If it still fails, the NFS server export options must be changed on the server.")\n\n\
+$(translate "Apply fix now?")" \
+            18 84 3>&1 1>&2 2>&3; then
+
+            if chmod 1777 "$host_dir" 2>/dev/null; then
+                msg_ok "$(translate "NFS directory permissions set — containers should now be able to write")"
+            else
+                msg_warn "$(translate "chmod failed — NFS server may be restricting changes from root")"
+            fi
+
+            if command -v setfacl >/dev/null 2>&1; then
+                setfacl -m o::rwx "$host_dir" 2>/dev/null || true
+                setfacl -m d:o::rwx "$host_dir" 2>/dev/null || true
+            fi
+        fi
+
+    elif [[ "$can_write" == "false" ]]; then
+        # Even root cannot write — NFS server is fully restrictive
+        local server_msg=""
+        [[ -n "$server_hint" ]] && server_msg="\n$(translate "NFS server:"): ${server_hint}"
+
+        dialog --backtitle "ProxMenux" \
+            --title "$(translate "NFS Access Restricted")" \
+            --msgbox \
+"$(translate "This NFS share is fully restricted — even the host root cannot write to it.")\n\
+${server_msg}\n\n\
+$(translate "ProxMenux cannot override NFS server-side permissions from the host.")\n\n\
+$(translate "To allow LXC write access, change the NFS export on the server to include:")\n\n\
+$(translate "  no_root_squash")     $(translate "(if only privileged LXCs need write access)")\n\
+$(translate "  all_squash,anonuid=65534,anongid=65534")  $(translate "(for unprivileged LXCs)")\n\n\
+$(translate "You can still mount this share for READ-ONLY access.")" \
+            20 84 3>&1 1>&2 2>&3
+    fi
+}
+
+# ==========================================================
+# HOST PERMISSION CHECK (host-side only, never touches the container)
+# ==========================================================
+
+lmm_offer_host_permissions() {
+    local host_dir="$1"
+    local is_unprivileged="$2"
+
+    # Privileged containers: UID 0 inside = UID 0 on host — always accessible
+    [[ "$is_unprivileged" != "1" ]] && return 0
+
+    # Check if 'others' already have r+x (minimum to traverse and read)
+    local stat_perms others_bits
+    stat_perms=$(stat -c "%a" "$host_dir" 2>/dev/null) || return 0
+    others_bits=$(( 8#${stat_perms} & 7 ))
+
+    # Check ACLs first if available (takes precedence over mode bits)
+    if command -v getfacl >/dev/null 2>&1; then
+        if getfacl -p "$host_dir" 2>/dev/null | grep -q "^other::.*r.*x"; then
+            return 0  # ACL already grants others r+x or better
+        fi
+    fi
+
+    # 5 = r-x (bits: r=4, x=1). If already r+x or rwx we're fine.
+    (( (others_bits & 5) == 5 )) && return 0
+
+    # Permissions are insufficient — offer to fix HOST directory only
+    local current_perms
+    current_perms=$(stat -c "%A" "$host_dir" 2>/dev/null)
+
+    if dialog --backtitle "ProxMenux" \
+        --title "$(translate "Unprivileged Container Access")" \
+        --yesno \
+"$(translate "The host directory may not be accessible from an unprivileged container.")\n\n\
+$(translate "Unprivileged containers map their UIDs to high host UIDs (e.g. 100000+), which appear as 'others' on the host filesystem.")\n\n\
+$(translate "Current permissions:"): ${current_perms}\n\n\
+$(translate "Apply read+write access for 'others' on the host directory?")\n\n\
+$(translate "(Only the host directory is modified. Nothing inside the container is changed.")" \
+        16 80 3>&1 1>&2 2>&3; then
+
+        chmod o+rwx "$host_dir" 2>/dev/null || true
+        if command -v setfacl >/dev/null 2>&1; then
+            setfacl -m o::rwx "$host_dir" 2>/dev/null || true
+            setfacl -m d:o::rwx "$host_dir" 2>/dev/null || true
+        fi
+        msg_ok "$(translate "Host directory permissions updated — unprivileged containers can now access it")"
+    fi
+}
+
+# ==========================================================
 # MAIN FUNCTION — ADD MOUNT
 # ==========================================================
 
@@ -577,7 +768,7 @@ mount_host_directory_minimal() {
 
     # Step 4: Get container type info (for display only)
     local uid_shift container_type_display
-    uid_shift=$(awk -F: '/^lxc.idmap.*u 0/ {print $5}' "/etc/pve/lxc/${container_id}.conf" 2>/dev/null | head -1)
+    uid_shift=$(awk '/^lxc.idmap.*u 0/ {print $5}' "/etc/pve/lxc/${container_id}.conf" 2>/dev/null | head -1)
     local is_unprivileged
     is_unprivileged=$(grep "^unprivileged:" "/etc/pve/lxc/${container_id}.conf" 2>/dev/null | awk '{print $2}')
     if [[ "$is_unprivileged" == "1" ]]; then
@@ -588,7 +779,13 @@ mount_host_directory_minimal() {
         uid_shift="0"
     fi
 
-    # Step 5: Confirmation
+    # Step 5: Active fix for network storage (before confirmation, while we know container type)
+    case "${LMM_HOST_DIR_TYPE:-local}" in
+        cifs) lmm_fix_cifs_access "$host_dir" "$is_unprivileged" ;;
+        nfs)  lmm_fix_nfs_access  "$host_dir" "$is_unprivileged" "$uid_shift" ;;
+    esac
+
+    # Step 6: Confirmation
     local confirm_msg
     confirm_msg="$(translate "Mount Configuration Summary:")
 
@@ -597,17 +794,12 @@ $(translate "Host Directory"): $host_dir
 $(translate "Container Mount Point"): $ct_mount_point
 
 $(translate "IMPORTANT NOTES:")
-- $(translate "Host directory permissions and ownership are NOT modified")
-- $(translate "Container filesystem is NOT modified")
-- $(translate "If access fails after mounting, adjust permissions manually:")
-
-$(if [[ "$is_unprivileged" == "1" ]]; then
-    echo "  # Allow container UID ${uid_shift}+ to access host dir:"
-    echo "  setfacl -m u:${uid_shift}:rwx \"$host_dir\""
-    echo "  setfacl -d:m u:${uid_shift}:rwx \"$host_dir\""
-else
-    echo "  chmod 755 \"$host_dir\""
-fi)
+- $(translate "Nothing inside the container is modified")
+- $(if [[ "$is_unprivileged" == "1" ]]; then
+    translate "Host directory access for unprivileged containers has been prepared above"
+  else
+    translate "Privileged container — host root maps directly, no permission changes needed"
+  fi)
 
 $(translate "Proceed")?"
 
@@ -621,7 +813,7 @@ $(translate "Proceed")?"
     msg_ok "$(translate "Host directory:") $host_dir"
     msg_ok "$(translate "Container mount point:") $ct_mount_point"
 
-    # Step 6: Add bind mount (the ONLY operation that changes anything)
+    # Step 7: Add bind mount
     if ! add_bind_mount "$container_id" "$host_dir" "$ct_mount_point"; then
         echo ""
         msg_success "$(translate "Press Enter to continue...")"
@@ -629,27 +821,25 @@ $(translate "Proceed")?"
         return 1
     fi
 
-    # Step 7: Summary with permission hints
+    # Step 8: Host permission check for local dirs (only if not already handled above for CIFS/NFS)
+    if [[ "${LMM_HOST_DIR_TYPE:-local}" == "local" ]]; then
+        lmm_offer_host_permissions "$host_dir" "$is_unprivileged"
+    fi
+
+    # Step 9: Summary
     echo ""
     echo -e "${TAB}${BOLD}$(translate "Mount Added Successfully:")${CL}"
     echo -e "${TAB}${BGN}$(translate "Container:")${CL} ${BL}$container_id${CL}"
     echo -e "${TAB}${BGN}$(translate "Host Directory:")${CL} ${BL}$host_dir${CL}"
     echo -e "${TAB}${BGN}$(translate "Mount Point:")${CL} ${BL}$ct_mount_point${CL}"
+    if [[ "$is_unprivileged" == "1" ]]; then
+        echo -e "${TAB}${YW}$(translate "Unprivileged container — UID offset:") ${uid_shift}${CL}"
+    else
+        echo -e "${TAB}${DGN}$(translate "Privileged container — direct root access")${CL}"
+    fi
     echo ""
 
-    if [[ "$is_unprivileged" == "1" ]]; then
-        local mapped_uid="$uid_shift"
-        echo -e "${TAB}${YW}$(translate "UNPRIVILEGED container — UID mapping active:")${CL}"
-        echo -e "${TAB}  $(translate "Container UID 0") → $(translate "Host UID") $mapped_uid"
-        echo -e "${TAB}  $(translate "If access fails, run on the host:")"
-        echo -e "${TAB}  ${DGN}setfacl -m u:${mapped_uid}:rwx \"$host_dir\"${CL}"
-        echo -e "${TAB}  ${DGN}setfacl -d:m u:${mapped_uid}:rwx \"$host_dir\"${CL}"
-    else
-        echo -e "${TAB}${DGN}$(translate "PRIVILEGED container — direct UID mapping")${CL}"
-        echo -e "${TAB}  $(translate "Ensure") $host_dir $(translate "is accessible by root (chmod 755 or wider)")"
-    fi
-
-    # Step 8: Offer restart
+    # Step 10: Offer restart
     echo ""
     if whiptail --yesno "$(translate "Restart container to activate mount?")" 8 60; then
         msg_info "$(translate "Restarting container...")"

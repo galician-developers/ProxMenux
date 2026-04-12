@@ -58,7 +58,7 @@ function select_linux_iso() {
                   --backtitle "ProxMenux" \
                   --title "Opciones de instalación de Linux" \
                   --menu "\nSeleccione el tipo de instalación de Linux:\n\n$header" \
-                  18 72 10 \
+                  20 70 10 \
                   1 "$(printf '%-35s│ %s' 'Instalar con metodo tradicional' 'Desde ISO oficial')" \
                   2 "$(printf '%-35s│ %s' 'Instalar con script Cloud-Init' 'Helper Scripts')" \
                   3 "$(printf '%-35s│ %s' 'Instalar con ISO personal' 'Almacenamiento local')" \
@@ -140,7 +140,7 @@ function select_linux_iso_official() {
 
   CHOICE=$(dialog --backtitle "ProxMenux" \
     --title "$(translate "Official Linux Distributions")" \
-    --menu "$(translate "Select the Linux distribution to install:")\n\n$HEADER_TEXT" 20 80 12 \
+    --menu "$(translate "Select the Linux distribution to install:")\n\n$HEADER_TEXT" 20 70 12 \
     "${MENU_OPTIONS[@]}" \
     3>&1 1>&2 2>&3)
 
@@ -269,7 +269,7 @@ local OTHER_OPTIONS=(
 local choice
 choice=$(dialog --backtitle "ProxMenux" \
   --title "$(translate "Other Prebuilt Linux VMs")" \
-  --menu "\n$(translate "Select one of the ready-to-run Linux VMs:")" 18 70 10 \
+  --menu "\n$(translate "Select one of the ready-to-run Linux VMs:")" 20 70 10 \
   "${OTHER_OPTIONS[@]}" 3>&1 1>&2 2>&3)
 
 if [[ $? -ne 0 || "$choice" == "4" ]]; then

@@ -253,7 +253,7 @@ add_proxmox_nfs_storage() {
     fi
 
     msg_ok "$(translate "Storage ID is available")"
-
+    msg_info "$(translate "NFS storage adding in progress...")"
     if pvesm_output=$(pvesm add nfs "$storage_id" \
         --server "$server" \
         --export "$export" \

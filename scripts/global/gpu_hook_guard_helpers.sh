@@ -222,9 +222,9 @@ attach_proxmenux_gpu_guard_to_vm() {
   fi
 
   if qm set "$vmid" --hookscript "$PROXMENUX_GPU_HOOK_STORAGE_REF" >/dev/null 2>&1; then
-    _gpu_guard_msg_ok "GPU guard hook attached to VM ${vmid}"
+    _gpu_guard_msg_ok "PCIe passthrough guard attached to VM ${vmid}"
   else
-    _gpu_guard_msg_warn "Could not attach GPU guard hook to VM ${vmid}. Ensure 'local' storage supports snippets."
+    _gpu_guard_msg_warn "Could not attach PCIe passthrough guard to VM ${vmid}. Ensure 'local' storage supports snippets."
   fi
 }
 
@@ -239,9 +239,9 @@ attach_proxmenux_gpu_guard_to_lxc() {
   fi
 
   if pct set "$ctid" -hookscript "$PROXMENUX_GPU_HOOK_STORAGE_REF" >/dev/null 2>&1; then
-    _gpu_guard_msg_ok "GPU guard hook attached to LXC ${ctid}"
+    _gpu_guard_msg_ok "PCIe passthrough guard attached to LXC ${ctid}"
   else
-    _gpu_guard_msg_warn "Could not attach GPU guard hook to LXC ${ctid}. Ensure 'local' storage supports snippets."
+    _gpu_guard_msg_warn "Could not attach PCIe passthrough guard to LXC ${ctid}. Ensure 'local' storage supports snippets."
   fi
 }
 

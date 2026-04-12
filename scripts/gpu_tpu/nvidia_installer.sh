@@ -57,6 +57,33 @@ detect_nvidia_gpus() {
   fi
 }
 
+check_gpu_not_in_vm_passthrough() {
+  local dev vendor driver vfio_list=""
+  for dev in /sys/bus/pci/devices/*; do
+    vendor=$(cat "$dev/vendor" 2>/dev/null)
+    [[ "$vendor" != "0x10de" ]] && continue
+    if [[ -L "$dev/driver" ]]; then
+      driver=$(basename "$(readlink "$dev/driver")")
+      if [[ "$driver" == "vfio-pci" ]]; then
+        vfio_list+="  • $(basename "$dev")\n"
+      fi
+    fi
+  done
+
+  [[ -z "$vfio_list" ]] && return 0
+
+  local msg
+  msg="\n$(translate "One or more NVIDIA GPUs are currently configured for VM passthrough (vfio-pci):")\n\n"
+  msg+="${vfio_list}\n"
+  msg+="$(translate "Installing host drivers while the GPU is assigned to a VM could break passthrough and destabilize the system.")\n\n"
+  msg+="$(translate "To install host drivers, first remove the GPU from VM passthrough configuration and reboot.")"
+
+  dialog --backtitle "ProxMenux" \
+    --title "$(translate "GPU in VM Passthrough Mode")" \
+    --msgbox "$msg" 16 78
+  exit 0
+}
+
 detect_driver_status() {
   CURRENT_DRIVER_INSTALLED=false
   CURRENT_DRIVER_VERSION=""
@@ -842,6 +869,7 @@ main() {
 
   detect_nvidia_gpus
   detect_driver_status
+  check_gpu_not_in_vm_passthrough
 
   if ! $NVIDIA_GPU_PRESENT; then
     dialog --backtitle "ProxMenux" --title "$(translate 'NVIDIA GPU Driver Installation')" --msgbox \

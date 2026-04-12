@@ -15,6 +15,66 @@ function _array_contains() {
   return 1
 }
 
+function _vm_boot_order_add_unique() {
+  local arr_name="$1"
+  shift
+  local -n arr_ref="$arr_name"
+  local entry
+  for entry in "$@"; do
+    [[ -z "$entry" ]] && continue
+    _array_contains "$entry" "${arr_ref[@]}" || arr_ref+=("$entry")
+  done
+}
+
+function _vm_boot_order_join() {
+  local -a unique_entries=()
+  local entry
+  for entry in "$@"; do
+    [[ -z "$entry" ]] && continue
+    _array_contains "$entry" "${unique_entries[@]}" || unique_entries+=("$entry")
+  done
+  [[ ${#unique_entries[@]} -gt 0 ]] || return 0
+  local joined
+  joined=$(IFS=';'; echo "${unique_entries[*]}")
+  echo "$joined"
+}
+
+function _vm_boot_order_hostpci_entries_for_pcis() {
+  local vmid="$1"
+  shift
+
+  local cfg
+  cfg=$(qm config "$vmid" 2>/dev/null || true)
+  [[ -n "$cfg" ]] || return 0
+
+  local -a hostpci_entries=()
+  local pci bdf bdf_re slot_base slot_re line entry
+
+  for pci in "$@"; do
+    [[ -n "$pci" ]] || continue
+    bdf="${pci#0000:}"
+    bdf_re="${bdf//./\\.}"
+
+    line=$(grep -E "^hostpci[0-9]+:.*(0000:)?${bdf_re}([,[:space:]]|$)" <<< "$cfg" | head -n1)
+    if [[ -z "$line" ]]; then
+      slot_base="${bdf%.*}"
+      slot_re="${slot_base//./\\.}"
+      line=$(grep -E "^hostpci[0-9]+:.*(0000:)?${slot_re}(\\.[0-7])?([,[:space:]]|$)" <<< "$cfg" | head -n1)
+    fi
+
+    [[ -n "$line" ]] || continue
+    entry="${line%%:*}"
+    _array_contains "$entry" "${hostpci_entries[@]}" || hostpci_entries+=("$entry")
+  done
+
+  printf '%s\n' "${hostpci_entries[@]}"
+}
+
+function _vmids_scope_key() {
+  [[ "$#" -eq 0 ]] && { echo ""; return 0; }
+  printf '%s\n' "$@" | awk 'NF' | sort -u | paste -sd',' -
+}
+
 function _refresh_host_storage_cache() {
   MOUNTED_DISKS=$(lsblk -ln -o NAME,MOUNTPOINT | awk '$2!="" {print "/dev/" $1}')
   SWAP_DISKS=$(swapon --noheadings --raw --show=NAME 2>/dev/null)
@@ -23,17 +83,24 @@ function _refresh_host_storage_cache() {
 
   ZFS_DISKS=""
   local zfs_raw entry path base_disk
-  zfs_raw=$(zpool list -v -H 2>/dev/null | awk '{print $1}' | grep -v '^NAME$' | grep -v '^-' | grep -v '^mirror')
+  zfs_raw=$(zpool list -v -H 2>/dev/null | awk '{print $1}' | grep -v '^NAME$' | grep -v '^-' | grep -v '^mirror' | grep -v '^raidz')
   for entry in $zfs_raw; do
     path=""
-    if [[ "$entry" == wwn-* || "$entry" == ata-* ]]; then
-      [[ -e "/dev/disk/by-id/$entry" ]] && path=$(readlink -f "/dev/disk/by-id/$entry")
-    elif [[ "$entry" == /dev/* ]]; then
-      path="$entry"
+    if [[ "$entry" == /dev/* ]]; then
+      path=$(readlink -f "$entry" 2>/dev/null)
+    elif [[ -e "/dev/disk/by-id/$entry" ]]; then
+      path=$(readlink -f "/dev/disk/by-id/$entry" 2>/dev/null)
+    elif [[ -e "/dev/$entry" ]]; then
+      path=$(readlink -f "/dev/$entry" 2>/dev/null)
     fi
     if [[ -n "$path" ]]; then
       base_disk=$(lsblk -no PKNAME "$path" 2>/dev/null)
-      [[ -n "$base_disk" ]] && ZFS_DISKS+="/dev/$base_disk"$'\n'
+      if [[ -n "$base_disk" ]]; then
+        ZFS_DISKS+="/dev/$base_disk"$'\n'
+      else
+        # Whole-disk vdev — path is already the resolved disk itself
+        ZFS_DISKS+="$path"$'\n'
+      fi
     fi
   done
   ZFS_DISKS=$(echo "$ZFS_DISKS" | sort -u)
@@ -77,7 +144,7 @@ function _disk_is_host_system_used() {
     DISK_USAGE_REASON="$(translate "Disk is part of host LVM")"
     return 0
   fi
-  if [[ -n "$ZFS_DISKS" && "$ZFS_DISKS" == *"$disk"* ]]; then
+  if [[ -n "$ZFS_DISKS" ]] && grep -qFx "$disk" <<< "$ZFS_DISKS"; then
     DISK_USAGE_REASON="$(translate "Disk is part of a host ZFS pool")"
     return 0
   fi
@@ -86,21 +153,179 @@ function _disk_is_host_system_used() {
 
 function _disk_used_in_guest_configs() {
   local disk="$1"
-  local real_path
+  local real_path escaped
   real_path=$(readlink -f "$disk" 2>/dev/null)
 
-  if [[ -n "$real_path" ]] && grep -Fq "$real_path" <<< "$CONFIG_DATA"; then
-    return 0
+  # Use boundary matching: path must be followed by comma, whitespace, or EOL
+  # This prevents /dev/sdb from falsely matching /dev/sdb1 or /dev/sdb2
+  if [[ -n "$real_path" ]]; then
+    escaped="${real_path//./\\.}"
+    if grep -qE "${escaped}(,|[[:space:]]|$)" <<< "$CONFIG_DATA"; then
+      return 0
+    fi
   fi
 
-  local symlink
+  local symlink symlink_escaped
   for symlink in /dev/disk/by-id/*; do
     [[ -e "$symlink" ]] || continue
-    if [[ "$(readlink -f "$symlink")" == "$real_path" ]] && grep -Fq "$symlink" <<< "$CONFIG_DATA"; then
+    [[ "$(readlink -f "$symlink")" == "$real_path" ]] || continue
+    symlink_escaped="${symlink//./\\.}"
+    if grep -qE "${symlink_escaped}(,|[[:space:]]|$)" <<< "$CONFIG_DATA"; then
       return 0
     fi
   done
   return 1
+}
+
+# Returns 0 if the disk is referenced in a RUNNING VM or CT config.
+# Mirrors _disk_used_in_guest_configs but checks guest status per-file.
+function _disk_used_in_running_guest() {
+  local disk="$1"
+  local real_path
+  real_path=$(readlink -f "$disk" 2>/dev/null)
+
+  local -a aliases=()
+  [[ -n "$disk" ]] && aliases+=("$disk")
+  [[ -n "$real_path" && "$real_path" != "$disk" ]] && aliases+=("$real_path")
+  local symlink
+  for symlink in /dev/disk/by-id/*; do
+    [[ -e "$symlink" ]] || continue
+    [[ "$(readlink -f "$symlink" 2>/dev/null)" == "$real_path" ]] && aliases+=("$symlink")
+  done
+
+  local conf vmid alias escaped
+  for conf in /etc/pve/qemu-server/*.conf; do
+    [[ -f "$conf" ]] || continue
+    vmid=$(basename "$conf" .conf)
+    for alias in "${aliases[@]}"; do
+      escaped="${alias//./\\.}"
+      if grep -qE "${escaped}(,|[[:space:]]|$)" "$conf" 2>/dev/null; then
+        if qm status "$vmid" 2>/dev/null | grep -q "status: running"; then
+          return 0
+        fi
+      fi
+    done
+  done
+
+  local ctid
+  for conf in /etc/pve/lxc/*.conf; do
+    [[ -f "$conf" ]] || continue
+    ctid=$(basename "$conf" .conf)
+    for alias in "${aliases[@]}"; do
+      escaped="${alias//./\\.}"
+      if grep -qE "${escaped}(,|[[:space:]]|$)" "$conf" 2>/dev/null; then
+        if pct status "$ctid" 2>/dev/null | grep -q "status: running"; then
+          return 0
+        fi
+      fi
+    done
+  done
+
+  return 1
+}
+
+# Prints "VM:VMID" or "CT:CTID" for each stopped guest that references the disk.
+function _disk_guest_ids() {
+  local disk="$1"
+  local real_path
+  real_path=$(readlink -f "$disk" 2>/dev/null)
+
+  local -a aliases=()
+  [[ -n "$disk" ]] && aliases+=("$disk")
+  [[ -n "$real_path" && "$real_path" != "$disk" ]] && aliases+=("$real_path")
+  local symlink
+  for symlink in /dev/disk/by-id/*; do
+    [[ -e "$symlink" ]] || continue
+    [[ "$(readlink -f "$symlink" 2>/dev/null)" == "$real_path" ]] && aliases+=("$symlink")
+  done
+
+  local conf vmid alias escaped
+  for conf in /etc/pve/qemu-server/*.conf; do
+    [[ -f "$conf" ]] || continue
+    vmid=$(basename "$conf" .conf)
+    for alias in "${aliases[@]}"; do
+      escaped="${alias//./\\.}"
+      if grep -qE "${escaped}(,|[[:space:]]|$)" "$conf" 2>/dev/null; then
+        echo "VM:$vmid"
+        break
+      fi
+    done
+  done
+
+  local ctid
+  for conf in /etc/pve/lxc/*.conf; do
+    [[ -f "$conf" ]] || continue
+    ctid=$(basename "$conf" .conf)
+    for alias in "${aliases[@]}"; do
+      escaped="${alias//./\\.}"
+      if grep -qE "${escaped}(,|[[:space:]]|$)" "$conf" 2>/dev/null; then
+        echo "CT:$ctid"
+        break
+      fi
+    done
+  done
+}
+
+# Print the slot names (e.g. sata0, scsi1) in a VM config that reference the disk.
+function _find_disk_slots_in_vm() {
+  local vmid="$1"
+  local disk="$2"
+  local real_path conf
+  real_path=$(readlink -f "$disk" 2>/dev/null)
+  conf="/etc/pve/qemu-server/${vmid}.conf"
+  [[ -f "$conf" ]] || return
+
+  local -a aliases=("$disk")
+  [[ -n "$real_path" && "$real_path" != "$disk" ]] && aliases+=("$real_path")
+  local symlink
+  for symlink in /dev/disk/by-id/*; do
+    [[ -e "$symlink" ]] || continue
+    [[ "$(readlink -f "$symlink" 2>/dev/null)" == "$real_path" ]] && aliases+=("$symlink")
+  done
+
+  local key rest alias escaped
+  while IFS=: read -r key rest; do
+    key=$(echo "$key" | xargs)
+    [[ "$key" =~ ^(scsi|sata|ide|virtio)[0-9]+$ ]] || continue
+    for alias in "${aliases[@]}"; do
+      escaped="${alias//./\\.}"
+      if echo "$rest" | grep -qE "${escaped}(,|[[:space:]]|$)"; then
+        echo "$key"
+        break
+      fi
+    done
+  done < "$conf"
+}
+
+# Print the mp names (e.g. mp0, mp1) in a CT config that reference the disk.
+function _find_disk_slots_in_ct() {
+  local ctid="$1"
+  local disk="$2"
+  local real_path conf
+  real_path=$(readlink -f "$disk" 2>/dev/null)
+  conf="/etc/pve/lxc/${ctid}.conf"
+  [[ -f "$conf" ]] || return
+
+  local -a aliases=("$disk")
+  [[ -n "$real_path" && "$real_path" != "$disk" ]] && aliases+=("$real_path")
+  local symlink
+  for symlink in /dev/disk/by-id/*; do
+    [[ -e "$symlink" ]] || continue
+    [[ "$(readlink -f "$symlink" 2>/dev/null)" == "$real_path" ]] && aliases+=("$symlink")
+  done
+
+  local key rest alias escaped
+  while IFS=: read -r key rest; do
+    key=$(echo "$key" | xargs)
+    [[ "$key" =~ ^mp[0-9]+$ ]] || continue
+    for alias in "${aliases[@]}"; do
+      escaped="${alias//./\\.}"
+      if echo "$rest" | grep -qE "${escaped}(,|[[:space:]]|$)"; then
+        echo "$key"
+        break
+      fi
+    done
+  done < "$conf"
 }
 
 function _controller_block_devices() {
@@ -135,6 +360,14 @@ function _vm_is_q35() {
   local machine_line
   machine_line=$(qm config "$vmid" 2>/dev/null | awk -F': ' '/^machine:/ {print $2}')
   [[ "$machine_line" == *q35* ]]
+}
+
+function _vm_storage_register_vfio_iommu_tool() {
+  local tools_json="${BASE_DIR:-/usr/local/share/proxmenux}/installed_tools.json"
+  command -v jq >/dev/null 2>&1 || return 0
+  [[ -f "$tools_json" ]] || echo "{}" > "$tools_json"
+  jq '.vfio_iommu=true' "$tools_json" > "$tools_json.tmp" \
+    && mv "$tools_json.tmp" "$tools_json" || true
 }
 
 function _vm_storage_enable_iommu_cmdline() {
@@ -175,18 +408,28 @@ function _vm_storage_ensure_iommu_or_offer() {
   local reboot_policy="${VM_STORAGE_IOMMU_REBOOT_POLICY:-ask_now}"
 
   if declare -F _pci_is_iommu_active >/dev/null 2>&1 && _pci_is_iommu_active; then
+    _vm_storage_register_vfio_iommu_tool
     return 0
   fi
 
   if grep -qE 'intel_iommu=on|amd_iommu=on' /proc/cmdline 2>/dev/null && \
      [[ -d /sys/kernel/iommu_groups ]] && \
      [[ -n "$(ls /sys/kernel/iommu_groups/ 2>/dev/null)" ]]; then
+    _vm_storage_register_vfio_iommu_tool
     return 0
   fi
 
-  # Wizard flow: if IOMMU was already configured in this run and reboot is pending,
-  # allow the user to continue planning storage selections without re-prompting.
-  if [[ "$reboot_policy" == "defer" && "${VM_STORAGE_IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
+  # Dedup: if IOMMU was already configured/announced in this wizard run, skip prompt
+  if [[ "${VM_STORAGE_IOMMU_PENDING_REBOOT:-0}" == "1" ]]; then
+    return 0
+  fi
+
+  # Detect if another script already wrote IOMMU params (e.g. GPU script ran first)
+  if grep -qE 'intel_iommu=on|amd_iommu=on' /etc/kernel/cmdline 2>/dev/null || \
+     grep -qE 'intel_iommu=on|amd_iommu=on' /etc/default/grub 2>/dev/null; then
+    _vm_storage_register_vfio_iommu_tool
+    VM_STORAGE_IOMMU_PENDING_REBOOT=1
+    export VM_STORAGE_IOMMU_PENDING_REBOOT
     return 0
   fi
 
@@ -205,6 +448,8 @@ function _vm_storage_ensure_iommu_or_offer() {
       10 72
     return 1
   fi
+
+  _vm_storage_register_vfio_iommu_tool
 
   if [[ "$reboot_policy" == "defer" ]]; then
     VM_STORAGE_IOMMU_PENDING_REBOOT=1
@@ -230,47 +475,71 @@ function _vm_storage_confirm_controller_passthrough_risk() {
   local vmid="${1:-}"
   local vm_name="${2:-}"
   local title="${3:-Controller + NVMe}"
+  local ui_mode="${4:-auto}"   # wizard | standalone | auto
   local vm_label=""
   if [[ -n "$vmid" ]]; then
     vm_label="$vmid"
     [[ -n "$vm_name" ]] && vm_label="${vm_label} (${vm_name})"
   fi
 
-  local msg
-  msg="$(translate "Important compatibility notice")\n\n"
-  msg+="$(translate "Not all motherboards support physical Controller/NVMe passthrough to VMs reliably, especially systems with old platforms or limited BIOS/UEFI firmware.")\n\n"
-  msg+="$(translate "On some systems, the VM may fail to start or the host may freeze when the VM boots.")\n\n"
-
   local reinforce_limited_firmware="no"
-  local bios_date bios_year current_year cpu_model
+  local bios_date bios_year current_year bios_age cpu_model risk_detail=""
   bios_date=$(cat /sys/class/dmi/id/bios_date 2>/dev/null)
   bios_year=$(echo "$bios_date" | grep -oE '[0-9]{4}' | tail -n1)
   current_year=$(date +%Y 2>/dev/null)
   if [[ -n "$bios_year" && -n "$current_year" ]]; then
-    if (( current_year - bios_year >= 7 )); then
+    bios_age=$(( current_year - bios_year ))
+    if (( bios_age >= 7 )); then
       reinforce_limited_firmware="yes"
+      risk_detail="$(translate "BIOS from") ${bios_year} (${bios_age} $(translate "years old")) — $(translate "older firmware may increase passthrough instability")"
     fi
   fi
   cpu_model=$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | xargs)
   if echo "$cpu_model" | grep -qiE 'J4[0-9]{3}|J3[0-9]{3}|N4[0-9]{3}|N3[0-9]{3}|Apollo Lake'; then
     reinforce_limited_firmware="yes"
+    [[ -z "$risk_detail" ]] && risk_detail="$(translate "Low-power CPU platform"): ${cpu_model}"
   fi
 
-  if [[ "$reinforce_limited_firmware" == "yes" ]]; then
-    msg+="$(translate "Detected risk factor: this host may use an older or limited firmware platform, which increases passthrough instability risk.")\n\n"
+  if [[ "$ui_mode" == "auto" ]]; then
+    if [[ "${PROXMENUX_UI_MODE:-}" == "wizard" || "${WIZARD_CALL:-false}" == "true" ]]; then
+      ui_mode="wizard"
+    else
+      ui_mode="standalone"
+    fi
   fi
 
-  if [[ -n "$vm_label" ]]; then
-    msg+="$(translate "Target VM"): ${vm_label}\n\n"
-  fi
-  msg+="$(translate "If this happens after assignment"):\n"
-  msg+="  - $(translate "Power cycle the host if it is frozen.")\n"
-  msg+="  - $(translate "Remove the hostpci controller/NVMe entries from the VM config file.")\n"
-  msg+="    /etc/pve/qemu-server/${vmid:-<VMID>}.conf\n"
-  msg+="  - $(translate "Start the VM again without that passthrough device.")\n\n"
-  msg+="$(translate "Do you want to continue with this assignment?")"
+  local height=20
+  [[ "$reinforce_limited_firmware" == "yes" ]] && height=23
 
-  whiptail --title "$title" --yesno "$msg" 21 96
+  if [[ "$ui_mode" == "wizard" ]]; then
+    # whiptail: plain text (no color codes)
+    local msg
+    [[ -n "$vm_label" ]] && msg+="$(translate "Target VM"): ${vm_label}\n\n"
+    msg+="⚠  $(translate "Controller/NVMe passthrough — compatibility notice")\n\n"
+    msg+="$(translate "Not all platforms support Controller/NVMe passthrough reliably.")\n"
+    msg+="$(translate "On some systems, when starting the VM the host may slow down for several minutes until it stabilizes, or freeze completely.")\n"
+    if [[ "$reinforce_limited_firmware" == "yes" && -n "$risk_detail" ]]; then
+      msg+="\n$(translate "Detected risk factor"): ${risk_detail}\n"
+    fi
+    msg+="\n$(translate "If the host freezes, remove hostpci entries from") /etc/pve/qemu-server/${vmid:-<VMID>}.conf\n"
+    msg+="\n$(translate "Do you want to continue?")"
+    whiptail --title "$title" --yesno "$msg" $height 96
+  else
+    # dialog: colored format matching add_controller_nvme_vm.sh
+    local msg
+    [[ -n "$vm_label" ]] && msg+="\n\Zb$(translate "Target VM"): ${vm_label}\Zn\n"
+    msg+="\n\Zb\Z4⚠  $(translate "Controller/NVMe passthrough — compatibility notice")\Zn\n\n"
+    msg+="$(translate "Not all platforms support Controller/NVMe passthrough reliably.")\n"
+    msg+="$(translate "On some systems, when starting the VM the host may slow down for several minutes until it stabilizes, or freeze completely.")\n"
+    if [[ "$reinforce_limited_firmware" == "yes" && -n "$risk_detail" ]]; then
+      msg+="\n\Z1$(translate "Detected risk factor"): ${risk_detail}\Zn\n"
+    fi
+    msg+="\n$(translate "If the host freezes, remove hostpci entries from") /etc/pve/qemu-server/${vmid:-<VMID>}.conf\n"
+    msg+="\n\Zb$(translate "Do you want to continue?")\Zn"
+    dialog --backtitle "ProxMenux" --colors \
+      --title "$title" \
+      --yesno "$msg" $height 96
+  fi
 }
 
 function _shorten_text() {
@@ -282,6 +551,30 @@ function _shorten_text() {
   else
     echo "$text"
   fi
+}
+
+function _pci_storage_display_name() {
+  local pci_full="$1"
+  local raw_line name_part
+
+  raw_line=$(lspci -nn -s "${pci_full#0000:}" 2>/dev/null | sed 's/^[^ ]* //')
+  if [[ -z "$raw_line" ]]; then
+    translate "Unknown storage controller"
+    return 0
+  fi
+
+  # Prefer the right side after class prefix (e.g. "...: Vendor Model ...").
+  name_part="${raw_line#*: }"
+  [[ "$name_part" == "$raw_line" ]] && name_part="$raw_line"
+
+  # Remove noisy suffixes while keeping the meaningful model name.
+  name_part="${name_part%% (rev *}"
+  name_part=$(echo "$name_part" | sed -E 's/\[[0-9a-fA-F]{4}:[0-9a-fA-F]{4}\]//g')
+  name_part=$(echo "$name_part" | sed -E 's/ Technology Inc\.?//g; s/ Corporation//g; s/ Co\., Ltd\.?//g')
+  name_part=$(echo "$name_part" | sed -E 's/[[:space:]]+/ /g; s/^ +| +$//g')
+
+  [[ -z "$name_part" ]] && name_part="$raw_line"
+  echo "$name_part"
 }
 
 function _pci_slot_base() {

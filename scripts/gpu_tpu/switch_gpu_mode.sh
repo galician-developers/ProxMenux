@@ -888,6 +888,48 @@ apply_vm_action_for_lxc_mode() {
   done
 }
 
+_register_iommu_tool() {
+  local tools_json="${BASE_DIR:-/usr/local/share/proxmenux}/installed_tools.json"
+  command -v jq >/dev/null 2>&1 || return 0
+  [[ -f "$tools_json" ]] || echo "{}" > "$tools_json"
+  jq '.vfio_iommu=true' "$tools_json" > "$tools_json.tmp" \
+    && mv "$tools_json.tmp" "$tools_json" || true
+}
+
+_enable_iommu_cmdline() {
+  local cpu_vendor
+  cpu_vendor=$(grep -m1 "vendor_id" /proc/cpuinfo 2>/dev/null | awk '{print $3}')
+
+  local iommu_param
+  if [[ "$cpu_vendor" == "GenuineIntel" ]]; then
+    iommu_param="intel_iommu=on"
+  elif [[ "$cpu_vendor" == "AuthenticAMD" ]]; then
+    iommu_param="amd_iommu=on"
+  else
+    return 1
+  fi
+
+  local cmdline_file="/etc/kernel/cmdline"
+  local grub_file="/etc/default/grub"
+
+  if [[ -f "$cmdline_file" ]] && grep -qE 'root=ZFS=|root=ZFS/' "$cmdline_file" 2>/dev/null; then
+    if ! grep -q "$iommu_param" "$cmdline_file"; then
+      cp "$cmdline_file" "${cmdline_file}.bak.$(date +%Y%m%d_%H%M%S)"
+      sed -i "s|\\s*$| ${iommu_param} iommu=pt|" "$cmdline_file"
+      proxmox-boot-tool refresh >>"$LOG_FILE" 2>&1 || true
+    fi
+  elif [[ -f "$grub_file" ]]; then
+    if ! grep -q "$iommu_param" "$grub_file"; then
+      cp "$grub_file" "${grub_file}.bak.$(date +%Y%m%d_%H%M%S)"
+      sed -i "/GRUB_CMDLINE_LINUX_DEFAULT=/ s|\"$| ${iommu_param} iommu=pt\"|" "$grub_file"
+      update-grub >>"$LOG_FILE" 2>&1 || true
+    fi
+  else
+    return 1
+  fi
+  return 0
+}
+
 switch_to_vm_mode() {
   detect_affected_lxc_for_selected
   prompt_lxc_action_for_vm_mode
@@ -897,6 +939,25 @@ switch_to_vm_mode() {
   apply_lxc_action_for_vm_mode
 
   msg_info "$(translate 'Configuring host for GPU -> VM mode...')"
+
+  if declare -F _pci_is_iommu_active >/dev/null 2>&1 && _pci_is_iommu_active; then
+    _register_iommu_tool
+    msg_ok "$(translate 'IOMMU is already active on this system')" | tee -a "$screen_capture"
+  elif grep -qE 'intel_iommu=on|amd_iommu=on' /etc/kernel/cmdline 2>/dev/null || \
+       grep -qE 'intel_iommu=on|amd_iommu=on' /etc/default/grub 2>/dev/null; then
+    _register_iommu_tool
+    HOST_CONFIG_CHANGED=true
+    msg_ok "$(translate 'IOMMU already configured in kernel parameters')" | tee -a "$screen_capture"
+  else
+    if _enable_iommu_cmdline; then
+      _register_iommu_tool
+      HOST_CONFIG_CHANGED=true
+      msg_ok "$(translate 'IOMMU kernel parameters configured')" | tee -a "$screen_capture"
+    else
+      msg_warn "$(translate 'Could not configure IOMMU kernel parameters automatically. Configure manually and reboot.')" | tee -a "$screen_capture"
+    fi
+  fi
+
   _add_vfio_modules
   msg_ok "$(translate 'VFIO modules configured in /etc/modules')" | tee -a "$screen_capture"
   _configure_iommu_options
@@ -1011,6 +1072,45 @@ switch_to_lxc_mode() {
   fi
 }
 
+# ==========================================================
+# Send notification when GPU mode switch completes
+# ==========================================================
+_send_gpu_mode_notification() {
+  local new_mode="$1"
+  local old_mode="$2"
+  local notify_script="/usr/bin/notification_manager.py"
+  
+  [[ ! -f "$notify_script" ]] && return 0
+  
+  local hostname_short
+  hostname_short=$(hostname -s)
+  
+  # Build GPU list for notification
+  local gpu_list=""
+  local idx
+  for idx in "${SELECTED_GPU_IDX[@]}"; do
+    gpu_list+="${ALL_GPU_NAMES[$idx]} (${ALL_GPU_PCIS[$idx]}), "
+  done
+  gpu_list="${gpu_list%, }"
+  
+  local mode_label details
+  if [[ "$new_mode" == "vm" ]]; then
+    mode_label="GPU -> VM (VFIO passthrough)"
+    details="GPU(s) ready for VM passthrough. A host reboot may be required."
+  else
+    mode_label="GPU -> LXC (native driver)"
+    details="GPU(s) available for LXC containers with native drivers."
+  fi
+  
+  python3 "$notify_script" --action send-raw --severity INFO \
+    --title "${hostname_short}: GPU mode changed to ${mode_label}" \
+    --message "GPU passthrough mode switched.
+GPU(s): ${gpu_list}
+Previous: ${old_mode}
+New: ${mode_label}
+${details}" 2>/dev/null || true
+}
+
 confirm_plan() {
   local msg mode_line
   if [[ "$TARGET_MODE" == "vm" ]]; then
@@ -1079,12 +1179,22 @@ main() {
   _set_title
   echo
 
+  # Determine old mode before switch for notification
+  local old_mode_label
+  if [[ "$CURRENT_MODE" == "vm" ]]; then
+    old_mode_label="GPU -> VM (VFIO)"
+  else
+    old_mode_label="GPU -> LXC (native)"
+  fi
+
   if [[ "$TARGET_MODE" == "vm" ]]; then
     switch_to_vm_mode
     msg_success "$(translate 'GPU switch complete: VM mode prepared.')"
+    _send_gpu_mode_notification "vm" "$old_mode_label"
   else
     switch_to_lxc_mode
     msg_success "$(translate 'GPU switch complete: LXC mode prepared.')"
+    _send_gpu_mode_notification "lxc" "$old_mode_label"
   fi
 
   final_summary

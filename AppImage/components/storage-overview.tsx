@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { HardDrive, Database, AlertTriangle, CheckCircle2, XCircle, Square, Thermometer, Archive, Info, Clock, Usb } from "lucide-react"
+import { HardDrive, Database, AlertTriangle, CheckCircle2, XCircle, Square, Thermometer, Archive, Info, Clock, Usb, Server, Activity, FileText, Play, Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
 import { fetchApi } from "../lib/api-config"
 
 interface DiskInfo {
@@ -44,6 +45,8 @@ interface DiskInfo {
   observations_count?: number
   connection_type?: 'usb' | 'sata' | 'nvme' | 'sas' | 'internal' | 'unknown'
   removable?: boolean
+  is_system_disk?: boolean
+  system_usage?: string[]
 }
 
 interface DiskObservation {
@@ -118,6 +121,7 @@ export function StorageOverview() {
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [diskObservations, setDiskObservations] = useState<DiskObservation[]>([])
   const [loadingObservations, setLoadingObservations] = useState(false)
+  const [activeModalTab, setActiveModalTab] = useState<"overview" | "smart">("overview")
 
   const fetchStorageData = async () => {
     try {
@@ -838,12 +842,18 @@ export function StorageOverview() {
                 >
                   <div className="space-y-2 mb-3">
                     {/* Row 1: Device name and type badge */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <HardDrive className="h-5 w-5 text-muted-foreground flex-shrink-0" />
                       <h3 className="font-semibold">/dev/{disk.name}</h3>
                       <Badge className={getDiskTypeBadge(disk.name, disk.rotation_rate).className}>
                         {getDiskTypeBadge(disk.name, disk.rotation_rate).label}
                       </Badge>
+                      {disk.is_system_disk && (
+                        <Badge className="bg-orange-500/10 text-orange-500 border-orange-500/20 gap-1">
+                          <Server className="h-3 w-3" />
+                          System
+                        </Badge>
+                      )}
                     </div>
 
                     {/* Row 2: Model, temperature, and health status */}
@@ -930,6 +940,12 @@ export function StorageOverview() {
                       <Badge className={getDiskTypeBadge(disk.name, disk.rotation_rate).className}>
                         {getDiskTypeBadge(disk.name, disk.rotation_rate).label}
                       </Badge>
+                      {disk.is_system_disk && (
+                        <Badge className="bg-orange-500/10 text-orange-500 border-orange-500/20 gap-1">
+                          <Server className="h-3 w-3" />
+                          System
+                        </Badge>
+                      )}
                     </div>
 
                     {/* Row 2: Model, temperature, and health status */}
@@ -1187,9 +1203,12 @@ export function StorageOverview() {
       )}
 
       {/* Disk Details Dialog */}
-      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] sm:max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
+      <Dialog open={detailsOpen} onOpenChange={(open) => {
+        setDetailsOpen(open)
+        if (!open) setActiveModalTab("overview")
+      }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] sm:max-h-[85vh] overflow-hidden flex flex-col p-0">
+          <DialogHeader className="px-6 pt-6 pb-0">
             <DialogTitle className="flex items-center gap-2">
               {selectedDisk?.connection_type === 'usb' ? (
                 <Usb className="h-5 w-5 text-orange-400" />
@@ -1200,10 +1219,47 @@ export function StorageOverview() {
               {selectedDisk?.connection_type === 'usb' && (
                 <Badge className="bg-orange-500/10 text-orange-400 border-orange-500/20 text-[10px] px-1.5">USB</Badge>
               )}
+              {selectedDisk?.is_system_disk && (
+                <Badge className="bg-orange-500/10 text-orange-500 border-orange-500/20 gap-1">
+                  <Server className="h-3 w-3" />
+                  System
+                </Badge>
+              )}
             </DialogTitle>
-            <DialogDescription>Complete SMART information and health status</DialogDescription>
+            <DialogDescription>
+              {selectedDisk?.model !== "Unknown" ? selectedDisk?.model : "Physical disk"} - {selectedDisk?.size_formatted}
+            </DialogDescription>
           </DialogHeader>
-          {selectedDisk && (
+          
+          {/* Tab Navigation */}
+          <div className="flex border-b border-border px-6">
+            <button
+              onClick={() => setActiveModalTab("overview")}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                activeModalTab === "overview"
+                  ? "border-blue-500 text-blue-500"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Info className="h-4 w-4" />
+              Overview
+            </button>
+            <button
+              onClick={() => setActiveModalTab("smart")}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                activeModalTab === "smart"
+                  ? "border-green-500 text-green-500"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Activity className="h-4 w-4" />
+              SMART Test
+            </button>
+          </div>
+          
+          {/* Tab Content */}
+          <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+          {selectedDisk && activeModalTab === "overview" && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -1402,6 +1458,745 @@ export function StorageOverview() {
               )}
             </div>
           )}
+          
+          {/* SMART Test Tab */}
+          {selectedDisk && activeModalTab === "smart" && (
+            <SmartTestTab disk={selectedDisk} />
+          )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+// SMART Test Tab Component
+interface SmartTestTabProps {
+  disk: DiskInfo
+}
+
+interface SmartTestStatus {
+  status: 'idle' | 'running' | 'completed' | 'failed'
+  test_type?: string
+  progress?: number
+  result?: string
+  last_test?: {
+    type: string
+    status: string
+    timestamp: string
+    duration?: string
+  }
+  smart_data?: {
+    device: string
+    model: string
+    serial: string
+    firmware: string
+    smart_status: string
+    temperature: number
+    power_on_hours: number
+    attributes: Array<{
+      id: number
+      name: string
+      value: number
+      worst: number
+      threshold: number
+      raw_value: string
+      status: 'ok' | 'warning' | 'critical'
+    }>
+  }
+}
+
+function SmartTestTab({ disk }: SmartTestTabProps) {
+  const [testStatus, setTestStatus] = useState<SmartTestStatus>({ status: 'idle' })
+  const [loading, setLoading] = useState(true)
+  const [runningTest, setRunningTest] = useState<'short' | 'long' | null>(null)
+  const [showReport, setShowReport] = useState(false)
+  const [reportTab, setReportTab] = useState<'overview' | 'attributes' | 'history' | 'recommendations'>('overview')
+  
+  // Fetch current SMART status on mount
+  useEffect(() => {
+    fetchSmartStatus()
+  }, [disk.name])
+  
+  const fetchSmartStatus = async () => {
+    try {
+      setLoading(true)
+      const data = await fetchApi<SmartTestStatus>(`/api/storage/smart/${disk.name}`)
+      setTestStatus(data)
+    } catch {
+      setTestStatus({ status: 'idle' })
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  const runSmartTest = async (testType: 'short' | 'long') => {
+    try {
+      setRunningTest(testType)
+      await fetchApi(`/api/storage/smart/${disk.name}/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ test_type: testType })
+      })
+      // Poll for status updates
+      const pollInterval = setInterval(async () => {
+        try {
+          const data = await fetchApi<SmartTestStatus>(`/api/storage/smart/${disk.name}`)
+          setTestStatus(data)
+          if (data.status !== 'running') {
+            clearInterval(pollInterval)
+            setRunningTest(null)
+          }
+        } catch {
+          clearInterval(pollInterval)
+          setRunningTest(null)
+        }
+      }, 5000)
+    } catch {
+      setRunningTest(null)
+    }
+  }
+  
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 gap-3">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">Loading SMART data...</p>
+      </div>
+    )
+  }
+  
+  return (
+    <div className="space-y-6">
+      {/* Quick Actions */}
+      <div className="space-y-3">
+        <h4 className="font-semibold flex items-center gap-2">
+          <Play className="h-4 w-4" />
+          Run SMART Test
+        </h4>
+        <div className="flex flex-wrap gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => runSmartTest('short')}
+            disabled={runningTest !== null}
+            className="gap-2"
+          >
+            {runningTest === 'short' ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Activity className="h-4 w-4" />
+            )}
+            Short Test (~2 min)
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => runSmartTest('long')}
+            disabled={runningTest !== null}
+            className="gap-2"
+          >
+            {runningTest === 'long' ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Activity className="h-4 w-4" />
+            )}
+            Extended Test (background)
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchSmartStatus}
+            disabled={runningTest !== null}
+            className="gap-2"
+          >
+            <Activity className="h-4 w-4" />
+            Refresh Status
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Short test takes ~2 minutes. Extended test runs in the background and can take several hours for large disks.
+          You will receive a notification when the test completes.
+        </p>
+      </div>
+      
+      {/* Test Progress */}
+      {testStatus.status === 'running' && (
+        <div className="border rounded-lg p-4 bg-blue-500/5 border-blue-500/20">
+          <div className="flex items-center gap-3 mb-3">
+            <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+            <div>
+              <p className="font-medium text-blue-500">
+                {testStatus.test_type === 'short' ? 'Short' : 'Extended'} test in progress
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Please wait while the test completes...
+              </p>
+            </div>
+          </div>
+          {testStatus.progress !== undefined && (
+            <Progress value={testStatus.progress} className="h-2 [&>div]:bg-blue-500" />
+          )}
+        </div>
+      )}
+      
+      {/* Last Test Result */}
+      {testStatus.last_test && (
+        <div className="space-y-3">
+          <h4 className="font-semibold flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            Last Test Result
+          </h4>
+          <div className={`border rounded-lg p-4 ${
+            testStatus.last_test.status === 'passed' 
+              ? 'bg-green-500/5 border-green-500/20' 
+              : 'bg-red-500/5 border-red-500/20'
+          }`}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                {testStatus.last_test.status === 'passed' ? (
+                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+                ) : (
+                  <XCircle className="h-5 w-5 text-red-500" />
+                )}
+                <span className="font-medium">
+                  {testStatus.last_test.type === 'short' ? 'Short' : 'Extended'} Test - {' '}
+                  {testStatus.last_test.status === 'passed' ? 'Passed' : 'Failed'}
+                </span>
+              </div>
+              <Badge className={testStatus.last_test.status === 'passed' 
+                ? 'bg-green-500/10 text-green-500 border-green-500/20'
+                : 'bg-red-500/10 text-red-500 border-red-500/20'
+              }>
+                {testStatus.last_test.status}
+              </Badge>
+            </div>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-muted-foreground">Completed</p>
+                <p className="font-medium">{testStatus.last_test.timestamp}</p>
+              </div>
+              {testStatus.last_test.duration && (
+                <div>
+                  <p className="text-muted-foreground">Duration</p>
+                  <p className="font-medium">{testStatus.last_test.duration}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* SMART Attributes Summary */}
+      {testStatus.smart_data?.attributes && testStatus.smart_data.attributes.length > 0 && (
+        <div className="space-y-3">
+          <h4 className="font-semibold flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            SMART Attributes
+          </h4>
+          <div className="border rounded-lg overflow-hidden">
+            <div className="grid grid-cols-12 gap-2 p-3 bg-muted/30 text-xs font-medium text-muted-foreground">
+              <div className="col-span-1">ID</div>
+              <div className="col-span-5">Attribute</div>
+              <div className="col-span-2 text-center">Value</div>
+              <div className="col-span-2 text-center">Worst</div>
+              <div className="col-span-2 text-center">Status</div>
+            </div>
+            <div className="divide-y divide-border max-h-[200px] overflow-y-auto">
+              {testStatus.smart_data.attributes.slice(0, 15).map((attr) => (
+                <div key={attr.id} className="grid grid-cols-12 gap-2 p-3 text-sm items-center">
+                  <div className="col-span-1 text-muted-foreground">{attr.id}</div>
+                  <div className="col-span-5 truncate" title={attr.name}>{attr.name}</div>
+                  <div className="col-span-2 text-center font-mono">{attr.value}</div>
+                  <div className="col-span-2 text-center font-mono text-muted-foreground">{attr.worst}</div>
+                  <div className="col-span-2 text-center">
+                    {attr.status === 'ok' ? (
+                      <CheckCircle2 className="h-4 w-4 text-green-500 mx-auto" />
+                    ) : attr.status === 'warning' ? (
+                      <AlertTriangle className="h-4 w-4 text-yellow-500 mx-auto" />
+                    ) : (
+                      <XCircle className="h-4 w-4 text-red-500 mx-auto" />
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* View Full Report Button */}
+      <div className="pt-4 border-t">
+        <Button 
+          variant="outline" 
+          className="w-full gap-2"
+          onClick={() => setShowReport(true)}
+        >
+          <FileText className="h-4 w-4" />
+          View Full SMART Report
+        </Button>
+        <p className="text-xs text-muted-foreground text-center mt-2">
+          Generate a comprehensive professional report with detailed analysis and recommendations.
+        </p>
+      </div>
+      
+      {/* Full SMART Report Dialog */}
+      <Dialog open={showReport} onOpenChange={setShowReport}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0">
+          <DialogHeader className="px-6 pt-6 pb-0">
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              SMART Health Report: /dev/{disk.name}
+            </DialogTitle>
+            <DialogDescription>
+              Comprehensive analysis of disk health, SMART attributes, and recommendations
+            </DialogDescription>
+          </DialogHeader>
+          
+          {/* Report Tabs */}
+          <div className="flex border-b border-border px-6 overflow-x-auto">
+            <button
+              onClick={() => setReportTab('overview')}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
+                reportTab === 'overview'
+                  ? "border-blue-500 text-blue-500"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Info className="h-4 w-4" />
+              Overview
+            </button>
+            <button
+              onClick={() => setReportTab('attributes')}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
+                reportTab === 'attributes'
+                  ? "border-purple-500 text-purple-500"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Activity className="h-4 w-4" />
+              Attributes
+            </button>
+            <button
+              onClick={() => setReportTab('history')}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
+                reportTab === 'history'
+                  ? "border-amber-500 text-amber-500"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Clock className="h-4 w-4" />
+              History
+            </button>
+            <button
+              onClick={() => setReportTab('recommendations')}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
+                reportTab === 'recommendations'
+                  ? "border-green-500 text-green-500"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              Recommendations
+            </button>
+          </div>
+          
+          {/* Report Content */}
+          <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+            {/* Overview Tab */}
+            {reportTab === 'overview' && (
+              <div className="space-y-6">
+                {/* Health Score Card */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className={`border rounded-lg p-4 ${
+                    testStatus.smart_status === 'passed' 
+                      ? 'bg-green-500/5 border-green-500/20' 
+                      : testStatus.smart_status === 'failed'
+                        ? 'bg-red-500/5 border-red-500/20'
+                        : 'bg-yellow-500/5 border-yellow-500/20'
+                  }`}>
+                    <p className="text-sm text-muted-foreground mb-1">Overall Health</p>
+                    <div className="flex items-center gap-2">
+                      {testStatus.smart_status === 'passed' ? (
+                        <CheckCircle2 className="h-6 w-6 text-green-500" />
+                      ) : testStatus.smart_status === 'failed' ? (
+                        <XCircle className="h-6 w-6 text-red-500" />
+                      ) : (
+                        <AlertTriangle className="h-6 w-6 text-yellow-500" />
+                      )}
+                      <span className="text-xl font-bold capitalize">
+                        {testStatus.smart_status || 'Unknown'}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="border rounded-lg p-4 bg-muted/20">
+                    <p className="text-sm text-muted-foreground mb-1">Temperature</p>
+                    <div className="flex items-center gap-2">
+                      <Thermometer className="h-6 w-6 text-blue-500" />
+                      <span className="text-xl font-bold">
+                        {disk.temperature > 0 ? `${disk.temperature}°C` : 'N/A'}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="border rounded-lg p-4 bg-muted/20">
+                    <p className="text-sm text-muted-foreground mb-1">Power On Time</p>
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-6 w-6 text-purple-500" />
+                      <span className="text-xl font-bold">
+                        {disk.power_on_hours ? `${disk.power_on_hours.toLocaleString()}h` : 'N/A'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Executive Summary */}
+                <div className="border rounded-lg p-4">
+                  <h4 className="font-semibold mb-3 flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Executive Summary
+                  </h4>
+                  <div className="prose prose-sm prose-invert max-w-none">
+                    <p className="text-muted-foreground leading-relaxed">
+                      {testStatus.smart_status === 'passed' ? (
+                        <>
+                          This disk is operating within normal parameters. All SMART attributes are within acceptable thresholds, 
+                          indicating good health. The disk has been powered on for approximately{' '}
+                          <span className="text-foreground font-medium">
+                            {disk.power_on_hours ? `${Math.round(disk.power_on_hours / 24)} days` : 'an unknown period'}
+                          </span>{' '}
+                          and is currently operating at{' '}
+                          <span className="text-foreground font-medium">{disk.temperature || 'N/A'}°C</span>.
+                          {disk.reallocated_sectors === 0 && disk.pending_sectors === 0 
+                            ? ' No bad sectors have been detected.'
+                            : disk.reallocated_sectors && disk.reallocated_sectors > 0 
+                              ? ` ${disk.reallocated_sectors} sectors have been reallocated, which may indicate early signs of wear.`
+                              : ''}
+                        </>
+                      ) : testStatus.smart_status === 'failed' ? (
+                        <>
+                          <span className="text-red-400 font-medium">Warning: This disk has failed SMART health assessment.</span>{' '}
+                          One or more critical SMART attributes have exceeded their failure threshold. 
+                          It is strongly recommended to backup all data immediately and consider replacing this disk.
+                          {disk.reallocated_sectors && disk.reallocated_sectors > 0 
+                            ? ` The disk has ${disk.reallocated_sectors} reallocated sectors, indicating physical media degradation.`
+                            : ''}
+                        </>
+                      ) : (
+                        <>
+                          The disk health status could not be fully determined. Some SMART attributes may be showing warning signs.
+                          It is recommended to run a full SMART self-test and monitor the disk closely.
+                        </>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                
+                {/* Key Metrics */}
+                <div className="border rounded-lg p-4">
+                  <h4 className="font-semibold mb-3">Key Metrics</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">Model</p>
+                      <p className="font-medium">{disk.model || 'Unknown'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Serial</p>
+                      <p className="font-medium font-mono text-xs">{disk.serial?.replace(/\\x[0-9a-fA-F]{2}/g, '') || 'Unknown'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Capacity</p>
+                      <p className="font-medium">{disk.size_formatted || 'Unknown'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Power Cycles</p>
+                      <p className="font-medium">{disk.power_cycles?.toLocaleString() || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Reallocated Sectors</p>
+                      <p className={`font-medium ${disk.reallocated_sectors && disk.reallocated_sectors > 0 ? 'text-yellow-500' : ''}`}>
+                        {disk.reallocated_sectors ?? 0}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Pending Sectors</p>
+                      <p className={`font-medium ${disk.pending_sectors && disk.pending_sectors > 0 ? 'text-yellow-500' : ''}`}>
+                        {disk.pending_sectors ?? 0}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">CRC Errors</p>
+                      <p className={`font-medium ${disk.crc_errors && disk.crc_errors > 0 ? 'text-yellow-500' : ''}`}>
+                        {disk.crc_errors ?? 0}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Disk Type</p>
+                      <p className="font-medium">
+                        {disk.name.startsWith('nvme') ? 'NVMe' : !disk.rotation_rate || disk.rotation_rate === 0 ? 'SSD' : 'HDD'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Attributes Tab */}
+            {reportTab === 'attributes' && (
+              <div className="space-y-4">
+                <div className="border rounded-lg p-4 bg-muted/20">
+                  <h4 className="font-semibold mb-2">Understanding SMART Attributes</h4>
+                  <p className="text-sm text-muted-foreground">
+                    SMART (Self-Monitoring, Analysis and Reporting Technology) attributes are sensors built into hard drives and SSDs. 
+                    Each attribute has a current value, a worst recorded value, and a threshold. When the current value drops below the threshold, 
+                    the attribute is considered failed. Values typically decrease from 100 (or 200/253 on some drives) as the attribute degrades.
+                  </p>
+                </div>
+                
+                {testStatus.smart_data?.attributes && testStatus.smart_data.attributes.length > 0 ? (
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="grid grid-cols-12 gap-2 p-3 bg-muted/30 text-xs font-medium text-muted-foreground">
+                      <div className="col-span-1">ID</div>
+                      <div className="col-span-4">Attribute Name</div>
+                      <div className="col-span-2 text-center">Value</div>
+                      <div className="col-span-2 text-center">Worst</div>
+                      <div className="col-span-2 text-center">Threshold</div>
+                      <div className="col-span-1 text-center">Status</div>
+                    </div>
+                    <div className="divide-y divide-border max-h-[400px] overflow-y-auto">
+                      {testStatus.smart_data.attributes.map((attr) => (
+                        <div key={attr.id} className={`grid grid-cols-12 gap-2 p-3 text-sm items-center ${
+                          attr.status === 'critical' ? 'bg-red-500/5' : attr.status === 'warning' ? 'bg-yellow-500/5' : ''
+                        }`}>
+                          <div className="col-span-1 text-muted-foreground font-mono">{attr.id}</div>
+                          <div className="col-span-4">
+                            <p className="truncate font-medium" title={attr.name}>{attr.name.replace(/_/g, ' ')}</p>
+                            <p className="text-xs text-muted-foreground">Raw: {attr.raw_value}</p>
+                          </div>
+                          <div className="col-span-2 text-center font-mono font-medium">{attr.value}</div>
+                          <div className="col-span-2 text-center font-mono text-muted-foreground">{attr.worst}</div>
+                          <div className="col-span-2 text-center font-mono text-muted-foreground">{attr.threshold}</div>
+                          <div className="col-span-1 text-center">
+                            {attr.status === 'ok' ? (
+                              <CheckCircle2 className="h-4 w-4 text-green-500 mx-auto" />
+                            ) : attr.status === 'warning' ? (
+                              <AlertTriangle className="h-4 w-4 text-yellow-500 mx-auto" />
+                            ) : (
+                              <XCircle className="h-4 w-4 text-red-500 mx-auto" />
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Activity className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                    <p>No SMART attribute data available.</p>
+                    <p className="text-sm mt-1">Run a SMART test to collect attribute data.</p>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* History Tab */}
+            {reportTab === 'history' && (
+              <div className="space-y-4">
+                {testStatus.last_test ? (
+                  <div className={`border rounded-lg p-4 ${
+                    testStatus.last_test.status === 'passed' 
+                      ? 'bg-green-500/5 border-green-500/20' 
+                      : 'bg-red-500/5 border-red-500/20'
+                  }`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-semibold flex items-center gap-2">
+                        {testStatus.last_test.status === 'passed' ? (
+                          <CheckCircle2 className="h-5 w-5 text-green-500" />
+                        ) : (
+                          <XCircle className="h-5 w-5 text-red-500" />
+                        )}
+                        Last Test Result
+                      </h4>
+                      <Badge className={testStatus.last_test.status === 'passed' 
+                        ? 'bg-green-500/10 text-green-500 border-green-500/20'
+                        : 'bg-red-500/10 text-red-500 border-red-500/20'
+                      }>
+                        {testStatus.last_test.status}
+                      </Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Test Type</p>
+                        <p className="font-medium capitalize">{testStatus.last_test.type}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Completed</p>
+                        <p className="font-medium">{testStatus.last_test.timestamp}</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Clock className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                    <p>No test history available.</p>
+                    <p className="text-sm mt-1">Run a SMART self-test to see results here.</p>
+                  </div>
+                )}
+                
+                <div className="border rounded-lg p-4 bg-muted/20">
+                  <h4 className="font-semibold mb-2">About Self-Tests</h4>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>
+                      <strong className="text-foreground">Short Test (~2 minutes):</strong> Performs a quick check of the disk&apos;s 
+                      basic functionality including read/seek tests on a small portion of the disk surface.
+                    </p>
+                    <p>
+                      <strong className="text-foreground">Extended Test (hours):</strong> Performs a comprehensive surface scan 
+                      of the entire disk. Duration depends on disk size - typically 1-2 hours per TB.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Recommendations Tab */}
+            {reportTab === 'recommendations' && (
+              <div className="space-y-4">
+                {/* Status-based recommendations */}
+                {testStatus.smart_status === 'passed' && (
+                  <div className="border rounded-lg p-4 bg-green-500/5 border-green-500/20">
+                    <div className="flex items-start gap-3">
+                      <CheckCircle2 className="h-5 w-5 text-green-500 mt-0.5" />
+                      <div>
+                        <h4 className="font-semibold text-green-500">Disk is Healthy</h4>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          All SMART attributes are within normal ranges. Continue with regular monitoring.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {testStatus.smart_status === 'failed' && (
+                  <div className="border rounded-lg p-4 bg-red-500/5 border-red-500/20">
+                    <div className="flex items-start gap-3">
+                      <XCircle className="h-5 w-5 text-red-500 mt-0.5" />
+                      <div>
+                        <h4 className="font-semibold text-red-500">Critical: Disk Replacement Recommended</h4>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          This disk has failed SMART health assessment. Backup all data immediately and plan for disk replacement.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Conditional recommendations */}
+                <div className="space-y-3">
+                  <h4 className="font-semibold">Recommendations</h4>
+                  
+                  {(disk.reallocated_sectors ?? 0) > 0 && (
+                    <div className="border rounded-lg p-3 bg-yellow-500/5 border-yellow-500/20">
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className="h-5 w-5 text-yellow-500 mt-0.5" />
+                        <div>
+                          <p className="font-medium">Reallocated Sectors Detected</p>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            {disk.reallocated_sectors} sectors have been reallocated. This indicates the disk has found and 
+                            remapped bad sectors. Monitor this value - if it increases rapidly, consider replacing the disk.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {(disk.pending_sectors ?? 0) > 0 && (
+                    <div className="border rounded-lg p-3 bg-yellow-500/5 border-yellow-500/20">
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className="h-5 w-5 text-yellow-500 mt-0.5" />
+                        <div>
+                          <p className="font-medium">Pending Sectors Detected</p>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            {disk.pending_sectors} sectors are pending reallocation. These sectors may be unreadable. 
+                            Run an extended self-test to force reallocation attempts.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {disk.temperature > 55 && (
+                    <div className="border rounded-lg p-3 bg-yellow-500/5 border-yellow-500/20">
+                      <div className="flex items-start gap-3">
+                        <Thermometer className="h-5 w-5 text-yellow-500 mt-0.5" />
+                        <div>
+                          <p className="font-medium">Elevated Temperature</p>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            Current temperature ({disk.temperature}°C) is above optimal. Improve airflow or reduce disk activity. 
+                            Sustained high temperatures can reduce disk lifespan.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {(disk.power_on_hours ?? 0) > 35000 && (
+                    <div className="border rounded-lg p-3 bg-blue-500/5 border-blue-500/20">
+                      <div className="flex items-start gap-3">
+                        <Info className="h-5 w-5 text-blue-500 mt-0.5" />
+                        <div>
+                          <p className="font-medium">High Power-On Hours</p>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            This disk has been running for {Math.round((disk.power_on_hours ?? 0) / 8760)} years. 
+                            While still operational, consider planning for replacement as disks typically have a 3-5 year lifespan.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* General best practices */}
+                  <div className="border rounded-lg p-4 bg-muted/20 mt-6">
+                    <h4 className="font-semibold mb-3">Best Practices</h4>
+                    <ul className="space-y-2 text-sm text-muted-foreground">
+                      <li className="flex items-start gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                        <span>Run a short SMART test monthly to catch early issues</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                        <span>Run an extended test quarterly for comprehensive verification</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                        <span>Maintain regular backups - SMART can detect some failures but not all</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                        <span>Keep disk temperatures below 50°C for optimal lifespan</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                        <span>Replace disks proactively after 4-5 years of heavy use</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Report Footer */}
+          <div className="border-t px-6 py-4 flex justify-between items-center bg-muted/10">
+            <p className="text-xs text-muted-foreground">
+              Report generated by ProxMenux Monitor
+            </p>
+            <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-2">
+              <FileText className="h-4 w-4" />
+              Print Report
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
