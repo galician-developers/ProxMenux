@@ -6362,11 +6362,45 @@ def _get_smart_json_path(disk_name):
     """Get path to SMART JSON file for a disk."""
     return os.path.join(SMART_DIR, f"{disk_name}.json")
 
-def _ensure_smart_tools():
-    """Check if SMART tools are installed."""
+def _ensure_smart_tools(install_if_missing=False):
+    """Check if SMART tools are installed and optionally install them."""
     has_smartctl = shutil.which('smartctl') is not None
     has_nvme = shutil.which('nvme') is not None
-    return {'smartctl': has_smartctl, 'nvme': has_nvme}
+    
+    installed = {'smartctl': False, 'nvme': False}
+    
+    if install_if_missing:
+        if not has_smartctl:
+            try:
+                # Install smartmontools
+                proc = subprocess.run(
+                    ['apt-get', 'install', '-y', 'smartmontools'],
+                    capture_output=True, text=True, timeout=120
+                )
+                if proc.returncode == 0:
+                    has_smartctl = shutil.which('smartctl') is not None
+                    installed['smartctl'] = has_smartctl
+            except Exception:
+                pass
+        
+        if not has_nvme:
+            try:
+                # Install nvme-cli
+                proc = subprocess.run(
+                    ['apt-get', 'install', '-y', 'nvme-cli'],
+                    capture_output=True, text=True, timeout=120
+                )
+                if proc.returncode == 0:
+                    has_nvme = shutil.which('nvme') is not None
+                    installed['nvme'] = has_nvme
+            except Exception:
+                pass
+    
+    return {
+        'smartctl': has_smartctl, 
+        'nvme': has_nvme,
+        'just_installed': installed
+    }
 
 def _parse_smart_attributes(output_lines):
     """Parse SMART attributes from smartctl output."""
@@ -6516,16 +6550,37 @@ def api_smart_status(disk_name):
                 lines = proc.stdout.split('\n')
                 for line in lines:
                     if line.startswith('# ') or line.startswith('#  '):
+                        # Format: # 1  Short offline       Completed without error       00%     18453         -
+                        test_type = 'short' if 'Short' in line else 'long' if 'Extended' in line or 'Long' in line else 'unknown'
+                        test_status = 'passed' if 'Completed without error' in line or 'without error' in line.lower() else 'failed'
+                        
+                        # Extract completion status text (everything between test type and percentage)
+                        completion_text = ''
+                        if 'Completed' in line:
+                            match = re.search(r'(Completed[^0-9%]+)', line)
+                            if match:
+                                completion_text = match.group(1).strip()
+                        elif 'without error' in line.lower():
+                            completion_text = 'Completed without error'
+                        
+                        # Extract lifetime hours (power-on hours when test completed)
+                        lifetime_hours = None
                         parts = line.split()
-                        if len(parts) >= 5:
-                            test_type = 'short' if 'Short' in line else 'long' if 'Extended' in line or 'Long' in line else 'unknown'
-                            test_status = 'passed' if 'Completed without error' in line else 'failed'
-                            result['last_test'] = {
-                                'type': test_type,
-                                'status': test_status,
-                                'timestamp': ' '.join(parts[-5:-2]) if len(parts) > 5 else 'unknown'
-                            }
-                            break
+                        for i, p in enumerate(parts):
+                            if p.endswith('%') and i + 1 < len(parts):
+                                try:
+                                    lifetime_hours = int(parts[i + 1])
+                                except ValueError:
+                                    pass
+                                break
+                        
+                        result['last_test'] = {
+                            'type': test_type,
+                            'status': test_status,
+                            'timestamp': completion_text or 'Completed',
+                            'lifetime_hours': lifetime_hours
+                        }
+                        break
         
         return jsonify(result)
     except subprocess.TimeoutExpired:
@@ -6553,8 +6608,10 @@ def api_smart_run_test(disk_name):
         if test_type not in ('short', 'long'):
             return jsonify({'error': 'Invalid test type. Use "short" or "long"'}), 400
         
-        tools = _ensure_smart_tools()
         is_nvme = _is_nvme(disk_name)
+        
+        # Check tools and auto-install if missing
+        tools = _ensure_smart_tools(install_if_missing=True)
         
         # Ensure SMART directory exists
         os.makedirs(SMART_DIR, exist_ok=True)
@@ -6562,7 +6619,7 @@ def api_smart_run_test(disk_name):
         
         if is_nvme:
             if not tools['nvme']:
-                return jsonify({'error': 'nvme-cli not installed'}), 400
+                return jsonify({'error': 'nvme-cli not installed. Please run: apt-get install nvme-cli'}), 400
             
             # NVMe: self-test-code 1=short, 2=long
             code = 1 if test_type == 'short' else 2
@@ -6574,21 +6631,22 @@ def api_smart_run_test(disk_name):
             if proc.returncode != 0:
                 return jsonify({'error': f'Failed to start test: {proc.stderr}'}), 500
             
-            # For long test, start background monitor
-            if test_type == 'long':
-                subprocess.Popen(
-                    f'''
-                    while nvme device-self-test {device} --self-test-code=0 2>/dev/null | grep -qi 'in progress'; do
-                        sleep 60
-                    done
-                    nvme smart-log -o json {device} > {json_path} 2>/dev/null
-                    ''',
-                    shell=True, start_new_session=True,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                )
+            # Start background monitor to save JSON when test completes
+            sleep_interval = 10 if test_type == 'short' else 60
+            subprocess.Popen(
+                f'''
+                sleep 5
+                while nvme device-self-test {device} --self-test-code=0 2>/dev/null | grep -qi 'in progress'; do
+                    sleep {sleep_interval}
+                done
+                nvme smart-log -o json {device} > {json_path} 2>/dev/null
+                ''',
+                shell=True, start_new_session=True,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
         else:
             if not tools['smartctl']:
-                return jsonify({'error': 'smartmontools not installed'}), 400
+                return jsonify({'error': 'smartmontools not installed. Please run: apt-get install smartmontools'}), 400
             
             test_flag = '-t short' if test_type == 'short' else '-t long'
             proc = subprocess.run(
@@ -6599,18 +6657,19 @@ def api_smart_run_test(disk_name):
             if proc.returncode not in (0, 4):  # 4 = test started successfully
                 return jsonify({'error': f'Failed to start test: {proc.stderr}'}), 500
             
-            # For long test, start background monitor
-            if test_type == 'long':
-                subprocess.Popen(
-                    f'''
-                    while smartctl -c {device} 2>/dev/null | grep -qiE 'Self-test routine in progress|[1-9][0-9]?% of test remaining'; do
-                        sleep 60
-                    done
-                    smartctl --json=c {device} > {json_path} 2>/dev/null
-                    ''',
-                    shell=True, start_new_session=True,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                )
+            # Start background monitor to save JSON when test completes
+            sleep_interval = 10 if test_type == 'short' else 60
+            subprocess.Popen(
+                f'''
+                sleep 5
+                while smartctl -c {device} 2>/dev/null | grep -qiE 'Self-test routine in progress|[1-9][0-9]?% of test remaining'; do
+                    sleep {sleep_interval}
+                done
+                smartctl --json=c {device} > {json_path} 2>/dev/null
+                ''',
+                shell=True, start_new_session=True,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
         
         return jsonify({
             'success': True,
