@@ -1763,8 +1763,8 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
 </div>
 
 <!-- 3. SMART Attributes -->
-  <div class="section">
-  <div class="section-title">3. SMART Attributes (\${smartAttributes.length} total\${hasCritical ? \`, \${criticalAttrs.length} warning(s)\` : ''})</div>
+<div class="section">
+  <div class="section-title">3. SMART Attributes (${smartAttributes.length} total${hasCritical ? `, ${criticalAttrs.length} warning(s)` : ''})</div>
   <table class="attr-tbl">
     <thead>
       <tr>
@@ -1778,11 +1778,10 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
       </tr>
     </thead>
     <tbody>
-      \${attributeRows || '<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:20px;">No SMART attributes available</td></tr>'}
-  </tbody>
+      ${attributeRows || '<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:20px;">No SMART attributes available</td></tr>'}
+    </tbody>
   </table>
-  </div>
-  </div>
+</div>
   
   <!-- 4. Last Test Result -->
 <div class="section">
