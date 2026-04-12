@@ -1461,7 +1461,7 @@ export function StorageOverview() {
           
           {/* SMART Test Tab */}
           {selectedDisk && activeModalTab === "smart" && (
-            <SmartTestTab disk={selectedDisk} />
+            <SmartTestTab disk={selectedDisk} observations={diskObservations} />
           )}
           </div>
         </DialogContent>
@@ -1471,7 +1471,7 @@ export function StorageOverview() {
 }
 
 // Generate SMART Report HTML and open in new window (same pattern as Lynis/Latency reports)
-function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttributes: Array<{id: number; name: string; value: number; worst: number; threshold: number; raw_value: string; status: 'ok' | 'warning' | 'critical'}>) {
+function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttributes: Array<{id: number; name: string; value: number; worst: number; threshold: number; raw_value: string; status: 'ok' | 'warning' | 'critical'}>, observations: DiskObservation[] = []) {
   const now = new Date().toLocaleString()
   const logoUrl = `${window.location.origin}/images/proxmenux-logo.png`
   const reportId = `SMART-${Date.now().toString(36).toUpperCase()}`
@@ -1499,26 +1499,111 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
     ? `${powerOnYears}y ${powerOnRemainingDays}d (${powerOnHours.toLocaleString()}h)`
     : `${powerOnDays}d (${powerOnHours.toLocaleString()}h)`
   
-  // Build attributes table
+  // Build attributes table - format differs for NVMe vs SATA
+  const isNvmeForTable = diskType === 'NVMe'
   const attributeRows = smartAttributes.map((attr, i) => {
   const statusColor = attr.status === 'ok' ? '#16a34a' : attr.status === 'warning' ? '#ca8a04' : '#dc2626'
   const statusBg = attr.status === 'ok' ? '#16a34a15' : attr.status === 'warning' ? '#ca8a0415' : '#dc262615'
-  return `
-  <tr>
-  <td style="font-weight:600;">${attr.id}</td>
-  <td class="col-name">${attr.name.replace(/_/g, ' ')}</td>
-  <td style="text-align:center;">${attr.value}</td>
-  <td style="text-align:center;">${attr.worst}</td>
-  <td class="hide-mobile" style="text-align:center;">${attr.threshold}</td>
-  <td class="col-raw">${attr.raw_value}</td>
-  <td><span class="f-tag" style="background:${statusBg};color:${statusColor}">${attr.status === 'ok' ? 'OK' : attr.status.toUpperCase()}</span></td>
-  </tr>
-  `
+  
+  if (isNvmeForTable) {
+    // NVMe format: Metric | Value | Status
+    return `
+    <tr>
+    <td class="col-name">${attr.name}</td>
+    <td style="text-align:center;font-family:monospace;">${attr.value}</td>
+    <td><span class="f-tag" style="background:${statusBg};color:${statusColor}">${attr.status === 'ok' ? 'OK' : attr.status.toUpperCase()}</span></td>
+    </tr>
+    `
+  } else {
+    // SATA format: ID | Attribute | Val | Worst | Thr | Raw | Status
+    return `
+    <tr>
+    <td style="font-weight:600;">${attr.id}</td>
+    <td class="col-name">${attr.name.replace(/_/g, ' ')}</td>
+    <td style="text-align:center;">${attr.value}</td>
+    <td style="text-align:center;">${attr.worst}</td>
+    <td class="hide-mobile" style="text-align:center;">${attr.threshold}</td>
+    <td class="col-raw">${attr.raw_value}</td>
+    <td><span class="f-tag" style="background:${statusBg};color:${statusColor}">${attr.status === 'ok' ? 'OK' : attr.status.toUpperCase()}</span></td>
+    </tr>
+    `
+  }
   }).join('')
   
   // Critical attributes to highlight
   const criticalAttrs = smartAttributes.filter(a => a.status !== 'ok')
   const hasCritical = criticalAttrs.length > 0
+  
+  // Temperature color based on disk type
+  const getTempColorForReport = (temp: number): string => {
+    if (temp <= 0) return '#94a3b8' // gray for N/A
+    switch (diskType) {
+      case 'NVMe':
+        // NVMe: <=70 green, 71-80 yellow, >80 red
+        if (temp <= 70) return '#16a34a'
+        if (temp <= 80) return '#ca8a04'
+        return '#dc2626'
+      case 'SSD':
+        // SSD: <=59 green, 60-70 yellow, >70 red
+        if (temp <= 59) return '#16a34a'
+        if (temp <= 70) return '#ca8a04'
+        return '#dc2626'
+      case 'HDD':
+      default:
+        // HDD: <=45 green, 46-55 yellow, >55 red
+        if (temp <= 45) return '#16a34a'
+        if (temp <= 55) return '#ca8a04'
+        return '#dc2626'
+    }
+  }
+  
+  // Temperature thresholds for display
+  const tempThresholds = diskType === 'NVMe' 
+    ? { optimal: '<=70°C', warning: '71-80°C', critical: '>80°C' }
+    : diskType === 'SSD'
+    ? { optimal: '<=59°C', warning: '60-70°C', critical: '>70°C' }
+    : { optimal: '<=45°C', warning: '46-55°C', critical: '>55°C' }
+  
+  const isNvmeDisk = diskType === 'NVMe'
+  
+  // NVMe Wear & Lifetime data
+  const nvmePercentUsed = testStatus.smart_data?.nvme_raw?.percent_used ?? disk.percentage_used ?? 0
+  const nvmeAvailSpare = testStatus.smart_data?.nvme_raw?.avail_spare ?? 100
+  const nvmeDataWritten = testStatus.smart_data?.nvme_raw?.data_units_written ?? 0
+  // Data units are in 512KB blocks, convert to TB
+  const nvmeDataWrittenTB = (nvmeDataWritten * 512 * 1024) / (1024 * 1024 * 1024 * 1024)
+  
+  // Calculate estimated life remaining for NVMe
+  let nvmeEstimatedLife = 'N/A'
+  if (nvmePercentUsed > 0 && disk.power_on_hours && disk.power_on_hours > 0) {
+    const totalEstimatedHours = disk.power_on_hours / (nvmePercentUsed / 100)
+    const remainingHours = totalEstimatedHours - disk.power_on_hours
+    const remainingYears = remainingHours / (24 * 365)
+    if (remainingYears >= 1) {
+      nvmeEstimatedLife = `~${remainingYears.toFixed(1)} years`
+    } else if (remainingHours >= 24) {
+      nvmeEstimatedLife = `~${Math.floor(remainingHours / 24)} days`
+    } else {
+      nvmeEstimatedLife = `~${Math.floor(remainingHours)} hours`
+    }
+  } else if (nvmePercentUsed === 0) {
+    nvmeEstimatedLife = 'Excellent'
+  }
+  
+  // Wear color based on percentage
+  const getWearColorHex = (pct: number): string => {
+    if (pct <= 50) return '#16a34a' // green
+    if (pct <= 80) return '#ca8a04' // yellow
+    return '#dc2626' // red
+  }
+  
+  // Life remaining color (inverse)
+  const getLifeColorHex = (pct: number): string => {
+    const remaining = 100 - pct
+    if (remaining >= 50) return '#16a34a' // green
+    if (remaining >= 20) return '#ca8a04' // yellow
+    return '#dc2626' // red
+  }
   
   // Build recommendations
   const recommendations: string[] = []
@@ -1545,8 +1630,8 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
   }
   
   if (recommendations.length === 1 && isHealthy) {
-    recommendations.push('<div class="rec-item rec-info"><div class="rec-icon">&#9432;</div><div><strong>Regular Maintenance</strong><p>Schedule periodic extended SMART tests (monthly) to catch issues early.</p></div></div>')
-    recommendations.push('<div class="rec-item rec-info"><div class="rec-icon">&#9432;</div><div><strong>Backup Strategy</strong><p>Ensure critical data is backed up regularly regardless of disk health status.</p></div></div>')
+  recommendations.push('<div class="rec-item rec-info"><div class="rec-icon">&#9432;</div><div><strong>Regular Maintenance</strong><p>Schedule periodic extended SMART tests (monthly) to catch issues early.</p></div></div>')
+  recommendations.push('<div class="rec-item rec-info"><div class="rec-icon">&#9432;</div><div><strong>Backup Strategy</strong><p>Ensure critical data is backed up regularly regardless of disk health status.</p></div></div>')
   }
   
   const html = `<!DOCTYPE html>
@@ -1746,8 +1831,9 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
   </div>
   <div class="grid-4">
     <div class="card card-c">
-      <div class="card-value" style="color:${disk.temperature > 55 ? '#dc2626' : disk.temperature > 45 ? '#ca8a04' : '#16a34a'}">${disk.temperature > 0 ? disk.temperature + '°C' : 'N/A'}</div>
+      <div class="card-value" style="color:${getTempColorForReport(disk.temperature)}">${disk.temperature > 0 ? disk.temperature + '°C' : 'N/A'}</div>
       <div class="card-label">Temperature</div>
+      <div style="font-size:9px;color:#64748b;margin-top:2px;">Optimal: ${tempThresholds.optimal}</div>
     </div>
     <div class="card card-c">
       <div class="card-value">${powerOnHours.toLocaleString()}h</div>
@@ -1758,36 +1844,168 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
       <div class="card-label">Power Cycles</div>
     </div>
     <div class="card card-c">
+      ${isNvmeDisk ? `
+      <div class="card-value" style="color:${(testStatus.smart_data?.nvme_raw?.media_errors ?? 0) > 0 ? '#dc2626' : '#16a34a'}">${testStatus.smart_data?.nvme_raw?.media_errors ?? 0}</div>
+      <div class="card-label">Media Errors</div>
+      ` : `
       <div class="card-value" style="color:${(disk.reallocated_sectors ?? 0) > 0 ? '#dc2626' : '#16a34a'}">${disk.reallocated_sectors ?? 0}</div>
       <div class="card-label">Reallocated Sectors</div>
+      `}
     </div>
   </div>
 </div>
 
-<!-- 3. SMART Attributes -->
+${!isNvmeDisk ? `
+<!-- 3. Disk Overview (SSD/HDD) -->
 <div class="section">
-  <div class="section-title">3. SMART Attributes (${smartAttributes.length} total${hasCritical ? `, ${criticalAttrs.length} warning(s)` : ''})</div>
+  <div class="section-title">3. Disk Overview</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+    <!-- Left Column -->
+    <div style="background:linear-gradient(135deg,#f8fafc 0%,#f1f5f9 100%);border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div>
+          <div style="font-size:11px;color:#64748b;">Temperature</div>
+          <div style="font-size:18px;font-weight:600;color:${getTempColorForReport(disk.temperature)};">${disk.temperature > 0 ? disk.temperature + '°C' : 'N/A'}</div>
+          <div style="font-size:9px;color:#94a3b8;">Optimal: ${tempThresholds.optimal}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#64748b;">Power On Hours</div>
+          <div style="font-size:18px;font-weight:600;color:#1e293b;">${powerOnHours.toLocaleString()}h</div>
+          <div style="font-size:9px;color:#94a3b8;">${powerOnYears}y ${powerOnDays}d</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#64748b;">Rotation Rate</div>
+          <div style="font-size:18px;font-weight:600;color:#1e293b;">${diskType === 'HDD' ? (disk.rotation_rate ? disk.rotation_rate + ' RPM' : 'N/A') : 'SSD'}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#64748b;">Power Cycles</div>
+          <div style="font-size:18px;font-weight:600;color:#1e293b;">${(disk.power_cycles ?? 0).toLocaleString()}</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Right Column - Health Indicators -->
+    <div style="background:linear-gradient(135deg,#f8fafc 0%,#f1f5f9 100%);border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
+      <div style="font-size:12px;color:#64748b;margin-bottom:12px;font-weight:600;">HEALTH INDICATORS</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:10px;height:10px;border-radius:50%;background:${disk.smart_status === 'Passed' ? '#16a34a' : '#dc2626'};"></div>
+          <div>
+            <div style="font-size:11px;color:#64748b;">SMART Status</div>
+            <div style="font-size:14px;font-weight:600;color:${disk.smart_status === 'Passed' ? '#16a34a' : '#dc2626'};">${disk.smart_status || 'N/A'}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:10px;height:10px;border-radius:50%;background:${(disk.reallocated_sectors ?? 0) > 0 ? '#dc2626' : '#16a34a'};"></div>
+          <div>
+            <div style="font-size:11px;color:#64748b;">Reallocated Sectors</div>
+            <div style="font-size:14px;font-weight:600;color:${(disk.reallocated_sectors ?? 0) > 0 ? '#dc2626' : '#16a34a'};">${disk.reallocated_sectors ?? 0}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:10px;height:10px;border-radius:50%;background:${(disk.pending_sectors ?? 0) > 0 ? '#dc2626' : '#16a34a'};"></div>
+          <div>
+            <div style="font-size:11px;color:#64748b;">Pending Sectors</div>
+            <div style="font-size:14px;font-weight:600;color:${(disk.pending_sectors ?? 0) > 0 ? '#dc2626' : '#16a34a'};">${disk.pending_sectors ?? 0}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:10px;height:10px;border-radius:50%;background:${(disk.crc_errors ?? 0) > 0 ? '#ca8a04' : '#16a34a'};"></div>
+          <div>
+            <div style="font-size:11px;color:#64748b;">CRC Errors</div>
+            <div style="font-size:14px;font-weight:600;color:${(disk.crc_errors ?? 0) > 0 ? '#ca8a04' : '#16a34a'};">${disk.crc_errors ?? 0}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+` : ''}
+
+${isNvmeDisk ? `
+<!-- NVMe Wear & Lifetime (Special Section) -->
+<div class="section">
+  <div class="section-title">3. NVMe Wear & Lifetime</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+    <!-- Life Remaining Gauge -->
+    <div style="background:linear-gradient(135deg,#f8fafc 0%,#f1f5f9 100%);border:1px solid #e2e8f0;border-radius:12px;padding:20px;text-align:center;">
+      <div style="font-size:12px;color:#64748b;margin-bottom:8px;font-weight:600;">LIFE REMAINING</div>
+      <div style="position:relative;width:120px;height:120px;margin:0 auto;">
+        <svg viewBox="0 0 120 120" style="transform:rotate(-90deg);">
+          <circle cx="60" cy="60" r="50" fill="none" stroke="#e2e8f0" stroke-width="12"/>
+          <circle cx="60" cy="60" r="50" fill="none" stroke="${getLifeColorHex(nvmePercentUsed)}" stroke-width="12" 
+            stroke-dasharray="${(100 - nvmePercentUsed) * 3.14} 314" stroke-linecap="round"/>
+        </svg>
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;">
+          <div style="font-size:28px;font-weight:700;color:${getLifeColorHex(nvmePercentUsed)};">${100 - nvmePercentUsed}%</div>
+        </div>
+      </div>
+      <div style="margin-top:12px;font-size:13px;color:#475569;">Estimated: <strong>${nvmeEstimatedLife}</strong></div>
+    </div>
+    
+    <!-- Usage Statistics -->
+    <div style="background:linear-gradient(135deg,#f8fafc 0%,#f1f5f9 100%);border:1px solid #e2e8f0;border-radius:12px;padding:20px;">
+      <div style="font-size:12px;color:#64748b;margin-bottom:12px;font-weight:600;">USAGE STATISTICS</div>
+      
+      <div style="margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+          <span style="font-size:12px;color:#64748b;">Percentage Used</span>
+          <span style="font-size:14px;font-weight:600;color:${getWearColorHex(nvmePercentUsed)};">${nvmePercentUsed}%</span>
+        </div>
+        <div style="background:#e2e8f0;border-radius:4px;height:8px;overflow:hidden;">
+          <div style="background:${getWearColorHex(nvmePercentUsed)};height:100%;width:${Math.min(nvmePercentUsed, 100)}%;border-radius:4px;"></div>
+        </div>
+      </div>
+      
+      <div style="margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+          <span style="font-size:12px;color:#64748b;">Available Spare</span>
+          <span style="font-size:14px;font-weight:600;color:${nvmeAvailSpare >= 50 ? '#16a34a' : nvmeAvailSpare >= 20 ? '#ca8a04' : '#dc2626'};">${nvmeAvailSpare}%</span>
+        </div>
+        <div style="background:#e2e8f0;border-radius:4px;height:8px;overflow:hidden;">
+          <div style="background:${nvmeAvailSpare >= 50 ? '#16a34a' : nvmeAvailSpare >= 20 ? '#ca8a04' : '#dc2626'};height:100%;width:${nvmeAvailSpare}%;border-radius:4px;"></div>
+        </div>
+      </div>
+      
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;padding-top:12px;border-top:1px solid #e2e8f0;">
+        <div>
+          <div style="font-size:11px;color:#64748b;">Data Written</div>
+          <div style="font-size:15px;font-weight:600;color:#1e293b;">${nvmeDataWrittenTB >= 1 ? nvmeDataWrittenTB.toFixed(2) + ' TB' : (nvmeDataWrittenTB * 1024).toFixed(1) + ' GB'}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#64748b;">Power Cycles</div>
+          <div style="font-size:15px;font-weight:600;color:#1e293b;">${testStatus.smart_data?.nvme_raw?.power_cycles?.toLocaleString() ?? disk.power_cycles ?? 'N/A'}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+` : ''}
+
+<!-- 4. SMART Attributes / NVMe Health Metrics -->
+<div class="section">
+  <div class="section-title">4. ${isNvmeDisk ? 'NVMe Health Metrics' : 'SMART Attributes'} (${smartAttributes.length} total${hasCritical ? `, ${criticalAttrs.length} warning(s)` : ''})</div>
   <table class="attr-tbl">
     <thead>
       <tr>
-        <th style="width:28px;">ID</th>
-        <th class="col-name">Attribute</th>
-        <th style="text-align:center;width:40px;">Val</th>
-        <th style="text-align:center;width:40px;">Worst</th>
-        <th class="hide-mobile" style="text-align:center;width:40px;">Thr</th>
-        <th class="col-raw" style="width:60px;">Raw</th>
+        ${isNvmeDisk ? '' : '<th style="width:28px;">ID</th>'}
+        <th class="col-name">${isNvmeDisk ? 'Metric' : 'Attribute'}</th>
+        <th style="text-align:center;width:${isNvmeDisk ? '80px' : '40px'};">Value</th>
+        ${isNvmeDisk ? '' : '<th style="text-align:center;width:40px;">Worst</th>'}
+        ${isNvmeDisk ? '' : '<th class="hide-mobile" style="text-align:center;width:40px;">Thr</th>'}
+        ${isNvmeDisk ? '' : '<th class="col-raw" style="width:60px;">Raw</th>'}
         <th style="width:36px;"></th>
       </tr>
     </thead>
     <tbody>
-      ${attributeRows || '<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:20px;">No SMART attributes available</td></tr>'}
+      ${attributeRows || '<tr><td colspan="' + (isNvmeDisk ? '3' : '7') + '" style="text-align:center;color:#94a3b8;padding:20px;">No ${isNvmeDisk ? 'NVMe metrics' : 'SMART attributes'} available</td></tr>'}
     </tbody>
   </table>
 </div>
   
-  <!-- 4. Last Test Result -->
+  <!-- 5. Last Test Result -->
 <div class="section">
-  <div class="section-title">4. Last Self-Test Result</div>
+  <div class="section-title">5. Last Self-Test Result</div>
   ${testStatus.last_test ? `
     <div class="grid-4">
       <div class="card">
@@ -1814,13 +2032,102 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
   `}
 </div>
 
-<!-- 5. Recommendations -->
+${observations.length > 0 ? `
+<!-- 6. Observations & Events -->
 <div class="section">
-  <div class="section-title">5. Recommendations</div>
+  <div class="section-title">6. Observations & Events (${observations.length} recorded, ${observations.reduce((sum, o) => sum + o.occurrence_count, 0)} total occurrences)</div>
+  <p style="color:#64748b;font-size:12px;margin-bottom:16px;">The following events have been detected and logged for this disk. These observations may indicate potential issues that require attention.</p>
+  
+  <!-- Group observations by error type -->
+  ${(() => {
+    const groupedObs: Record<string, typeof observations> = {}
+    observations.forEach(obs => {
+      const type = obs.error_type || 'unknown'
+      if (!groupedObs[type]) groupedObs[type] = []
+      groupedObs[type].push(obs)
+    })
+    
+    return Object.entries(groupedObs).map(([type, obsList]) => {
+      const typeLabel = type === 'io_error' ? 'I/O Errors' : type === 'smart_error' ? 'SMART Errors' : type === 'filesystem_error' ? 'Filesystem Errors' : type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+      const totalOccurrences = obsList.reduce((sum, o) => sum + o.occurrence_count, 0)
+      
+      return \`
+      <div style="margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #e2e8f0;">
+          <span style="font-weight:600;color:#1e293b;">\${typeLabel}</span>
+          <span style="background:#64748b15;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;">\${obsList.length} unique, \${totalOccurrences} total</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          \${obsList.map(obs => {
+            const severityColor = obs.severity === 'critical' ? '#dc2626' : obs.severity === 'warning' ? '#ca8a04' : '#3b82f6'
+            const severityBg = obs.severity === 'critical' ? '#dc262615' : obs.severity === 'warning' ? '#ca8a0415' : '#3b82f615'
+            const severityLabel = obs.severity ? obs.severity.charAt(0).toUpperCase() + obs.severity.slice(1) : 'Info'
+            const firstDate = obs.first_occurrence ? new Date(obs.first_occurrence).toLocaleString() : 'N/A'
+            const lastDate = obs.last_occurrence ? new Date(obs.last_occurrence).toLocaleString() : 'N/A'
+            const dismissed = obs.dismissed ? '<span style="background:#16a34a20;color:#16a34a;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:4px;">Dismissed</span>' : ''
+            
+            return \\\`
+            <div style="background:\${severityBg};border:1px solid \${severityColor}30;border-radius:8px;padding:16px;">
+              <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px;">
+                <span style="background:\${severityColor}20;color:\${severityColor};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">\${severityLabel}</span>
+                <span style="background:#64748b20;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;">ID: #\${obs.id}</span>
+                <span style="background:#64748b20;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;">Occurrences: <strong>\${obs.occurrence_count}</strong></span>
+                \${dismissed}
+              </div>
+              
+              <!-- Error Signature -->
+              <div style="margin-bottom:10px;">
+                <div style="font-size:10px;color:#64748b;margin-bottom:4px;">Error Signature:</div>
+                <div style="font-family:monospace;font-size:11px;color:#1e293b;background:#f1f5f9;padding:8px;border-radius:4px;word-break:break-all;">\${obs.error_signature}</div>
+              </div>
+              
+              <!-- Raw Message -->
+              <div style="margin-bottom:12px;">
+                <div style="font-size:10px;color:#64748b;margin-bottom:4px;">Raw Message:</div>
+                <div style="font-family:monospace;font-size:11px;color:#1e293b;background:#f8fafc;padding:10px;border-radius:4px;white-space:pre-wrap;word-break:break-all;max-height:120px;overflow-y:auto;">\${obs.raw_message || 'N/A'}</div>
+              </div>
+              
+              <!-- Metadata Grid -->
+              <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:10px;font-size:11px;padding-top:10px;border-top:1px solid \${severityColor}20;">
+                <div>
+                  <span style="color:#64748b;">Device:</span>
+                  <strong style="color:#1e293b;margin-left:4px;">\${obs.device_name || disk.name}</strong>
+                </div>
+                <div>
+                  <span style="color:#64748b;">Serial:</span>
+                  <strong style="color:#1e293b;margin-left:4px;">\${obs.serial || disk.serial || 'N/A'}</strong>
+                </div>
+                <div>
+                  <span style="color:#64748b;">Model:</span>
+                  <strong style="color:#1e293b;margin-left:4px;">\${obs.model || disk.model || 'N/A'}</strong>
+                </div>
+                <div>
+                  <span style="color:#64748b;">First Seen:</span>
+                  <strong style="color:#1e293b;margin-left:4px;">\${firstDate}</strong>
+                </div>
+                <div>
+                  <span style="color:#64748b;">Last Seen:</span>
+                  <strong style="color:#1e293b;margin-left:4px;">\${lastDate}</strong>
+                </div>
+              </div>
+            </div>
+            \\\`
+          }).join('')}
+        </div>
+      </div>
+      \`
+    }).join('')
+  })()}
+</div>
+` : ''}
+
+<!-- ${observations.length > 0 ? '7' : '6'}. Recommendations -->
+<div class="section">
+  <div class="section-title">${observations.length > 0 ? '7' : '6'}. Recommendations</div>
   ${recommendations.join('')}
 </div>
-
-<!-- Footer -->
+  
+  <!-- Footer -->
 <div class="rpt-footer">
   <div>Report generated by ProxMenux Monitor</div>
   <div>ProxMenux Monitor v1.0.2-beta</div>
@@ -1837,6 +2144,7 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
 // SMART Test Tab Component
 interface SmartTestTabProps {
   disk: DiskInfo
+  observations?: DiskObservation[]
 }
 
 interface SmartTestStatus {
@@ -1875,7 +2183,7 @@ interface SmartTestStatus {
   }
 }
 
-function SmartTestTab({ disk }: SmartTestTabProps) {
+function SmartTestTab({ disk, observations = [] }: SmartTestTabProps) {
   const [testStatus, setTestStatus] = useState<SmartTestStatus>({ status: 'idle' })
   const [loading, setLoading] = useState(true)
   const [runningTest, setRunningTest] = useState<'short' | 'long' | null>(null)
@@ -2150,23 +2458,23 @@ function SmartTestTab({ disk }: SmartTestTabProps) {
         <div className="space-y-3">
           <h4 className="font-semibold flex items-center gap-2">
             <Activity className="h-4 w-4" />
-            SMART Attributes
+            {isNvme ? 'NVMe Health Metrics' : 'SMART Attributes'}
           </h4>
           <div className="border rounded-lg overflow-hidden">
-            <div className="grid grid-cols-12 gap-2 p-3 bg-muted/30 text-xs font-medium text-muted-foreground">
-              <div className="col-span-1">ID</div>
-              <div className="col-span-5">Attribute</div>
-              <div className="col-span-2 text-center">Value</div>
-              <div className="col-span-2 text-center">Worst</div>
+            <div className={`grid ${isNvme ? 'grid-cols-10' : 'grid-cols-12'} gap-2 p-3 bg-muted/30 text-xs font-medium text-muted-foreground`}>
+              {!isNvme && <div className="col-span-1">ID</div>}
+              <div className={isNvme ? 'col-span-5' : 'col-span-5'}>Attribute</div>
+              <div className={isNvme ? 'col-span-3 text-center' : 'col-span-2 text-center'}>Value</div>
+              {!isNvme && <div className="col-span-2 text-center">Worst</div>}
               <div className="col-span-2 text-center">Status</div>
             </div>
             <div className="divide-y divide-border max-h-[200px] overflow-y-auto">
               {testStatus.smart_data.attributes.slice(0, 15).map((attr) => (
-                <div key={attr.id} className="grid grid-cols-12 gap-2 p-3 text-sm items-center">
-                  <div className="col-span-1 text-muted-foreground">{attr.id}</div>
-                  <div className="col-span-5 truncate" title={attr.name}>{attr.name}</div>
-                  <div className="col-span-2 text-center font-mono">{attr.value}</div>
-                  <div className="col-span-2 text-center font-mono text-muted-foreground">{attr.worst}</div>
+                <div key={attr.id} className={`grid ${isNvme ? 'grid-cols-10' : 'grid-cols-12'} gap-2 p-3 text-sm items-center`}>
+                  {!isNvme && <div className="col-span-1 text-muted-foreground">{attr.id}</div>}
+                  <div className={`${isNvme ? 'col-span-5' : 'col-span-5'} truncate`} title={attr.name}>{attr.name}</div>
+                  <div className={`${isNvme ? 'col-span-3' : 'col-span-2'} text-center font-mono`}>{attr.value}</div>
+                  {!isNvme && <div className="col-span-2 text-center font-mono text-muted-foreground">{attr.worst}</div>}
                   <div className="col-span-2 text-center">
                     {attr.status === 'ok' ? (
                       <CheckCircle2 className="h-4 w-4 text-green-500 mx-auto" />
@@ -2188,7 +2496,7 @@ function SmartTestTab({ disk }: SmartTestTabProps) {
         <Button 
           variant="outline" 
           className="w-full gap-2 bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400"
-          onClick={() => openSmartReport(disk, testStatus, smartAttributes)}
+          onClick={() => openSmartReport(disk, testStatus, smartAttributes, observations)}
         >
           <FileText className="h-4 w-4" />
           View Full SMART Report

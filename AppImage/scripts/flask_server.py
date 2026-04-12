@@ -6496,40 +6496,121 @@ def api_smart_status(disk_name):
         
         # Get current SMART status
         if is_nvme:
-            # NVMe: Check for running test
+            # NVMe: Check for running test and get self-test log
             try:
                 proc = subprocess.run(
                     ['nvme', 'self-test-log', device],
                     capture_output=True, text=True, timeout=10
                 )
-                if proc.returncode == 0 and 'in progress' in proc.stdout.lower():
-                    result['status'] = 'running'
-                    result['test_type'] = 'nvme'
+                if proc.returncode == 0:
+                    output = proc.stdout
+                    # Check if test is in progress
+                    if 'in progress' in output.lower():
+                        result['status'] = 'running'
+                        result['test_type'] = 'nvme'
+                        # Try to extract progress
+                        match = re.search(r'(\d+)%', output)
+                        if match:
+                            result['progress'] = int(match.group(1))
+                    
+                    # Parse last test result from self-test log
+                    # Format varies but typically shows test entries
+                    lines = output.split('\n')
+                    for line in lines:
+                        line_lower = line.lower()
+                        if 'completed' in line_lower or 'passed' in line_lower or 'without error' in line_lower:
+                            test_type = 'short' if 'short' in line_lower else 'long' if 'extended' in line_lower or 'long' in line_lower else 'unknown'
+                            test_status = 'passed' if 'without error' in line_lower or 'passed' in line_lower or 'success' in line_lower else 'failed'
+                            result['last_test'] = {
+                                'type': test_type,
+                                'status': test_status,
+                                'timestamp': 'Completed without error'
+                            }
+                            break
             except subprocess.TimeoutExpired:
                 pass
+            except Exception:
+                pass
             
-            # Get smart-log data
+            # Get smart-log data (JSON format)
             try:
                 proc = subprocess.run(
-                    ['nvme', 'smart-log', device],
+                    ['nvme', 'smart-log', '-o', 'json', device],
                     capture_output=True, text=True, timeout=10
                 )
                 if proc.returncode == 0:
-                    lines = proc.stdout.strip().split('\n')
-                    smart_data = {}
-                    for line in lines:
-                        if ':' in line:
-                            key, value = line.split(':', 1)
-                            smart_data[key.strip().lower().replace(' ', '_')] = value.strip()
-                    result['smart_data'] = smart_data
+                    try:
+                        nvme_data = json.loads(proc.stdout)
+                    except json.JSONDecodeError:
+                        nvme_data = {}
                     
                     # Check health
-                    crit_warn = smart_data.get('critical_warning', '0')
-                    result['smart_status'] = 'passed' if crit_warn == '0' else 'warning'
+                    crit_warn = nvme_data.get('critical_warning', 0)
+                    result['smart_status'] = 'passed' if crit_warn == 0 else 'warning'
+                    
+                    # Convert NVMe data to attributes format for UI compatibility
+                    nvme_attrs = []
+                    nvme_field_map = [
+                        ('critical_warning', 'Critical Warning', lambda v: 'OK' if v == 0 else 'Warning'),
+                        ('temperature', 'Temperature', lambda v: f"{v - 273 if v > 200 else v}°C"),
+                        ('avail_spare', 'Available Spare', lambda v: f"{v}%"),
+                        ('spare_thresh', 'Spare Threshold', lambda v: f"{v}%"),
+                        ('percent_used', 'Percent Used', lambda v: f"{v}%"),
+                        ('data_units_read', 'Data Units Read', lambda v: f"{v:,}"),
+                        ('data_units_written', 'Data Units Written', lambda v: f"{v:,}"),
+                        ('host_read_commands', 'Host Read Commands', lambda v: f"{v:,}"),
+                        ('host_write_commands', 'Host Write Commands', lambda v: f"{v:,}"),
+                        ('power_cycles', 'Power Cycles', lambda v: f"{v:,}"),
+                        ('power_on_hours', 'Power On Hours', lambda v: f"{v:,}"),
+                        ('unsafe_shutdowns', 'Unsafe Shutdowns', lambda v: f"{v:,}"),
+                        ('media_errors', 'Media Errors', lambda v: f"{v:,}"),
+                        ('num_err_log_entries', 'Error Log Entries', lambda v: f"{v:,}"),
+                    ]
+                    
+                    for i, (field, name, formatter) in enumerate(nvme_field_map, start=1):
+                        if field in nvme_data:
+                            raw_val = nvme_data[field]
+                            # Determine status based on field type
+                            if field == 'critical_warning':
+                                status = 'ok' if raw_val == 0 else 'critical'
+                            elif field == 'media_errors':
+                                status = 'ok' if raw_val == 0 else 'critical'
+                            elif field == 'percent_used':
+                                status = 'ok' if raw_val < 90 else 'warning' if raw_val < 100 else 'critical'
+                            elif field == 'avail_spare':
+                                thresh = nvme_data.get('spare_thresh', 10)
+                                status = 'ok' if raw_val > thresh else 'warning'
+                            elif field == 'unsafe_shutdowns':
+                                status = 'ok' if raw_val < 100 else 'warning'
+                            else:
+                                status = 'ok'
+                            
+                            nvme_attrs.append({
+                                'id': i,
+                                'name': name,
+                                'value': formatter(raw_val),
+                                'worst': '-',
+                                'threshold': '-',
+                                'raw_value': str(raw_val),
+                                'status': status
+                            })
+                    
+                    result['smart_data'] = {
+                        'attributes': nvme_attrs,
+                        'power_on_hours': nvme_data.get('power_on_hours', 0),
+                        'temperature': nvme_data.get('temperature', 0) - 273 if nvme_data.get('temperature', 0) > 200 else nvme_data.get('temperature', 0),
+                        'nvme_raw': nvme_data
+                    }
+                    
+                    # Update last_test with power_on_hours if available
+                    if 'last_test' in result and nvme_data.get('power_on_hours'):
+                        result['last_test']['lifetime_hours'] = nvme_data['power_on_hours']
                 else:
                     result['nvme_error'] = proc.stderr.strip() or 'Failed to read SMART data'
             except subprocess.TimeoutExpired:
                 result['nvme_error'] = 'Command timeout'
+            except Exception as e:
+                result['nvme_error'] = str(e)
         else:
             # SATA/SAS: Check for running test
             proc = subprocess.run(
