@@ -1470,6 +1470,353 @@ export function StorageOverview() {
   )
 }
 
+// Generate SMART Report HTML and open in new window (same pattern as Lynis/Latency reports)
+function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttributes: Array<{id: number; name: string; value: number; worst: number; threshold: number; raw_value: string; status: 'ok' | 'warning' | 'critical'}>) {
+  const now = new Date().toLocaleString()
+  const logoUrl = `${window.location.origin}/images/proxmenux-logo.png`
+  const reportId = `SMART-${Date.now().toString(36).toUpperCase()}`
+  
+  // Determine disk type
+  let diskType = "HDD"
+  if (disk.name.startsWith("nvme")) {
+    diskType = "NVMe"
+  } else if (!disk.rotation_rate || disk.rotation_rate === 0) {
+    diskType = "SSD"
+  }
+  
+  // Health status styling
+  const healthStatus = testStatus.smart_status || (testStatus.smart_data?.smart_status) || 'unknown'
+  const isHealthy = healthStatus.toLowerCase() === 'passed'
+  const healthColor = isHealthy ? '#16a34a' : healthStatus.toLowerCase() === 'failed' ? '#dc2626' : '#ca8a04'
+  const healthLabel = isHealthy ? 'PASSED' : healthStatus.toUpperCase()
+  
+  // Format power on time
+  const powerOnHours = disk.power_on_hours || testStatus.smart_data?.power_on_hours || 0
+  const powerOnDays = Math.round(powerOnHours / 24)
+  const powerOnYears = Math.floor(powerOnHours / 8760)
+  const powerOnRemainingDays = Math.floor((powerOnHours % 8760) / 24)
+  const powerOnFormatted = powerOnYears > 0 
+    ? `${powerOnYears}y ${powerOnRemainingDays}d (${powerOnHours.toLocaleString()}h)`
+    : `${powerOnDays}d (${powerOnHours.toLocaleString()}h)`
+  
+  // Build attributes table
+  const attributeRows = smartAttributes.map((attr, i) => {
+    const statusColor = attr.status === 'ok' ? '#16a34a' : attr.status === 'warning' ? '#ca8a04' : '#dc2626'
+    const statusBg = attr.status === 'ok' ? '#16a34a15' : attr.status === 'warning' ? '#ca8a0415' : '#dc262615'
+    return `
+      <tr>
+        <td style="font-weight:600;">${attr.id}</td>
+        <td>${attr.name}</td>
+        <td style="text-align:center;">${attr.value}</td>
+        <td style="text-align:center;">${attr.worst}</td>
+        <td style="text-align:center;">${attr.threshold}</td>
+        <td style="font-family:monospace;font-size:11px;">${attr.raw_value}</td>
+        <td><span class="f-tag" style="background:${statusBg};color:${statusColor}">${attr.status.toUpperCase()}</span></td>
+      </tr>
+    `
+  }).join('')
+  
+  // Critical attributes to highlight
+  const criticalAttrs = smartAttributes.filter(a => a.status !== 'ok')
+  const hasCritical = criticalAttrs.length > 0
+  
+  // Build recommendations
+  const recommendations: string[] = []
+  if (isHealthy) {
+    recommendations.push('<div class="rec-item rec-ok"><div class="rec-icon">&#10003;</div><div><strong>Disk is Healthy</strong><p>All SMART attributes are within normal ranges. Continue regular monitoring.</p></div></div>')
+  } else {
+    recommendations.push('<div class="rec-item rec-critical"><div class="rec-icon">&#10007;</div><div><strong>Critical: Disk Health Issue Detected</strong><p>SMART has reported a health issue. Backup all data immediately and plan for disk replacement.</p></div></div>')
+  }
+  
+  if ((disk.reallocated_sectors ?? 0) > 0) {
+    recommendations.push(`<div class="rec-item rec-warn"><div class="rec-icon">&#9888;</div><div><strong>Reallocated Sectors Detected (${disk.reallocated_sectors})</strong><p>The disk has bad sectors that have been remapped. Monitor closely and consider replacement if count increases.</p></div></div>`)
+  }
+  
+  if ((disk.pending_sectors ?? 0) > 0) {
+    recommendations.push(`<div class="rec-item rec-warn"><div class="rec-icon">&#9888;</div><div><strong>Pending Sectors (${disk.pending_sectors})</strong><p>There are sectors waiting to be reallocated. This may indicate impending failure.</p></div></div>`)
+  }
+  
+  if (disk.temperature > 55 && diskType === 'HDD') {
+    recommendations.push(`<div class="rec-item rec-warn"><div class="rec-icon">&#9888;</div><div><strong>High Temperature (${disk.temperature}°C)</strong><p>HDD is running hot. Improve case airflow or add cooling.</p></div></div>`)
+  } else if (disk.temperature > 70 && diskType === 'SSD') {
+    recommendations.push(`<div class="rec-item rec-warn"><div class="rec-icon">&#9888;</div><div><strong>High Temperature (${disk.temperature}°C)</strong><p>SSD is running hot. Check airflow around the drive.</p></div></div>`)
+  } else if (disk.temperature > 80 && diskType === 'NVMe') {
+    recommendations.push(`<div class="rec-item rec-warn"><div class="rec-icon">&#9888;</div><div><strong>High Temperature (${disk.temperature}°C)</strong><p>NVMe is overheating. Consider adding a heatsink or improving case airflow.</p></div></div>`)
+  }
+  
+  if (recommendations.length === 1 && isHealthy) {
+    recommendations.push('<div class="rec-item rec-info"><div class="rec-icon">&#9432;</div><div><strong>Regular Maintenance</strong><p>Schedule periodic extended SMART tests (monthly) to catch issues early.</p></div></div>')
+    recommendations.push('<div class="rec-item rec-info"><div class="rec-icon">&#9432;</div><div><strong>Backup Strategy</strong><p>Ensure critical data is backed up regularly regardless of disk health status.</p></div></div>')
+  }
+  
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SMART Health Report - /dev/${disk.name}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1a2e; background: #fff; font-size: 13px; line-height: 1.5; }
+  @page { margin: 10mm; size: A4; }
+  @media print {
+    .no-print { display: none !important; }
+    .page-break { page-break-before: always; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body { font-size: 11px; padding-top: 0; }
+    .section { page-break-inside: avoid; break-inside: avoid; }
+  }
+  @media screen {
+    body { max-width: 1000px; margin: 0 auto; padding: 24px 32px; padding-top: 64px; }
+  }
+  
+  /* Top bar */
+  .top-bar {
+    position: fixed; top: 0; left: 0; right: 0; background: #0f172a; color: #e2e8f0;
+    padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; z-index: 100;
+  }
+  .top-bar-left { display: flex; align-items: center; gap: 12px; }
+  .top-bar-title { font-weight: 600; }
+  .top-bar-subtitle { font-size: 11px; color: #94a3b8; }
+  .top-bar button {
+    background: #06b6d4; color: #fff; border: none; padding: 10px 20px; border-radius: 6px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .top-bar button:hover { background: #0891b2; }
+  @media print { .top-bar { display: none; } body { padding-top: 0; } }
+
+  /* Header */
+  .rpt-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 0; border-bottom: 3px solid #0f172a; margin-bottom: 22px;
+  }
+  .rpt-header-left { display: flex; align-items: center; gap: 14px; }
+  .rpt-header-left img { height: 44px; width: auto; }
+  .rpt-header-left h1 { font-size: 22px; font-weight: 700; color: #0f172a; }
+  .rpt-header-left p { font-size: 11px; color: #64748b; }
+  .rpt-header-right { text-align: right; font-size: 11px; color: #64748b; line-height: 1.6; }
+  .rpt-header-right .rid { font-family: monospace; font-size: 10px; color: #94a3b8; }
+
+  /* Sections */
+  .section { margin-bottom: 22px; }
+  .section-title {
+    font-size: 14px; font-weight: 700; color: #0f172a; text-transform: uppercase;
+    letter-spacing: 0.05em; padding-bottom: 5px; border-bottom: 2px solid #e2e8f0; margin-bottom: 12px;
+  }
+
+  /* Executive summary */
+  .exec-box {
+    display: flex; align-items: flex-start; gap: 20px; padding: 20px;
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .health-ring {
+    width: 96px; height: 96px; border-radius: 50%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; border: 4px solid; flex-shrink: 0;
+  }
+  .health-icon { font-size: 32px; line-height: 1; }
+  .health-lbl { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; margin-top: 4px; }
+  .exec-text { flex: 1; min-width: 200px; }
+  .exec-text h3 { font-size: 16px; margin-bottom: 4px; }
+  .exec-text p { font-size: 12px; color: #64748b; line-height: 1.5; }
+
+  /* Grids */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .card { padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; }
+  .card-label { font-size: 10px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px; }
+  .card-value { font-size: 13px; font-weight: 600; color: #0f172a; }
+  .card-c { text-align: center; }
+  .card-c .card-value { font-size: 20px; font-weight: 800; }
+
+  /* Tags */
+  .f-tag { font-size: 9px; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+
+  /* Tables */
+  .attr-tbl { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .attr-tbl th { text-align: left; padding: 8px; font-size: 10px; color: #64748b; font-weight: 600; border-bottom: 2px solid #e2e8f0; background: #f1f5f9; }
+  .attr-tbl td { padding: 6px 8px; border-bottom: 1px solid #f1f5f9; color: #1e293b; }
+  .attr-tbl tr:hover { background: #f8fafc; }
+
+  /* Recommendations */
+  .rec-item { display: flex; align-items: flex-start; gap: 12px; padding: 12px; border-radius: 6px; margin-bottom: 8px; }
+  .rec-icon { font-size: 18px; flex-shrink: 0; width: 24px; text-align: center; }
+  .rec-item strong { display: block; margin-bottom: 2px; }
+  .rec-item p { font-size: 12px; color: #64748b; margin: 0; }
+  .rec-ok { background: #dcfce7; border: 1px solid #86efac; }
+  .rec-ok .rec-icon { color: #16a34a; }
+  .rec-warn { background: #fef3c7; border: 1px solid #fcd34d; }
+  .rec-warn .rec-icon { color: #ca8a04; }
+  .rec-critical { background: #fee2e2; border: 1px solid #fca5a5; }
+  .rec-critical .rec-icon { color: #dc2626; }
+  .rec-info { background: #e0f2fe; border: 1px solid #7dd3fc; }
+  .rec-info .rec-icon { color: #0284c7; }
+
+  /* Footer */
+  .rpt-footer {
+    margin-top: 32px; padding-top: 12px; border-top: 1px solid #e2e8f0;
+    display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8;
+  }
+</style>
+</head>
+<body>
+<!-- Top bar (screen only) -->
+<div class="top-bar no-print">
+  <div class="top-bar-left">
+    <div class="top-bar-title">SMART Health Report</div>
+    <div class="top-bar-subtitle">/dev/${disk.name}</div>
+  </div>
+  <button onclick="window.print()">Print Report</button>
+</div>
+
+<!-- Header -->
+<div class="rpt-header">
+  <div class="rpt-header-left">
+    <img src="${logoUrl}" alt="ProxMenux" onerror="this.style.display='none'">
+    <div>
+      <h1>SMART Health Report</h1>
+      <p>ProxMenux Monitor - Disk Health Analysis</p>
+    </div>
+  </div>
+  <div class="rpt-header-right">
+    <div>Date: ${now}</div>
+    <div>Device: /dev/${disk.name}</div>
+    <div class="rid">ID: ${reportId}</div>
+  </div>
+</div>
+
+<!-- 1. Executive Summary -->
+<div class="section">
+  <div class="section-title">1. Executive Summary</div>
+  <div class="exec-box">
+    <div class="health-ring" style="border-color:${healthColor};color:${healthColor}">
+      <div class="health-icon">${isHealthy ? '&#10003;' : '&#10007;'}</div>
+      <div class="health-lbl">${healthLabel}</div>
+    </div>
+    <div class="exec-text">
+      <h3>Disk Health Assessment</h3>
+      <p>
+        ${isHealthy 
+          ? `This disk is operating within normal parameters. All SMART attributes are within acceptable thresholds. The disk has been powered on for approximately ${powerOnFormatted} and is currently operating at ${disk.temperature > 0 ? disk.temperature + '°C' : 'N/A'}. ${(disk.reallocated_sectors ?? 0) === 0 ? 'No bad sectors have been detected.' : `${disk.reallocated_sectors} reallocated sector(s) detected - monitor closely.`}`
+          : `This disk has reported a SMART health failure. Immediate action is required. Backup all critical data and plan for disk replacement.`
+        }
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- 2. Disk Information -->
+<div class="section">
+  <div class="section-title">2. Disk Information</div>
+  <div class="grid-4">
+    <div class="card">
+      <div class="card-label">Model</div>
+      <div class="card-value" style="font-size:11px;">${disk.model || testStatus.smart_data?.model || 'Unknown'}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Serial</div>
+      <div class="card-value" style="font-size:11px;font-family:monospace;">${disk.serial || testStatus.smart_data?.serial || 'Unknown'}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Capacity</div>
+      <div class="card-value" style="font-size:11px;">${disk.size_formatted || 'Unknown'}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Type</div>
+      <div class="card-value" style="font-size:11px;">${diskType}</div>
+    </div>
+  </div>
+  <div class="grid-4">
+    <div class="card card-c">
+      <div class="card-value" style="color:${disk.temperature > 55 ? '#dc2626' : disk.temperature > 45 ? '#ca8a04' : '#16a34a'}">${disk.temperature > 0 ? disk.temperature + '°C' : 'N/A'}</div>
+      <div class="card-label">Temperature</div>
+    </div>
+    <div class="card card-c">
+      <div class="card-value">${powerOnHours.toLocaleString()}h</div>
+      <div class="card-label">Power On Time</div>
+    </div>
+    <div class="card card-c">
+      <div class="card-value">${(disk.power_cycles ?? 0).toLocaleString()}</div>
+      <div class="card-label">Power Cycles</div>
+    </div>
+    <div class="card card-c">
+      <div class="card-value" style="color:${(disk.reallocated_sectors ?? 0) > 0 ? '#dc2626' : '#16a34a'}">${disk.reallocated_sectors ?? 0}</div>
+      <div class="card-label">Reallocated Sectors</div>
+    </div>
+  </div>
+</div>
+
+<!-- 3. SMART Attributes -->
+<div class="section">
+  <div class="section-title">3. SMART Attributes (${smartAttributes.length} total${hasCritical ? `, ${criticalAttrs.length} warning(s)` : ''})</div>
+  <table class="attr-tbl">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Attribute</th>
+        <th style="text-align:center;">Value</th>
+        <th style="text-align:center;">Worst</th>
+        <th style="text-align:center;">Thresh</th>
+        <th>Raw Value</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${attributeRows || '<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:20px;">No SMART attributes available</td></tr>'}
+    </tbody>
+  </table>
+</div>
+
+<!-- 4. Last Test Result -->
+<div class="section">
+  <div class="section-title">4. Last Self-Test Result</div>
+  ${testStatus.last_test ? `
+    <div class="grid-4">
+      <div class="card">
+        <div class="card-label">Test Type</div>
+        <div class="card-value" style="text-transform:capitalize;">${testStatus.last_test.type}</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Result</div>
+        <div class="card-value" style="color:${testStatus.last_test.status === 'passed' ? '#16a34a' : '#dc2626'};text-transform:capitalize;">${testStatus.last_test.status}</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Completed</div>
+        <div class="card-value" style="font-size:11px;">${testStatus.last_test.timestamp || 'N/A'}</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Duration</div>
+        <div class="card-value">${testStatus.last_test.duration || 'N/A'}</div>
+      </div>
+    </div>
+  ` : `
+    <div style="text-align:center;padding:20px;color:#94a3b8;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+      No self-test history available. Run a SMART self-test to see results here.
+    </div>
+  `}
+</div>
+
+<!-- 5. Recommendations -->
+<div class="section">
+  <div class="section-title">5. Recommendations</div>
+  ${recommendations.join('')}
+</div>
+
+<!-- Footer -->
+<div class="rpt-footer">
+  <div>Report generated by ProxMenux Monitor</div>
+  <div>ProxMenux Monitor v1.0.2-beta</div>
+</div>
+
+</body>
+</html>`
+
+  const blob = new Blob([html], { type: "text/html" })
+  const url = URL.createObjectURL(blob)
+  window.open(url, "_blank")
+}
+
 // SMART Test Tab Component
 interface SmartTestTabProps {
   disk: DiskInfo
@@ -1510,8 +1857,9 @@ function SmartTestTab({ disk }: SmartTestTabProps) {
   const [testStatus, setTestStatus] = useState<SmartTestStatus>({ status: 'idle' })
   const [loading, setLoading] = useState(true)
   const [runningTest, setRunningTest] = useState<'short' | 'long' | null>(null)
-  const [showReport, setShowReport] = useState(false)
-  const [reportTab, setReportTab] = useState<'overview' | 'attributes' | 'history' | 'recommendations'>('overview')
+  
+  // Extract SMART attributes from testStatus for the report
+  const smartAttributes = testStatus.smart_data?.attributes || []
   
   // Fetch current SMART status on mount
   useEffect(() => {
@@ -1580,7 +1928,7 @@ function SmartTestTab({ disk }: SmartTestTabProps) {
             size="sm"
             onClick={() => runSmartTest('short')}
             disabled={runningTest !== null}
-            className="gap-2"
+            className="gap-2 bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400"
           >
             {runningTest === 'short' ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -1594,7 +1942,7 @@ function SmartTestTab({ disk }: SmartTestTabProps) {
             size="sm"
             onClick={() => runSmartTest('long')}
             disabled={runningTest !== null}
-            className="gap-2"
+            className="gap-2 bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400"
           >
             {runningTest === 'long' ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -1608,7 +1956,7 @@ function SmartTestTab({ disk }: SmartTestTabProps) {
             size="sm"
             onClick={fetchSmartStatus}
             disabled={runningTest !== null}
-            className="gap-2"
+            className="gap-2 bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400"
           >
             <Activity className="h-4 w-4" />
             Refresh Status
@@ -1729,8 +2077,8 @@ function SmartTestTab({ disk }: SmartTestTabProps) {
       <div className="pt-4 border-t">
         <Button 
           variant="outline" 
-          className="w-full gap-2"
-          onClick={() => setShowReport(true)}
+          className="w-full gap-2 bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400"
+          onClick={() => openSmartReport(disk, testStatus, smartAttributes)}
         >
           <FileText className="h-4 w-4" />
           View Full SMART Report
@@ -1740,465 +2088,7 @@ function SmartTestTab({ disk }: SmartTestTabProps) {
         </p>
       </div>
       
-      {/* Full SMART Report Dialog */}
-      <Dialog open={showReport} onOpenChange={setShowReport}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0">
-          <DialogHeader className="px-6 pt-6 pb-0">
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              SMART Health Report: /dev/{disk.name}
-            </DialogTitle>
-            <DialogDescription>
-              Comprehensive analysis of disk health, SMART attributes, and recommendations
-            </DialogDescription>
-          </DialogHeader>
-          
-          {/* Report Tabs */}
-          <div className="flex border-b border-border px-6 overflow-x-auto">
-            <button
-              onClick={() => setReportTab('overview')}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
-                reportTab === 'overview'
-                  ? "border-blue-500 text-blue-500"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Info className="h-4 w-4" />
-              Overview
-            </button>
-            <button
-              onClick={() => setReportTab('attributes')}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
-                reportTab === 'attributes'
-                  ? "border-purple-500 text-purple-500"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Activity className="h-4 w-4" />
-              Attributes
-            </button>
-            <button
-              onClick={() => setReportTab('history')}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
-                reportTab === 'history'
-                  ? "border-amber-500 text-amber-500"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Clock className="h-4 w-4" />
-              History
-            </button>
-            <button
-              onClick={() => setReportTab('recommendations')}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
-                reportTab === 'recommendations'
-                  ? "border-green-500 text-green-500"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <CheckCircle2 className="h-4 w-4" />
-              Recommendations
-            </button>
-          </div>
-          
-          {/* Report Content */}
-          <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
-            {/* Overview Tab */}
-            {reportTab === 'overview' && (
-              <div className="space-y-6">
-                {/* Health Score Card */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className={`border rounded-lg p-4 ${
-                    testStatus.smart_status === 'passed' 
-                      ? 'bg-green-500/5 border-green-500/20' 
-                      : testStatus.smart_status === 'failed'
-                        ? 'bg-red-500/5 border-red-500/20'
-                        : 'bg-yellow-500/5 border-yellow-500/20'
-                  }`}>
-                    <p className="text-sm text-muted-foreground mb-1">Overall Health</p>
-                    <div className="flex items-center gap-2">
-                      {testStatus.smart_status === 'passed' ? (
-                        <CheckCircle2 className="h-6 w-6 text-green-500" />
-                      ) : testStatus.smart_status === 'failed' ? (
-                        <XCircle className="h-6 w-6 text-red-500" />
-                      ) : (
-                        <AlertTriangle className="h-6 w-6 text-yellow-500" />
-                      )}
-                      <span className="text-xl font-bold capitalize">
-                        {testStatus.smart_status || 'Unknown'}
-                      </span>
-                    </div>
-                  </div>
-                  
-                  <div className="border rounded-lg p-4 bg-muted/20">
-                    <p className="text-sm text-muted-foreground mb-1">Temperature</p>
-                    <div className="flex items-center gap-2">
-                      <Thermometer className="h-6 w-6 text-blue-500" />
-                      <span className="text-xl font-bold">
-                        {disk.temperature > 0 ? `${disk.temperature}°C` : 'N/A'}
-                      </span>
-                    </div>
-                  </div>
-                  
-                  <div className="border rounded-lg p-4 bg-muted/20">
-                    <p className="text-sm text-muted-foreground mb-1">Power On Time</p>
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-6 w-6 text-purple-500" />
-                      <span className="text-xl font-bold">
-                        {disk.power_on_hours ? `${disk.power_on_hours.toLocaleString()}h` : 'N/A'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Executive Summary */}
-                <div className="border rounded-lg p-4">
-                  <h4 className="font-semibold mb-3 flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
-                    Executive Summary
-                  </h4>
-                  <div className="prose prose-sm prose-invert max-w-none">
-                    <p className="text-muted-foreground leading-relaxed">
-                      {testStatus.smart_status === 'passed' ? (
-                        <>
-                          This disk is operating within normal parameters. All SMART attributes are within acceptable thresholds, 
-                          indicating good health. The disk has been powered on for approximately{' '}
-                          <span className="text-foreground font-medium">
-                            {disk.power_on_hours ? `${Math.round(disk.power_on_hours / 24)} days` : 'an unknown period'}
-                          </span>{' '}
-                          and is currently operating at{' '}
-                          <span className="text-foreground font-medium">{disk.temperature || 'N/A'}°C</span>.
-                          {disk.reallocated_sectors === 0 && disk.pending_sectors === 0 
-                            ? ' No bad sectors have been detected.'
-                            : disk.reallocated_sectors && disk.reallocated_sectors > 0 
-                              ? ` ${disk.reallocated_sectors} sectors have been reallocated, which may indicate early signs of wear.`
-                              : ''}
-                        </>
-                      ) : testStatus.smart_status === 'failed' ? (
-                        <>
-                          <span className="text-red-400 font-medium">Warning: This disk has failed SMART health assessment.</span>{' '}
-                          One or more critical SMART attributes have exceeded their failure threshold. 
-                          It is strongly recommended to backup all data immediately and consider replacing this disk.
-                          {disk.reallocated_sectors && disk.reallocated_sectors > 0 
-                            ? ` The disk has ${disk.reallocated_sectors} reallocated sectors, indicating physical media degradation.`
-                            : ''}
-                        </>
-                      ) : (
-                        <>
-                          The disk health status could not be fully determined. Some SMART attributes may be showing warning signs.
-                          It is recommended to run a full SMART self-test and monitor the disk closely.
-                        </>
-                      )}
-                    </p>
-                  </div>
-                </div>
-                
-                {/* Key Metrics */}
-                <div className="border rounded-lg p-4">
-                  <h4 className="font-semibold mb-3">Key Metrics</h4>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                      <p className="text-muted-foreground">Model</p>
-                      <p className="font-medium">{disk.model || 'Unknown'}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Serial</p>
-                      <p className="font-medium font-mono text-xs">{disk.serial?.replace(/\\x[0-9a-fA-F]{2}/g, '') || 'Unknown'}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Capacity</p>
-                      <p className="font-medium">{disk.size_formatted || 'Unknown'}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Power Cycles</p>
-                      <p className="font-medium">{disk.power_cycles?.toLocaleString() || 'N/A'}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Reallocated Sectors</p>
-                      <p className={`font-medium ${disk.reallocated_sectors && disk.reallocated_sectors > 0 ? 'text-yellow-500' : ''}`}>
-                        {disk.reallocated_sectors ?? 0}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Pending Sectors</p>
-                      <p className={`font-medium ${disk.pending_sectors && disk.pending_sectors > 0 ? 'text-yellow-500' : ''}`}>
-                        {disk.pending_sectors ?? 0}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">CRC Errors</p>
-                      <p className={`font-medium ${disk.crc_errors && disk.crc_errors > 0 ? 'text-yellow-500' : ''}`}>
-                        {disk.crc_errors ?? 0}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Disk Type</p>
-                      <p className="font-medium">
-                        {disk.name.startsWith('nvme') ? 'NVMe' : !disk.rotation_rate || disk.rotation_rate === 0 ? 'SSD' : 'HDD'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {/* Attributes Tab */}
-            {reportTab === 'attributes' && (
-              <div className="space-y-4">
-                <div className="border rounded-lg p-4 bg-muted/20">
-                  <h4 className="font-semibold mb-2">Understanding SMART Attributes</h4>
-                  <p className="text-sm text-muted-foreground">
-                    SMART (Self-Monitoring, Analysis and Reporting Technology) attributes are sensors built into hard drives and SSDs. 
-                    Each attribute has a current value, a worst recorded value, and a threshold. When the current value drops below the threshold, 
-                    the attribute is considered failed. Values typically decrease from 100 (or 200/253 on some drives) as the attribute degrades.
-                  </p>
-                </div>
-                
-                {testStatus.smart_data?.attributes && testStatus.smart_data.attributes.length > 0 ? (
-                  <div className="border rounded-lg overflow-hidden">
-                    <div className="grid grid-cols-12 gap-2 p-3 bg-muted/30 text-xs font-medium text-muted-foreground">
-                      <div className="col-span-1">ID</div>
-                      <div className="col-span-4">Attribute Name</div>
-                      <div className="col-span-2 text-center">Value</div>
-                      <div className="col-span-2 text-center">Worst</div>
-                      <div className="col-span-2 text-center">Threshold</div>
-                      <div className="col-span-1 text-center">Status</div>
-                    </div>
-                    <div className="divide-y divide-border max-h-[400px] overflow-y-auto">
-                      {testStatus.smart_data.attributes.map((attr) => (
-                        <div key={attr.id} className={`grid grid-cols-12 gap-2 p-3 text-sm items-center ${
-                          attr.status === 'critical' ? 'bg-red-500/5' : attr.status === 'warning' ? 'bg-yellow-500/5' : ''
-                        }`}>
-                          <div className="col-span-1 text-muted-foreground font-mono">{attr.id}</div>
-                          <div className="col-span-4">
-                            <p className="truncate font-medium" title={attr.name}>{attr.name.replace(/_/g, ' ')}</p>
-                            <p className="text-xs text-muted-foreground">Raw: {attr.raw_value}</p>
-                          </div>
-                          <div className="col-span-2 text-center font-mono font-medium">{attr.value}</div>
-                          <div className="col-span-2 text-center font-mono text-muted-foreground">{attr.worst}</div>
-                          <div className="col-span-2 text-center font-mono text-muted-foreground">{attr.threshold}</div>
-                          <div className="col-span-1 text-center">
-                            {attr.status === 'ok' ? (
-                              <CheckCircle2 className="h-4 w-4 text-green-500 mx-auto" />
-                            ) : attr.status === 'warning' ? (
-                              <AlertTriangle className="h-4 w-4 text-yellow-500 mx-auto" />
-                            ) : (
-                              <XCircle className="h-4 w-4 text-red-500 mx-auto" />
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Activity className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                    <p>No SMART attribute data available.</p>
-                    <p className="text-sm mt-1">Run a SMART test to collect attribute data.</p>
-                  </div>
-                )}
-              </div>
-            )}
-            
-            {/* History Tab */}
-            {reportTab === 'history' && (
-              <div className="space-y-4">
-                {testStatus.last_test ? (
-                  <div className={`border rounded-lg p-4 ${
-                    testStatus.last_test.status === 'passed' 
-                      ? 'bg-green-500/5 border-green-500/20' 
-                      : 'bg-red-500/5 border-red-500/20'
-                  }`}>
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="font-semibold flex items-center gap-2">
-                        {testStatus.last_test.status === 'passed' ? (
-                          <CheckCircle2 className="h-5 w-5 text-green-500" />
-                        ) : (
-                          <XCircle className="h-5 w-5 text-red-500" />
-                        )}
-                        Last Test Result
-                      </h4>
-                      <Badge className={testStatus.last_test.status === 'passed' 
-                        ? 'bg-green-500/10 text-green-500 border-green-500/20'
-                        : 'bg-red-500/10 text-red-500 border-red-500/20'
-                      }>
-                        {testStatus.last_test.status}
-                      </Badge>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <p className="text-muted-foreground">Test Type</p>
-                        <p className="font-medium capitalize">{testStatus.last_test.type}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Completed</p>
-                        <p className="font-medium">{testStatus.last_test.timestamp}</p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Clock className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                    <p>No test history available.</p>
-                    <p className="text-sm mt-1">Run a SMART self-test to see results here.</p>
-                  </div>
-                )}
-                
-                <div className="border rounded-lg p-4 bg-muted/20">
-                  <h4 className="font-semibold mb-2">About Self-Tests</h4>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p>
-                      <strong className="text-foreground">Short Test (~2 minutes):</strong> Performs a quick check of the disk&apos;s 
-                      basic functionality including read/seek tests on a small portion of the disk surface.
-                    </p>
-                    <p>
-                      <strong className="text-foreground">Extended Test (hours):</strong> Performs a comprehensive surface scan 
-                      of the entire disk. Duration depends on disk size - typically 1-2 hours per TB.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {/* Recommendations Tab */}
-            {reportTab === 'recommendations' && (
-              <div className="space-y-4">
-                {/* Status-based recommendations */}
-                {testStatus.smart_status === 'passed' && (
-                  <div className="border rounded-lg p-4 bg-green-500/5 border-green-500/20">
-                    <div className="flex items-start gap-3">
-                      <CheckCircle2 className="h-5 w-5 text-green-500 mt-0.5" />
-                      <div>
-                        <h4 className="font-semibold text-green-500">Disk is Healthy</h4>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          All SMART attributes are within normal ranges. Continue with regular monitoring.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                {testStatus.smart_status === 'failed' && (
-                  <div className="border rounded-lg p-4 bg-red-500/5 border-red-500/20">
-                    <div className="flex items-start gap-3">
-                      <XCircle className="h-5 w-5 text-red-500 mt-0.5" />
-                      <div>
-                        <h4 className="font-semibold text-red-500">Critical: Disk Replacement Recommended</h4>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          This disk has failed SMART health assessment. Backup all data immediately and plan for disk replacement.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                {/* Conditional recommendations */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold">Recommendations</h4>
-                  
-                  {(disk.reallocated_sectors ?? 0) > 0 && (
-                    <div className="border rounded-lg p-3 bg-yellow-500/5 border-yellow-500/20">
-                      <div className="flex items-start gap-3">
-                        <AlertTriangle className="h-5 w-5 text-yellow-500 mt-0.5" />
-                        <div>
-                          <p className="font-medium">Reallocated Sectors Detected</p>
-                          <p className="text-sm text-muted-foreground mt-1">
-                            {disk.reallocated_sectors} sectors have been reallocated. This indicates the disk has found and 
-                            remapped bad sectors. Monitor this value - if it increases rapidly, consider replacing the disk.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {(disk.pending_sectors ?? 0) > 0 && (
-                    <div className="border rounded-lg p-3 bg-yellow-500/5 border-yellow-500/20">
-                      <div className="flex items-start gap-3">
-                        <AlertTriangle className="h-5 w-5 text-yellow-500 mt-0.5" />
-                        <div>
-                          <p className="font-medium">Pending Sectors Detected</p>
-                          <p className="text-sm text-muted-foreground mt-1">
-                            {disk.pending_sectors} sectors are pending reallocation. These sectors may be unreadable. 
-                            Run an extended self-test to force reallocation attempts.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {disk.temperature > 55 && (
-                    <div className="border rounded-lg p-3 bg-yellow-500/5 border-yellow-500/20">
-                      <div className="flex items-start gap-3">
-                        <Thermometer className="h-5 w-5 text-yellow-500 mt-0.5" />
-                        <div>
-                          <p className="font-medium">Elevated Temperature</p>
-                          <p className="text-sm text-muted-foreground mt-1">
-                            Current temperature ({disk.temperature}°C) is above optimal. Improve airflow or reduce disk activity. 
-                            Sustained high temperatures can reduce disk lifespan.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {(disk.power_on_hours ?? 0) > 35000 && (
-                    <div className="border rounded-lg p-3 bg-blue-500/5 border-blue-500/20">
-                      <div className="flex items-start gap-3">
-                        <Info className="h-5 w-5 text-blue-500 mt-0.5" />
-                        <div>
-                          <p className="font-medium">High Power-On Hours</p>
-                          <p className="text-sm text-muted-foreground mt-1">
-                            This disk has been running for {Math.round((disk.power_on_hours ?? 0) / 8760)} years. 
-                            While still operational, consider planning for replacement as disks typically have a 3-5 year lifespan.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* General best practices */}
-                  <div className="border rounded-lg p-4 bg-muted/20 mt-6">
-                    <h4 className="font-semibold mb-3">Best Practices</h4>
-                    <ul className="space-y-2 text-sm text-muted-foreground">
-                      <li className="flex items-start gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
-                        <span>Run a short SMART test monthly to catch early issues</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
-                        <span>Run an extended test quarterly for comprehensive verification</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
-                        <span>Maintain regular backups - SMART can detect some failures but not all</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
-                        <span>Keep disk temperatures below 50°C for optimal lifespan</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
-                        <span>Replace disks proactively after 4-5 years of heavy use</span>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-          
-          {/* Report Footer */}
-          <div className="border-t px-6 py-4 flex justify-between items-center bg-muted/10">
-            <p className="text-xs text-muted-foreground">
-              Report generated by ProxMenux Monitor
-            </p>
-            <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-2">
-              <FileText className="h-4 w-4" />
-              Print Report
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+
     </div>
   )
 }
