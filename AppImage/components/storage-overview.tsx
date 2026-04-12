@@ -1649,9 +1649,11 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
   .hide-mobile { display: table-cell; }
   @media screen and (max-width: 640px) {
     .hide-mobile { display: none !important; }
-    .attr-tbl { font-size: 10px; }
-    .attr-tbl th, .attr-tbl td { padding: 4px 2px; }
-    .attr-tbl .col-raw { font-size: 9px; word-break: break-all; }
+    .attr-tbl { font-size: 11px; }
+    .attr-tbl th { font-size: 11px; padding: 5px 3px; }
+    .attr-tbl td { padding: 5px 3px; }
+    .attr-tbl .col-name { padding-right: 6px; }
+    .attr-tbl .col-raw { font-size: 11px; word-break: break-all; }
   }
 
   /* Recommendations */
@@ -1847,6 +1849,7 @@ interface SmartTestStatus {
     status: string
     timestamp: string
     duration?: string
+    lifetime_hours?: number
   }
   smart_data?: {
     device: string
@@ -1893,14 +1896,25 @@ function SmartTestTab({ disk }: SmartTestTabProps) {
     }
   }
   
+  const [testError, setTestError] = useState<string | null>(null)
+  
   const runSmartTest = async (testType: 'short' | 'long') => {
     try {
       setRunningTest(testType)
-      await fetchApi(`/api/storage/smart/${disk.name}/test`, {
+      setTestError(null)
+      const response = await fetch(`/api/storage/smart/${disk.name}/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ test_type: testType })
       })
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        setTestError(errorData.error || 'Failed to start test')
+        setRunningTest(null)
+        return
+      }
+      
       // Poll for status updates
       const pollInterval = setInterval(async () => {
         try {
@@ -1915,7 +1929,8 @@ function SmartTestTab({ disk }: SmartTestTabProps) {
           setRunningTest(null)
         }
       }, 5000)
-    } catch {
+    } catch (err) {
+      setTestError('Failed to connect to server')
       setRunningTest(null)
     }
   }
@@ -1981,6 +1996,33 @@ function SmartTestTab({ disk }: SmartTestTabProps) {
           Short test takes ~2 minutes. Extended test runs in the background and can take several hours for large disks.
           You will receive a notification when the test completes.
         </p>
+        
+        {/* Error Message */}
+        {testError && (
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">
+            <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium">Failed to start test</p>
+              <p className="text-xs opacity-80">{testError}</p>
+            </div>
+          </div>
+        )}
+        
+        {/* Tools not installed warning */}
+        {testStatus.tools_installed && (!testStatus.tools_installed.smartctl || !testStatus.tools_installed.nvme) && (
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400">
+            <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium">SMART tools not fully installed</p>
+              <p className="text-xs opacity-80">
+                {!testStatus.tools_installed.smartctl && 'smartmontools (for SATA/SAS) '}
+                {!testStatus.tools_installed.smartctl && !testStatus.tools_installed.nvme && 'and '}
+                {!testStatus.tools_installed.nvme && 'nvme-cli (for NVMe) '}
+                not found. Click a test button to auto-install.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
       
       {/* Test Progress */}
@@ -2036,13 +2078,13 @@ function SmartTestTab({ disk }: SmartTestTabProps) {
             </div>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <p className="text-muted-foreground">Completed</p>
+                <p className="text-muted-foreground">Result</p>
                 <p className="font-medium">{testStatus.last_test.timestamp}</p>
               </div>
-              {testStatus.last_test.duration && (
+              {testStatus.last_test.lifetime_hours && (
                 <div>
-                  <p className="text-muted-foreground">Duration</p>
-                  <p className="font-medium">{testStatus.last_test.duration}</p>
+                  <p className="text-muted-foreground">At Power-On Hours</p>
+                  <p className="font-medium">{testStatus.last_test.lifetime_hours.toLocaleString()}h</p>
                 </div>
               )}
             </div>
