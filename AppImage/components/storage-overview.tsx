@@ -1634,6 +1634,101 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
   recommendations.push('<div class="rec-item rec-info"><div class="rec-icon">&#9432;</div><div><strong>Backup Strategy</strong><p>Ensure critical data is backed up regularly regardless of disk health status.</p></div></div>')
   }
   
+  // Build observations HTML separately to avoid nested template literal issues
+  let observationsHtml = ''
+  if (observations.length > 0) {
+    const totalOccurrences = observations.reduce((sum, o) => sum + o.occurrence_count, 0)
+    
+    // Group observations by error type
+    const groupedObs: Record<string, DiskObservation[]> = {}
+    observations.forEach(obs => {
+      const type = obs.error_type || 'unknown'
+      if (!groupedObs[type]) groupedObs[type] = []
+      groupedObs[type].push(obs)
+    })
+    
+    let groupsHtml = ''
+    Object.entries(groupedObs).forEach(([type, obsList]) => {
+      const typeLabel = type === 'io_error' ? 'I/O Errors' : type === 'smart_error' ? 'SMART Errors' : type === 'filesystem_error' ? 'Filesystem Errors' : type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+      const groupOccurrences = obsList.reduce((sum, o) => sum + o.occurrence_count, 0)
+      
+      let obsItemsHtml = ''
+      obsList.forEach(obs => {
+        const severityColor = obs.severity === 'critical' ? '#dc2626' : obs.severity === 'warning' ? '#ca8a04' : '#3b82f6'
+        const severityBg = obs.severity === 'critical' ? '#dc262615' : obs.severity === 'warning' ? '#ca8a0415' : '#3b82f615'
+        const severityLabel = obs.severity ? obs.severity.charAt(0).toUpperCase() + obs.severity.slice(1) : 'Info'
+        const firstDate = obs.first_occurrence ? new Date(obs.first_occurrence).toLocaleString() : 'N/A'
+        const lastDate = obs.last_occurrence ? new Date(obs.last_occurrence).toLocaleString() : 'N/A'
+        const dismissedBadge = obs.dismissed ? '<span style="background:#16a34a20;color:#16a34a;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:4px;">Dismissed</span>' : ''
+        
+        obsItemsHtml += `
+        <div style="background:${severityBg};border:1px solid ${severityColor}30;border-radius:8px;padding:16px;">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px;">
+            <span style="background:${severityColor}20;color:${severityColor};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">${severityLabel}</span>
+            <span style="background:#64748b20;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;">ID: #${obs.id}</span>
+            <span style="background:#64748b20;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;">Occurrences: <strong>${obs.occurrence_count}</strong></span>
+            ${dismissedBadge}
+          </div>
+          
+          <div style="margin-bottom:10px;">
+            <div style="font-size:10px;color:#64748b;margin-bottom:4px;">Error Signature:</div>
+            <div style="font-family:monospace;font-size:11px;color:#1e293b;background:#f1f5f9;padding:8px;border-radius:4px;word-break:break-all;">${obs.error_signature}</div>
+          </div>
+          
+          <div style="margin-bottom:12px;">
+            <div style="font-size:10px;color:#64748b;margin-bottom:4px;">Raw Message:</div>
+            <div style="font-family:monospace;font-size:11px;color:#1e293b;background:#f8fafc;padding:10px;border-radius:4px;white-space:pre-wrap;word-break:break-all;max-height:120px;overflow-y:auto;">${obs.raw_message || 'N/A'}</div>
+          </div>
+          
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:10px;font-size:11px;padding-top:10px;border-top:1px solid ${severityColor}20;">
+            <div>
+              <span style="color:#64748b;">Device:</span>
+              <strong style="color:#1e293b;margin-left:4px;">${obs.device_name || disk.name}</strong>
+            </div>
+            <div>
+              <span style="color:#64748b;">Serial:</span>
+              <strong style="color:#1e293b;margin-left:4px;">${obs.serial || disk.serial || 'N/A'}</strong>
+            </div>
+            <div>
+              <span style="color:#64748b;">Model:</span>
+              <strong style="color:#1e293b;margin-left:4px;">${obs.model || disk.model || 'N/A'}</strong>
+            </div>
+            <div>
+              <span style="color:#64748b;">First Seen:</span>
+              <strong style="color:#1e293b;margin-left:4px;">${firstDate}</strong>
+            </div>
+            <div>
+              <span style="color:#64748b;">Last Seen:</span>
+              <strong style="color:#1e293b;margin-left:4px;">${lastDate}</strong>
+            </div>
+          </div>
+        </div>
+        `
+      })
+      
+      groupsHtml += `
+      <div style="margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #e2e8f0;">
+          <span style="font-weight:600;color:#1e293b;">${typeLabel}</span>
+          <span style="background:#64748b15;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;">${obsList.length} unique, ${groupOccurrences} total</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          ${obsItemsHtml}
+        </div>
+      </div>
+      `
+    })
+    
+    observationsHtml = `
+    <!-- 6. Observations & Events -->
+    <div class="section">
+      <div class="section-title">6. Observations & Events (${observations.length} recorded, ${totalOccurrences} total occurrences)</div>
+      <p style="color:#64748b;font-size:12px;margin-bottom:16px;">The following events have been detected and logged for this disk. These observations may indicate potential issues that require attention.</p>
+      ${groupsHtml}
+    </div>
+    `
+  }
+  
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2032,94 +2127,7 @@ ${isNvmeDisk ? `
   `}
 </div>
 
-${observations.length > 0 ? `
-<!-- 6. Observations & Events -->
-<div class="section">
-  <div class="section-title">6. Observations & Events (${observations.length} recorded, ${observations.reduce((sum, o) => sum + o.occurrence_count, 0)} total occurrences)</div>
-  <p style="color:#64748b;font-size:12px;margin-bottom:16px;">The following events have been detected and logged for this disk. These observations may indicate potential issues that require attention.</p>
-  
-  <!-- Group observations by error type -->
-  ${(() => {
-    const groupedObs: Record<string, typeof observations> = {}
-    observations.forEach(obs => {
-      const type = obs.error_type || 'unknown'
-      if (!groupedObs[type]) groupedObs[type] = []
-      groupedObs[type].push(obs)
-    })
-    
-    return Object.entries(groupedObs).map(([type, obsList]) => {
-      const typeLabel = type === 'io_error' ? 'I/O Errors' : type === 'smart_error' ? 'SMART Errors' : type === 'filesystem_error' ? 'Filesystem Errors' : type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-      const totalOccurrences = obsList.reduce((sum, o) => sum + o.occurrence_count, 0)
-      
-      return \`
-      <div style="margin-bottom:20px;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #e2e8f0;">
-          <span style="font-weight:600;color:#1e293b;">\${typeLabel}</span>
-          <span style="background:#64748b15;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;">\${obsList.length} unique, \${totalOccurrences} total</span>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:12px;">
-          \${obsList.map(obs => {
-            const severityColor = obs.severity === 'critical' ? '#dc2626' : obs.severity === 'warning' ? '#ca8a04' : '#3b82f6'
-            const severityBg = obs.severity === 'critical' ? '#dc262615' : obs.severity === 'warning' ? '#ca8a0415' : '#3b82f615'
-            const severityLabel = obs.severity ? obs.severity.charAt(0).toUpperCase() + obs.severity.slice(1) : 'Info'
-            const firstDate = obs.first_occurrence ? new Date(obs.first_occurrence).toLocaleString() : 'N/A'
-            const lastDate = obs.last_occurrence ? new Date(obs.last_occurrence).toLocaleString() : 'N/A'
-            const dismissed = obs.dismissed ? '<span style="background:#16a34a20;color:#16a34a;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:4px;">Dismissed</span>' : ''
-            
-            return \\\`
-            <div style="background:\${severityBg};border:1px solid \${severityColor}30;border-radius:8px;padding:16px;">
-              <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px;">
-                <span style="background:\${severityColor}20;color:\${severityColor};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">\${severityLabel}</span>
-                <span style="background:#64748b20;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;">ID: #\${obs.id}</span>
-                <span style="background:#64748b20;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;">Occurrences: <strong>\${obs.occurrence_count}</strong></span>
-                \${dismissed}
-              </div>
-              
-              <!-- Error Signature -->
-              <div style="margin-bottom:10px;">
-                <div style="font-size:10px;color:#64748b;margin-bottom:4px;">Error Signature:</div>
-                <div style="font-family:monospace;font-size:11px;color:#1e293b;background:#f1f5f9;padding:8px;border-radius:4px;word-break:break-all;">\${obs.error_signature}</div>
-              </div>
-              
-              <!-- Raw Message -->
-              <div style="margin-bottom:12px;">
-                <div style="font-size:10px;color:#64748b;margin-bottom:4px;">Raw Message:</div>
-                <div style="font-family:monospace;font-size:11px;color:#1e293b;background:#f8fafc;padding:10px;border-radius:4px;white-space:pre-wrap;word-break:break-all;max-height:120px;overflow-y:auto;">\${obs.raw_message || 'N/A'}</div>
-              </div>
-              
-              <!-- Metadata Grid -->
-              <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:10px;font-size:11px;padding-top:10px;border-top:1px solid \${severityColor}20;">
-                <div>
-                  <span style="color:#64748b;">Device:</span>
-                  <strong style="color:#1e293b;margin-left:4px;">\${obs.device_name || disk.name}</strong>
-                </div>
-                <div>
-                  <span style="color:#64748b;">Serial:</span>
-                  <strong style="color:#1e293b;margin-left:4px;">\${obs.serial || disk.serial || 'N/A'}</strong>
-                </div>
-                <div>
-                  <span style="color:#64748b;">Model:</span>
-                  <strong style="color:#1e293b;margin-left:4px;">\${obs.model || disk.model || 'N/A'}</strong>
-                </div>
-                <div>
-                  <span style="color:#64748b;">First Seen:</span>
-                  <strong style="color:#1e293b;margin-left:4px;">\${firstDate}</strong>
-                </div>
-                <div>
-                  <span style="color:#64748b;">Last Seen:</span>
-                  <strong style="color:#1e293b;margin-left:4px;">\${lastDate}</strong>
-                </div>
-              </div>
-            </div>
-            \\\`
-          }).join('')}
-        </div>
-      </div>
-      \`
-    }).join('')
-  })()}
-</div>
-` : ''}
+${observationsHtml}
 
 <!-- ${observations.length > 0 ? '7' : '6'}. Recommendations -->
 <div class="section">
