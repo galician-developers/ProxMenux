@@ -1998,7 +1998,7 @@ ${isNvmeDisk ? `
       </tr>
     </thead>
     <tbody>
-      ${attributeRows || '<tr><td colspan="' + (isNvmeDisk ? '3' : '7') + '" style="text-align:center;color:#94a3b8;padding:20px;">No ${isNvmeDisk ? 'NVMe metrics' : 'SMART attributes'} available</td></tr>'}
+      ${attributeRows || '<tr><td colspan="' + (isNvmeDisk ? '3' : '7') + '" style="text-align:center;color:#94a3b8;padding:20px;">No ' + (isNvmeDisk ? 'NVMe metrics' : 'SMART attributes') + ' available</td></tr>'}
     </tbody>
   </table>
 </div>
