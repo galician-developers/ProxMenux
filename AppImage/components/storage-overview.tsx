@@ -1949,7 +1949,7 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
       <div class="card-label">Power Cycles</div>
     </div>
     <div class="card card-c">
-      <div class="card-value" style="color:${disk.smart_status === 'Passed' ? '#16a34a' : (disk.smart_status === 'Failed' ? '#dc2626' : '#64748b')}">${disk.smart_status || 'N/A'}</div>
+      <div class="card-value" style="color:${disk.smart_status?.toLowerCase() === 'passed' ? '#16a34a' : (disk.smart_status?.toLowerCase() === 'failed' ? '#dc2626' : '#64748b')}">${disk.smart_status || 'N/A'}</div>
       <div class="card-label">SMART Status</div>
     </div>
   </div>
