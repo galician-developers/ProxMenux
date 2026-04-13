@@ -2814,57 +2814,38 @@ def get_smart_data(disk_name):
                                     elif attr_id == 199:  # UDMA_CRC_Error_Count
                                         smart_data['crc_errors'] = raw_value
 
-                                    elif attr_id == '230': 
-                                        try:
-                                            wear_used = None
-                                            rv = str(raw_value).strip()
+                                    elif attr_id == 230:  # Media_Wearout_Indicator (WD/SanDisk)
+                                        # normalized_value = endurance used % (0=new, 100=fully worn)
+                                        smart_data['media_wearout_indicator'] = normalized_value
+                                        smart_data['ssd_life_left'] = max(0, 100 - normalized_value)
 
-                                            if rv.startswith("0x") and len(rv) >= 8:
-                                                # 0x001c0014... -> '001c' -> 0x001c = 28
-                                                wear_hex = rv[4:8]
-                                                wear_used = int(wear_hex, 16)
-                                            else:
-                                                wear_used = int(rv)
-
-                                            if wear_used is None or wear_used < 0 or wear_used > 100:
-                                                wear_used = max(0, min(100, 100 - int(normalized_value)))
-
-                                            smart_data['media_wearout_indicator'] = wear_used                   
-                                            smart_data['ssd_life_left'] = max(0, 100 - wear_used)              
-
-                                        except Exception as e:
-                                            # print(f"[v0] Error parsing Media_Wearout_Indicator (ID 230): {e}")
-                                            pass
-                                    elif attr_id == '233':  # Media_Wearout_Indicator (Intel/Samsung SSD)
-                                        # Valor normalizado: 100 = nuevo, 0 = gastado
-                                        # Invertimos para mostrar desgaste: 0% = nuevo, 100% = gastado
+                                    elif attr_id == 233:  # Media_Wearout_Indicator (Intel/Samsung SSD)
+                                        # Normalized: 100=new, 0=worn → invert to get wear used %
                                         smart_data['media_wearout_indicator'] = 100 - normalized_value
-                                        # print(f"[v0] Media Wearout Indicator (ID 233): {smart_data['media_wearout_indicator']}% used")
-                                        pass
-                                    elif attr_id == '177':  # Wear_Leveling_Count
-                                        # Valor normalizado: 100 = nuevo, 0 = gastado
+
+                                    elif attr_id == 177:  # Wear_Leveling_Count
+                                        # Normalized: 100=new, 0=worn → invert to get wear used %
                                         smart_data['wear_leveling_count'] = 100 - normalized_value
-                                        # print(f"[v0] Wear Leveling Count (ID 177): {smart_data['wear_leveling_count']}% used")
-                                        pass
-                                    elif attr_id == '202':  # Percentage_Lifetime_Remain (algunos fabricantes)
-                                        # Valor normalizado: 100 = nuevo, 0 = gastado
+
+                                    elif attr_id == 202:  # Percentage_Lifetime_Remain
+                                        # Normalized: 100=new, 0=worn → value IS life remaining
                                         smart_data['ssd_life_left'] = normalized_value
-                                        # print(f"[v0] SSD Life Left (ID 202): {smart_data['ssd_life_left']}%")
-                                        pass
-                                    elif attr_id == '231':  # SSD_Life_Left (algunos fabricantes)
+
+                                    elif attr_id == 231:  # SSD_Life_Left
+                                        # Normalized: value IS life remaining %
                                         smart_data['ssd_life_left'] = normalized_value
-                                        # print(f"[v0] SSD Life Left (ID 231): {smart_data['ssd_life_left']}%")
-                                        pass
-                                    elif attr_id == '241':  # Total_LBAs_Written
-                                        # Convertir a GB (raw_value es en sectores de 512 bytes)
-                                        try:
-                                            raw_int = int(raw_value.replace(',', ''))
-                                            total_gb = (raw_int * 512) / (1024 * 1024 * 1024)
-                                            smart_data['total_lbas_written'] = round(total_gb, 2)
-                                            # print(f"[v0] Total LBAs Written (ID 241): {smart_data['total_lbas_written']} GB")
-                                            pass
-                                        except ValueError:
-                                            pass
+                                    elif attr_id == 241:  # Total_LBAs_Written / Host_Writes_GiB
+                                        attr_name = attr.get('name', '')
+                                        if 'gib' in attr_name.lower() or '_gb' in attr_name.lower():
+                                            # WD/Kingston: raw value already in GiB
+                                            smart_data['total_lbas_written'] = round(raw_value, 2)
+                                        else:
+                                            # Standard: raw value in LBA sectors (512 bytes each)
+                                            try:
+                                                total_gb = (raw_value * 512) / (1024 * 1024 * 1024)
+                                                smart_data['total_lbas_written'] = round(total_gb, 2)
+                                            except (ValueError, TypeError):
+                                                pass
                             
                             # If we got good data, break out of the loop
                             if smart_data['model'] != 'Unknown' and smart_data['serial'] != 'Unknown':
@@ -6585,7 +6566,27 @@ def api_smart_status(disk_name):
                     result['test_history'] = _get_smart_history(disk_name, limit=10)
             except (json.JSONDecodeError, IOError):
                 pass
-        
+
+        # Get device identity via smartctl (works for both NVMe and SATA)
+        _sctl_identity = {}
+        try:
+            _sctl_proc = subprocess.run(
+                ['smartctl', '-a', '--json=c', device],
+                capture_output=True, text=True, timeout=15
+            )
+            _sctl_data = json.loads(_sctl_proc.stdout)
+            _sctl_identity = {
+                'model': _sctl_data.get('model_name', ''),
+                'serial': _sctl_data.get('serial_number', ''),
+                'firmware': _sctl_data.get('firmware_version', ''),
+                'nvme_version': _sctl_data.get('nvme_version', {}).get('string', ''),
+                'capacity_bytes': _sctl_data.get('user_capacity', {}).get('bytes', 0),
+                'smart_passed': _sctl_data.get('smart_status', {}).get('passed'),
+                'smartctl_messages': [m.get('string', '') for m in _sctl_data.get('smartctl', {}).get('messages', [])],
+            }
+        except Exception:
+            pass
+
         # Get current SMART status
         if is_nvme:
             # NVMe: Check for running test and get self-test log using JSON format
@@ -6642,7 +6643,11 @@ def api_smart_status(disk_name):
                 pass
             except Exception:
                 pass
-            
+
+            # NVMe always supports progress reporting via nvme self-test-log
+            result['supports_progress_reporting'] = True
+            result['supports_self_test'] = True
+
             # Get smart-log data (JSON format)
             try:
                 proc = subprocess.run(
@@ -6654,34 +6659,50 @@ def api_smart_status(disk_name):
                         nvme_data = json.loads(proc.stdout)
                     except json.JSONDecodeError:
                         nvme_data = {}
-                    
-                    # Check health
+
+                    # Normalise temperature: nvme-cli reports in Kelvin when > 200
+                    raw_temp = nvme_data.get('temperature', 0)
+                    temp_celsius = raw_temp - 273 if raw_temp > 200 else raw_temp
+
+                    # Check health: critical_warning == 0 and media_errors == 0 is ideal
                     crit_warn = nvme_data.get('critical_warning', 0)
-                    result['smart_status'] = 'passed' if crit_warn == 0 else 'warning'
-                    
+                    media_err = nvme_data.get('media_errors', 0)
+                    if crit_warn != 0 or media_err != 0:
+                        result['smart_status'] = 'warning' if crit_warn != 0 else 'passed'
+                    else:
+                        result['smart_status'] = 'passed'
+                    # Override with smartctl smart_status if available
+                    if _sctl_identity.get('smart_passed') is True:
+                        result['smart_status'] = 'passed'
+                    elif _sctl_identity.get('smart_passed') is False:
+                        result['smart_status'] = 'failed'
+
                     # Convert NVMe data to attributes format for UI compatibility
                     nvme_attrs = []
                     nvme_field_map = [
-                        ('critical_warning', 'Critical Warning', lambda v: 'OK' if v == 0 else 'Warning'),
-                        ('temperature', 'Temperature', lambda v: f"{v - 273 if v > 200 else v}°C"),
-                        ('avail_spare', 'Available Spare', lambda v: f"{v}%"),
-                        ('spare_thresh', 'Spare Threshold', lambda v: f"{v}%"),
-                        ('percent_used', 'Percent Used', lambda v: f"{v}%"),
-                        ('data_units_read', 'Data Units Read', lambda v: f"{v:,}"),
-                        ('data_units_written', 'Data Units Written', lambda v: f"{v:,}"),
-                        ('host_read_commands', 'Host Read Commands', lambda v: f"{v:,}"),
-                        ('host_write_commands', 'Host Write Commands', lambda v: f"{v:,}"),
-                        ('power_cycles', 'Power Cycles', lambda v: f"{v:,}"),
-                        ('power_on_hours', 'Power On Hours', lambda v: f"{v:,}"),
-                        ('unsafe_shutdowns', 'Unsafe Shutdowns', lambda v: f"{v:,}"),
-                        ('media_errors', 'Media Errors', lambda v: f"{v:,}"),
-                        ('num_err_log_entries', 'Error Log Entries', lambda v: f"{v:,}"),
+                        ('critical_warning',                    'Critical Warning',         lambda v: 'OK' if v == 0 else f'0x{v:02X}'),
+                        ('temperature',                         'Temperature',              lambda v: f"{v - 273 if v > 200 else v}°C"),
+                        ('avail_spare',                         'Available Spare',          lambda v: f"{v}%"),
+                        ('spare_thresh',                        'Available Spare Threshold',lambda v: f"{v}%"),
+                        ('percent_used',                        'Percentage Used',          lambda v: f"{v}%"),
+                        ('endurance_grp_critical_warning_summary', 'Endurance Group Warning', lambda v: 'OK' if v == 0 else f'0x{v:02X}'),
+                        ('data_units_read',                     'Data Units Read',          lambda v: f"{v:,}"),
+                        ('data_units_written',                  'Data Units Written',       lambda v: f"{v:,}"),
+                        ('host_read_commands',                  'Host Read Commands',       lambda v: f"{v:,}"),
+                        ('host_write_commands',                 'Host Write Commands',      lambda v: f"{v:,}"),
+                        ('controller_busy_time',                'Controller Busy Time',     lambda v: f"{v:,} min"),
+                        ('power_cycles',                        'Power Cycles',             lambda v: f"{v:,}"),
+                        ('power_on_hours',                      'Power On Hours',           lambda v: f"{v:,}"),
+                        ('unsafe_shutdowns',                    'Unsafe Shutdowns',         lambda v: f"{v:,}"),
+                        ('media_errors',                        'Media Errors',             lambda v: f"{v:,}"),
+                        ('num_err_log_entries',                 'Error Log Entries',        lambda v: f"{v:,}"),
+                        ('warning_temp_time',                   'Warning Temp Time',        lambda v: f"{v:,} min"),
+                        ('critical_comp_time',                  'Critical Temp Time',       lambda v: f"{v:,} min"),
                     ]
-                    
+
                     for i, (field, name, formatter) in enumerate(nvme_field_map, start=1):
                         if field in nvme_data:
                             raw_val = nvme_data[field]
-                            # Determine status based on field type
                             if field == 'critical_warning':
                                 status = 'ok' if raw_val == 0 else 'critical'
                             elif field == 'media_errors':
@@ -6693,9 +6714,13 @@ def api_smart_status(disk_name):
                                 status = 'ok' if raw_val > thresh else 'warning'
                             elif field == 'unsafe_shutdowns':
                                 status = 'ok' if raw_val < 100 else 'warning'
+                            elif field in ('warning_temp_time', 'critical_comp_time'):
+                                status = 'ok' if raw_val == 0 else 'warning'
+                            elif field == 'endurance_grp_critical_warning_summary':
+                                status = 'ok' if raw_val == 0 else 'warning'
                             else:
                                 status = 'ok'
-                            
+
                             nvme_attrs.append({
                                 'id': i,
                                 'name': name,
@@ -6705,14 +6730,52 @@ def api_smart_status(disk_name):
                                 'raw_value': str(raw_val),
                                 'status': status
                             })
-                    
+
+                    # Temperature sensors array (composite + hotspot)
+                    temp_sensors = nvme_data.get('temperature_sensors', [])
+                    temp_sensors_celsius = []
+                    for s in temp_sensors:
+                        if s is not None:
+                            temp_sensors_celsius.append(s - 273 if s > 200 else s)
+                        else:
+                            temp_sensors_celsius.append(None)
+
                     result['smart_data'] = {
-                        'attributes': nvme_attrs,
+                        'device': disk_name,
+                        'model': _sctl_identity.get('model', 'Unknown'),
+                        'serial': _sctl_identity.get('serial', 'Unknown'),
+                        'firmware': _sctl_identity.get('firmware', 'Unknown'),
+                        'nvme_version': _sctl_identity.get('nvme_version', ''),
+                        'smart_status': result.get('smart_status', 'unknown'),
+                        'temperature': temp_celsius,
+                        'temperature_sensors': temp_sensors_celsius,
                         'power_on_hours': nvme_data.get('power_on_hours', 0),
-                        'temperature': nvme_data.get('temperature', 0) - 273 if nvme_data.get('temperature', 0) > 200 else nvme_data.get('temperature', 0),
-                        'nvme_raw': nvme_data
+                        'power_cycles': nvme_data.get('power_cycles', 0),
+                        'supports_progress_reporting': True,
+                        'attributes': nvme_attrs,
+                        'nvme_raw': {
+                            'critical_warning':                     nvme_data.get('critical_warning', 0),
+                            'temperature':                          temp_celsius,
+                            'avail_spare':                          nvme_data.get('avail_spare', 100),
+                            'spare_thresh':                         nvme_data.get('spare_thresh', 10),
+                            'percent_used':                         nvme_data.get('percent_used', 0),
+                            'endurance_grp_critical_warning_summary': nvme_data.get('endurance_grp_critical_warning_summary', 0),
+                            'data_units_read':                      nvme_data.get('data_units_read', 0),
+                            'data_units_written':                   nvme_data.get('data_units_written', 0),
+                            'host_read_commands':                   nvme_data.get('host_read_commands', 0),
+                            'host_write_commands':                  nvme_data.get('host_write_commands', 0),
+                            'controller_busy_time':                 nvme_data.get('controller_busy_time', 0),
+                            'power_cycles':                         nvme_data.get('power_cycles', 0),
+                            'power_on_hours':                       nvme_data.get('power_on_hours', 0),
+                            'unsafe_shutdowns':                     nvme_data.get('unsafe_shutdowns', 0),
+                            'media_errors':                         nvme_data.get('media_errors', 0),
+                            'num_err_log_entries':                  nvme_data.get('num_err_log_entries', 0),
+                            'warning_temp_time':                    nvme_data.get('warning_temp_time', 0),
+                            'critical_comp_time':                   nvme_data.get('critical_comp_time', 0),
+                            'temperature_sensors':                  temp_sensors_celsius,
+                        }
                     }
-                    
+
                     # Update last_test with power_on_hours if available
                     if 'last_test' in result and nvme_data.get('power_on_hours'):
                         result['last_test']['lifetime_hours'] = nvme_data['power_on_hours']
@@ -6723,79 +6786,170 @@ def api_smart_status(disk_name):
             except Exception as e:
                 result['nvme_error'] = str(e)
         else:
-            # SATA/SAS: Check for running test
+            # SATA/SAS/SSD: Single JSON call gives all data at once
             proc = subprocess.run(
-                ['smartctl', '-c', device],
-                capture_output=True, text=True, timeout=10
+                ['smartctl', '-a', '--json=c', device],
+                capture_output=True, text=True, timeout=30
             )
-            if 'Self-test routine in progress' in proc.stdout or '% of test remaining' in proc.stdout:
+            # Parse JSON regardless of exit code — smartctl uses bit-flags for non-fatal conditions
+            data = {}
+            try:
+                data = json.loads(proc.stdout)
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+            ata_data = data.get('ata_smart_data', {})
+            capabilities = ata_data.get('capabilities', {})
+
+            # --- Detect test in progress ---
+            self_test_block = ata_data.get('self_test', {})
+            st_status = self_test_block.get('status', {})
+            st_value = st_status.get('value', 0)
+            remaining_pct = st_status.get('remaining_percent')
+            # smartctl status value 241 (0xF1) = self-test in progress
+            if st_value == 241 or (remaining_pct is not None and 0 < remaining_pct <= 100):
                 result['status'] = 'running'
-                # Extract progress percentage
-                match = re.search(r'(\d+)% of test remaining', proc.stdout)
-                if match:
-                    result['progress'] = 100 - int(match.group(1))
-            
-            # Get SMART health
-            proc = subprocess.run(
-                ['smartctl', '-H', device],
-                capture_output=True, text=True, timeout=10
-            )
-            if 'PASSED' in proc.stdout:
+                if remaining_pct is not None:
+                    result['progress'] = 100 - remaining_pct
+            # Fallback text detection in case JSON misses it
+            if result['status'] != 'running':
+                try:
+                    cproc = subprocess.run(['smartctl', '-c', device], capture_output=True, text=True, timeout=10)
+                    if 'Self-test routine in progress' in cproc.stdout or '% of test remaining' in cproc.stdout:
+                        result['status'] = 'running'
+                        match = re.search(r'(\d+)% of test remaining', cproc.stdout)
+                        if match:
+                            result['progress'] = 100 - int(match.group(1))
+                except Exception:
+                    pass
+
+            # --- Progress reporting capability ---
+            # Disks without self_test block (e.g. Phison/Kingston) cannot report test progress
+            has_self_test_block = 'self_test' in ata_data
+            supports_self_test = capabilities.get('self_tests_supported', False) or has_self_test_block
+            result['supports_progress_reporting'] = has_self_test_block
+            result['supports_self_test'] = supports_self_test
+
+            # --- SMART health status ---
+            if data.get('smart_status', {}).get('passed') is True:
                 result['smart_status'] = 'passed'
-            elif 'FAILED' in proc.stdout:
+            elif data.get('smart_status', {}).get('passed') is False:
                 result['smart_status'] = 'failed'
             else:
                 result['smart_status'] = 'unknown'
-            
-            # Get SMART attributes
-            proc = subprocess.run(
-                ['smartctl', '-A', device],
-                capture_output=True, text=True, timeout=10
-            )
-            if proc.returncode == 0:
-                attrs = _parse_smart_attributes(proc.stdout.split('\n'))
-                result['smart_data'] = {'attributes': attrs}
-            
-            # Get self-test log for last test result
-            proc = subprocess.run(
-                ['smartctl', '-l', 'selftest', device],
-                capture_output=True, text=True, timeout=10
-            )
-            if proc.returncode == 0:
-                lines = proc.stdout.split('\n')
-                for line in lines:
-                    if line.startswith('# ') or line.startswith('#  '):
-                        # Format: # 1  Short offline       Completed without error       00%     18453         -
-                        test_type = 'short' if 'Short' in line else 'long' if 'Extended' in line or 'Long' in line else 'unknown'
-                        test_status = 'passed' if 'Completed without error' in line or 'without error' in line.lower() else 'failed'
-                        
-                        # Extract completion status text (everything between test type and percentage)
-                        completion_text = ''
-                        if 'Completed' in line:
-                            match = re.search(r'(Completed[^0-9%]+)', line)
-                            if match:
-                                completion_text = match.group(1).strip()
-                        elif 'without error' in line.lower():
-                            completion_text = 'Completed without error'
-                        
-                        # Extract lifetime hours (power-on hours when test completed)
-                        lifetime_hours = None
-                        parts = line.split()
-                        for i, p in enumerate(parts):
-                            if p.endswith('%') and i + 1 < len(parts):
-                                try:
-                                    lifetime_hours = int(parts[i + 1])
-                                except ValueError:
-                                    pass
-                                break
-                        
-                        result['last_test'] = {
-                            'type': test_type,
-                            'status': test_status,
-                            'timestamp': completion_text or 'Completed',
-                            'lifetime_hours': lifetime_hours
-                        }
-                        break
+
+            # --- Device identity fields ---
+            model_family = data.get('model_family', '')
+            form_factor = data.get('form_factor', {}).get('name', '')
+            physical_block_size = data.get('physical_block_size', 512)
+            trim_supported = data.get('trim', {}).get('supported', False)
+            sata_version = data.get('sata_version', {}).get('string', '')
+            interface_speed = data.get('interface_speed', {}).get('current', {}).get('string', '')
+
+            # --- Self-test polling times ---
+            polling_short = self_test_block.get('polling_minutes', {}).get('short')
+            polling_extended = self_test_block.get('polling_minutes', {}).get('extended')
+
+            # --- Error log count ---
+            error_log_count = data.get('ata_smart_error_log', {}).get('summary', {}).get('count', 0)
+
+            # --- Self-test history ---
+            st_table = data.get('ata_smart_self_test_log', {}).get('standard', {}).get('table', [])
+            self_test_history = []
+            for entry in st_table:
+                type_str = entry.get('type', {}).get('string', 'Unknown')
+                t_norm = 'short' if 'Short' in type_str else 'long' if ('Extended' in type_str or 'Long' in type_str) else 'other'
+                st_entry = entry.get('status', {})
+                passed_flag = st_entry.get('passed', True)
+                self_test_history.append({
+                    'type': t_norm,
+                    'type_str': type_str,
+                    'status': 'passed' if passed_flag else 'failed',
+                    'status_str': st_entry.get('string', ''),
+                    'lifetime_hours': entry.get('lifetime_hours'),
+                })
+
+            if self_test_history:
+                result['last_test'] = {
+                    'type': self_test_history[0]['type'],
+                    'status': self_test_history[0]['status'],
+                    'timestamp': self_test_history[0]['status_str'] or 'Completed',
+                    'lifetime_hours': self_test_history[0]['lifetime_hours']
+                }
+
+            # --- Parse SMART attributes from JSON ---
+            ata_attrs = data.get('ata_smart_attributes', {}).get('table', [])
+            attrs = []
+            for attr in ata_attrs:
+                attr_id = attr.get('id')
+                name = attr.get('name', '')
+                value = attr.get('value', 0)
+                worst = attr.get('worst', 0)
+                thresh = attr.get('thresh', 0)
+                raw_obj = attr.get('raw', {})
+                raw_value = raw_obj.get('string', str(raw_obj.get('value', 0)))
+                flags = attr.get('flags', {})
+                prefailure = flags.get('prefailure', False)
+                when_failed = attr.get('when_failed', '')
+
+                if when_failed == 'now':
+                    status = 'critical'
+                elif prefailure and thresh > 0 and value <= thresh:
+                    status = 'critical'
+                elif prefailure and thresh > 0 and value <= thresh + 10:
+                    status = 'warning'
+                else:
+                    status = 'ok'
+
+                attrs.append({
+                    'id': attr_id,
+                    'name': name,
+                    'value': value,
+                    'worst': worst,
+                    'threshold': thresh,
+                    'raw_value': raw_value,
+                    'status': status,
+                    'prefailure': prefailure,
+                    'flags': flags.get('string', '').strip()
+                })
+
+            # Fallback: if JSON gave no attributes, try text parser
+            if not attrs:
+                try:
+                    aproc = subprocess.run(['smartctl', '-A', device], capture_output=True, text=True, timeout=10)
+                    if aproc.returncode == 0:
+                        attrs = _parse_smart_attributes(aproc.stdout.split('\n'))
+                except Exception:
+                    pass
+
+            # --- Build enriched smart_data ---
+            temp = data.get('temperature', {}).get('current', 0)
+            poh = data.get('power_on_time', {}).get('hours', 0)
+            cycles = data.get('power_cycle_count', 0)
+
+            result['smart_data'] = {
+                'device': disk_name,
+                'model': data.get('model_name', 'Unknown'),
+                'model_family': model_family,
+                'serial': data.get('serial_number', 'Unknown'),
+                'firmware': data.get('firmware_version', 'Unknown'),
+                'smart_status': result.get('smart_status', 'unknown'),
+                'temperature': temp,
+                'power_on_hours': poh,
+                'power_cycles': cycles,
+                'rotation_rate': data.get('rotation_rate', 0),
+                'form_factor': form_factor,
+                'physical_block_size': physical_block_size,
+                'trim_supported': trim_supported,
+                'sata_version': sata_version,
+                'interface_speed': interface_speed,
+                'polling_minutes_short': polling_short,
+                'polling_minutes_extended': polling_extended,
+                'supports_progress_reporting': has_self_test_block,
+                'error_log_count': error_log_count,
+                'self_test_history': self_test_history,
+                'attributes': attrs
+            }
         
         return jsonify(result)
     except subprocess.TimeoutExpired:

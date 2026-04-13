@@ -1509,12 +1509,18 @@ export function StorageOverview() {
                             : `${(dataWrittenTB * 1024).toFixed(2)} GB`
                         }
                         
-                        // Get wear percentage
+                        // Get wear percentage (life remaining %)
                         let wearPercent: number | null = null
                         let wearLabel = 'Life Remaining'
                         if (wearAttr) {
-                          wearPercent = wearAttr.value
-                          wearLabel = wearAttr.name?.replace(/_/g, ' ') || 'Life Remaining'
+                          if (wearAttr.id === 230) {
+                            // Media_Wearout_Indicator (WD/SanDisk): value = endurance used %
+                            wearPercent = 100 - wearAttr.value
+                          } else {
+                            // Standard: value = normalized life remaining %
+                            wearPercent = wearAttr.value
+                          }
+                          wearLabel = 'Life Remaining'
                         } else if (nvmeHealth?.percentage_used !== undefined) {
                           wearPercent = 100 - (nvmeHealth.percentage_used as number)
                           wearLabel = 'Life Remaining'
@@ -1544,18 +1550,18 @@ export function StorageOverview() {
                         if (wearPercent !== null || dataWrittenLabel) {
                           return (
                             <>
-                              {/* Wear Progress Bar - Same style as NVMe */}
+                              {/* Wear Progress Bar - Blue style matching NVMe */}
                               {wearPercent !== null && (
                                 <div>
                                   <div className="flex items-center justify-between mb-2">
                                     <p className="text-sm text-muted-foreground">{wearLabel}</p>
-                                    <p className={`font-medium ${wearPercent < 20 ? 'text-red-400' : wearPercent < 50 ? 'text-yellow-400' : 'text-green-400'}`}>
+                                    <p className="font-medium text-blue-400">
                                       {wearPercent}%
                                     </p>
                                   </div>
                                   <Progress
                                     value={wearPercent}
-                                    className={`h-2 ${wearPercent < 20 ? '[&>div]:bg-red-500' : wearPercent < 50 ? '[&>div]:bg-yellow-500' : '[&>div]:bg-green-500'}`}
+                                    className={`h-2 ${wearPercent < 20 ? '[&>div]:bg-red-500' : '[&>div]:bg-blue-500'}`}
                                   />
                                 </div>
                               )}
@@ -1686,7 +1692,7 @@ export function StorageOverview() {
           
           {/* SMART Test Tab */}
           {selectedDisk && activeModalTab === "smart" && (
-            <SmartTestTab disk={selectedDisk} observations={diskObservations} />
+            <SmartTestTab disk={selectedDisk} observations={diskObservations} lastTestDate={smartJsonData?.timestamp || undefined} />
           )}
           
           {/* Schedule Tab */}
@@ -1701,11 +1707,35 @@ export function StorageOverview() {
 }
 
 // Generate SMART Report HTML and open in new window (same pattern as Lynis/Latency reports)
-function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttributes: Array<{id: number; name: string; value: number; worst: number; threshold: number; raw_value: string; status: 'ok' | 'warning' | 'critical'}>, observations: DiskObservation[] = []) {
+function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttributes: SmartAttribute[], observations: DiskObservation[] = []) {
   const now = new Date().toLocaleString()
   const logoUrl = `${window.location.origin}/images/proxmenux-logo.png`
   const reportId = `SMART-${Date.now().toString(36).toUpperCase()}`
-  
+
+  // --- Enriched device fields from smart_data ---
+  const sd = testStatus.smart_data
+  const modelFamily   = sd?.model_family   || ''
+  const formFactor    = sd?.form_factor    || ''
+  const physBlockSize = sd?.physical_block_size ?? 512
+  const trimSupported = sd?.trim_supported ?? false
+  const sataVersion   = sd?.sata_version   || ''
+  const ifaceSpeed    = sd?.interface_speed || ''
+  const pollingShort  = sd?.polling_minutes_short
+  const pollingExt    = sd?.polling_minutes_extended
+  const errorLogCount = sd?.error_log_count ?? 0
+  const selfTestHistory = sd?.self_test_history || []
+
+  // SMR detection (WD Red without Plus, known SMR families)
+  const isSMR = modelFamily.toLowerCase().includes('smr') ||
+    /WD (Red|Blue|Green) \d/.test(modelFamily) ||
+    /WDC WD\d{4}[EZ]/.test(disk.model || '')
+
+  // Seagate proprietary Raw_Read_Error_Rate detection
+  const isSeagate = modelFamily.toLowerCase().includes('seagate') ||
+    modelFamily.toLowerCase().includes('barracuda') ||
+    modelFamily.toLowerCase().includes('ironwolf') ||
+    (disk.model || '').startsWith('ST')
+
   // Determine disk type
   let diskType = "HDD"
   if (disk.name.startsWith("nvme")) {
@@ -1720,14 +1750,15 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
   const healthColor = isHealthy ? '#16a34a' : healthStatus.toLowerCase() === 'failed' ? '#dc2626' : '#ca8a04'
   const healthLabel = isHealthy ? 'PASSED' : healthStatus.toUpperCase()
   
-  // Format power on time
+  // Format power on time — force 'en' locale for consistent comma separator
+  const fmtNum = (n: number) => n.toLocaleString('en-US')
   const powerOnHours = disk.power_on_hours || testStatus.smart_data?.power_on_hours || 0
   const powerOnDays = Math.round(powerOnHours / 24)
   const powerOnYears = Math.floor(powerOnHours / 8760)
   const powerOnRemainingDays = Math.floor((powerOnHours % 8760) / 24)
-  const powerOnFormatted = powerOnYears > 0 
-    ? `${powerOnYears}y ${powerOnRemainingDays}d (${powerOnHours.toLocaleString()}h)`
-    : `${powerOnDays}d (${powerOnHours.toLocaleString()}h)`
+  const powerOnFormatted = powerOnYears > 0
+    ? `${powerOnYears}y ${powerOnRemainingDays}d (${fmtNum(powerOnHours)}h)`
+    : `${powerOnDays}d (${fmtNum(powerOnHours)}h)`
   
   // Build attributes table - format differs for NVMe vs SATA
   const isNvmeForTable = diskType === 'NVMe'
@@ -1921,9 +1952,38 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
     recommendations.push(`<div class="rec-item rec-warn"><div class="rec-icon">&#9888;</div><div><strong>High Temperature (${disk.temperature}°C)</strong><p>NVMe is overheating. Consider adding a heatsink or improving case airflow.</p></div></div>`)
   }
   
+  // NVMe critical warning
+  if (diskType === 'NVMe') {
+    const critWarnVal = testStatus.smart_data?.nvme_raw?.critical_warning ?? 0
+    const mediaErrVal = testStatus.smart_data?.nvme_raw?.media_errors ?? 0
+    const unsafeVal   = testStatus.smart_data?.nvme_raw?.unsafe_shutdowns ?? 0
+    if (critWarnVal !== 0) {
+      recommendations.push(`<div class="rec-item rec-critical"><div class="rec-icon">&#10007;</div><div><strong>NVMe Critical Warning Active (0x${critWarnVal.toString(16).toUpperCase()})</strong><p>The NVMe controller has raised an alert flag. Back up data immediately and investigate further.</p></div></div>`)
+    }
+    if (mediaErrVal > 0) {
+      recommendations.push(`<div class="rec-item rec-critical"><div class="rec-icon">&#10007;</div><div><strong>NVMe Media Errors Detected (${mediaErrVal})</strong><p>Unrecoverable errors in NAND flash cells. Any non-zero value indicates physical flash damage. Back up data and plan for replacement.</p></div></div>`)
+    }
+    if (unsafeVal > 200) {
+      recommendations.push(`<div class="rec-item rec-warn"><div class="rec-icon">&#9888;</div><div><strong>High Unsafe Shutdown Count (${unsafeVal})</strong><p>Frequent power losses without proper shutdown increase the risk of firmware corruption. Ensure stable power supply or use a UPS.</p></div></div>`)
+    }
+  }
+
+  // Seagate Raw_Read_Error_Rate note
+  if (isSeagate) {
+    const hasRawReadAttr = smartAttributes.some(a => a.name === 'Raw_Read_Error_Rate' || a.id === 1)
+    if (hasRawReadAttr) {
+      recommendations.push('<div class="rec-item rec-info"><div class="rec-icon">&#9432;</div><div><strong>Seagate Raw_Read_Error_Rate — Normal Behavior</strong><p>Seagate drives report very large raw values for attribute #1 (Raw_Read_Error_Rate). This is expected and uses a proprietary formula — a high raw number does NOT indicate errors. Only the normalized value (column Val) matters, and it should remain at 100.</p></div></div>')
+    }
+  }
+
+  // SMR disk note
+  if (isSMR) {
+    recommendations.push('<div class="rec-item rec-info"><div class="rec-icon">&#9432;</div><div><strong>SMR Drive Detected — Write Limitations</strong><p>This appears to be a Shingled Magnetic Recording (SMR) disk. SMR drives have slower random-write performance and may stall during heavy mixed workloads. They are suitable for sequential workloads (backups, archives) but not recommended as primary Proxmox storage or ZFS vdevs.</p></div></div>')
+  }
+
   if (recommendations.length === 1 && isHealthy) {
-  recommendations.push('<div class="rec-item rec-info"><div class="rec-icon">&#9432;</div><div><strong>Regular Maintenance</strong><p>Schedule periodic extended SMART tests (monthly) to catch issues early.</p></div></div>')
-  recommendations.push('<div class="rec-item rec-info"><div class="rec-icon">&#9432;</div><div><strong>Backup Strategy</strong><p>Ensure critical data is backed up regularly regardless of disk health status.</p></div></div>')
+    recommendations.push('<div class="rec-item rec-info"><div class="rec-icon">&#9432;</div><div><strong>Regular Maintenance</strong><p>Schedule periodic extended SMART tests (monthly) to catch issues early.</p></div></div>')
+    recommendations.push('<div class="rec-item rec-info"><div class="rec-icon">&#9432;</div><div><strong>Backup Strategy</strong><p>Ensure critical data is backed up regularly regardless of disk health status.</p></div></div>')
   }
   
   // Build observations HTML separately to avoid nested template literal issues
@@ -2255,11 +2315,11 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
   <div class="grid-4">
     <div class="card">
       <div class="card-label">Model</div>
-      <div class="card-value" style="font-size:11px;">${disk.model || testStatus.smart_data?.model || 'Unknown'}</div>
+      <div class="card-value" style="font-size:11px;">${disk.model || sd?.model || 'Unknown'}</div>
     </div>
     <div class="card">
       <div class="card-label">Serial</div>
-      <div class="card-value" style="font-size:11px;font-family:monospace;">${disk.serial || testStatus.smart_data?.serial || 'Unknown'}</div>
+      <div class="card-value" style="font-size:11px;font-family:monospace;">${disk.serial || sd?.serial || 'Unknown'}</div>
     </div>
     <div class="card">
       <div class="card-label">Capacity</div>
@@ -2270,6 +2330,14 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
       <div class="card-value" style="font-size:11px;">${diskType === 'HDD' && disk.rotation_rate ? `HDD ${disk.rotation_rate} RPM` : diskType}</div>
     </div>
   </div>
+  ${(modelFamily || formFactor || sataVersion || ifaceSpeed) ? `
+  <div class="grid-4" style="margin-top:8px;">
+    ${modelFamily ? `<div class="card"><div class="card-label">Family</div><div class="card-value" style="font-size:11px;">${modelFamily}</div></div>` : ''}
+    ${formFactor ? `<div class="card"><div class="card-label">Form Factor</div><div class="card-value" style="font-size:11px;">${formFactor}</div></div>` : ''}
+    ${sataVersion ? `<div class="card"><div class="card-label">Interface</div><div class="card-value" style="font-size:11px;">${sataVersion}${ifaceSpeed ? ` · ${ifaceSpeed}` : ''}</div></div>` : (ifaceSpeed ? `<div class="card"><div class="card-label">Link Speed</div><div class="card-value" style="font-size:11px;">${ifaceSpeed}</div></div>` : '')}
+    ${!isNvmeDisk ? `<div class="card"><div class="card-label">TRIM</div><div class="card-value" style="font-size:11px;color:${trimSupported ? '#16a34a' : '#94a3b8'};">${trimSupported ? 'Supported' : 'Not supported'}${physBlockSize === 4096 ? ' · 4K AF' : ''}</div></div>` : ''}
+  </div>
+  ` : ''}
   <div class="grid-4">
     <div class="card card-c">
       <div class="card-value" style="color:${getTempColorForReport(disk.temperature)}">${disk.temperature > 0 ? disk.temperature + '°C' : 'N/A'}</div>
@@ -2277,12 +2345,12 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
       <div style="font-size:9px;color:#475569;margin-top:2px;">Optimal: ${tempThresholds.optimal}</div>
     </div>
     <div class="card card-c">
-      <div class="card-value">${powerOnHours.toLocaleString()}h</div>
+      <div class="card-value">${fmtNum(powerOnHours)}h</div>
       <div class="card-label">Power On Time</div>
-      <div style="font-size:9px;color:#475569;margin-top:2px;">${powerOnYears}y ${powerOnDays}d</div>
+      <div style="font-size:9px;color:#475569;margin-top:2px;">${powerOnYears}y ${powerOnRemainingDays}d</div>
     </div>
     <div class="card card-c">
-      <div class="card-value">${(disk.power_cycles ?? 0).toLocaleString()}</div>
+      <div class="card-value">${fmtNum(disk.power_cycles ?? 0)}</div>
       <div class="card-label">Power Cycles</div>
     </div>
     <div class="card card-c">
@@ -2362,11 +2430,55 @@ ${isNvmeDisk ? `
         </div>
         <div>
           <div style="font-size:11px;color:#475569;">Power Cycles</div>
-          <div style="font-size:15px;font-weight:600;color:#1e293b;">${testStatus.smart_data?.nvme_raw?.power_cycles?.toLocaleString() ?? disk.power_cycles ?? 'N/A'}</div>
+          <div style="font-size:15px;font-weight:600;color:#1e293b;">${testStatus.smart_data?.nvme_raw?.power_cycles != null ? fmtNum(testStatus.smart_data.nvme_raw.power_cycles) : (disk.power_cycles ? fmtNum(disk.power_cycles) : 'N/A')}</div>
         </div>
       </div>
     </div>
   </div>
+
+  <!-- NVMe Extended Health Metrics -->
+  ${(() => {
+    const nr = testStatus.smart_data?.nvme_raw
+    if (!nr) return ''
+    const mediaErr = nr.media_errors ?? 0
+    const unsafeSd = nr.unsafe_shutdowns ?? 0
+    const critWarn = nr.critical_warning ?? 0
+    const warnTempMin = nr.warning_temp_time ?? 0
+    const critTempMin = nr.critical_comp_time ?? 0
+    const ctrlBusy = nr.controller_busy_time ?? 0
+    const errLog = nr.num_err_log_entries ?? 0
+    const dataReadTB = ((nr.data_units_read ?? 0) * 512 * 1024) / (1024 ** 4)
+    const hostReads = nr.host_read_commands ?? 0
+    const hostWrites = nr.host_write_commands ?? 0
+    const endGrpWarn = nr.endurance_grp_critical_warning_summary ?? 0
+    const sensors = (nr.temperature_sensors ?? []).filter((s: number | null) => s !== null) as number[]
+
+    const metricCard = (label: string, value: string, colorHex: string, note?: string) =>
+      `<div class="card"><div class="card-label">${label}</div><div class="card-value" style="font-size:12px;color:${colorHex};">${value}</div>${note ? `<div style="font-size:9px;color:#64748b;margin-top:2px;">${note}</div>` : ''}</div>`
+
+    return `
+    <div style="margin-top:16px;padding-top:16px;border-top:1px solid #e2e8f0;">
+      <div style="font-size:11px;font-weight:600;color:#475569;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">Extended NVMe Health</div>
+      <div class="grid-4">
+        ${metricCard('Critical Warning', critWarn === 0 ? 'None' : `0x${critWarn.toString(16).toUpperCase()}`, critWarn === 0 ? '#16a34a' : '#dc2626', 'Controller alert flags')}
+        ${metricCard('Media Errors', fmtNum(mediaErr), mediaErr === 0 ? '#16a34a' : '#dc2626', 'Flash cell damage')}
+        ${metricCard('Unsafe Shutdowns', fmtNum(unsafeSd), unsafeSd < 50 ? '#16a34a' : unsafeSd < 200 ? '#ca8a04' : '#dc2626', 'Power loss without flush')}
+        ${metricCard('Endurance Warning', endGrpWarn === 0 ? 'None' : `0x${endGrpWarn.toString(16).toUpperCase()}`, endGrpWarn === 0 ? '#16a34a' : '#ca8a04', 'Group endurance alert')}
+      </div>
+      <div class="grid-4" style="margin-top:8px;">
+        ${metricCard('Controller Busy', `${fmtNum(ctrlBusy)} min`, '#1e293b', 'Total busy time')}
+        ${metricCard('Error Log Entries', fmtNum(errLog), errLog === 0 ? '#16a34a' : '#ca8a04', 'May include benign artifacts')}
+        ${metricCard('Warning Temp Time', `${fmtNum(warnTempMin)} min`, warnTempMin === 0 ? '#16a34a' : '#ca8a04', 'Minutes in warning range')}
+        ${metricCard('Critical Temp Time', `${fmtNum(critTempMin)} min`, critTempMin === 0 ? '#16a34a' : '#dc2626', 'Minutes in critical range')}
+      </div>
+      <div class="grid-4" style="margin-top:8px;">
+        ${metricCard('Data Read', dataReadTB >= 1 ? dataReadTB.toFixed(2) + ' TB' : (dataReadTB * 1024).toFixed(1) + ' GB', '#1e293b', 'Total host reads')}
+        ${metricCard('Host Read Cmds', fmtNum(hostReads), '#1e293b', 'Total read commands')}
+        ${metricCard('Host Write Cmds', fmtNum(hostWrites), '#1e293b', 'Total write commands')}
+        ${sensors.length >= 2 ? metricCard('Hotspot Temp', `${sensors[1]}°C`, sensors[1] > 80 ? '#dc2626' : sensors[1] > 70 ? '#ca8a04' : '#16a34a', 'Sensor[1] hotspot') : '<div class="card"><div class="card-label">Sensors</div><div class="card-value" style="font-size:11px;color:#94a3b8;">N/A</div></div>'}
+      </div>
+    </div>`
+  })()}
 </div>
 ` : ''}
 
@@ -2385,22 +2497,31 @@ ${!isNvmeDisk && diskType === 'SSD' ? (() => {
     a.id === 241
   )
   
-  // Also check disk properties
-  const wearValue = wearAttr?.value ?? disk.wear_leveling_count ?? disk.ssd_life_left
-  
-  if (wearValue !== undefined && wearValue !== null) {
-    const lifeRemaining = wearValue // Usually this is percentage remaining
+  // Also check disk properties — cast to number since SmartAttribute.value is number | string
+  const wearRaw = (wearAttr?.value !== undefined ? Number(wearAttr.value) : undefined) ?? disk.wear_leveling_count ?? disk.ssd_life_left
+
+  if (wearRaw !== undefined && wearRaw !== null) {
+    // ID 230 (Media_Wearout_Indicator on WD/SanDisk): value = endurance used %
+    // All others (ID 177, 231, etc.): value = life remaining %
+    const lifeRemaining = (wearAttr?.id === 230) ? (100 - wearRaw) : wearRaw
     const lifeUsed = 100 - lifeRemaining
     
-    // Calculate data written from LBAs (LBA = 512 bytes)
+    // Calculate data written — detect unit from attribute name
     let dataWrittenTB = 0
     if (lbasWrittenAttr?.raw_value) {
       const rawValue = parseInt(lbasWrittenAttr.raw_value.replace(/[^0-9]/g, ''))
       if (!isNaN(rawValue)) {
-        dataWrittenTB = (rawValue * 512) / (1024 ** 4)
+        const attrName = (lbasWrittenAttr.name || '').toLowerCase()
+        if (attrName.includes('gib') || attrName.includes('_gb')) {
+          // Raw value already in GiB (WD Blue, Kingston, etc.)
+          dataWrittenTB = rawValue / 1024
+        } else {
+          // Raw value in LBAs — multiply by 512 bytes (Seagate, standard)
+          dataWrittenTB = (rawValue * 512) / (1024 ** 4)
+        }
       }
     } else if (disk.total_lbas_written) {
-      dataWrittenTB = disk.total_lbas_written / 1024 // Already in GB
+      dataWrittenTB = disk.total_lbas_written / 1024 // Already in GB from backend
     }
     
     return `
@@ -2448,7 +2569,7 @@ ${!isNvmeDisk && diskType === 'SSD' ? (() => {
         </div>
         <div>
           <div style="font-size:11px;color:#475569;">Power On Hours</div>
-          <div style="font-size:15px;font-weight:600;color:#1e293b;">${powerOnHours.toLocaleString()}h</div>
+          <div style="font-size:15px;font-weight:600;color:#1e293b;">${fmtNum(powerOnHours)}h</div>
         </div>
       </div>
       ` : ''}
@@ -2503,11 +2624,40 @@ ${!isNvmeDisk && diskType === 'SSD' ? (() => {
         <div class="card-label">Completed</div>
         <div class="card-value" style="font-size:11px;">${testStatus.last_test.timestamp || 'N/A'}</div>
       </div>
-  <div class="card">
-  <div class="card-label">At Power-On Hours</div>
-  <div class="card-value">${testStatus.last_test.lifetime_hours ? testStatus.last_test.lifetime_hours.toLocaleString() + 'h' : 'N/A'}</div>
-  </div>
+      <div class="card">
+        <div class="card-label">At Power-On Hours</div>
+        <div class="card-value">${testStatus.last_test.lifetime_hours ? fmtNum(testStatus.last_test.lifetime_hours) + 'h' : 'N/A'}</div>
+      </div>
     </div>
+    ${(pollingShort || pollingExt) ? `
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+      ${pollingShort ? `<div style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;padding:6px 12px;font-size:11px;color:#475569;"><strong>Short test:</strong> ~${pollingShort} min</div>` : ''}
+      ${pollingExt ? `<div style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;padding:6px 12px;font-size:11px;color:#475569;"><strong>Extended test:</strong> ~${pollingExt} min</div>` : ''}
+      ${errorLogCount > 0 ? `<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:6px 12px;font-size:11px;color:#92400e;"><strong>ATA error log:</strong> ${errorLogCount} entr${errorLogCount === 1 ? 'y' : 'ies'}</div>` : ''}
+    </div>` : ''}
+    ${selfTestHistory.length > 1 ? `
+    <div style="margin-top:14px;">
+      <div style="font-size:11px;font-weight:600;color:#475569;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Full Self-Test History (${selfTestHistory.length} entries)</div>
+      <table class="attr-tbl">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>At POH</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${selfTestHistory.map((e, i) => `
+          <tr>
+            <td style="color:#94a3b8;">${i + 1}</td>
+            <td style="text-transform:capitalize;">${e.type_str || e.type}</td>
+            <td><span class="f-tag" style="background:${e.status === 'passed' ? '#16a34a15' : '#dc262615'};color:${e.status === 'passed' ? '#16a34a' : '#dc2626'};">${e.status_str || e.status}</span></td>
+            <td style="font-family:monospace;">${e.lifetime_hours != null ? fmtNum(e.lifetime_hours) + 'h' : 'N/A'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>` : ''}
   ` : `
     <div style="text-align:center;padding:20px;color:#64748b;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
       No self-test history available. Run a SMART self-test to see results here.
@@ -2541,6 +2691,49 @@ ${observationsHtml}
 interface SmartTestTabProps {
   disk: DiskInfo
   observations?: DiskObservation[]
+  lastTestDate?: string
+}
+
+interface SmartSelfTestEntry {
+  type: 'short' | 'long' | 'other'
+  type_str: string
+  status: 'passed' | 'failed'
+  status_str: string
+  lifetime_hours: number | null
+}
+
+interface SmartAttribute {
+  id: number
+  name: string
+  value: number | string
+  worst: number | string
+  threshold: number | string
+  raw_value: string
+  status: 'ok' | 'warning' | 'critical'
+  prefailure?: boolean
+  flags?: string
+}
+
+interface NvmeRaw {
+  critical_warning: number
+  temperature: number
+  avail_spare: number
+  spare_thresh: number
+  percent_used: number
+  endurance_grp_critical_warning_summary: number
+  data_units_read: number
+  data_units_written: number
+  host_read_commands: number
+  host_write_commands: number
+  controller_busy_time: number
+  power_cycles: number
+  power_on_hours: number
+  unsafe_shutdowns: number
+  media_errors: number
+  num_err_log_entries: number
+  warning_temp_time: number
+  critical_comp_time: number
+  temperature_sensors: (number | null)[]
 }
 
 interface SmartTestStatus {
@@ -2548,6 +2741,8 @@ interface SmartTestStatus {
   test_type?: string
   progress?: number
   result?: string
+  supports_progress_reporting?: boolean
+  supports_self_test?: boolean
   last_test?: {
     type: string
     status: string
@@ -2558,20 +2753,28 @@ interface SmartTestStatus {
   smart_data?: {
     device: string
     model: string
+    model_family?: string
     serial: string
     firmware: string
+    nvme_version?: string
     smart_status: string
     temperature: number
+    temperature_sensors?: (number | null)[]
     power_on_hours: number
-    attributes: Array<{
-      id: number
-      name: string
-      value: number
-      worst: number
-      threshold: number
-      raw_value: string
-      status: 'ok' | 'warning' | 'critical'
-    }>
+    power_cycles?: number
+    rotation_rate?: number
+    form_factor?: string
+    physical_block_size?: number
+    trim_supported?: boolean
+    sata_version?: string
+    interface_speed?: string
+    polling_minutes_short?: number
+    polling_minutes_extended?: number
+    supports_progress_reporting?: boolean
+    error_log_count?: number
+    self_test_history?: SmartSelfTestEntry[]
+    attributes: SmartAttribute[]
+    nvme_raw?: NvmeRaw
   }
   tools_installed?: {
     smartctl: boolean
@@ -2579,7 +2782,7 @@ interface SmartTestStatus {
   }
 }
 
-function SmartTestTab({ disk, observations = [] }: SmartTestTabProps) {
+function SmartTestTab({ disk, observations = [], lastTestDate }: SmartTestTabProps) {
   const [testStatus, setTestStatus] = useState<SmartTestStatus>({ status: 'idle' })
   const [loading, setLoading] = useState(true)
   const [runningTest, setRunningTest] = useState<'short' | 'long' | null>(null)
@@ -2843,13 +3046,24 @@ function SmartTestTab({ disk, observations = [] }: SmartTestTabProps) {
                 {(runningTest || testStatus.test_type) === 'short' ? 'Short' : 'Extended'} test in progress
               </p>
               <p className="text-xs text-muted-foreground">
-                Please wait while the test completes...
+                Please wait while the test completes. Buttons will unlock when it finishes.
               </p>
             </div>
           </div>
-          {/* Only show progress bar if the disk reports progress percentage */}
-          {testStatus.progress !== undefined && (
+          {/* Progress bar if disk reports percentage */}
+          {testStatus.progress !== undefined ? (
             <Progress value={testStatus.progress} className="h-2 mt-3 [&>div]:bg-blue-500" />
+          ) : (
+            <>
+              <div className="h-2 mt-3 rounded-full bg-blue-500/20 overflow-hidden">
+                <div className="h-full w-1/3 bg-blue-500 rounded-full animate-[indeterminate_1.5s_ease-in-out_infinite]"
+                  style={{ animation: 'indeterminate 1.5s ease-in-out infinite' }} />
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-2 flex items-center gap-1">
+                <Info className="h-3 w-3 flex-shrink-0" />
+                This disk&apos;s firmware does not support progress reporting. The test is running in the background.
+              </p>
+            </>
           )}
         </div>
       )}
@@ -2860,6 +3074,11 @@ function SmartTestTab({ disk, observations = [] }: SmartTestTabProps) {
           <h4 className="font-semibold flex items-center gap-2">
             <FileText className="h-4 w-4" />
             Last Test Result
+            {lastTestDate && (
+              <span className="text-xs font-normal text-muted-foreground">
+                — {new Date(lastTestDate).toLocaleString()}
+              </span>
+            )}
           </h4>
           <div className={`border rounded-lg p-4 ${
             testStatus.last_test.status === 'passed' 
@@ -2893,7 +3112,7 @@ function SmartTestTab({ disk, observations = [] }: SmartTestTabProps) {
               {testStatus.last_test.lifetime_hours && (
                 <div>
                   <p className="text-muted-foreground">At Power-On Hours</p>
-                  <p className="font-medium">{testStatus.last_test.lifetime_hours.toLocaleString()}h</p>
+                  <p className="font-medium">{testStatus.last_test.lifetime_hours.toLocaleString('en-US')}h</p>
                 </div>
               )}
             </div>
