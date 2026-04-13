@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { HardDrive, Database, AlertTriangle, CheckCircle2, XCircle, Square, Thermometer, Archive, Info, Clock, Usb, Server, Activity, FileText, Play, Loader2, Download } from "lucide-react"
+import { HardDrive, Database, AlertTriangle, CheckCircle2, XCircle, Square, Thermometer, Archive, Info, Clock, Usb, Server, Activity, FileText, Play, Loader2, Download, Plus, Trash2, Settings } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -121,7 +121,15 @@ export function StorageOverview() {
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [diskObservations, setDiskObservations] = useState<DiskObservation[]>([])
   const [loadingObservations, setLoadingObservations] = useState(false)
-  const [activeModalTab, setActiveModalTab] = useState<"overview" | "smart">("overview")
+  const [activeModalTab, setActiveModalTab] = useState<"overview" | "smart" | "schedule">("overview")
+  const [smartJsonData, setSmartJsonData] = useState<{
+    has_data: boolean
+    data?: Record<string, unknown>
+    timestamp?: string
+    test_type?: string
+    history?: Array<{ filename: string; timestamp: string; test_type: string; date_readable: string }>
+  } | null>(null)
+  const [loadingSmartJson, setLoadingSmartJson] = useState(false)
 
   const fetchStorageData = async () => {
     try {
@@ -269,21 +277,46 @@ export function StorageOverview() {
     setSelectedDisk(disk)
     setDetailsOpen(true)
     setDiskObservations([])
+    setSmartJsonData(null)
 
-    // Always attempt to fetch observations -- the count enrichment may lag
-    // behind the actual observation recording (especially for USB disks).
+    // Fetch observations and SMART JSON data in parallel
     setLoadingObservations(true)
-    try {
-      const params = new URLSearchParams()
-      if (disk.name) params.set('device', disk.name)
-      if (disk.serial && disk.serial !== 'Unknown') params.set('serial', disk.serial)
-      const data = await fetchApi<{ observations: DiskObservation[] }>(`/api/storage/observations?${params.toString()}`)
-      setDiskObservations(data.observations || [])
-    } catch {
-      setDiskObservations([])
-    } finally {
-      setLoadingObservations(false)
+    setLoadingSmartJson(true)
+    
+    // Fetch observations
+    const fetchObservations = async () => {
+      try {
+        const params = new URLSearchParams()
+        if (disk.name) params.set('device', disk.name)
+        if (disk.serial && disk.serial !== 'Unknown') params.set('serial', disk.serial)
+        const data = await fetchApi<{ observations: DiskObservation[] }>(`/api/storage/observations?${params.toString()}`)
+        setDiskObservations(data.observations || [])
+      } catch {
+        setDiskObservations([])
+      } finally {
+        setLoadingObservations(false)
+      }
     }
+    
+    // Fetch SMART JSON data from real test if available
+    const fetchSmartJson = async () => {
+      try {
+        const data = await fetchApi<{
+          has_data: boolean
+          data?: Record<string, unknown>
+          timestamp?: string
+          test_type?: string
+        }>(`/api/storage/smart/${disk.name}/latest`)
+        setSmartJsonData(data)
+      } catch {
+        setSmartJsonData({ has_data: false })
+      } finally {
+        setLoadingSmartJson(false)
+      }
+    }
+    
+    // Run both in parallel
+    await Promise.all([fetchObservations(), fetchSmartJson()])
   }
 
   const formatObsDate = (iso: string) => {
@@ -1205,7 +1238,10 @@ export function StorageOverview() {
       {/* Disk Details Dialog */}
       <Dialog open={detailsOpen} onOpenChange={(open) => {
         setDetailsOpen(open)
-        if (!open) setActiveModalTab("overview")
+        if (!open) {
+          setActiveModalTab("overview")
+          setSmartJsonData(null)
+        }
       }}>
         <DialogContent className="max-w-2xl max-h-[80vh] sm:max-h-[85vh] overflow-hidden flex flex-col p-0">
           <DialogHeader className="px-6 pt-6 pb-0">
@@ -1254,6 +1290,17 @@ export function StorageOverview() {
             >
               <Activity className="h-4 w-4" />
               SMART Test
+            </button>
+            <button
+              onClick={() => setActiveModalTab("schedule")}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                activeModalTab === "schedule"
+                  ? "border-purple-500 text-purple-500"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Clock className="h-4 w-4" />
+              Schedule
             </button>
           </div>
           
@@ -1389,6 +1436,153 @@ export function StorageOverview() {
                 </div>
               </div>
 
+              {/* SMART Test Data Section (from real test JSON) */}
+              {(loadingSmartJson || smartJsonData?.has_data) && (
+                <div className="border-t pt-4">
+                  <h4 className="font-semibold mb-3 flex items-center gap-2">
+                    <Activity className="h-4 w-4 text-green-400" />
+                    SMART Test Data
+                    {smartJsonData?.has_data && (
+                      <Badge className="bg-green-500/10 text-green-400 border-green-500/20 text-[10px] px-1.5">
+                        Real Test
+                      </Badge>
+                    )}
+                  </h4>
+                  {loadingSmartJson ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                      <div className="h-4 w-4 rounded-full border-2 border-transparent border-t-green-400 animate-spin" />
+                      Loading SMART test data...
+                    </div>
+                  ) : smartJsonData?.has_data && smartJsonData.data ? (
+                    <div className="space-y-3">
+                      {/* Last Test Info */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm text-muted-foreground">Last Test Date</p>
+                          <p className="font-medium">
+                            {smartJsonData.timestamp 
+                              ? new Date(smartJsonData.timestamp).toLocaleString()
+                              : 'Unknown'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">Test Type</p>
+                          <p className="font-medium capitalize">{smartJsonData.test_type || 'Unknown'}</p>
+                        </div>
+                      </div>
+                      
+                      {/* SSD Life Estimation from JSON (if available) */}
+                      {(() => {
+                        const data = smartJsonData.data as Record<string, unknown>
+                        const ataAttrs = data?.ata_smart_attributes as { table?: Array<{ id: number; name: string; value: number; raw?: { value: number } }> }
+                        const table = ataAttrs?.table || []
+                        
+                        // Look for wear-related attributes
+                        const wearAttr = table.find(a => 
+                          a.name?.toLowerCase().includes('wear_leveling') ||
+                          a.name?.toLowerCase().includes('media_wearout') ||
+                          a.name?.toLowerCase().includes('percent_lifetime') ||
+                          a.id === 177 || a.id === 231 || a.id === 233
+                        )
+                        
+                        // Look for total LBAs written
+                        const lbasAttr = table.find(a => 
+                          a.name?.toLowerCase().includes('total_lbas_written') ||
+                          a.id === 241
+                        )
+                        
+                        if (wearAttr || lbasAttr) {
+                          return (
+                            <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-3">
+                              <p className="text-xs text-green-400 mb-2 font-medium">From Real SMART Test</p>
+                              <div className="grid grid-cols-2 gap-4">
+                                {wearAttr && (
+                                  <div>
+                                    <p className="text-sm text-muted-foreground">{wearAttr.name?.replace(/_/g, ' ')}</p>
+                                    <p className={`font-medium ${wearAttr.value < 50 ? 'text-red-400' : wearAttr.value < 80 ? 'text-yellow-400' : 'text-green-400'}`}>
+                                      {wearAttr.value}%
+                                    </p>
+                                  </div>
+                                )}
+                                {lbasAttr && lbasAttr.raw?.value && (
+                                  <div>
+                                    <p className="text-sm text-muted-foreground">Total Data Written</p>
+                                    <p className="font-medium">
+                                      {(() => {
+                                        const tbWritten = (lbasAttr.raw.value * 512) / (1024 ** 4)
+                                        return tbWritten >= 1 
+                                          ? `${tbWritten.toFixed(2)} TB`
+                                          : `${(tbWritten * 1024).toFixed(2)} GB`
+                                      })()}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        }
+                        
+                        // For NVMe, check nvme_smart_health_information_log
+                        const nvmeHealth = data?.nvme_smart_health_information_log as Record<string, unknown>
+                        if (nvmeHealth) {
+                          const percentUsed = nvmeHealth.percentage_used as number
+                          const dataUnitsWritten = nvmeHealth.data_units_written as number
+                          const availableSpare = nvmeHealth.available_spare as number
+                          
+                          return (
+                            <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-3">
+                              <p className="text-xs text-green-400 mb-2 font-medium">From Real SMART Test (NVMe)</p>
+                              <div className="grid grid-cols-2 gap-4">
+                                {percentUsed !== undefined && (
+                                  <div>
+                                    <p className="text-sm text-muted-foreground">Percent Used</p>
+                                    <p className={`font-medium ${percentUsed > 80 ? 'text-red-400' : percentUsed > 50 ? 'text-yellow-400' : 'text-green-400'}`}>
+                                      {percentUsed}%
+                                    </p>
+                                  </div>
+                                )}
+                                {availableSpare !== undefined && (
+                                  <div>
+                                    <p className="text-sm text-muted-foreground">Available Spare</p>
+                                    <p className={`font-medium ${availableSpare < 20 ? 'text-red-400' : availableSpare < 50 ? 'text-yellow-400' : 'text-green-400'}`}>
+                                      {availableSpare}%
+                                    </p>
+                                  </div>
+                                )}
+                                {dataUnitsWritten !== undefined && (
+                                  <div>
+                                    <p className="text-sm text-muted-foreground">Total Data Written</p>
+                                    <p className="font-medium">
+                                      {(() => {
+                                        const tbWritten = (dataUnitsWritten * 512000) / (1024 ** 4)
+                                        return tbWritten >= 1 
+                                          ? `${tbWritten.toFixed(2)} TB`
+                                          : `${(tbWritten * 1024).toFixed(2)} GB`
+                                      })()}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        }
+                        
+                        return null
+                      })()}
+                      
+                      <p className="text-xs text-muted-foreground">
+                        Run a SMART test in the SMART Test tab for more detailed analysis.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-muted-foreground">
+                      <p>No SMART test data available for this disk.</p>
+                      <p className="text-xs mt-1">Run a SMART test in the SMART Test tab to get detailed health information.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Observations Section */}
               {(diskObservations.length > 0 || loadingObservations) && (
                 <div className="border-t pt-4">
@@ -1462,6 +1656,11 @@ export function StorageOverview() {
           {/* SMART Test Tab */}
           {selectedDisk && activeModalTab === "smart" && (
             <SmartTestTab disk={selectedDisk} observations={diskObservations} />
+          )}
+          
+          {/* Schedule Tab */}
+          {selectedDisk && activeModalTab === "schedule" && (
+            <ScheduleTab disk={selectedDisk} />
           )}
           </div>
         </DialogContent>
@@ -1670,40 +1869,40 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
           <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px;">
             <span style="background:${infoColor}20;color:${infoColor};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">${errorTypeLabel}</span>
             <span style="background:${severityBadgeColor}20;color:${severityBadgeColor};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">${severityLabel}</span>
-            <span style="background:#64748b20;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;">ID: #${obs.id}</span>
-            <span style="background:#64748b20;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;">Occurrences: <strong>${obs.occurrence_count}</strong></span>
+            <span style="background:#64748b20;color:#475569;padding:2px 8px;border-radius:4px;font-size:11px;">ID: #${obs.id}</span>
+            <span style="background:#64748b20;color:#475569;padding:2px 8px;border-radius:4px;font-size:11px;">Occurrences: <strong>${obs.occurrence_count}</strong></span>
             ${dismissedBadge}
           </div>
           
           <div style="margin-bottom:10px;">
-            <div style="font-size:10px;color:#64748b;margin-bottom:4px;">Error Signature:</div>
+            <div style="font-size:10px;color:#475569;margin-bottom:4px;">Error Signature:</div>
             <div style="font-family:monospace;font-size:11px;color:#1e293b;background:#f1f5f9;padding:8px;border-radius:4px;word-break:break-all;">${obs.error_signature}</div>
           </div>
           
           <div style="margin-bottom:12px;">
-            <div style="font-size:10px;color:#64748b;margin-bottom:4px;">Raw Message:</div>
+            <div style="font-size:10px;color:#475569;margin-bottom:4px;">Raw Message:</div>
             <div style="font-family:monospace;font-size:11px;color:#1e293b;background:#f8fafc;padding:10px;border-radius:4px;white-space:pre-wrap;word-break:break-all;max-height:120px;overflow-y:auto;">${obs.raw_message || 'N/A'}</div>
           </div>
           
           <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:10px;font-size:11px;padding-top:10px;border-top:1px solid ${infoColor}20;">
             <div>
-              <span style="color:#64748b;">Device:</span>
+              <span style="color:#475569;">Device:</span>
               <strong style="color:#1e293b;margin-left:4px;">${obs.device_name || disk.name}</strong>
             </div>
             <div>
-              <span style="color:#64748b;">Serial:</span>
+              <span style="color:#475569;">Serial:</span>
               <strong style="color:#1e293b;margin-left:4px;">${obs.serial || disk.serial || 'N/A'}</strong>
             </div>
             <div>
-              <span style="color:#64748b;">Model:</span>
+              <span style="color:#475569;">Model:</span>
               <strong style="color:#1e293b;margin-left:4px;">${obs.model || disk.model || 'N/A'}</strong>
             </div>
             <div>
-              <span style="color:#64748b;">First Seen:</span>
+              <span style="color:#475569;">First Seen:</span>
               <strong style="color:#1e293b;margin-left:4px;">${firstDate}</strong>
             </div>
             <div>
-              <span style="color:#64748b;">Last Seen:</span>
+              <span style="color:#475569;">Last Seen:</span>
               <strong style="color:#1e293b;margin-left:4px;">${lastDate}</strong>
             </div>
           </div>
@@ -1715,7 +1914,7 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
       <div style="margin-bottom:20px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #e2e8f0;">
           <span style="font-weight:600;color:#1e293b;">${typeLabel}</span>
-          <span style="background:#64748b15;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;">${obsList.length} unique, ${groupOccurrences} total</span>
+          <span style="background:#64748b15;color:#475569;padding:2px 8px;border-radius:4px;font-size:11px;">${obsList.length} unique, ${groupOccurrences} total</span>
         </div>
         <div style="display:flex;flex-direction:column;gap:12px;">
           ${obsItemsHtml}
@@ -1729,7 +1928,7 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
   <!-- ${obsSecNum}. Observations & Events -->
   <div class="section">
   <div class="section-title">${obsSecNum}. Observations & Events (${observations.length} recorded, ${totalOccurrences} total occurrences)</div>
-      <p style="color:#64748b;font-size:12px;margin-bottom:16px;">The following events have been detected and logged for this disk. These observations may indicate potential issues that require attention.</p>
+      <p style="color:#475569;font-size:12px;margin-bottom:16px;">The following events have been detected and logged for this disk. These observations may indicate potential issues that require attention.</p>
       ${groupsHtml}
     </div>
     `
@@ -1898,7 +2097,7 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
         <div class="health-icon">${isHealthy ? '&#10003;' : '&#10007;'}</div>
         <div class="health-lbl">${healthLabel}</div>
       </div>
-      <div style="font-size:10px;color:#64748b;font-weight:600;">SMART Status</div>
+      <div style="font-size:10px;color:#475569;font-weight:600;">SMART Status</div>
     </div>
     <div class="exec-text">
       <h3>Disk Health Assessment</h3>
@@ -1908,6 +2107,51 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
           : `This disk has reported a SMART health failure. Immediate action is required. Backup all critical data and plan for disk replacement.`
         }
       </p>
+    </div>
+  </div>
+  
+  <!-- Simple Explanation for Non-Technical Users -->
+  <div style="background:${isHealthy ? '#dcfce7' : (hasCritical ? '#fee2e2' : '#fef3c7')};border:1px solid ${isHealthy ? '#86efac' : (hasCritical ? '#fca5a5' : '#fcd34d')};border-radius:8px;padding:16px;margin-top:12px;">
+    <div style="font-weight:700;font-size:14px;color:${isHealthy ? '#166534' : (hasCritical ? '#991b1b' : '#92400e')};margin-bottom:8px;">
+      ${isHealthy ? 'What does this mean? Your disk is healthy!' : (hasCritical ? 'ATTENTION REQUIRED: Problems detected' : 'Some issues need monitoring')}
+    </div>
+    <p style="color:${isHealthy ? '#166534' : (hasCritical ? '#991b1b' : '#92400e')};font-size:12px;margin:0 0 8px 0;">
+      ${isHealthy 
+        ? 'In simple terms: This disk is working properly. You can continue using it normally. We recommend running periodic SMART tests (monthly) to catch any issues early.'
+        : (hasCritical 
+          ? 'In simple terms: This disk has problems that could cause data loss. You should back up your important files immediately and consider replacing the disk soon.'
+          : 'In simple terms: The disk is working but shows some signs of wear. It is not critical yet, but you should monitor it closely and ensure your backups are up to date.'
+        )
+      }
+    </p>
+    ${!isHealthy && criticalAttrs.length > 0 ? `
+    <div style="margin-top:8px;padding-top:8px;border-top:1px solid ${hasCritical ? '#fca5a5' : '#fcd34d'};">
+      <div style="font-size:11px;font-weight:600;color:#475569;margin-bottom:4px;">Issues found:</div>
+      <ul style="margin:0;padding-left:20px;font-size:11px;color:${hasCritical ? '#991b1b' : '#92400e'};">
+        ${criticalAttrs.slice(0, 3).map(a => `<li>${a.name.replace(/_/g, ' ')}: ${a.status === 'critical' ? 'Critical - requires immediate attention' : 'Warning - should be monitored'}</li>`).join('')}
+        ${criticalAttrs.length > 3 ? `<li>...and ${criticalAttrs.length - 3} more issues (see details below)</li>` : ''}
+      </ul>
+    </div>
+    ` : ''}
+  </div>
+  
+  <!-- Test Information -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));gap:8px;margin-top:12px;">
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;">
+      <div style="font-size:10px;color:#475569;font-weight:600;text-transform:uppercase;">Report Generated</div>
+      <div style="font-size:12px;font-weight:600;color:#1e293b;">${now}</div>
+    </div>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;">
+      <div style="font-size:10px;color:#475569;font-weight:600;text-transform:uppercase;">Last Test Type</div>
+      <div style="font-size:12px;font-weight:600;color:#1e293b;">${testStatus.last_test?.type || 'N/A'}</div>
+    </div>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;">
+      <div style="font-size:10px;color:#475569;font-weight:600;text-transform:uppercase;">Test Result</div>
+      <div style="font-size:12px;font-weight:600;color:${testStatus.last_test?.status?.toLowerCase() === 'passed' ? '#16a34a' : testStatus.last_test?.status?.toLowerCase() === 'failed' ? '#dc2626' : '#64748b'};">${testStatus.last_test?.status || 'N/A'}</div>
+    </div>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;">
+      <div style="font-size:10px;color:#475569;font-weight:600;text-transform:uppercase;">Attributes Checked</div>
+      <div style="font-size:12px;font-weight:600;color:#1e293b;">${smartAttributes.length}</div>
     </div>
   </div>
 </div>
@@ -1937,12 +2181,12 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
     <div class="card card-c">
       <div class="card-value" style="color:${getTempColorForReport(disk.temperature)}">${disk.temperature > 0 ? disk.temperature + '°C' : 'N/A'}</div>
       <div class="card-label">Temperature</div>
-      <div style="font-size:9px;color:#64748b;margin-top:2px;">Optimal: ${tempThresholds.optimal}</div>
+      <div style="font-size:9px;color:#475569;margin-top:2px;">Optimal: ${tempThresholds.optimal}</div>
     </div>
     <div class="card card-c">
       <div class="card-value">${powerOnHours.toLocaleString()}h</div>
       <div class="card-label">Power On Time</div>
-      <div style="font-size:9px;color:#64748b;margin-top:2px;">${powerOnYears}y ${powerOnDays}d</div>
+      <div style="font-size:9px;color:#475569;margin-top:2px;">${powerOnYears}y ${powerOnDays}d</div>
     </div>
     <div class="card card-c">
       <div class="card-value">${(disk.power_cycles ?? 0).toLocaleString()}</div>
@@ -1980,7 +2224,7 @@ ${isNvmeDisk ? `
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
     <!-- Life Remaining Gauge -->
     <div style="background:linear-gradient(135deg,#f8fafc 0%,#f1f5f9 100%);border:1px solid #e2e8f0;border-radius:12px;padding:20px;text-align:center;">
-      <div style="font-size:12px;color:#64748b;margin-bottom:8px;font-weight:600;">LIFE REMAINING</div>
+      <div style="font-size:12px;color:#475569;margin-bottom:8px;font-weight:600;">LIFE REMAINING</div>
       <div style="position:relative;width:120px;height:120px;margin:0 auto;">
         <svg viewBox="0 0 120 120" style="transform:rotate(-90deg);">
           <circle cx="60" cy="60" r="50" fill="none" stroke="#e2e8f0" stroke-width="12"/>
@@ -1996,11 +2240,11 @@ ${isNvmeDisk ? `
     
     <!-- Usage Statistics -->
     <div style="background:linear-gradient(135deg,#f8fafc 0%,#f1f5f9 100%);border:1px solid #e2e8f0;border-radius:12px;padding:20px;">
-      <div style="font-size:12px;color:#64748b;margin-bottom:12px;font-weight:600;">USAGE STATISTICS</div>
+      <div style="font-size:12px;color:#475569;margin-bottom:12px;font-weight:600;">USAGE STATISTICS</div>
       
       <div style="margin-bottom:16px;">
         <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-          <span style="font-size:12px;color:#64748b;">Percentage Used</span>
+          <span style="font-size:12px;color:#475569;">Percentage Used</span>
           <span style="font-size:14px;font-weight:600;color:${getWearColorHex(nvmePercentUsed)};">${nvmePercentUsed}%</span>
         </div>
         <div style="background:#e2e8f0;border-radius:4px;height:8px;overflow:hidden;">
@@ -2010,7 +2254,7 @@ ${isNvmeDisk ? `
       
       <div style="margin-bottom:16px;">
         <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-          <span style="font-size:12px;color:#64748b;">Available Spare</span>
+          <span style="font-size:12px;color:#475569;">Available Spare</span>
           <span style="font-size:14px;font-weight:600;color:${nvmeAvailSpare >= 50 ? '#16a34a' : nvmeAvailSpare >= 20 ? '#ca8a04' : '#dc2626'};">${nvmeAvailSpare}%</span>
         </div>
         <div style="background:#e2e8f0;border-radius:4px;height:8px;overflow:hidden;">
@@ -2020,11 +2264,11 @@ ${isNvmeDisk ? `
       
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;padding-top:12px;border-top:1px solid #e2e8f0;">
         <div>
-          <div style="font-size:11px;color:#64748b;">Data Written</div>
+          <div style="font-size:11px;color:#475569;">Data Written</div>
           <div style="font-size:15px;font-weight:600;color:#1e293b;">${nvmeDataWrittenTB >= 1 ? nvmeDataWrittenTB.toFixed(2) + ' TB' : (nvmeDataWrittenTB * 1024).toFixed(1) + ' GB'}</div>
         </div>
         <div>
-          <div style="font-size:11px;color:#64748b;">Power Cycles</div>
+          <div style="font-size:11px;color:#475569;">Power Cycles</div>
           <div style="font-size:15px;font-weight:600;color:#1e293b;">${testStatus.smart_data?.nvme_raw?.power_cycles?.toLocaleString() ?? disk.power_cycles ?? 'N/A'}</div>
         </div>
       </div>
@@ -2033,9 +2277,104 @@ ${isNvmeDisk ? `
 </div>
 ` : ''}
 
-<!-- 4. SMART Attributes / NVMe Health Metrics -->
+${!isNvmeDisk && diskType === 'SSD' ? (() => {
+  // Try to find SSD wear indicators from SMART attributes
+  const wearAttr = smartAttributes.find(a => 
+    a.name?.toLowerCase().includes('wear_leveling') ||
+    a.name?.toLowerCase().includes('media_wearout') ||
+    a.name?.toLowerCase().includes('percent_lifetime') ||
+    a.name?.toLowerCase().includes('ssd_life_left') ||
+    a.id === 177 || a.id === 231 || a.id === 233
+  )
+  
+  const lbasWrittenAttr = smartAttributes.find(a => 
+    a.name?.toLowerCase().includes('total_lbas_written') ||
+    a.id === 241
+  )
+  
+  // Also check disk properties
+  const wearValue = wearAttr?.value ?? disk.wear_leveling_count ?? disk.ssd_life_left
+  
+  if (wearValue !== undefined && wearValue !== null) {
+    const lifeRemaining = wearValue // Usually this is percentage remaining
+    const lifeUsed = 100 - lifeRemaining
+    
+    // Calculate data written from LBAs (LBA = 512 bytes)
+    let dataWrittenTB = 0
+    if (lbasWrittenAttr?.raw_value) {
+      const rawValue = parseInt(lbasWrittenAttr.raw_value.replace(/[^0-9]/g, ''))
+      if (!isNaN(rawValue)) {
+        dataWrittenTB = (rawValue * 512) / (1024 ** 4)
+      }
+    } else if (disk.total_lbas_written) {
+      dataWrittenTB = disk.total_lbas_written / 1024 // Already in GB
+    }
+    
+    return `
+<!-- SSD Wear & Lifetime -->
 <div class="section">
-  <div class="section-title">${isNvmeDisk ? '4' : '3'}. ${isNvmeDisk ? 'NVMe Health Metrics' : 'SMART Attributes'} (${smartAttributes.length} total${hasCritical ? `, ${criticalAttrs.length} warning(s)` : ''})</div>
+  <div class="section-title">3. SSD Wear & Lifetime</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+    <!-- Life Remaining Gauge -->
+    <div style="background:linear-gradient(135deg,#f8fafc 0%,#f1f5f9 100%);border:1px solid #e2e8f0;border-radius:12px;padding:20px;text-align:center;">
+      <div style="font-size:12px;color:#475569;margin-bottom:8px;font-weight:600;">LIFE REMAINING</div>
+      <div style="position:relative;width:120px;height:120px;margin:0 auto;">
+        <svg viewBox="0 0 120 120" style="transform:rotate(-90deg);">
+          <circle cx="60" cy="60" r="50" fill="none" stroke="#e2e8f0" stroke-width="12"/>
+          <circle cx="60" cy="60" r="50" fill="none" stroke="${getLifeColorHex(lifeUsed)}" stroke-width="12" 
+            stroke-dasharray="${lifeRemaining * 3.14} 314" stroke-linecap="round"/>
+        </svg>
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;">
+          <div style="font-size:28px;font-weight:700;color:${getLifeColorHex(lifeUsed)};">${lifeRemaining}%</div>
+        </div>
+      </div>
+      <div style="margin-top:12px;font-size:11px;color:#475569;">
+        Source: ${wearAttr?.name?.replace(/_/g, ' ') || 'SSD Life Indicator'}
+      </div>
+    </div>
+    
+    <!-- Usage Statistics -->
+    <div style="background:linear-gradient(135deg,#f8fafc 0%,#f1f5f9 100%);border:1px solid #e2e8f0;border-radius:12px;padding:20px;">
+      <div style="font-size:12px;color:#475569;margin-bottom:12px;font-weight:600;">USAGE STATISTICS</div>
+      
+      <div style="margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+          <span style="font-size:12px;color:#475569;">Wear Level</span>
+          <span style="font-size:14px;font-weight:600;color:${getWearColorHex(lifeUsed)};">${lifeUsed}%</span>
+        </div>
+        <div style="background:#e2e8f0;border-radius:4px;height:8px;overflow:hidden;">
+          <div style="background:${getWearColorHex(lifeUsed)};height:100%;width:${Math.min(lifeUsed, 100)}%;border-radius:4px;"></div>
+        </div>
+      </div>
+      
+      ${dataWrittenTB > 0 ? `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;padding-top:12px;border-top:1px solid #e2e8f0;">
+        <div>
+          <div style="font-size:11px;color:#475569;">Data Written</div>
+          <div style="font-size:15px;font-weight:600;color:#1e293b;">${dataWrittenTB >= 1 ? dataWrittenTB.toFixed(2) + ' TB' : (dataWrittenTB * 1024).toFixed(1) + ' GB'}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#475569;">Power On Hours</div>
+          <div style="font-size:15px;font-weight:600;color:#1e293b;">${powerOnHours.toLocaleString()}h</div>
+        </div>
+      </div>
+      ` : ''}
+      
+      <div style="margin-top:12px;padding:8px;background:#f1f5f9;border-radius:6px;font-size:11px;color:#475569;">
+        <strong>Note:</strong> SSD life estimates are based on manufacturer-reported wear indicators. 
+        Actual lifespan may vary based on workload and usage patterns.
+      </div>
+    </div>
+  </div>
+</div>
+`
+  }
+  return ''
+})() : ''}
+
+<!-- ${isNvmeDisk ? '4' : (diskType === 'SSD' && (disk.wear_leveling_count !== undefined || disk.ssd_life_left !== undefined || smartAttributes.some(a => a.name?.toLowerCase().includes('wear'))) ? '4' : '3')}. SMART Attributes / NVMe Health Metrics -->
+<div class="section">
+  <div class="section-title">${isNvmeDisk ? '4' : (diskType === 'SSD' && (disk.wear_leveling_count !== undefined || disk.ssd_life_left !== undefined || smartAttributes.some(a => a.name?.toLowerCase().includes('wear'))) ? '4' : '3')}. ${isNvmeDisk ? 'NVMe Health Metrics' : 'SMART Attributes'} (${smartAttributes.length} total${hasCritical ? `, ${criticalAttrs.length} warning(s)` : ''})</div>
   <table class="attr-tbl">
     <thead>
       <tr>
@@ -2049,7 +2388,7 @@ ${isNvmeDisk ? `
       </tr>
     </thead>
     <tbody>
-      ${attributeRows || '<tr><td colspan="' + (isNvmeDisk ? '3' : '7') + '" style="text-align:center;color:#94a3b8;padding:20px;">No ' + (isNvmeDisk ? 'NVMe metrics' : 'SMART attributes') + ' available</td></tr>'}
+      ${attributeRows || '<tr><td colspan="' + (isNvmeDisk ? '3' : '7') + '" style="text-align:center;color:#64748b;padding:20px;">No ' + (isNvmeDisk ? 'NVMe metrics' : 'SMART attributes') + ' available</td></tr>'}
     </tbody>
   </table>
 </div>
@@ -2077,7 +2416,7 @@ ${isNvmeDisk ? `
   </div>
     </div>
   ` : `
-    <div style="text-align:center;padding:20px;color:#94a3b8;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+    <div style="text-align:center;padding:20px;color:#64748b;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
       No self-test history available. Run a SMART self-test to see results here.
     </div>
   `}
@@ -2505,6 +2844,376 @@ function SmartTestTab({ disk, observations = [] }: SmartTestTabProps) {
       </div>
       
 
+    </div>
+  )
+}
+
+// ─── Schedule Tab Component ─────────────────────────────────────────────────────
+
+interface SmartSchedule {
+  id: string
+  active: boolean
+  test_type: 'short' | 'long'
+  frequency: 'daily' | 'weekly' | 'monthly'
+  hour: number
+  minute: number
+  day_of_week: number
+  day_of_month: number
+  disks: string[]
+  retention: number
+  notify_on_complete: boolean
+  notify_only_on_failure: boolean
+}
+
+interface ScheduleConfig {
+  enabled: boolean
+  schedules: SmartSchedule[]
+}
+
+function ScheduleTab({ disk }: { disk: DiskInfo }) {
+  const [config, setConfig] = useState<ScheduleConfig>({ enabled: true, schedules: [] })
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [showForm, setShowForm] = useState(false)
+  const [editingSchedule, setEditingSchedule] = useState<SmartSchedule | null>(null)
+  
+  // Form state
+  const [formData, setFormData] = useState<Partial<SmartSchedule>>({
+    test_type: 'short',
+    frequency: 'weekly',
+    hour: 3,
+    minute: 0,
+    day_of_week: 0,
+    day_of_month: 1,
+    disks: ['all'],
+    retention: 10,
+    active: true,
+    notify_on_complete: true,
+    notify_only_on_failure: false
+  })
+
+  const fetchSchedules = async () => {
+    try {
+      setLoading(true)
+      const data = await fetchApi<ScheduleConfig>('/api/storage/smart/schedules')
+      setConfig(data)
+    } catch {
+      console.error('Failed to load schedules')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchSchedules()
+  }, [])
+
+  const handleToggleGlobal = async () => {
+    try {
+      setSaving(true)
+      await fetchApi('/api/storage/smart/schedules/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: !config.enabled })
+      })
+      setConfig(prev => ({ ...prev, enabled: !prev.enabled }))
+    } catch {
+      console.error('Failed to toggle schedules')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleSaveSchedule = async () => {
+    try {
+      setSaving(true)
+      const scheduleData = {
+        ...formData,
+        id: editingSchedule?.id || undefined
+      }
+      
+      await fetchApi('/api/storage/smart/schedules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(scheduleData)
+      })
+      
+      await fetchSchedules()
+      setShowForm(false)
+      setEditingSchedule(null)
+      resetForm()
+    } catch {
+      console.error('Failed to save schedule')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDeleteSchedule = async (id: string) => {
+    try {
+      setSaving(true)
+      await fetchApi(`/api/storage/smart/schedules/${id}`, {
+        method: 'DELETE'
+      })
+      await fetchSchedules()
+    } catch {
+      console.error('Failed to delete schedule')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const resetForm = () => {
+    setFormData({
+      test_type: 'short',
+      frequency: 'weekly',
+      hour: 3,
+      minute: 0,
+      day_of_week: 0,
+      day_of_month: 1,
+      disks: ['all'],
+      retention: 10,
+      active: true,
+      notify_on_complete: true,
+      notify_only_on_failure: false
+    })
+  }
+
+  const editSchedule = (schedule: SmartSchedule) => {
+    setEditingSchedule(schedule)
+    setFormData(schedule)
+    setShowForm(true)
+  }
+
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+  
+  const formatScheduleTime = (schedule: SmartSchedule) => {
+    const time = `${schedule.hour.toString().padStart(2, '0')}:${schedule.minute.toString().padStart(2, '0')}`
+    if (schedule.frequency === 'daily') return `Daily at ${time}`
+    if (schedule.frequency === 'weekly') return `${dayNames[schedule.day_of_week]}s at ${time}`
+    return `Day ${schedule.day_of_month} of month at ${time}`
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <div className="h-6 w-6 rounded-full border-2 border-transparent border-t-purple-400 animate-spin" />
+        <span className="ml-2 text-muted-foreground">Loading schedules...</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Global Toggle */}
+      <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+        <div>
+          <p className="font-medium">Automatic SMART Tests</p>
+          <p className="text-xs text-muted-foreground">Enable or disable all scheduled tests</p>
+        </div>
+        <Button
+          variant={config.enabled ? "default" : "outline"}
+          size="sm"
+          onClick={handleToggleGlobal}
+          disabled={saving}
+          className={config.enabled ? "bg-purple-600 hover:bg-purple-700" : ""}
+        >
+          {config.enabled ? 'Enabled' : 'Disabled'}
+        </Button>
+      </div>
+
+      {/* Schedules List */}
+      {config.schedules.length > 0 ? (
+        <div className="space-y-2">
+          <h4 className="font-semibold text-sm">Configured Schedules</h4>
+          {config.schedules.map(schedule => (
+            <div 
+              key={schedule.id}
+              className={`border rounded-lg p-3 ${schedule.active ? 'border-purple-500/30 bg-purple-500/5' : 'border-muted opacity-60'}`}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Badge className={schedule.test_type === 'long' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'}>
+                      {schedule.test_type}
+                    </Badge>
+                    <span className="text-sm font-medium">{formatScheduleTime(schedule)}</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Disks: {schedule.disks.includes('all') ? 'All disks' : schedule.disks.join(', ')} | 
+                    Keep {schedule.retention} results
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editSchedule(schedule)}
+                    className="h-8 w-8 p-0"
+                  >
+                    <Settings className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDeleteSchedule(schedule.id)}
+                    className="h-8 w-8 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                    disabled={saving}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-6 text-muted-foreground">
+          <Clock className="h-8 w-8 mx-auto mb-2 opacity-50" />
+          <p>No scheduled tests configured</p>
+          <p className="text-xs mt-1">Create a schedule to automatically run SMART tests</p>
+        </div>
+      )}
+
+      {/* Add/Edit Form */}
+      {showForm ? (
+        <div className="border rounded-lg p-4 space-y-4">
+          <h4 className="font-semibold">{editingSchedule ? 'Edit Schedule' : 'New Schedule'}</h4>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm text-muted-foreground">Test Type</label>
+              <select
+                value={formData.test_type}
+                onChange={e => setFormData(prev => ({ ...prev, test_type: e.target.value as 'short' | 'long' }))}
+                className="w-full mt-1 p-2 rounded-md bg-background border border-input text-sm"
+              >
+                <option value="short">Short Test (~2 min)</option>
+                <option value="long">Long Test (1-4 hours)</option>
+              </select>
+            </div>
+            
+            <div>
+              <label className="text-sm text-muted-foreground">Frequency</label>
+              <select
+                value={formData.frequency}
+                onChange={e => setFormData(prev => ({ ...prev, frequency: e.target.value as 'daily' | 'weekly' | 'monthly' }))}
+                className="w-full mt-1 p-2 rounded-md bg-background border border-input text-sm"
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+            
+            {formData.frequency === 'weekly' && (
+              <div>
+                <label className="text-sm text-muted-foreground">Day of Week</label>
+                <select
+                  value={formData.day_of_week}
+                  onChange={e => setFormData(prev => ({ ...prev, day_of_week: parseInt(e.target.value) }))}
+                  className="w-full mt-1 p-2 rounded-md bg-background border border-input text-sm"
+                >
+                  {dayNames.map((day, i) => (
+                    <option key={day} value={i}>{day}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            
+            {formData.frequency === 'monthly' && (
+              <div>
+                <label className="text-sm text-muted-foreground">Day of Month</label>
+                <select
+                  value={formData.day_of_month}
+                  onChange={e => setFormData(prev => ({ ...prev, day_of_month: parseInt(e.target.value) }))}
+                  className="w-full mt-1 p-2 rounded-md bg-background border border-input text-sm"
+                >
+                  {Array.from({ length: 28 }, (_, i) => i + 1).map(day => (
+                    <option key={day} value={day}>{day}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            
+            <div>
+              <label className="text-sm text-muted-foreground">Time (Hour)</label>
+              <select
+                value={formData.hour}
+                onChange={e => setFormData(prev => ({ ...prev, hour: parseInt(e.target.value) }))}
+                className="w-full mt-1 p-2 rounded-md bg-background border border-input text-sm"
+              >
+                {Array.from({ length: 24 }, (_, i) => (
+                  <option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>
+                ))}
+              </select>
+            </div>
+            
+            <div>
+              <label className="text-sm text-muted-foreground">Keep Results</label>
+              <select
+                value={formData.retention}
+                onChange={e => setFormData(prev => ({ ...prev, retention: parseInt(e.target.value) }))}
+                className="w-full mt-1 p-2 rounded-md bg-background border border-input text-sm"
+              >
+                <option value={5}>Last 5</option>
+                <option value={10}>Last 10</option>
+                <option value={20}>Last 20</option>
+                <option value={50}>Last 50</option>
+                <option value={0}>Keep All</option>
+              </select>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={formData.disks?.includes('all')}
+                onChange={e => setFormData(prev => ({
+                  ...prev,
+                  disks: e.target.checked ? ['all'] : [disk.name]
+                }))}
+                className="rounded border-input"
+              />
+              Test all disks
+            </label>
+          </div>
+          
+          <div className="flex items-center gap-2 pt-2">
+            <Button
+              onClick={handleSaveSchedule}
+              disabled={saving}
+              className="bg-purple-600 hover:bg-purple-700"
+            >
+              {saving ? 'Saving...' : 'Save Schedule'}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowForm(false)
+                setEditingSchedule(null)
+                resetForm()
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button
+          onClick={() => setShowForm(true)}
+          variant="outline"
+          className="w-full"
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Add Schedule
+        </Button>
+      )}
+      
+      <p className="text-xs text-muted-foreground text-center">
+        Scheduled tests run automatically via cron. Results are saved to the SMART history.
+      </p>
     </div>
   )
 }

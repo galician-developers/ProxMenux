@@ -70,7 +70,42 @@ _smart_disk_label() {
 
 _smart_json_path() {
   local disk="$1"
-  echo "${SMART_DIR}/$(basename "$disk").json"
+  local test_type="${2:-short}"
+  local disk_name
+  disk_name=$(basename "$disk")
+  local disk_dir="${SMART_DIR}/${disk_name}"
+  local timestamp
+  timestamp=$(date +%Y-%m-%dT%H-%M-%S)
+  
+  # Create disk directory if it doesn't exist
+  mkdir -p "$disk_dir"
+  
+  echo "${disk_dir}/${timestamp}_${test_type}.json"
+}
+
+_smart_get_latest_json() {
+  local disk="$1"
+  local disk_name
+  disk_name=$(basename "$disk")
+  local disk_dir="${SMART_DIR}/${disk_name}"
+  
+  if [[ -d "$disk_dir" ]]; then
+    # Get most recent JSON file (sorted by name = sorted by timestamp)
+    ls -1 "${disk_dir}"/*.json 2>/dev/null | sort -r | head -1
+  fi
+}
+
+_smart_cleanup_old_jsons() {
+  local disk="$1"
+  local retention="${2:-10}"  # Default: keep last 10
+  local disk_name
+  disk_name=$(basename "$disk")
+  local disk_dir="${SMART_DIR}/${disk_name}"
+  
+  if [[ -d "$disk_dir" && "$retention" -gt 0 ]]; then
+    # List all JSON files sorted by name (oldest last), skip first $retention, delete rest
+    ls -1 "${disk_dir}"/*.json 2>/dev/null | sort -r | tail -n +$((retention + 1)) | xargs -r rm -f
+  fi
 }
 
 _smart_ensure_packages() {
@@ -146,7 +181,7 @@ while true; do
     DISK_SIZE=$(lsblk -dn -o SIZE "$SELECTED_DISK" 2>/dev/null | xargs)
     if ! dialog --backtitle "$BACKTITLE" \
       --title "$(translate 'Long Test — Background')" \
-      --yesno "\n$(translate 'The long test runs directly on the disk hardware.')\n\n$(translate 'Disk:') $SELECTED_DISK ($DISK_SIZE)\n\n$(translate 'The test will continue even if you close this terminal.')\n$(translate 'Results will be saved automatically to:')\n$(_smart_json_path "$SELECTED_DISK")\n\n$(translate 'Start long test now?')" \
+      --yesno "\n$(translate 'The long test runs directly on the disk hardware.')\n\n$(translate 'Disk:') $SELECTED_DISK ($DISK_SIZE)\n\n$(translate 'The test will continue even if you close this terminal.')\n$(translate 'Results will be saved automatically to:')\n$(_smart_json_path "$SELECTED_DISK" "long")\n\n$(translate 'Start long test now?')" \
       16 $UI_RESULT_W; then
       continue
     fi
@@ -253,9 +288,10 @@ while true; do
       fi
       ;;
 
-    # ── Long test (background) ──────────────────────────────
-    long)
-      JSON_PATH=$(_smart_json_path "$SELECTED_DISK")
+  # ── Long test (background) ──────────────────────────────
+  long)
+    JSON_PATH=$(_smart_json_path "$SELECTED_DISK" "long")
+    _smart_cleanup_old_jsons "$SELECTED_DISK"
       DISK_SAFE=$(printf '%q' "$SELECTED_DISK")
       JSON_SAFE=$(printf '%q' "$JSON_PATH")
 
@@ -309,7 +345,7 @@ while true; do
             while smartctl -c ${DISK_SAFE} 2>/dev/null | grep -qiE 'Self-test routine in progress|[1-9][0-9]?% of test remaining'; do
               sleep 60
             done
-            smartctl --json=c ${DISK_SAFE} > ${JSON_SAFE} 2>/dev/null
+            smartctl -a --json=c ${DISK_SAFE} > ${JSON_SAFE} 2>/dev/null
             
             # Send notification when test completes
             if [[ -f \"${NOTIFY_SCRIPT}\" ]]; then
@@ -380,11 +416,17 @@ while true; do
 
   # ── Auto-export JSON (except long — handled by background monitor)
   if [[ "$ACTION" != "long" && "$ACTION" != "report" ]]; then
-    JSON_PATH=$(_smart_json_path "$SELECTED_DISK")
+    # Determine test type from ACTION (short test or status check)
+    local json_test_type="short"
+    [[ "$ACTION" == "status" ]] && json_test_type="status"
+    
+    JSON_PATH=$(_smart_json_path "$SELECTED_DISK" "$json_test_type")
+    _smart_cleanup_old_jsons "$SELECTED_DISK"
+    
     if _smart_is_nvme "$SELECTED_DISK"; then
       nvme smart-log -o json "$SELECTED_DISK" > "$JSON_PATH" 2>/dev/null
     else
-      smartctl --json=c "$SELECTED_DISK" > "$JSON_PATH" 2>/dev/null
+      smartctl -a --json=c "$SELECTED_DISK" > "$JSON_PATH" 2>/dev/null
     fi
     [[ -s "$JSON_PATH" ]] || rm -f "$JSON_PATH"
   fi
