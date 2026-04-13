@@ -1719,10 +1719,11 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
       `
     })
     
-    observationsHtml = `
-    <!-- 6. Observations & Events -->
-    <div class="section">
-      <div class="section-title">6. Observations & Events (${observations.length} recorded, ${totalOccurrences} total occurrences)</div>
+  const obsSecNum = isNvmeDisk ? '6' : '5'
+  observationsHtml = `
+  <!-- ${obsSecNum}. Observations & Events -->
+  <div class="section">
+  <div class="section-title">${obsSecNum}. Observations & Events (${observations.length} recorded, ${totalOccurrences} total occurrences)</div>
       <p style="color:#64748b;font-size:12px;margin-bottom:16px;">The following events have been detected and logged for this disk. These observations may indicate potential issues that require attention.</p>
       ${groupsHtml}
     </div>
@@ -1887,9 +1888,12 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
 <div class="section">
   <div class="section-title">1. Executive Summary</div>
   <div class="exec-box">
-    <div class="health-ring" style="border-color:${healthColor};color:${healthColor}">
-      <div class="health-icon">${isHealthy ? '&#10003;' : '&#10007;'}</div>
-      <div class="health-lbl">${healthLabel}</div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+      <div class="health-ring" style="border-color:${healthColor};color:${healthColor}">
+        <div class="health-icon">${isHealthy ? '&#10003;' : '&#10007;'}</div>
+        <div class="health-lbl">${healthLabel}</div>
+      </div>
+      <div style="font-size:10px;color:#64748b;font-weight:600;">SMART Status</div>
     </div>
     <div class="exec-text">
       <h3>Disk Health Assessment</h3>
@@ -1921,7 +1925,7 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
     </div>
     <div class="card">
       <div class="card-label">Type</div>
-      <div class="card-value" style="font-size:11px;">${diskType}</div>
+      <div class="card-value" style="font-size:11px;">${diskType === 'HDD' && disk.rotation_rate ? `HDD ${disk.rotation_rate} RPM` : diskType}</div>
     </div>
   </div>
   <div class="grid-4">
@@ -1933,6 +1937,7 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
     <div class="card card-c">
       <div class="card-value">${powerOnHours.toLocaleString()}h</div>
       <div class="card-label">Power On Time</div>
+      <div style="font-size:9px;color:#64748b;margin-top:2px;">${powerOnYears}y ${powerOnDays}d</div>
     </div>
     <div class="card card-c">
       <div class="card-value">${(disk.power_cycles ?? 0).toLocaleString()}</div>
@@ -1948,74 +1953,25 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
       `}
     </div>
   </div>
-</div>
-
-${!isNvmeDisk ? `
-<!-- 3. Disk Overview (SSD/HDD) -->
-<div class="section">
-  <div class="section-title">3. Disk Overview</div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-    <!-- Left Column -->
-    <div style="background:linear-gradient(135deg,#f8fafc 0%,#f1f5f9 100%);border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div>
-          <div style="font-size:11px;color:#64748b;">Temperature</div>
-          <div style="font-size:18px;font-weight:600;color:${getTempColorForReport(disk.temperature)};">${disk.temperature > 0 ? disk.temperature + '°C' : 'N/A'}</div>
-          <div style="font-size:9px;color:#94a3b8;">Optimal: ${tempThresholds.optimal}</div>
-        </div>
-        <div>
-          <div style="font-size:11px;color:#64748b;">Power On Hours</div>
-          <div style="font-size:18px;font-weight:600;color:#1e293b;">${powerOnHours.toLocaleString()}h</div>
-          <div style="font-size:9px;color:#94a3b8;">${powerOnYears}y ${powerOnDays}d</div>
-        </div>
-        <div>
-          <div style="font-size:11px;color:#64748b;">Rotation Rate</div>
-          <div style="font-size:18px;font-weight:600;color:#1e293b;">${diskType === 'HDD' ? (disk.rotation_rate ? disk.rotation_rate + ' RPM' : 'N/A') : 'SSD'}</div>
-        </div>
-        <div>
-          <div style="font-size:11px;color:#64748b;">Power Cycles</div>
-          <div style="font-size:18px;font-weight:600;color:#1e293b;">${(disk.power_cycles ?? 0).toLocaleString()}</div>
-        </div>
-      </div>
+  ${!isNvmeDisk ? `
+  <div class="grid-3" style="margin-top:8px;">
+    <div class="card card-c">
+      <div class="card-value" style="color:${(disk.pending_sectors ?? 0) > 0 ? '#dc2626' : '#16a34a'}">${disk.pending_sectors ?? 0}</div>
+      <div class="card-label">Pending Sectors</div>
     </div>
-    
-    <!-- Right Column - Health Indicators -->
-    <div style="background:linear-gradient(135deg,#f8fafc 0%,#f1f5f9 100%);border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
-      <div style="font-size:12px;color:#64748b;margin-bottom:12px;font-weight:600;">HEALTH INDICATORS</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <div style="width:10px;height:10px;border-radius:50%;background:${disk.smart_status === 'Passed' ? '#16a34a' : '#dc2626'};"></div>
-          <div>
-            <div style="font-size:11px;color:#64748b;">SMART Status</div>
-            <div style="font-size:14px;font-weight:600;color:${disk.smart_status === 'Passed' ? '#16a34a' : '#dc2626'};">${disk.smart_status || 'N/A'}</div>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <div style="width:10px;height:10px;border-radius:50%;background:${(disk.reallocated_sectors ?? 0) > 0 ? '#dc2626' : '#16a34a'};"></div>
-          <div>
-            <div style="font-size:11px;color:#64748b;">Reallocated Sectors</div>
-            <div style="font-size:14px;font-weight:600;color:${(disk.reallocated_sectors ?? 0) > 0 ? '#dc2626' : '#16a34a'};">${disk.reallocated_sectors ?? 0}</div>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <div style="width:10px;height:10px;border-radius:50%;background:${(disk.pending_sectors ?? 0) > 0 ? '#dc2626' : '#16a34a'};"></div>
-          <div>
-            <div style="font-size:11px;color:#64748b;">Pending Sectors</div>
-            <div style="font-size:14px;font-weight:600;color:${(disk.pending_sectors ?? 0) > 0 ? '#dc2626' : '#16a34a'};">${disk.pending_sectors ?? 0}</div>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <div style="width:10px;height:10px;border-radius:50%;background:${(disk.crc_errors ?? 0) > 0 ? '#ca8a04' : '#16a34a'};"></div>
-          <div>
-            <div style="font-size:11px;color:#64748b;">CRC Errors</div>
-            <div style="font-size:14px;font-weight:600;color:${(disk.crc_errors ?? 0) > 0 ? '#ca8a04' : '#16a34a'};">${disk.crc_errors ?? 0}</div>
-          </div>
-        </div>
-      </div>
+    <div class="card card-c">
+      <div class="card-value" style="color:${(disk.crc_errors ?? 0) > 0 ? '#ca8a04' : '#16a34a'}">${disk.crc_errors ?? 0}</div>
+      <div class="card-label">CRC Errors</div>
+    </div>
+    <div class="card card-c">
+      <div class="card-value" style="color:${disk.smart_status === 'Passed' ? '#16a34a' : '#dc2626'}">${disk.smart_status || 'N/A'}</div>
+      <div class="card-label">SMART Status</div>
     </div>
   </div>
+  ` : ''}
 </div>
-` : ''}
+
+
 
 ${isNvmeDisk ? `
 <!-- NVMe Wear & Lifetime (Special Section) -->
@@ -2079,7 +2035,7 @@ ${isNvmeDisk ? `
 
 <!-- 4. SMART Attributes / NVMe Health Metrics -->
 <div class="section">
-  <div class="section-title">4. ${isNvmeDisk ? 'NVMe Health Metrics' : 'SMART Attributes'} (${smartAttributes.length} total${hasCritical ? `, ${criticalAttrs.length} warning(s)` : ''})</div>
+  <div class="section-title">${isNvmeDisk ? '4' : '3'}. ${isNvmeDisk ? 'NVMe Health Metrics' : 'SMART Attributes'} (${smartAttributes.length} total${hasCritical ? `, ${criticalAttrs.length} warning(s)` : ''})</div>
   <table class="attr-tbl">
     <thead>
       <tr>
@@ -2100,7 +2056,7 @@ ${isNvmeDisk ? `
   
   <!-- 5. Last Test Result -->
 <div class="section">
-  <div class="section-title">5. Last Self-Test Result</div>
+  <div class="section-title">${isNvmeDisk ? '5' : '4'}. Last Self-Test Result</div>
   ${testStatus.last_test ? `
     <div class="grid-4">
       <div class="card">
@@ -2115,10 +2071,10 @@ ${isNvmeDisk ? `
         <div class="card-label">Completed</div>
         <div class="card-value" style="font-size:11px;">${testStatus.last_test.timestamp || 'N/A'}</div>
       </div>
-      <div class="card">
-        <div class="card-label">Duration</div>
-        <div class="card-value">${testStatus.last_test.duration || 'N/A'}</div>
-      </div>
+  <div class="card">
+  <div class="card-label">At Power-On Hours</div>
+  <div class="card-value">${testStatus.last_test.lifetime_hours ? testStatus.last_test.lifetime_hours.toLocaleString() + 'h' : 'N/A'}</div>
+  </div>
     </div>
   ` : `
     <div style="text-align:center;padding:20px;color:#94a3b8;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
@@ -2129,9 +2085,9 @@ ${isNvmeDisk ? `
 
 ${observationsHtml}
 
-<!-- ${observations.length > 0 ? '7' : '6'}. Recommendations -->
+<!-- Recommendations -->
 <div class="section">
-  <div class="section-title">${observations.length > 0 ? '7' : '6'}. Recommendations</div>
+  <div class="section-title">${observations.length > 0 ? (isNvmeDisk ? '7' : '6') : (isNvmeDisk ? '6' : '5')}. Recommendations</div>
   ${recommendations.join('')}
 </div>
   
