@@ -6496,37 +6496,56 @@ def api_smart_status(disk_name):
         
         # Get current SMART status
         if is_nvme:
-            # NVMe: Check for running test and get self-test log
+            # NVMe: Check for running test and get self-test log using JSON format
             try:
                 proc = subprocess.run(
-                    ['nvme', 'self-test-log', device],
+                    ['nvme', 'self-test-log', device, '-o', 'json'],
                     capture_output=True, text=True, timeout=10
                 )
                 if proc.returncode == 0:
-                    output = proc.stdout
-                    # Check if test is in progress
-                    if 'in progress' in output.lower():
-                        result['status'] = 'running'
-                        result['test_type'] = 'nvme'
-                        # Try to extract progress
-                        match = re.search(r'(\d+)%', output)
-                        if match:
-                            result['progress'] = int(match.group(1))
-                    
-                    # Parse last test result from self-test log
-                    # Format varies but typically shows test entries
-                    lines = output.split('\n')
-                    for line in lines:
-                        line_lower = line.lower()
-                        if 'completed' in line_lower or 'passed' in line_lower or 'without error' in line_lower:
-                            test_type = 'short' if 'short' in line_lower else 'long' if 'extended' in line_lower or 'long' in line_lower else 'unknown'
-                            test_status = 'passed' if 'without error' in line_lower or 'passed' in line_lower or 'success' in line_lower else 'failed'
-                            result['last_test'] = {
-                                'type': test_type,
-                                'status': test_status,
-                                'timestamp': 'Completed without error'
-                            }
-                            break
+                    try:
+                        selftest_data = json.loads(proc.stdout)
+                        # Check if test is in progress
+                        # "Current Device Self-Test Operation": 0=none, 1=short, 2=extended
+                        current_op = selftest_data.get('Current Device Self-Test Operation', 0)
+                        if current_op > 0:
+                            result['status'] = 'running'
+                            result['test_type'] = 'short' if current_op == 1 else 'long'
+                            # Get completion percentage
+                            completion = selftest_data.get('Current Device Self-Test Completion', 0)
+                            result['progress'] = completion
+                        
+                        # Parse last test result from self-test log
+                        valid_reports = selftest_data.get('List of Valid Reports', [])
+                        if valid_reports:
+                            # Find most recent completed test (result != 15 which means not run)
+                            for report in valid_reports:
+                                test_result = report.get('Self test result', 15)
+                                if test_result != 15:  # 15 = entry not used
+                                    test_code = report.get('Self test code', 0)
+                                    test_type = 'short' if test_code == 1 else 'long' if test_code == 2 else 'unknown'
+                                    # 0 = completed without error, other values = error
+                                    test_status = 'passed' if test_result == 0 else 'failed'
+                                    result['last_test'] = {
+                                        'type': test_type,
+                                        'status': test_status,
+                                        'timestamp': f'POH: {report.get("Power on hours", "N/A")}'
+                                    }
+                                    break
+                    except json.JSONDecodeError:
+                        # Fallback to text parsing if JSON fails
+                        output = proc.stdout
+                        # Check Current operation field
+                        op_match = re.search(r'Current operation\s*:\s*(0x[0-9a-fA-F]+|\d+)', output)
+                        if op_match:
+                            op_val = int(op_match.group(1), 0)
+                            if op_val > 0:
+                                result['status'] = 'running'
+                                result['test_type'] = 'short' if op_val == 1 else 'long'
+                                # Try to extract progress percentage
+                                prog_match = re.search(r'Current Completion\s*:\s*(\d+)%', output)
+                                if prog_match:
+                                    result['progress'] = int(prog_match.group(1))
             except subprocess.TimeoutExpired:
                 pass
             except Exception:
@@ -6777,12 +6796,14 @@ def api_smart_run_test(disk_name):
                 return jsonify({'error': f'Failed to start test: {error_msg}'}), 500
             
             # Start background monitor to save JSON when test completes
-            # Use 'nvme self-test-log' to check test status (not device-self-test)
+            # Check 'Current Device Self-Test Operation' field - if > 0, test is running
             sleep_interval = 10 if test_type == 'short' else 60
             subprocess.Popen(
                 f'''
                 sleep 5
-                while nvme self-test-log {device} 2>/dev/null | grep -qi 'in progress\\|operation in progress'; do
+                while true; do
+                    op=$(nvme self-test-log {device} -o json 2>/dev/null | grep -o '"Current Device Self-Test Operation":[0-9]*' | grep -o '[0-9]*$')
+                    [ -z "$op" ] || [ "$op" -eq 0 ] && break
                     sleep {sleep_interval}
                 done
                 nvme smart-log -o json {device} > {json_path} 2>/dev/null
