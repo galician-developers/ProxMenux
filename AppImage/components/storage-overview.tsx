@@ -1436,12 +1436,20 @@ export function StorageOverview() {
                 </div>
               </div>
 
-              {/* SMART Test Data Section (from real test JSON) */}
+              {/* SMART Test Data Section (from real test JSON) - Uniform style with Wear & Lifetime */}
               {(loadingSmartJson || smartJsonData?.has_data) && (
                 <div className="border-t pt-4">
                   <h4 className="font-semibold mb-3 flex items-center gap-2">
                     <Activity className="h-4 w-4 text-green-400" />
-                    SMART Test Data
+                    {(() => {
+                      // Check if this is SSD without Proxmox wear data - show as "Wear & Lifetime"
+                      const isNvme = selectedDisk.name?.includes('nvme')
+                      const hasProxmoxWear = getWearIndicator(selectedDisk) !== null
+                      if (!isNvme && !hasProxmoxWear && smartJsonData?.has_data) {
+                        return 'Wear & Lifetime'
+                      }
+                      return 'SMART Test Data'
+                    })()}
                     {smartJsonData?.has_data && (
                       <Badge className="bg-green-500/10 text-green-400 border-green-500/20 text-[10px] px-1.5">
                         Real Test
@@ -1455,33 +1463,18 @@ export function StorageOverview() {
                     </div>
                   ) : smartJsonData?.has_data && smartJsonData.data ? (
                     <div className="space-y-3">
-                      {/* Last Test Info */}
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-sm text-muted-foreground">Last Test Date</p>
-                          <p className="font-medium">
-                            {smartJsonData.timestamp 
-                              ? new Date(smartJsonData.timestamp).toLocaleString()
-                              : 'Unknown'}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">Test Type</p>
-                          <p className="font-medium capitalize">{smartJsonData.test_type || 'Unknown'}</p>
-                        </div>
-                      </div>
-                      
-                      {/* SSD Life Estimation from JSON (if available) */}
+                      {/* SSD/NVMe Life Estimation from JSON - Uniform style */}
                       {(() => {
                         const data = smartJsonData.data as Record<string, unknown>
                         const ataAttrs = data?.ata_smart_attributes as { table?: Array<{ id: number; name: string; value: number; raw?: { value: number } }> }
                         const table = ataAttrs?.table || []
                         
-                        // Look for wear-related attributes
+                        // Look for wear-related attributes for SSD
                         const wearAttr = table.find(a => 
                           a.name?.toLowerCase().includes('wear_leveling') ||
                           a.name?.toLowerCase().includes('media_wearout') ||
                           a.name?.toLowerCase().includes('percent_lifetime') ||
+                          a.name?.toLowerCase().includes('ssd_life_left') ||
                           a.id === 177 || a.id === 231 || a.id === 233
                         )
                         
@@ -1491,54 +1484,94 @@ export function StorageOverview() {
                           a.id === 241
                         )
                         
-                        if (wearAttr || lbasAttr) {
-                          return (
-                            <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-3">
-                              <p className="text-xs text-green-400 mb-2 font-medium">From Real SMART Test</p>
-                              <div className="grid grid-cols-2 gap-4">
-                                {wearAttr && (
-                                  <div>
-                                    <p className="text-sm text-muted-foreground">{wearAttr.name?.replace(/_/g, ' ')}</p>
-                                    <p className={`font-medium ${wearAttr.value < 50 ? 'text-red-400' : wearAttr.value < 80 ? 'text-yellow-400' : 'text-green-400'}`}>
-                                      {wearAttr.value}%
-                                    </p>
-                                  </div>
-                                )}
-                                {lbasAttr && lbasAttr.raw?.value && (
-                                  <div>
-                                    <p className="text-sm text-muted-foreground">Total Data Written</p>
-                                    <p className="font-medium">
-                                      {(() => {
-                                        const tbWritten = (lbasAttr.raw.value * 512) / (1024 ** 4)
-                                        return tbWritten >= 1 
-                                          ? `${tbWritten.toFixed(2)} TB`
-                                          : `${(tbWritten * 1024).toFixed(2)} GB`
-                                      })()}
-                                    </p>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        }
+                        // Look for power on hours from SMART data
+                        const pohAttr = table.find(a => 
+                          a.name?.toLowerCase().includes('power_on_hours') ||
+                          a.id === 9
+                        )
                         
                         // For NVMe, check nvme_smart_health_information_log
                         const nvmeHealth = data?.nvme_smart_health_information_log as Record<string, unknown>
-                        if (nvmeHealth) {
-                          const percentUsed = nvmeHealth.percentage_used as number
-                          const dataUnitsWritten = nvmeHealth.data_units_written as number
-                          const availableSpare = nvmeHealth.available_spare as number
-                          
+                        
+                        // Calculate data written
+                        let dataWrittenTB = 0
+                        let dataWrittenLabel = ''
+                        if (lbasAttr && lbasAttr.raw?.value) {
+                          dataWrittenTB = (lbasAttr.raw.value * 512) / (1024 ** 4)
+                          dataWrittenLabel = dataWrittenTB >= 1 
+                            ? `${dataWrittenTB.toFixed(2)} TB`
+                            : `${(dataWrittenTB * 1024).toFixed(2)} GB`
+                        } else if (nvmeHealth?.data_units_written) {
+                          const units = nvmeHealth.data_units_written as number
+                          dataWrittenTB = (units * 512000) / (1024 ** 4)
+                          dataWrittenLabel = dataWrittenTB >= 1 
+                            ? `${dataWrittenTB.toFixed(2)} TB`
+                            : `${(dataWrittenTB * 1024).toFixed(2)} GB`
+                        }
+                        
+                        // Get wear percentage
+                        let wearPercent: number | null = null
+                        let wearLabel = 'Life Remaining'
+                        if (wearAttr) {
+                          wearPercent = wearAttr.value
+                          wearLabel = wearAttr.name?.replace(/_/g, ' ') || 'Life Remaining'
+                        } else if (nvmeHealth?.percentage_used !== undefined) {
+                          wearPercent = 100 - (nvmeHealth.percentage_used as number)
+                          wearLabel = 'Life Remaining'
+                        }
+                        
+                        // Calculate estimated life remaining
+                        let estimatedLife = ''
+                        const powerOnHours = pohAttr?.raw?.value || selectedDisk.power_on_hours || 0
+                        if (wearPercent !== null && wearPercent > 0 && wearPercent < 100 && powerOnHours > 0) {
+                          const usedPercent = 100 - wearPercent
+                          if (usedPercent > 0) {
+                            const totalEstimatedHours = powerOnHours / (usedPercent / 100)
+                            const remainingHours = totalEstimatedHours - powerOnHours
+                            const remainingYears = remainingHours / (24 * 365)
+                            if (remainingYears >= 1) {
+                              estimatedLife = `~${remainingYears.toFixed(1)} years`
+                            } else {
+                              const remainingMonths = remainingYears * 12
+                              estimatedLife = `~${remainingMonths.toFixed(0)} months`
+                            }
+                          }
+                        }
+                        
+                        // Available spare for NVMe
+                        const availableSpare = nvmeHealth?.available_spare as number | undefined
+                        
+                        if (wearPercent !== null || dataWrittenLabel) {
                           return (
-                            <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-3">
-                              <p className="text-xs text-green-400 mb-2 font-medium">From Real SMART Test (NVMe)</p>
-                              <div className="grid grid-cols-2 gap-4">
-                                {percentUsed !== undefined && (
-                                  <div>
-                                    <p className="text-sm text-muted-foreground">Percent Used</p>
-                                    <p className={`font-medium ${percentUsed > 80 ? 'text-red-400' : percentUsed > 50 ? 'text-yellow-400' : 'text-green-400'}`}>
-                                      {percentUsed}%
+                            <>
+                              {/* Wear Progress Bar - Same style as NVMe */}
+                              {wearPercent !== null && (
+                                <div>
+                                  <div className="flex items-center justify-between mb-2">
+                                    <p className="text-sm text-muted-foreground">{wearLabel}</p>
+                                    <p className={`font-medium ${wearPercent < 20 ? 'text-red-400' : wearPercent < 50 ? 'text-yellow-400' : 'text-green-400'}`}>
+                                      {wearPercent}%
                                     </p>
+                                  </div>
+                                  <Progress
+                                    value={wearPercent}
+                                    className={`h-2 ${wearPercent < 20 ? '[&>div]:bg-red-500' : wearPercent < 50 ? '[&>div]:bg-yellow-500' : '[&>div]:bg-green-500'}`}
+                                  />
+                                </div>
+                              )}
+                              
+                              {/* Stats Grid - Same layout as NVMe Wear & Lifetime */}
+                              <div className="grid grid-cols-2 gap-4">
+                                {estimatedLife && (
+                                  <div>
+                                    <p className="text-sm text-muted-foreground">Estimated Life Remaining</p>
+                                    <p className="font-medium">{estimatedLife}</p>
+                                  </div>
+                                )}
+                                {dataWrittenLabel && (
+                                  <div>
+                                    <p className="text-sm text-muted-foreground">Total Data Written</p>
+                                    <p className="font-medium">{dataWrittenLabel}</p>
                                   </div>
                                 )}
                                 {availableSpare !== undefined && (
@@ -1549,30 +1582,28 @@ export function StorageOverview() {
                                     </p>
                                   </div>
                                 )}
-                                {dataUnitsWritten !== undefined && (
-                                  <div>
-                                    <p className="text-sm text-muted-foreground">Total Data Written</p>
-                                    <p className="font-medium">
-                                      {(() => {
-                                        const tbWritten = (dataUnitsWritten * 512000) / (1024 ** 4)
-                                        return tbWritten >= 1 
-                                          ? `${tbWritten.toFixed(2)} TB`
-                                          : `${(tbWritten * 1024).toFixed(2)} GB`
-                                      })()}
-                                    </p>
-                                  </div>
-                                )}
                               </div>
-                            </div>
+                            </>
                           )
                         }
-                        
                         return null
                       })()}
                       
-                      <p className="text-xs text-muted-foreground">
-                        Run a SMART test in the SMART Test tab for more detailed analysis.
-                      </p>
+                      {/* Last Test Info */}
+                      <div className="grid grid-cols-2 gap-4 pt-2 border-t border-border/50">
+                        <div>
+                          <p className="text-sm text-muted-foreground">Last Test Date</p>
+                          <p className="font-medium text-sm">
+                            {smartJsonData.timestamp 
+                              ? new Date(smartJsonData.timestamp).toLocaleString()
+                              : 'Unknown'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">Test Type</p>
+                          <p className="font-medium text-sm capitalize">{smartJsonData.test_type || 'Unknown'}</p>
+                        </div>
+                      </div>
                     </div>
                   ) : (
                     <div className="text-sm text-muted-foreground">
@@ -1700,30 +1731,92 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
   
   // Build attributes table - format differs for NVMe vs SATA
   const isNvmeForTable = diskType === 'NVMe'
+  
+  // Explanations for NVMe metrics
+  const nvmeExplanations: Record<string, string> = {
+    'Critical Warning': 'Active alert flags from the NVMe controller. Any non-zero value requires immediate investigation.',
+    'Temperature': 'Composite temperature. Sustained high temps cause throttling and reduce lifespan.',
+    'Available Spare': 'Spare NAND blocks remaining. Alert triggers below 5%.',
+    'Available Spare Threshold': 'Threshold below which spare blocks are considered critical.',
+    'Percentage Used': "Drive's own estimate of endurance consumed. 100% means rated lifespan has been reached.",
+    'Percent Used': "Drive's own estimate of endurance consumed. 100% means rated lifespan has been reached.",
+    'Media Errors': 'Unrecoverable errors involving the NAND flash. Any non-zero value indicates flash cell damage.',
+    'Unsafe Shutdowns': 'Power losses without proper shutdown. Very high counts can cause firmware corruption.',
+    'Power Cycles': 'Total on/off cycles. Frequent cycling increases connector and capacitor wear.',
+    'Power On Hours': 'Total hours the drive has been powered on.',
+    'Data Units Read': 'Total data read from the drive in 512KB units.',
+    'Data Units Written': 'Total data written to the drive in 512KB units.',
+    'Host Read Commands': 'Total read commands processed by the controller.',
+    'Host Write Commands': 'Total write commands processed by the controller.',
+    'Controller Busy Time': 'Minutes the controller was busy processing commands.',
+    'Error Log Entries': 'Number of entries in the error log. Often includes benign self-test artifacts.',
+    'Warning Temp Time': 'Minutes spent in the warning temperature range. Zero is ideal.',
+    'Critical Temp Time': 'Minutes spent in the critical temperature range. Should always be zero.',
+  }
+  
+  // Explanations for SATA/SSD attributes
+  const sataExplanations: Record<string, string> = {
+    'Raw Read Error Rate': 'Raw read errors detected. High values on Seagate drives are often normal (uses proprietary formula).',
+    'Reallocated Sector Count': 'Bad sectors replaced by spare sectors. Growing count indicates drive degradation.',
+    'Reallocated Sectors': 'Bad sectors replaced by spare sectors. Growing count indicates drive degradation.',
+    'Spin Up Time': 'Time needed for platters to reach operating speed (HDD only).',
+    'Start Stop Count': 'Number of spindle start/stop cycles (HDD only).',
+    'Power On Hours': 'Total hours the drive has been powered on.',
+    'Power Cycle Count': 'Total number of complete power on/off cycles.',
+    'Temperature': 'Current drive temperature. High temps reduce lifespan.',
+    'Temperature Celsius': 'Current drive temperature in Celsius. High temps reduce lifespan.',
+    'Current Pending Sector': 'Sectors waiting to be remapped. May resolve or become reallocated.',
+    'Pending Sectors': 'Sectors waiting to be remapped. May resolve or become reallocated.',
+    'Offline Uncorrectable': 'Uncorrectable errors found during offline scan. Indicates potential data loss.',
+    'UDMA CRC Error Count': 'Interface communication errors. Usually caused by cable or connection issues.',
+    'CRC Errors': 'Interface communication errors. Usually caused by cable or connection issues.',
+    'Wear Leveling Count': 'SSD wear indicator. Lower values mean more wear.',
+    'Media Wearout Indicator': 'SSD life remaining estimate. Lower values mean less life remaining.',
+    'Total LBAs Written': 'Total logical blocks written to the drive.',
+    'Total LBAs Read': 'Total logical blocks read from the drive.',
+    'SSD Life Left': 'Estimated remaining lifespan percentage.',
+    'Percent Lifetime Remain': 'Estimated remaining lifespan percentage.',
+  }
+  
+  const getAttrExplanation = (name: string, isNvme: boolean): string => {
+    const cleanName = name.replace(/_/g, ' ')
+    if (isNvme) {
+      return nvmeExplanations[cleanName] || nvmeExplanations[name] || ''
+    }
+    return sataExplanations[cleanName] || sataExplanations[name] || ''
+  }
+  
   const attributeRows = smartAttributes.map((attr, i) => {
   const statusColor = attr.status === 'ok' ? '#16a34a' : attr.status === 'warning' ? '#ca8a04' : '#dc2626'
   const statusBg = attr.status === 'ok' ? '#16a34a15' : attr.status === 'warning' ? '#ca8a0415' : '#dc262615'
+  const explanation = getAttrExplanation(attr.name, isNvmeForTable)
   
   if (isNvmeForTable) {
-    // NVMe format: Metric | Value | Status
+    // NVMe format: Metric | Value | Status (with explanation)
     return `
     <tr>
-    <td class="col-name">${attr.name}</td>
-    <td style="text-align:center;font-family:monospace;">${attr.value}</td>
-    <td><span class="f-tag" style="background:${statusBg};color:${statusColor}">${attr.status === 'ok' ? 'OK' : attr.status.toUpperCase()}</span></td>
+      <td class="col-name">
+        <div style="font-weight:500;">${attr.name}</div>
+        ${explanation ? `<div style="font-size:10px;color:#64748b;margin-top:2px;">${explanation}</div>` : ''}
+      </td>
+      <td style="text-align:center;font-family:monospace;vertical-align:top;padding-top:12px;">${attr.value}</td>
+      <td style="vertical-align:top;padding-top:8px;"><span class="f-tag" style="background:${statusBg};color:${statusColor}">${attr.status === 'ok' ? 'OK' : attr.status.toUpperCase()}</span></td>
     </tr>
     `
   } else {
-    // SATA format: ID | Attribute | Val | Worst | Thr | Raw | Status
+    // SATA format: ID | Attribute | Val | Worst | Thr | Raw | Status (with explanation)
     return `
     <tr>
-    <td style="font-weight:600;">${attr.id}</td>
-    <td class="col-name">${attr.name.replace(/_/g, ' ')}</td>
-    <td style="text-align:center;">${attr.value}</td>
-    <td style="text-align:center;">${attr.worst}</td>
-    <td class="hide-mobile" style="text-align:center;">${attr.threshold}</td>
-    <td class="col-raw">${attr.raw_value}</td>
-    <td><span class="f-tag" style="background:${statusBg};color:${statusColor}">${attr.status === 'ok' ? 'OK' : attr.status.toUpperCase()}</span></td>
+      <td style="font-weight:600;vertical-align:top;padding-top:12px;">${attr.id}</td>
+      <td class="col-name">
+        <div style="font-weight:500;">${attr.name.replace(/_/g, ' ')}</div>
+        ${explanation ? `<div style="font-size:10px;color:#64748b;margin-top:2px;">${explanation}</div>` : ''}
+      </td>
+      <td style="text-align:center;vertical-align:top;padding-top:12px;">${attr.value}</td>
+      <td style="text-align:center;vertical-align:top;padding-top:12px;">${attr.worst}</td>
+      <td class="hide-mobile" style="text-align:center;vertical-align:top;padding-top:12px;">${attr.threshold}</td>
+      <td class="col-raw" style="vertical-align:top;padding-top:12px;">${attr.raw_value}</td>
+      <td style="vertical-align:top;padding-top:8px;"><span class="f-tag" style="background:${statusBg};color:${statusColor}">${attr.status === 'ok' ? 'OK' : attr.status.toUpperCase()}</span></td>
     </tr>
     `
   }
@@ -2585,19 +2678,36 @@ function SmartTestTab({ disk, observations = [] }: SmartTestTabProps) {
       fetchSmartStatus()
       
       // Poll for status updates
+      // For disks that don't report progress, we keep polling but show an indeterminate progress bar
+      let pollCount = 0
+      const maxPolls = testType === 'short' ? 36 : 720 // 3 min for short, 1 hour for long (at 5s intervals)
+      
       const pollInterval = setInterval(async () => {
+        pollCount++
         try {
-          const data = await fetchApi<SmartTestStatus>(`/api/storage/smart/${disk.name}`)
-          setTestStatus(data)
-          if (data.status !== 'running') {
+          const statusData = await fetchApi<SmartTestStatus>(`/api/storage/smart/${disk.name}`)
+          setTestStatus(statusData)
+          
+          // Only clear runningTest when we get a definitive "not running" status
+          if (statusData.status !== 'running') {
             clearInterval(pollInterval)
             setRunningTest(null)
+            // Refresh SMART JSON data to get new test results
+            fetchSmartStatus()
           }
         } catch {
+          // Don't clear on error - keep showing progress
+        }
+        
+        // Safety timeout: stop polling after max duration
+        if (pollCount >= maxPolls) {
           clearInterval(pollInterval)
           setRunningTest(null)
+          // Refresh status one more time to get final result
+          fetchSmartStatus()
         }
       }, 5000)
+      
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start test'
       setTestError(message)
@@ -2666,79 +2776,80 @@ function SmartTestTab({ disk, observations = [] }: SmartTestTabProps) {
           <Play className="h-4 w-4" />
           Run SMART Test
         </h4>
+        
         <div className="flex flex-wrap gap-3">
-  <Button
-  variant="outline"
-  size="sm"
-  onClick={() => runSmartTest('short')}
-  disabled={runningTest !== null || testStatus.status === 'running'}
-  className="gap-2 bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400"
-  >
-  {runningTest === 'short' || (testStatus.status === 'running' && testStatus.test_type === 'short') ? (
-  <Loader2 className="h-4 w-4 animate-spin" />
-  ) : (
-  <Activity className="h-4 w-4" />
-  )}
-  Short Test (~2 min)
-  </Button>
-  <Button
-  variant="outline"
-  size="sm"
-  onClick={() => runSmartTest('long')}
-  disabled={runningTest !== null || testStatus.status === 'running'}
-  className="gap-2 bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400"
-  >
-  {runningTest === 'long' || (testStatus.status === 'running' && testStatus.test_type === 'long') ? (
-  <Loader2 className="h-4 w-4 animate-spin" />
-  ) : (
-  <Activity className="h-4 w-4" />
-  )}
-  Extended Test (background)
-  </Button>
-  <Button
-  variant="outline"
-  size="sm"
-  onClick={fetchSmartStatus}
-  className="gap-2 bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400"
-  >
-  <Activity className="h-4 w-4" />
-  Refresh Status
-  </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => runSmartTest('short')}
+            disabled={runningTest !== null || testStatus.status === 'running'}
+            className="gap-2 bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400"
+          >
+            {runningTest === 'short' || (testStatus.status === 'running' && testStatus.test_type === 'short') ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Activity className="h-4 w-4" />
+            )}
+            Short Test (~2 min)
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => runSmartTest('long')}
+            disabled={runningTest !== null || testStatus.status === 'running'}
+            className="gap-2 bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400"
+          >
+            {runningTest === 'long' || (testStatus.status === 'running' && testStatus.test_type === 'long') ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Activity className="h-4 w-4" />
+            )}
+            Extended Test (background)
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchSmartStatus}
+            className="gap-2 bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400"
+          >
+            <Activity className="h-4 w-4" />
+            Refresh Status
+          </Button>
         </div>
         <p className="text-xs text-muted-foreground">
           Short test takes ~2 minutes. Extended test runs in the background and can take several hours for large disks.
           You will receive a notification when the test completes.
         </p>
         
-  {/* Error Message */}
-  {testError && (
-  <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">
-  <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-  <div className="flex-1">
-  <p className="text-sm font-medium">Failed to start test</p>
-  <p className="text-xs opacity-80">{testError}</p>
-  </div>
-  </div>
-  )}
-  
-  </div>
+        {/* Error Message */}
+        {testError && (
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">
+            <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">Failed to start test</p>
+              <p className="text-xs opacity-80">{testError}</p>
+            </div>
+          </div>
+        )}
+      </div>
       
-      {/* Test Progress */}
-      {testStatus.status === 'running' && (
+      {/* Test Progress - Show when API reports running OR when we just started a test */}
+      {(testStatus.status === 'running' || runningTest !== null) && (
         <div className="border rounded-lg p-4 bg-blue-500/5 border-blue-500/20">
-          <div className="flex items-center gap-3 mb-3">
+          <div className="flex items-center gap-3">
             <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
-            <div>
+            <div className="flex-1">
               <p className="font-medium text-blue-500">
-                {testStatus.test_type === 'short' ? 'Short' : 'Extended'} test in progress
+                {(runningTest || testStatus.test_type) === 'short' ? 'Short' : 'Extended'} test in progress
               </p>
               <p className="text-xs text-muted-foreground">
                 Please wait while the test completes...
               </p>
             </div>
           </div>
+          {/* Only show progress bar if the disk reports progress percentage */}
           {testStatus.progress !== undefined && (
-            <Progress value={testStatus.progress} className="h-2 [&>div]:bg-blue-500" />
+            <Progress value={testStatus.progress} className="h-2 mt-3 [&>div]:bg-blue-500" />
           )}
         </div>
       )}
