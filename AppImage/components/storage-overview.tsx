@@ -1654,17 +1654,22 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
       
       let obsItemsHtml = ''
       obsList.forEach(obs => {
-        const severityColor = obs.severity === 'critical' ? '#dc2626' : obs.severity === 'warning' ? '#ca8a04' : '#3b82f6'
-        const severityBg = obs.severity === 'critical' ? '#dc262615' : obs.severity === 'warning' ? '#ca8a0415' : '#3b82f615'
+        // Use blue (info) as base color for all observations
+        const infoColor = '#3b82f6'
+        const infoBg = '#3b82f615'
+        // Severity badge color based on actual severity
+        const severityBadgeColor = obs.severity === 'critical' ? '#dc2626' : obs.severity === 'warning' ? '#ca8a04' : '#3b82f6'
         const severityLabel = obs.severity ? obs.severity.charAt(0).toUpperCase() + obs.severity.slice(1) : 'Info'
         const firstDate = obs.first_occurrence ? new Date(obs.first_occurrence).toLocaleString() : 'N/A'
         const lastDate = obs.last_occurrence ? new Date(obs.last_occurrence).toLocaleString() : 'N/A'
         const dismissedBadge = obs.dismissed ? '<span style="background:#16a34a20;color:#16a34a;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:4px;">Dismissed</span>' : ''
+        const errorTypeLabel = type === 'io_error' ? 'I/O Error' : type === 'smart_error' ? 'SMART Error' : type === 'filesystem_error' ? 'Filesystem Error' : type.replace(/_/g, ' ')
         
         obsItemsHtml += `
-        <div style="background:${severityBg};border:1px solid ${severityColor}30;border-radius:8px;padding:16px;">
+        <div style="background:${infoBg};border:1px solid ${infoColor}30;border-radius:8px;padding:16px;">
           <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px;">
-            <span style="background:${severityColor}20;color:${severityColor};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">${severityLabel}</span>
+            <span style="background:${infoColor}20;color:${infoColor};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">${errorTypeLabel}</span>
+            <span style="background:${severityBadgeColor}20;color:${severityBadgeColor};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">${severityLabel}</span>
             <span style="background:#64748b20;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;">ID: #${obs.id}</span>
             <span style="background:#64748b20;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;">Occurrences: <strong>${obs.occurrence_count}</strong></span>
             ${dismissedBadge}
@@ -1680,7 +1685,7 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
             <div style="font-family:monospace;font-size:11px;color:#1e293b;background:#f8fafc;padding:10px;border-radius:4px;white-space:pre-wrap;word-break:break-all;max-height:120px;overflow-y:auto;">${obs.raw_message || 'N/A'}</div>
           </div>
           
-          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:10px;font-size:11px;padding-top:10px;border-top:1px solid ${severityColor}20;">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:10px;font-size:11px;padding-top:10px;border-top:1px solid ${infoColor}20;">
             <div>
               <span style="color:#64748b;">Device:</span>
               <strong style="color:#1e293b;margin-left:4px;">${obs.device_name || disk.name}</strong>
@@ -1944,13 +1949,8 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
       <div class="card-label">Power Cycles</div>
     </div>
     <div class="card card-c">
-      ${isNvmeDisk ? `
-      <div class="card-value" style="color:${(testStatus.smart_data?.nvme_raw?.media_errors ?? 0) > 0 ? '#dc2626' : '#16a34a'}">${testStatus.smart_data?.nvme_raw?.media_errors ?? 0}</div>
-      <div class="card-label">Media Errors</div>
-      ` : `
-      <div class="card-value" style="color:${(disk.reallocated_sectors ?? 0) > 0 ? '#dc2626' : '#16a34a'}">${disk.reallocated_sectors ?? 0}</div>
-      <div class="card-label">Reallocated Sectors</div>
-      `}
+      <div class="card-value" style="color:${disk.smart_status === 'Passed' ? '#16a34a' : (disk.smart_status === 'Failed' ? '#dc2626' : '#64748b')}">${disk.smart_status || 'N/A'}</div>
+      <div class="card-label">SMART Status</div>
     </div>
   </div>
   ${!isNvmeDisk ? `
@@ -1964,8 +1964,8 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
       <div class="card-label">CRC Errors</div>
     </div>
     <div class="card card-c">
-      <div class="card-value" style="color:${disk.smart_status === 'Passed' ? '#16a34a' : '#dc2626'}">${disk.smart_status || 'N/A'}</div>
-      <div class="card-label">SMART Status</div>
+      <div class="card-value" style="color:${(disk.reallocated_sectors ?? 0) > 0 ? '#dc2626' : '#16a34a'}">${disk.reallocated_sectors ?? 0}</div>
+      <div class="card-label">Reallocated Sectors</div>
     </div>
   </div>
   ` : ''}
