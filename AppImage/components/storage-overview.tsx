@@ -1378,7 +1378,9 @@ export function StorageOverview() {
                           a.id === 9
                         )
 
-                        const nvmeHealth = data?.nvme_smart_health_information_log as Record<string, unknown>
+                        // NVMe: check both nvme_smart_health_information_log (smartctl) and top-level (nvme smart-log)
+                        const nvmeHealth = (data?.nvme_smart_health_information_log || data) as Record<string, unknown>
+                        const isNvmeData = nvmeHealth?.percent_used !== undefined || nvmeHealth?.percentage_used !== undefined
 
                         // Data written
                         let dataWrittenLabel = ''
@@ -1392,7 +1394,8 @@ export function StorageOverview() {
                           }
                           dataWrittenLabel = tb >= 1 ? `${tb.toFixed(2)} TB` : `${(tb * 1024).toFixed(2)} GB`
                         } else if (nvmeHealth?.data_units_written) {
-                          const tb = ((nvmeHealth.data_units_written as number) * 512000) / (1024 ** 4)
+                          const units = nvmeHealth.data_units_written as number
+                          const tb = (units * 512000) / (1024 ** 4)
                           dataWrittenLabel = tb >= 1 ? `${tb.toFixed(2)} TB` : `${(tb * 1024).toFixed(2)} GB`
                         }
 
@@ -1400,8 +1403,9 @@ export function StorageOverview() {
                         let wearPercent: number | null = null
                         if (wearAttr) {
                           wearPercent = (wearAttr.id === 230) ? (100 - wearAttr.value) : wearAttr.value
-                        } else if (nvmeHealth?.percentage_used !== undefined) {
-                          wearPercent = 100 - (nvmeHealth.percentage_used as number)
+                        } else if (isNvmeData) {
+                          const pctUsed = (nvmeHealth.percent_used ?? nvmeHealth.percentage_used ?? 0) as number
+                          wearPercent = 100 - pctUsed
                         }
 
                         // Estimated life
@@ -1415,7 +1419,7 @@ export function StorageOverview() {
                           }
                         }
 
-                        const availableSpare = nvmeHealth?.available_spare as number | undefined
+                        const availableSpare = (nvmeHealth?.avail_spare ?? nvmeHealth?.available_spare) as number | undefined
 
                         if (wearPercent !== null || dataWrittenLabel) {
                           return (
