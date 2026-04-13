@@ -6698,27 +6698,21 @@ def api_smart_status(disk_name):
 def api_smart_run_test(disk_name):
     """Start a SMART self-test on a disk."""
     try:
-        logging.info(f"[SMART Test] Starting test for disk: {disk_name}")
-        
         # Validate disk name (security)
         if not re.match(r'^[a-zA-Z0-9]+$', disk_name):
-            logging.warning(f"[SMART Test] Invalid disk name rejected: {disk_name}")
             return jsonify({'error': 'Invalid disk name'}), 400
         
         device = f'/dev/{disk_name}'
         if not os.path.exists(device):
-            logging.warning(f"[SMART Test] Device not found: {device}")
             return jsonify({'error': 'Device not found'}), 404
         
         data = request.get_json() or {}
         test_type = data.get('test_type', 'short')
-        logging.info(f"[SMART Test] Test type: {test_type}, Device: {device}")
         
         if test_type not in ('short', 'long'):
             return jsonify({'error': 'Invalid test type. Use "short" or "long"'}), 400
         
         is_nvme = _is_nvme(disk_name)
-        logging.info(f"[SMART Test] Is NVMe: {is_nvme}")
         
         # Check tools and auto-install if missing
         tools = _ensure_smart_tools(install_if_missing=True)
@@ -6760,17 +6754,22 @@ def api_smart_run_test(disk_name):
             if not supports_selftest:
                 return jsonify({'error': 'This NVMe device does not support self-test (OACS bit 4 not set)'}), 400
             
-            logging.info(f"[SMART Test] Running: nvme device-self-test {device} --self-test-code={code}")
             proc = subprocess.run(
                 ['nvme', 'device-self-test', device, f'--self-test-code={code}'],
                 capture_output=True, text=True, timeout=30
             )
-            logging.info(f"[SMART Test] Result: returncode={proc.returncode}, stdout={proc.stdout[:200] if proc.stdout else ''}, stderr={proc.stderr[:200] if proc.stderr else ''}")
             
             if proc.returncode != 0:
                 error_msg = proc.stderr.strip() or proc.stdout.strip() or 'Unknown error'
+                # Test already in progress - return success so frontend shows progress
+                if 'in progress' in error_msg.lower() or '0x211d' in error_msg.lower():
+                    return jsonify({
+                        'success': True,
+                        'message': 'Test started successfully',
+                        'test_type': test_type
+                    }), 200
                 # Some NVMe devices don't support self-test
-                if 'not support' in error_msg.lower() or 'invalid' in error_msg.lower() or 'operation' in error_msg.lower():
+                if 'not support' in error_msg.lower() or 'invalid' in error_msg.lower():
                     return jsonify({'error': f'This NVMe device does not support self-test: {error_msg}'}), 400
                 # Check for permission errors
                 if 'permission' in error_msg.lower() or 'operation not permitted' in error_msg.lower():

@@ -2155,22 +2155,52 @@ function SmartTestTab({ disk, observations = [] }: SmartTestTabProps) {
   // Extract SMART attributes from testStatus for the report
   const smartAttributes = testStatus.smart_data?.attributes || []
   
-  // Fetch current SMART status on mount
-  useEffect(() => {
-    fetchSmartStatus()
-  }, [disk.name])
-  
   const fetchSmartStatus = async () => {
-    try {
-      setLoading(true)
-      const data = await fetchApi<SmartTestStatus>(`/api/storage/smart/${disk.name}`)
-      setTestStatus(data)
-    } catch {
-      setTestStatus({ status: 'idle' })
-    } finally {
-      setLoading(false)
+  try {
+  setLoading(true)
+  const data = await fetchApi<SmartTestStatus>(`/api/storage/smart/${disk.name}`)
+  setTestStatus(data)
+  return data
+  } catch {
+  setTestStatus({ status: 'idle' })
+  return { status: 'idle' }
+  } finally {
+  setLoading(false)
+  }
+  }
+  
+  // Fetch current SMART status on mount and start polling if test is running
+  useEffect(() => {
+  let pollInterval: NodeJS.Timeout | null = null
+  
+  const checkAndPoll = async () => {
+  const data = await fetchSmartStatus()
+  // If a test is already running, start polling
+  if (data.status === 'running') {
+  pollInterval = setInterval(async () => {
+  try {
+    const status = await fetchApi<SmartTestStatus>(`/api/storage/smart/${disk.name}`)
+    setTestStatus(status)
+    if (status.status !== 'running' && pollInterval) {
+      clearInterval(pollInterval)
+      pollInterval = null
+    }
+  } catch {
+    if (pollInterval) {
+      clearInterval(pollInterval)
+      pollInterval = null
     }
   }
+  }, 5000)
+  }
+  }
+  
+  checkAndPoll()
+  
+  return () => {
+  if (pollInterval) clearInterval(pollInterval)
+  }
+  }, [disk.name])
   
   const [testError, setTestError] = useState<string | null>(null)
   const [installing, setInstalling] = useState(false)
@@ -2206,10 +2236,14 @@ function SmartTestTab({ disk, observations = [] }: SmartTestTabProps) {
     try {
       setRunningTest(testType)
       setTestError(null)
+      
       await fetchApi(`/api/storage/smart/${disk.name}/test`, {
         method: 'POST',
         body: JSON.stringify({ test_type: testType })
       })
+      
+      // Immediately fetch status to show progress bar
+      fetchSmartStatus()
       
       // Poll for status updates
       const pollInterval = setInterval(async () => {
@@ -2294,61 +2328,61 @@ function SmartTestTab({ disk, observations = [] }: SmartTestTabProps) {
           Run SMART Test
         </h4>
         <div className="flex flex-wrap gap-3">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => runSmartTest('short')}
-            disabled={runningTest !== null}
-            className="gap-2 bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400"
-          >
-            {runningTest === 'short' ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Activity className="h-4 w-4" />
-            )}
-            Short Test (~2 min)
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => runSmartTest('long')}
-            disabled={runningTest !== null}
-            className="gap-2 bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400"
-          >
-            {runningTest === 'long' ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Activity className="h-4 w-4" />
-            )}
-            Extended Test (background)
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={fetchSmartStatus}
-            disabled={runningTest !== null}
-            className="gap-2 bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400"
-          >
-            <Activity className="h-4 w-4" />
-            Refresh Status
-          </Button>
+  <Button
+  variant="outline"
+  size="sm"
+  onClick={() => runSmartTest('short')}
+  disabled={runningTest !== null || testStatus.status === 'running'}
+  className="gap-2 bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400"
+  >
+  {runningTest === 'short' || (testStatus.status === 'running' && testStatus.test_type === 'short') ? (
+  <Loader2 className="h-4 w-4 animate-spin" />
+  ) : (
+  <Activity className="h-4 w-4" />
+  )}
+  Short Test (~2 min)
+  </Button>
+  <Button
+  variant="outline"
+  size="sm"
+  onClick={() => runSmartTest('long')}
+  disabled={runningTest !== null || testStatus.status === 'running'}
+  className="gap-2 bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400"
+  >
+  {runningTest === 'long' || (testStatus.status === 'running' && testStatus.test_type === 'long') ? (
+  <Loader2 className="h-4 w-4 animate-spin" />
+  ) : (
+  <Activity className="h-4 w-4" />
+  )}
+  Extended Test (background)
+  </Button>
+  <Button
+  variant="outline"
+  size="sm"
+  onClick={fetchSmartStatus}
+  className="gap-2 bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400"
+  >
+  <Activity className="h-4 w-4" />
+  Refresh Status
+  </Button>
         </div>
         <p className="text-xs text-muted-foreground">
           Short test takes ~2 minutes. Extended test runs in the background and can take several hours for large disks.
           You will receive a notification when the test completes.
         </p>
         
-        {/* Error Message */}
-        {testError && (
-          <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">
-            <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-            <div className="flex-1">
-              <p className="text-sm font-medium">Failed to start test</p>
-              <p className="text-xs opacity-80">{testError}</p>
-            </div>
-          </div>
-        )}
-      </div>
+  {/* Error Message */}
+  {testError && (
+  <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">
+  <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+  <div className="flex-1">
+  <p className="text-sm font-medium">Failed to start test</p>
+  <p className="text-xs opacity-80">{testError}</p>
+  </div>
+  </div>
+  )}
+  
+  </div>
       
       {/* Test Progress */}
       {testStatus.status === 'running' && (
