@@ -1421,42 +1421,65 @@ export function StorageOverview() {
 
                         const availableSpare = (nvmeHealth?.avail_spare ?? nvmeHealth?.available_spare) as number | undefined
 
-                        if (wearPercent !== null || dataWrittenLabel) {
+                        // Wear used % (inverse of life remaining)
+                        const wearUsed = wearPercent !== null ? 100 - wearPercent : null
+                        // Life ring color: green ≥50%, yellow 20-49%, red <20%
+                        const lifeColor = wearPercent !== null
+                          ? (wearPercent >= 50 ? '#22c55e' : wearPercent >= 20 ? '#eab308' : '#ef4444')
+                          : '#6b7280'
+
+                        if (wearUsed !== null || dataWrittenLabel) {
                           return (
-                            <>
+                            <div className="flex gap-4 items-start">
+                              {/* Life remaining ring */}
                               {wearPercent !== null && (
-                                <div>
-                                  <div className="flex items-center justify-between mb-2">
-                                    <p className="text-sm text-muted-foreground">Life Remaining</p>
-                                    <p className="font-medium text-blue-400">{wearPercent}%</p>
-                                  </div>
-                                  <Progress
-                                    value={wearPercent}
-                                    className={`h-2 ${wearPercent < 20 ? '[&>div]:bg-red-500' : '[&>div]:bg-blue-500'}`}
-                                  />
+                                <div className="flex flex-col items-center gap-1 flex-shrink-0">
+                                  <svg width="72" height="72" viewBox="0 0 72 72">
+                                    <circle cx="36" cy="36" r="28" fill="none" stroke="currentColor" strokeWidth="6" className="text-muted/20" />
+                                    <circle cx="36" cy="36" r="28" fill="none" stroke={lifeColor} strokeWidth="6"
+                                      strokeDasharray={`${wearPercent * 1.759} 175.9`}
+                                      strokeLinecap="round" transform="rotate(-90 36 36)" />
+                                    <text x="36" y="33" textAnchor="middle" fill={lifeColor} fontSize="16" fontWeight="700">{wearPercent}%</text>
+                                    <text x="36" y="46" textAnchor="middle" fill="currentColor" fontSize="7" className="text-muted-foreground">life</text>
+                                  </svg>
                                 </div>
                               )}
-                              <div className="grid grid-cols-2 gap-4">
-                                {estimatedLife && (
+                              {/* Wear bar + stats */}
+                              <div className="flex-1 space-y-3 min-w-0">
+                                {wearUsed !== null && (
                                   <div>
-                                    <p className="text-sm text-muted-foreground">Estimated Life Remaining</p>
-                                    <p className="font-medium">{estimatedLife}</p>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                      <p className="text-xs text-muted-foreground">Wear</p>
+                                      <p className="text-sm font-medium text-blue-400">{wearUsed}%</p>
+                                    </div>
+                                    <Progress
+                                      value={wearUsed}
+                                      className="h-1.5 [&>div]:bg-blue-500"
+                                    />
                                   </div>
                                 )}
-                                {dataWrittenLabel && (
-                                  <div>
-                                    <p className="text-sm text-muted-foreground">Total Data Written</p>
-                                    <p className="font-medium">{dataWrittenLabel}</p>
-                                  </div>
-                                )}
-                                {availableSpare !== undefined && (
-                                  <div>
-                                    <p className="text-sm text-muted-foreground">Available Spare</p>
-                                    <p className={`font-medium ${availableSpare < 20 ? 'text-red-400' : 'text-blue-400'}`}>{availableSpare}%</p>
-                                  </div>
-                                )}
+                                <div className="grid grid-cols-2 gap-3">
+                                  {estimatedLife && (
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">Est. Life</p>
+                                      <p className="text-sm font-medium">{estimatedLife}</p>
+                                    </div>
+                                  )}
+                                  {dataWrittenLabel && (
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">Data Written</p>
+                                      <p className="text-sm font-medium">{dataWrittenLabel}</p>
+                                    </div>
+                                  )}
+                                  {availableSpare !== undefined && (
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">Avail. Spare</p>
+                                      <p className={`text-sm font-medium ${availableSpare < 20 ? 'text-red-400' : 'text-blue-400'}`}>{availableSpare}%</p>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                            </>
+                            </div>
                           )
                         }
                         return null
