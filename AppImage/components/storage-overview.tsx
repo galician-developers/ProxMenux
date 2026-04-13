@@ -1335,8 +1335,134 @@ export function StorageOverview() {
                 </div>
               </div>
 
-              {/* Wear & Lifetime Section */}
-              {getWearIndicator(selectedDisk) && (
+              {/* Wear & Lifetime — SMART test data takes priority over basic DiskInfo */}
+              {(loadingSmartJson || smartJsonData?.has_data) ? (
+                <div className="border-t pt-4">
+                  <h4 className="font-semibold mb-3 flex items-center gap-2">
+                    Wear & Lifetime
+                    {smartJsonData?.has_data && (
+                      <Badge className="bg-green-500/10 text-green-400 border-green-500/20 text-[10px] px-1.5">
+                        Real Test
+                      </Badge>
+                    )}
+                  </h4>
+                  {loadingSmartJson ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                      <div className="h-4 w-4 rounded-full border-2 border-transparent border-t-blue-400 animate-spin" />
+                      Loading SMART test data...
+                    </div>
+                  ) : smartJsonData?.has_data && smartJsonData.data ? (
+                    <div className="space-y-3">
+                      {(() => {
+                        const data = smartJsonData.data as Record<string, unknown>
+                        const ataAttrs = data?.ata_smart_attributes as { table?: Array<{ id: number; name: string; value: number; raw?: { value: number } }> }
+                        const table = ataAttrs?.table || []
+
+                        const wearAttr = table.find(a =>
+                          a.name?.toLowerCase().includes('wear_leveling') ||
+                          a.name?.toLowerCase().includes('media_wearout') ||
+                          a.name?.toLowerCase().includes('percent_lifetime') ||
+                          a.name?.toLowerCase().includes('ssd_life_left') ||
+                          a.id === 177 || a.id === 231
+                        )
+
+                        const lbasAttr = table.find(a =>
+                          a.name?.toLowerCase().includes('total_lbas_written') ||
+                          a.name?.toLowerCase().includes('writes_gib') ||
+                          a.name?.toLowerCase().includes('lifetime_writes') ||
+                          a.id === 241
+                        )
+
+                        const pohAttr = table.find(a =>
+                          a.name?.toLowerCase().includes('power_on_hours') ||
+                          a.id === 9
+                        )
+
+                        const nvmeHealth = data?.nvme_smart_health_information_log as Record<string, unknown>
+
+                        // Data written
+                        let dataWrittenLabel = ''
+                        if (lbasAttr && lbasAttr.raw?.value) {
+                          const attrName = (lbasAttr.name || '').toLowerCase()
+                          let tb = 0
+                          if (attrName.includes('gib') || attrName.includes('_gb') || attrName.includes('writes_gib')) {
+                            tb = lbasAttr.raw.value / 1024
+                          } else {
+                            tb = (lbasAttr.raw.value * 512) / (1024 ** 4)
+                          }
+                          dataWrittenLabel = tb >= 1 ? `${tb.toFixed(2)} TB` : `${(tb * 1024).toFixed(2)} GB`
+                        } else if (nvmeHealth?.data_units_written) {
+                          const tb = ((nvmeHealth.data_units_written as number) * 512000) / (1024 ** 4)
+                          dataWrittenLabel = tb >= 1 ? `${tb.toFixed(2)} TB` : `${(tb * 1024).toFixed(2)} GB`
+                        }
+
+                        // Life remaining %
+                        let wearPercent: number | null = null
+                        if (wearAttr) {
+                          wearPercent = (wearAttr.id === 230) ? (100 - wearAttr.value) : wearAttr.value
+                        } else if (nvmeHealth?.percentage_used !== undefined) {
+                          wearPercent = 100 - (nvmeHealth.percentage_used as number)
+                        }
+
+                        // Estimated life
+                        let estimatedLife = ''
+                        const powerOnHrs = pohAttr?.raw?.value || selectedDisk.power_on_hours || 0
+                        if (wearPercent !== null && wearPercent > 0 && wearPercent < 100 && powerOnHrs > 0) {
+                          const usedPct = 100 - wearPercent
+                          if (usedPct > 0) {
+                            const remYears = ((powerOnHrs / (usedPct / 100)) - powerOnHrs) / (24 * 365)
+                            estimatedLife = remYears >= 1 ? `~${remYears.toFixed(1)} years` : `~${(remYears * 12).toFixed(0)} months`
+                          }
+                        }
+
+                        const availableSpare = nvmeHealth?.available_spare as number | undefined
+
+                        if (wearPercent !== null || dataWrittenLabel) {
+                          return (
+                            <>
+                              {wearPercent !== null && (
+                                <div>
+                                  <div className="flex items-center justify-between mb-2">
+                                    <p className="text-sm text-muted-foreground">Life Remaining</p>
+                                    <p className="font-medium text-blue-400">{wearPercent}%</p>
+                                  </div>
+                                  <Progress
+                                    value={wearPercent}
+                                    className={`h-2 ${wearPercent < 20 ? '[&>div]:bg-red-500' : '[&>div]:bg-blue-500'}`}
+                                  />
+                                </div>
+                              )}
+                              <div className="grid grid-cols-2 gap-4">
+                                {estimatedLife && (
+                                  <div>
+                                    <p className="text-sm text-muted-foreground">Estimated Life Remaining</p>
+                                    <p className="font-medium">{estimatedLife}</p>
+                                  </div>
+                                )}
+                                {dataWrittenLabel && (
+                                  <div>
+                                    <p className="text-sm text-muted-foreground">Total Data Written</p>
+                                    <p className="font-medium">{dataWrittenLabel}</p>
+                                  </div>
+                                )}
+                                {availableSpare !== undefined && (
+                                  <div>
+                                    <p className="text-sm text-muted-foreground">Available Spare</p>
+                                    <p className={`font-medium ${availableSpare < 20 ? 'text-red-400' : 'text-blue-400'}`}>{availableSpare}%</p>
+                                  </div>
+                                )}
+                              </div>
+                            </>
+                          )
+                        }
+                        return null
+                      })()}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Run a SMART test to get detailed wear data.</p>
+                  )}
+                </div>
+              ) : getWearIndicator(selectedDisk) ? (
                 <div className="border-t pt-4">
                   <h4 className="font-semibold mb-3">Wear & Lifetime</h4>
                   <div className="space-y-3">
@@ -1372,7 +1498,7 @@ export function StorageOverview() {
                     )}
                   </div>
                 </div>
-              )}
+              ) : null}
 
               <div className="border-t pt-4">
                 <h4 className="font-semibold mb-3">SMART Attributes</h4>
@@ -1436,8 +1562,8 @@ export function StorageOverview() {
                 </div>
               </div>
 
-              {/* SMART Test Data Section (from real test JSON) - Uniform style with Wear & Lifetime */}
-              {(loadingSmartJson || smartJsonData?.has_data) && (
+              {/* OLD SMART Test Data section removed — now unified in Wear & Lifetime above */}
+              {false && (
                 <div className="border-t pt-4">
                   <h4 className="font-semibold mb-3 flex items-center gap-2">
                     <Activity className="h-4 w-4 text-green-400" />
@@ -1595,21 +1721,6 @@ export function StorageOverview() {
                         return null
                       })()}
                       
-                      {/* Last Test Info */}
-                      <div className="grid grid-cols-2 gap-4 pt-2 border-t border-border/50">
-                        <div>
-                          <p className="text-sm text-muted-foreground">Last Test Date</p>
-                          <p className="font-medium text-sm">
-                            {smartJsonData.timestamp 
-                              ? new Date(smartJsonData.timestamp).toLocaleString()
-                              : 'Unknown'}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">Test Type</p>
-                          <p className="font-medium text-sm capitalize">{smartJsonData.test_type || 'Unknown'}</p>
-                        </div>
-                      </div>
                     </div>
                   ) : (
                     <div className="text-sm text-muted-foreground">
