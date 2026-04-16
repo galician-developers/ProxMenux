@@ -2087,36 +2087,33 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
   const statusColor = attr.status === 'ok' ? '#16a34a' : attr.status === 'warning' ? '#ca8a04' : '#dc2626'
   const statusBg = attr.status === 'ok' ? '#16a34a15' : attr.status === 'warning' ? '#ca8a0415' : '#dc262615'
   const explanation = getAttrExplanation(attr.name, diskType)
+  const explainRow = explanation
+    ? `<tr class="attr-explain-row"><td colspan="${useSimpleTable ? '3' : '7'}" style="padding:0 4px 8px;border-bottom:1px solid #f1f5f9;"><div style="font-size:10px;color:#64748b;line-height:1.4;">${explanation}</div></td></tr>`
+    : ''
 
   if (useSimpleTable) {
-    // NVMe/SAS format: Metric | Value | Status (with explanation)
+    // NVMe/SAS format: Metric | Value | Status
     const displayValue = isSasDisk ? attr.raw_value : attr.value
     return `
     <tr>
-      <td class="col-name">
-        <div style="font-weight:500;">${attr.name}</div>
-        ${explanation ? `<div style="font-size:10px;color:#64748b;margin-top:2px;">${explanation}</div>` : ''}
-      </td>
-      <td style="text-align:center;font-family:monospace;vertical-align:top;padding-top:12px;">${displayValue}</td>
-      <td style="vertical-align:top;padding-top:8px;"><span class="f-tag" style="background:${statusBg};color:${statusColor}">${attr.status === 'ok' ? 'OK' : attr.status.toUpperCase()}</span></td>
+      <td class="col-name" style="font-weight:500;${explanation ? 'border-bottom:none;padding-bottom:2px;' : ''}">${attr.name}</td>
+      <td style="text-align:center;font-family:monospace;${explanation ? 'border-bottom:none;' : ''}">${displayValue}</td>
+      <td style="${explanation ? 'border-bottom:none;' : ''}"><span class="f-tag" style="background:${statusBg};color:${statusColor}">${attr.status === 'ok' ? 'OK' : attr.status.toUpperCase()}</span></td>
     </tr>
-    `
+    ${explainRow}`
   } else {
-    // SATA format: ID | Attribute | Val | Worst | Thr | Raw | Status (with explanation)
+    // SATA format: ID | Attribute | Val | Worst | Thr | Raw | Status
     return `
     <tr>
-      <td style="font-weight:600;vertical-align:top;padding-top:12px;">${attr.id}</td>
-      <td class="col-name">
-        <div style="font-weight:500;">${attr.name.replace(/_/g, ' ')}</div>
-        ${explanation ? `<div style="font-size:10px;color:#64748b;margin-top:2px;">${explanation}</div>` : ''}
-      </td>
-      <td style="text-align:center;vertical-align:top;padding-top:12px;">${attr.value}</td>
-      <td style="text-align:center;vertical-align:top;padding-top:12px;">${attr.worst}</td>
-      <td style="text-align:center;vertical-align:top;padding-top:12px;">${attr.threshold}</td>
-      <td class="col-raw" style="vertical-align:top;padding-top:12px;">${attr.raw_value}</td>
-      <td style="vertical-align:top;padding-top:8px;"><span class="f-tag" style="background:${statusBg};color:${statusColor}">${attr.status === 'ok' ? 'OK' : attr.status.toUpperCase()}</span></td>
+      <td style="font-weight:600;${explanation ? 'border-bottom:none;padding-bottom:2px;' : ''}">${attr.id}</td>
+      <td class="col-name" style="font-weight:500;${explanation ? 'border-bottom:none;padding-bottom:2px;' : ''}">${attr.name.replace(/_/g, ' ')}</td>
+      <td style="text-align:center;${explanation ? 'border-bottom:none;' : ''}">${attr.value}</td>
+      <td style="text-align:center;${explanation ? 'border-bottom:none;' : ''}">${attr.worst}</td>
+      <td style="text-align:center;${explanation ? 'border-bottom:none;' : ''}">${attr.threshold}</td>
+      <td class="col-raw" style="${explanation ? 'border-bottom:none;' : ''}">${attr.raw_value}</td>
+      <td style="${explanation ? 'border-bottom:none;' : ''}"><span class="f-tag" style="background:${statusBg};color:${statusColor}">${attr.status === 'ok' ? 'OK' : attr.status.toUpperCase()}</span></td>
     </tr>
-    `
+    ${explainRow}`
   }
   }).join('')
   
@@ -2365,7 +2362,7 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=1024">
 <title>SMART Health Report - /dev/${disk.name}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -2476,6 +2473,10 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
   .attr-tbl tr:hover { background: #f8fafc; }
   .attr-tbl .col-name { word-break: break-word; }
   .attr-tbl .col-raw { font-family: monospace; font-size: 10px; }
+
+  /* Attribute explanation rows: full-width below the data row */
+  .attr-explain-row td { padding-top: 0 !important; }
+  .attr-explain-row:hover { background: transparent; }
 
   /* Recommendations */
   .rec-item { display: flex; align-items: flex-start; gap: 12px; padding: 12px; border-radius: 6px; margin-bottom: 8px; }
@@ -3406,8 +3407,10 @@ function SmartTestTab({ disk, observations = [], lastTestDate }: SmartTestTabPro
         </div>
       )}
       
-      {/* Last Test Result — compact: type + status + date */}
-      {testStatus.last_test && (
+      {/* Last Test Result — only show if a test was executed from ProxMenux (lastTestDate exists)
+           or if currently running/just completed a test. Tests from the drive's internal log
+           (e.g. factory tests) are only shown in the full SMART report. */}
+      {testStatus.last_test && lastTestDate && (
         <div className="flex items-center gap-3 flex-wrap">
           {testStatus.last_test.status === 'passed' ? (
             <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
@@ -3423,11 +3426,9 @@ function SmartTestTab({ disk, observations = [], lastTestDate }: SmartTestTabPro
           }>
             {testStatus.last_test.status}
           </Badge>
-          {lastTestDate && (
-            <span className="text-xs text-muted-foreground">
-              {new Date(lastTestDate).toLocaleString()}
-            </span>
-          )}
+          <span className="text-xs text-muted-foreground">
+            {new Date(lastTestDate).toLocaleString()}
+          </span>
         </div>
       )}
       

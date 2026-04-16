@@ -6936,7 +6936,12 @@ def api_smart_status(disk_name):
                     type_str = entry.get('type', {}).get('string', 'Unknown')
                     t_norm = 'short' if 'Short' in type_str else 'long' if ('Extended' in type_str or 'Long' in type_str) else 'other'
                     st_entry = entry.get('status', {})
-                    passed_flag = st_entry.get('passed', True)
+                    # Never default to True — if 'passed' field is missing, determine from status string
+                    if 'passed' in st_entry:
+                        passed_flag = st_entry['passed']
+                    else:
+                        status_string = st_entry.get('string', '').lower()
+                        passed_flag = 'without error' in status_string or 'completed' in status_string
                     self_test_history.append({
                         'type': t_norm,
                         'type_str': type_str,
