@@ -7156,7 +7156,10 @@ def api_smart_run_test(disk_name):
                     [ -z "$op" ] || [ "$op" -eq 0 ] && break
                     sleep {sleep_interval}
                 done
-                nvme smart-log -o json {device} > {json_path} 2>/dev/null
+                # Save complete data: smartctl gives device info + health + self-test log in one JSON
+                smartctl -a --json=c {device} > {json_path} 2>/dev/null
+                # Fallback to nvme smart-log if smartctl fails
+                [ ! -s {json_path} ] && nvme smart-log -o json {device} > {json_path} 2>/dev/null
                 ''',
                 shell=True, start_new_session=True,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL

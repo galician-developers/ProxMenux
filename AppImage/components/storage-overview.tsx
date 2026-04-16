@@ -1818,7 +1818,7 @@ export function StorageOverview() {
 }
 
 // Generate SMART Report HTML and open in new window (same pattern as Lynis/Latency reports)
-function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttributes: SmartAttribute[], observations: DiskObservation[] = [], lastTestDate?: string, targetWindow?: Window) {
+function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttributes: SmartAttribute[], observations: DiskObservation[] = [], lastTestDate?: string, targetWindow?: Window, isHistorical = false) {
   const now = new Date().toLocaleString()
   const logoUrl = `${window.location.origin}/images/proxmenux-logo.png`
   const reportId = `SMART-${Date.now().toString(36).toUpperCase()}`
@@ -2417,7 +2417,7 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
       <div style="font-size:12px;font-weight:600;color:#1e293b;">${now}</div>
     </div>
     <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;">
-      <div style="font-size:10px;color:#475569;font-weight:600;text-transform:uppercase;">Last Test Type</div>
+      <div style="font-size:10px;color:#475569;font-weight:600;text-transform:uppercase;">${isHistorical ? 'Test Type' : 'Last Test Type'}</div>
       <div style="font-size:12px;font-weight:600;color:#1e293b;">${testStatus.last_test?.type || 'N/A'}</div>
     </div>
     <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;">
@@ -2740,7 +2740,7 @@ ${!isNvmeDisk && diskType === 'SSD' ? (() => {
   
   <!-- 5. Last Test Result -->
 <div class="section">
-  <div class="section-title">${isNvmeDisk ? '5' : '4'}. Last Self-Test Result</div>
+  <div class="section-title">${isNvmeDisk ? '5' : '4'}. ${isHistorical ? 'Self-Test Result' : 'Last Self-Test Result'}</div>
   ${testStatus.last_test ? `
     <div class="grid-4">
       <div class="card">
@@ -2789,6 +2789,28 @@ ${!isNvmeDisk && diskType === 'SSD' ? (() => {
         </tbody>
       </table>
     </div>` : ''}
+  ` : lastTestDate ? `
+    <div class="grid-4">
+      <div class="card">
+        <div class="card-label">${isHistorical ? 'Test Type' : 'Last Test Type'}</div>
+        <div class="card-value" style="text-transform:capitalize;">${testStatus.test_type || 'Extended'}</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Result</div>
+        <div class="card-value" style="color:#16a34a;">Passed</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Date</div>
+        <div class="card-value" style="font-size:11px;">${new Date(lastTestDate).toLocaleString()}</div>
+      </div>
+      <div class="card">
+        <div class="card-label">At Power-On Hours</div>
+        <div class="card-value">${fmtNum(powerOnHours)}h</div>
+      </div>
+    </div>
+    <div style="margin-top:8px;padding:8px 12px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;color:#475569;">
+      <strong>Note:</strong> This disk's firmware does not maintain an internal self-test log. Test results are tracked by ProxMenux Monitor.
+    </div>
   ` : `
     <div style="text-align:center;padding:20px;color:#64748b;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
       No self-test history available. Run a SMART self-test to see results here.
@@ -3353,51 +3375,11 @@ function HistoryTab({ disk }: { disk: DiskInfo }) {
 
     try {
       setViewingReport(entry.filename)
-      const jsonData = await fetchApi<Record<string, unknown>>(`/api/storage/smart/${disk.name}/history/${entry.filename}`)
+      // Fetch full SMART status from backend (same data as SMART tab uses)
+      const fullStatus = await fetchApi<SmartTestStatus>(`/api/storage/smart/${disk.name}`)
+      const attrs = fullStatus.smart_data?.attributes || []
 
-      const isNvme = disk.name.includes('nvme')
-      let attrs: SmartAttribute[] = []
-
-      if (isNvme) {
-        const fieldMap: [string, string][] = [
-          ['critical_warning', 'Critical Warning'], ['temperature', 'Temperature'],
-          ['avail_spare', 'Available Spare'], ['percent_used', 'Percentage Used'],
-          ['data_units_written', 'Data Units Written'], ['data_units_read', 'Data Units Read'],
-          ['power_cycles', 'Power Cycles'], ['power_on_hours', 'Power On Hours'],
-          ['unsafe_shutdowns', 'Unsafe Shutdowns'], ['media_errors', 'Media Errors'],
-          ['num_err_log_entries', 'Error Log Entries'],
-        ]
-        fieldMap.forEach(([key, name], i) => {
-          if (jsonData[key] !== undefined) {
-            const v = jsonData[key] as number
-            const status = (key === 'critical_warning' || key === 'media_errors') && v > 0 ? 'critical' as const : 'ok' as const
-            attrs.push({ id: i + 1, name, value: String(v), worst: '-', threshold: '-', raw_value: String(v), status })
-          }
-        })
-      } else {
-        const ataTable = (jsonData as Record<string, unknown>)?.ata_smart_attributes as { table?: Array<Record<string, unknown>> }
-        if (ataTable?.table) {
-          attrs = ataTable.table.map(a => ({
-            id: (a.id as number) || 0,
-            name: (a.name as string) || '',
-            value: (a.value as number) || 0,
-            worst: (a.worst as number) || 0,
-            threshold: (a.thresh as number) || 0,
-            raw_value: (a.raw as Record<string, unknown>)?.string as string || String((a.raw as Record<string, unknown>)?.value || 0),
-            status: 'ok' as const
-          }))
-        }
-      }
-
-      const testStatus: SmartTestStatus = {
-        status: 'idle',
-        smart_data: { device: disk.name, model: disk.model || '', serial: disk.serial || '', firmware: '', smart_status: 'passed', temperature: disk.temperature, power_on_hours: disk.power_on_hours || 0, attributes: attrs }
-      }
-
-      // Generate report — write directly into the already-open window (avoids popup blocker)
-      // openSmartReport creates a blob and calls window.open, but we already have a window.
-      // So we call the same logic but write to our existing window.
-      openSmartReport(disk, testStatus, attrs, [], entry.timestamp, reportWindow || undefined)
+      openSmartReport(disk, fullStatus, attrs, [], entry.timestamp, reportWindow || undefined, true)
     } catch {
       if (reportWindow && !reportWindow.closed) {
         reportWindow.document.body.innerHTML = '<p style="color:#ef4444;text-align:center;margin-top:40vh">Failed to load report data.</p>'
@@ -3845,7 +3827,7 @@ function ScheduleTab({ disk }: { disk: DiskInfo }) {
             <Button
               onClick={handleSaveSchedule}
               disabled={saving}
-              className="bg-purple-600 hover:bg-purple-700"
+              className="bg-purple-600 hover:bg-purple-700 text-white"
             >
               {saving ? 'Saving...' : 'Save Schedule'}
             </Button>
