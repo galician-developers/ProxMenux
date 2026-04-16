@@ -361,10 +361,28 @@ class HealthPersistence:
                   AND acknowledged = 0
                   AND last_seen < ?
             ''', (cutoff,))
-            cleaned = cursor.rowcount
-            if cleaned > 0:
+            cleaned_errors = cursor.rowcount
+
+            # Also dismiss stale disk observations that are still active
+            # but haven't been updated recently — leftovers from the
+            # feedback loop bug where occurrence_count kept incrementing.
+            # Detect column names for backward compatibility
+            cursor.execute('PRAGMA table_info(disk_observations)')
+            obs_cols = [col[1] for col in cursor.fetchall()]
+            last_col = 'last_occurrence' if 'last_occurrence' in obs_cols else 'last_seen'
+
+            cursor.execute(f'''
+                UPDATE disk_observations
+                SET dismissed = 1
+                WHERE dismissed = 0
+                  AND {last_col} < ?
+            ''', (cutoff,))
+            cleaned_obs = cursor.rowcount
+
+            total_cleaned = cleaned_errors + cleaned_obs
+            if total_cleaned > 0:
                 conn.commit()
-                print(f"[HealthPersistence] Startup cleanup: removed {cleaned} stale error(s) from previous versions")
+                print(f"[HealthPersistence] Startup cleanup: removed {cleaned_errors} stale error(s), dismissed {cleaned_obs} stale observation(s)")
         except Exception as e:
             print(f"[HealthPersistence] Startup cleanup warning: {e}")
 
