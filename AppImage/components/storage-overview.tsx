@@ -2223,8 +2223,13 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
     .no-print { display: none !important; }
     .page-break { page-break-before: always; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    body { font-size: 11px; padding-top: 0; }
+    body { font-size: 11px; padding-top: 0; max-width: none; width: 100%; }
     .section { page-break-inside: avoid; break-inside: avoid; }
+    .grid-4 { grid-template-columns: 1fr 1fr 1fr 1fr !important; }
+    .grid-3 { grid-template-columns: 1fr 1fr 1fr !important; }
+    .grid-2 { grid-template-columns: 1fr 1fr !important; }
+    .rpt-header { flex-direction: row !important; }
+    .hide-mobile { display: table-cell !important; }
   }
   @media screen {
     body { max-width: 1000px; margin: 0 auto; padding: 24px 32px; padding-top: 64px; overflow-x: hidden; }
@@ -3528,7 +3533,7 @@ function ScheduleTab({ disk }: { disk: DiskInfo }) {
     minute: 0,
     day_of_week: 0,
     day_of_month: 1,
-    disks: ['all'],
+    disks: [disk.name],
     retention: 10,
     active: true,
     notify_on_complete: true,
@@ -3614,7 +3619,7 @@ function ScheduleTab({ disk }: { disk: DiskInfo }) {
       minute: 0,
       day_of_week: 0,
       day_of_month: 1,
-      disks: ['all'],
+      disks: [disk.name],
       retention: 10,
       active: true,
       notify_on_complete: true,
@@ -3806,21 +3811,6 @@ function ScheduleTab({ disk }: { disk: DiskInfo }) {
                 <option value={0}>Keep All</option>
               </select>
             </div>
-          </div>
-          
-          <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={formData.disks?.includes('all')}
-                onChange={e => setFormData(prev => ({
-                  ...prev,
-                  disks: e.target.checked ? ['all'] : [disk.name]
-                }))}
-                className="rounded border-input"
-              />
-              Test all disks
-            </label>
           </div>
           
           <div className="flex items-center gap-2 pt-2">
