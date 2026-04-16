@@ -381,7 +381,7 @@ kernel.keys.maxkeys=1000000"
     msg_info "$(translate "Setting systemd ulimits...")"
     for file in /etc/systemd/system.conf /etc/systemd/user.conf; do
         if ! grep -q "^DefaultLimitNOFILE=" "$file"; then
-            echo "DefaultLimitNOFILE=256000" >> "$file"
+            echo "DefaultLimitNOFILE=1048576" >> "$file"
         fi
     done
     msg_ok "$(translate "Systemd ulimits set")"
@@ -397,8 +397,9 @@ kernel.keys.maxkeys=1000000"
 
     # Set ulimit for the shell user
     msg_info "$(translate "Setting ulimit for the shell user...")"
-    if ! grep -q "ulimit -n 256000" /root/.profile; then
-        echo "ulimit -n 256000" >> /root/.profile
+    if ! grep -q "ulimit -n 1048576" /root/.profile; then
+        sed -i '/ulimit -n 256000/d' /root/.profile 2>/dev/null
+        echo "ulimit -n 1048576" >> /root/.profile
     fi
     msg_ok "$(translate "Shell user ulimit set")"
 
@@ -412,8 +413,8 @@ vm.vfs_cache_pressure = 100"
     # Increase Max FS open files
     msg_info "$(translate "Increasing maximum file system open files...")"
     append_or_replace "/etc/sysctl.d/99-fs.conf" "
-fs.nr_open = 12000000
-fs.file-max = 9223372036854775807
+fs.nr_open = 2097152
+fs.file-max = 2097152
 fs.aio-max-nr = 1048576"
 
     msg_ok "$(translate "Max FS open files configuration created successfully")"
@@ -561,31 +562,8 @@ configure_time_sync() {
 
 
 
-configure_entropy() {
-    msg_info2 "$(translate "Configuring entropy generation to prevent slowdowns...")"
-
-    # Install haveged
-    msg_info "$(translate "Installing haveged...")"
-    /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' install haveged > /dev/null 2>&1
-    msg_ok "$(translate "haveged installed successfully")"
-
-    # Configure haveged
-    msg_info "$(translate "Configuring haveged...")"
-    cat <<EOF > /etc/default/haveged
-#   -w sets low entropy watermark (in bits)
-DAEMON_ARGS="-w 1024"
-EOF
-
-    # Reload systemd daemon
-    systemctl daemon-reload > /dev/null 2>&1
-
-    # Enable haveged service
-    systemctl enable haveged > /dev/null 2>&1
-    msg_ok "$(translate "haveged service enabled successfully")"
-
-    register_tool "entropy" true
-    msg_success "$(translate "Entropy generation configuration completed")"
-}
+# configure_entropy removed — modern kernels (5.6+) have built-in entropy generation
+# haveged is no longer needed and adds unnecessary overhead
 
 
 
@@ -1708,7 +1686,7 @@ su root adm
 rotate 7
 create
 compress
-size=10M
+size 10M
 delaycompress
 copytruncate
 
@@ -1789,7 +1767,7 @@ vm.dirty_background_ratio = 5
 vm.overcommit_memory = 1
 
 # Avoid excessive virtual memory areas (safe for most applications)
-vm.max_map_count = 65530
+vm.max_map_count = 262144
 EOF
 
     if [ -f /proc/sys/vm/compaction_proactiveness ]; then
@@ -2675,7 +2653,7 @@ main_menu() {
     "System|Optimize journald|JOURNALD"
     "System|Optimize logrotate|LOGROTATE"
     "System|Increase various system limits|LIMITS"
-    "System|Ensure entropy pools are populated|ENTROPY"
+    # Entropy (haveged) removed — modern kernels 5.6+ have built-in entropy generation
     "System|Optimize Memory|MEMORYFIXES"
     "System|Enable fast reboots|KEXEC"
     "System|Enable restart on kernel panic|KERNELPANIC"
@@ -2824,7 +2802,7 @@ done
         JOURNALD) optimize_journald ;;
         LOGROTATE) optimize_logrotate ;;
         LIMITS) increase_system_limits ;;
-        ENTROPY) configure_entropy ;;
+        # ENTROPY removed — modern kernels 5.6+ have built-in entropy
         MEMORYFIXES) optimize_memory_settings ;;
         KEXEC) enable_kexec ;;
         KERNELPANIC) configure_kernel_panic ;;

@@ -231,7 +231,7 @@ optimize_journald() {
 Storage=persistent
 SplitMode=none
 RateLimitIntervalSec=30s
-RateLimitBurst=500
+RateLimitBurst=1000
 ForwardToSyslog=no
 ForwardToWall=no
 Seal=no
@@ -270,7 +270,7 @@ optimize_logrotate() {
 daily
 su root adm
 rotate 7
-size=10M
+size 10M
 compress
 delaycompress
 missingok
@@ -322,7 +322,7 @@ EOF
    
     for file in /etc/systemd/system.conf /etc/systemd/user.conf; do
         if ! grep -q "^DefaultLimitNOFILE=" "$file"; then
-            echo "DefaultLimitNOFILE=256000" >> "$file"
+            echo "DefaultLimitNOFILE=1048576" >> "$file"
         fi
     done
     
@@ -334,8 +334,9 @@ EOF
     done
     
 
-    if ! grep -q "ulimit -n 256000" /root/.profile; then
-        echo "ulimit -n 256000" >> /root/.profile
+    if ! grep -q "ulimit -n 1048576" /root/.profile; then
+        sed -i '/ulimit -n 256000/d' /root/.profile 2>/dev/null
+        echo "ulimit -n 1048576" >> /root/.profile
     fi
     
 
@@ -348,31 +349,13 @@ EOF
  
     cat > /etc/sysctl.d/99-fs.conf << EOF
 # ProxMenux configuration
-fs.nr_open = 12000000
-fs.file-max = 9223372036854775807
+fs.nr_open = 2097152
+fs.file-max = 2097152
 fs.aio-max-nr = 1048576
 EOF
     
     msg_ok "$(translate "System limits increase completed.")"
     register_tool "system_limits" true
-}
-
-# ==========================================================
-configure_entropy() {
-    msg_info "$(translate "Configuring entropy generation to prevent slowdowns...")"
-    
-    /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' install haveged > /dev/null 2>&1
-    
-    cat <<EOF > /etc/default/haveged
-#   -w sets low entropy watermark (in bits)
-DAEMON_ARGS="-w 1024"
-EOF
-    
-    systemctl daemon-reload > /dev/null 2>&1
-    systemctl enable haveged > /dev/null 2>&1
-    
-    msg_ok "$(translate "Entropy generation configuration completed")"
-    register_tool "entropy" true
 }
 
 # ==========================================================
@@ -386,7 +369,7 @@ vm.swappiness = 10
 vm.dirty_ratio = 15
 vm.dirty_background_ratio = 5
 vm.overcommit_memory = 1
-vm.max_map_count = 65530
+vm.max_map_count = 262144
 EOF
     
     if [ -f /proc/sys/vm/compaction_proactiveness ]; then
@@ -760,7 +743,7 @@ EOF
 Storage=persistent
 SplitMode=none
 RateLimitIntervalSec=30s
-RateLimitBurst=500
+RateLimitBurst=1000
 SystemKeepFree=${KEEP_MB}M
 RuntimeMaxUse=${RUNTIME_MB}M
 # MaxLevelStore=info: required for ProxMenux Monitor log display and Fail2Ban detection.
@@ -869,7 +852,6 @@ run_complete_optimization() {
     #configure_time_sync
     skip_apt_languages
     increase_system_limits
-    configure_entropy
     optimize_memory_settings
     configure_kernel_panic
     apply_network_optimizations
