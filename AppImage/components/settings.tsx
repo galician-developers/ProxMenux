@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
-import { Wrench, Package, Ruler, HeartPulse, Cpu, MemoryStick, HardDrive, CircleDot, Network, Server, Settings2, FileText, RefreshCw, Shield, AlertTriangle, Info, Loader2, Check, Database, CloudOff } from "lucide-react"
+import { Wrench, Package, Ruler, HeartPulse, Cpu, MemoryStick, HardDrive, CircleDot, Network, Server, Settings2, FileText, RefreshCw, Shield, AlertTriangle, Info, Loader2, Check, Database, CloudOff, Code, X, Copy } from "lucide-react"
 import { NotificationSettings } from "./notification-settings"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
 import { Switch } from "./ui/switch"
@@ -46,6 +46,8 @@ interface ProxMenuxTool {
   key: string
   name: string
   enabled: boolean
+  version?: string
+  has_source?: boolean
 }
 
 interface RemoteStorage {
@@ -79,6 +81,18 @@ export function Settings() {
   const [loadingTools, setLoadingTools] = useState(true)
   const [networkUnitSettings, setNetworkUnitSettings] = useState<"Bytes" | "Bits">("Bytes")
   const [loadingUnitSettings, setLoadingUnitSettings] = useState(true)
+  // Code viewer modal state
+  const [codeModal, setCodeModal] = useState<{
+    open: boolean
+    loading: boolean
+    toolName: string
+    version: string
+    functionName: string
+    source: string
+    script: string
+    error: string
+  }>({ open: false, loading: false, toolName: '', version: '', functionName: '', source: '', script: '', error: '' })
+  const [codeCopied, setCodeCopied] = useState(false)
   
   // Health Monitor suppression settings
   const [suppressionCategories, setSuppressionCategories] = useState<SuppressionCategory[]>([])
@@ -118,6 +132,26 @@ export function Settings() {
     } finally {
       setLoadingTools(false)
     }
+  }
+
+  const viewToolSource = async (tool: ProxMenuxTool) => {
+    setCodeModal({ open: true, loading: true, toolName: tool.name, version: tool.version || '1.0', functionName: '', source: '', script: '', error: '' })
+    try {
+      const data = await fetchApi(`/api/proxmenux/tool-source/${tool.key}`)
+      if (data.success) {
+        setCodeModal(prev => ({ ...prev, loading: false, functionName: data.function, source: data.source, script: data.script }))
+      } else {
+        setCodeModal(prev => ({ ...prev, loading: false, error: data.error || 'Source code not available' }))
+      }
+    } catch {
+      setCodeModal(prev => ({ ...prev, loading: false, error: 'Failed to load source code' }))
+    }
+  }
+
+  const copySourceCode = () => {
+    navigator.clipboard.writeText(codeModal.source)
+    setCodeCopied(true)
+    setTimeout(() => setCodeCopied(false), 2000)
   }
 
   const changeNetworkUnit = (unit: string) => {
@@ -843,10 +877,22 @@ export function Settings() {
                 {proxmenuxTools.map((tool) => (
                   <div
                     key={tool.key}
-                    className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg border border-border hover:bg-muted transition-colors"
+                    className="flex items-center justify-between gap-2 p-3 bg-muted/50 rounded-lg border border-border hover:bg-muted transition-colors"
                   >
-                    <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
-                    <span className="text-sm font-medium">{tool.name}</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
+                      <span className="text-sm font-medium truncate">{tool.name}</span>
+                      <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono flex-shrink-0">v{tool.version || '1.0'}</span>
+                    </div>
+                    {tool.has_source && (
+                      <button
+                        onClick={() => viewToolSource(tool)}
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                        title="View source code"
+                      >
+                        <Code className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -854,6 +900,65 @@ export function Settings() {
           )}
         </CardContent>
       </Card>
+
+      {/* Code Viewer Modal */}
+      {codeModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setCodeModal(prev => ({ ...prev, open: false }))}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <div className="flex items-center gap-3 min-w-0">
+                <Code className="h-5 w-5 text-orange-500 flex-shrink-0" />
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold truncate">{codeModal.toolName}</h3>
+                  <p className="text-xs text-muted-foreground">
+                    {codeModal.functionName && <span className="font-mono">{codeModal.functionName}()</span>}
+                    {codeModal.script && <span> — {codeModal.script}</span>}
+                    {codeModal.version && <span className="ml-2 bg-muted px-1.5 py-0.5 rounded font-mono">v{codeModal.version}</span>}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {codeModal.source && (
+                  <button
+                    onClick={copySourceCode}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-muted hover:bg-muted/80 transition-colors"
+                    title="Copy to clipboard"
+                  >
+                    {codeCopied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                    {codeCopied ? 'Copied' : 'Copy'}
+                  </button>
+                )}
+                <button
+                  onClick={() => setCodeModal(prev => ({ ...prev, open: false }))}
+                  className="p-1.5 rounded-md hover:bg-muted transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            {/* Body */}
+            <div className="flex-1 overflow-auto p-0">
+              {codeModal.loading ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="animate-spin h-8 w-8 border-4 border-orange-500 border-t-transparent rounded-full" />
+                </div>
+              ) : codeModal.error ? (
+                <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                  <Code className="h-10 w-10 mb-3 opacity-40" />
+                  <p className="text-sm">{codeModal.error}</p>
+                </div>
+              ) : (
+                <pre className="text-xs leading-relaxed font-mono p-4 overflow-x-auto whitespace-pre text-foreground bg-muted/30"><code>{codeModal.source}</code></pre>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
