@@ -1268,10 +1268,10 @@ export function StorageOverview() {
           </DialogHeader>
           
           {/* Tab Navigation */}
-          <div className="flex border-b border-border px-6">
+          <div className="flex border-b border-border px-6 overflow-x-auto">
             <button
               onClick={() => setActiveModalTab("overview")}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
                 activeModalTab === "overview"
                   ? "border-blue-500 text-blue-500"
                   : "border-transparent text-muted-foreground hover:text-foreground"
@@ -1282,7 +1282,7 @@ export function StorageOverview() {
             </button>
             <button
               onClick={() => setActiveModalTab("smart")}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
                 activeModalTab === "smart"
                   ? "border-green-500 text-green-500"
                   : "border-transparent text-muted-foreground hover:text-foreground"
@@ -1293,7 +1293,7 @@ export function StorageOverview() {
             </button>
             <button
               onClick={() => setActiveModalTab("history")}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
                 activeModalTab === "history"
                   ? "border-orange-500 text-orange-500"
                   : "border-transparent text-muted-foreground hover:text-foreground"
@@ -1304,7 +1304,7 @@ export function StorageOverview() {
             </button>
             <button
               onClick={() => setActiveModalTab("schedule")}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
                 activeModalTab === "schedule"
                   ? "border-purple-500 text-purple-500"
                   : "border-transparent text-muted-foreground hover:text-foreground"
@@ -1818,7 +1818,7 @@ export function StorageOverview() {
 }
 
 // Generate SMART Report HTML and open in new window (same pattern as Lynis/Latency reports)
-function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttributes: SmartAttribute[], observations: DiskObservation[] = [], lastTestDate?: string) {
+function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttributes: SmartAttribute[], observations: DiskObservation[] = [], lastTestDate?: string, targetWindow?: Window) {
   const now = new Date().toLocaleString()
   const logoUrl = `${window.location.origin}/images/proxmenux-logo.png`
   const reportId = `SMART-${Date.now().toString(36).toUpperCase()}`
@@ -2813,9 +2813,16 @@ ${observationsHtml}
 </body>
 </html>`
 
-  const blob = new Blob([html], { type: "text/html" })
-  const url = URL.createObjectURL(blob)
-  window.open(url, "_blank")
+  if (targetWindow && !targetWindow.closed) {
+    // Write directly into the already-open window (avoids popup blocker)
+    targetWindow.document.open()
+    targetWindow.document.write(html)
+    targetWindow.document.close()
+  } else {
+    const blob = new Blob([html], { type: "text/html" })
+    const url = URL.createObjectURL(blob)
+    window.open(url, "_blank")
+  }
 }
 
 // SMART Test Tab Component
@@ -3389,13 +3396,10 @@ function HistoryTab({ disk }: { disk: DiskInfo }) {
         smart_data: { device: disk.name, model: disk.model || '', serial: disk.serial || '', firmware: '', smart_status: 'passed', temperature: disk.temperature, power_on_hours: disk.power_on_hours || 0, attributes: attrs }
       }
 
-      // Generate the report HTML using the same function as SMART tab
-      openSmartReport(disk, testStatus, attrs, [], entry.timestamp)
-
-      // Close the loading window — openSmartReport already opened the real one
-      if (reportWindow && !reportWindow.closed) {
-        reportWindow.close()
-      }
+      // Generate report — write directly into the already-open window (avoids popup blocker)
+      // openSmartReport creates a blob and calls window.open, but we already have a window.
+      // So we call the same logic but write to our existing window.
+      openSmartReport(disk, testStatus, attrs, [], entry.timestamp, reportWindow || undefined)
     } catch {
       if (reportWindow && !reportWindow.closed) {
         reportWindow.document.body.innerHTML = '<p style="color:#ef4444;text-align:center;margin-top:40vh">Failed to load report data.</p>'
