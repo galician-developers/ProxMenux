@@ -2673,7 +2673,8 @@ def get_smart_data(disk_name):
     
     try:
         commands_to_try = [
-            ['smartctl', '-a', '-j', f'/dev/{disk_name}'],  # JSON output (preferred)
+            ['smartctl', '-a', '-j', f'/dev/{disk_name}'],  # JSON auto-detect (preferred)
+            ['smartctl', '-a', '-j', '-d', 'scsi', f'/dev/{disk_name}'],  # JSON SCSI/SAS (early for SAS disks)
             ['smartctl', '-a', '-d', 'ata', f'/dev/{disk_name}'],  # JSON with ATA device type
             ['smartctl', '-a', '-d', 'sat', f'/dev/{disk_name}'],  # JSON with SAT device type
             ['smartctl', '-a', f'/dev/{disk_name}'],  # Text output (fallback)
@@ -2682,7 +2683,6 @@ def get_smart_data(disk_name):
             ['smartctl', '-i', '-H', '-A', f'/dev/{disk_name}'],  # Info + Health + Attributes
             ['smartctl', '-i', '-H', '-A', '-d', 'ata', f'/dev/{disk_name}'],  # With ATA
             ['smartctl', '-i', '-H', '-A', '-d', 'sat', f'/dev/{disk_name}'],  # With SAT
-            ['smartctl', '-a', '-j', '-d', 'scsi', f'/dev/{disk_name}'],  # JSON with SCSI device type
             ['smartctl', '-a', '-j', '-d', 'sat,12', f'/dev/{disk_name}'],  # SAT with 12-byte commands
             ['smartctl', '-a', '-j', '-d', 'sat,16', f'/dev/{disk_name}'],  # SAT with 16-byte commands
             ['smartctl', '-a', '-d', 'sat,12', f'/dev/{disk_name}'],  # Text SAT with 12-byte commands
@@ -2771,8 +2771,38 @@ def get_smart_data(disk_name):
                                     smart_data['total_lbas_written'] = round(total_gb, 2)
 
                             
+                            # Parse SCSI/SAS SMART data (no ATA attribute IDs)
+                            device_protocol = data.get('device', {}).get('protocol', '')
+                            if device_protocol == 'SCSI' or 'scsi_error_counter_log' in data:
+                                # Temperature
+                                if 'temperature' in data and 'current' in data['temperature']:
+                                    smart_data['temperature'] = data['temperature']['current']
+                                # Power-on hours
+                                if 'power_on_time' in data:
+                                    smart_data['power_on_hours'] = data['power_on_time'].get('hours', 0)
+                                # Power cycles from start-stop counter
+                                scsi_ssc = data.get('scsi_start_stop_cycle_counter', {})
+                                if 'accumulated_start_stop_cycles' in scsi_ssc:
+                                    smart_data['power_cycles'] = scsi_ssc['accumulated_start_stop_cycles']
+                                # Grown defect list (equivalent to reallocated sectors)
+                                gdl = data.get('scsi_grown_defect_list', 0)
+                                if isinstance(gdl, dict):
+                                    gdl = gdl.get('count', 0)
+                                smart_data['reallocated_sectors'] = gdl
+                                # Read/write errors from error counter log
+                                ecl = data.get('scsi_error_counter_log', {})
+                                read_errors = ecl.get('read', {}).get('errors_corrected_by_eccfast', 0) + \
+                                              ecl.get('read', {}).get('errors_corrected_by_eccdelayed', 0) + \
+                                              ecl.get('read', {}).get('total_errors_corrected', 0)
+                                write_errors = ecl.get('write', {}).get('total_errors_corrected', 0)
+                                # Uncorrected = potential data loss
+                                uncorrected_read = ecl.get('read', {}).get('total_uncorrected_errors', 0)
+                                uncorrected_write = ecl.get('write', {}).get('total_uncorrected_errors', 0)
+                                smart_data['pending_sectors'] = uncorrected_read + uncorrected_write
+                                # CRC errors not applicable for SAS, keep at 0
+
                             # Parse ATA SMART attributes
-                            if 'ata_smart_attributes' in data and 'table' in data['ata_smart_attributes']:
+                            elif 'ata_smart_attributes' in data and 'table' in data['ata_smart_attributes']:
 
                                 for attr in data['ata_smart_attributes']['table']:
                                     attr_id = attr.get('id')
@@ -6786,19 +6816,35 @@ def api_smart_status(disk_name):
             except (json.JSONDecodeError, ValueError):
                 pass
 
+            # --- Detect device protocol (ATA vs SCSI/SAS) ---
+            device_protocol = data.get('device', {}).get('protocol', '')
+            is_scsi = device_protocol == 'SCSI' or 'scsi_error_counter_log' in data or 'scsi_grown_defect_list' in data
+
             ata_data = data.get('ata_smart_data', {})
             capabilities = ata_data.get('capabilities', {})
 
             # --- Detect test in progress ---
-            self_test_block = ata_data.get('self_test', {})
-            st_status = self_test_block.get('status', {})
-            st_value = st_status.get('value', 0)
-            remaining_pct = st_status.get('remaining_percent')
-            # smartctl status value 241 (0xF1) = self-test in progress
-            if st_value == 241 or (remaining_pct is not None and 0 < remaining_pct <= 100):
-                result['status'] = 'running'
-                if remaining_pct is not None:
-                    result['progress'] = 100 - remaining_pct
+            if is_scsi:
+                # SCSI: check background self-test status
+                scsi_selftest_status = data.get('scsi_self_test', {}).get('status', {})
+                scsi_st_value = scsi_selftest_status.get('value', 0)
+                # value 15 = in progress on SCSI
+                if scsi_st_value == 15:
+                    result['status'] = 'running'
+                    remaining_pct = scsi_selftest_status.get('remaining_percent')
+                    if remaining_pct is not None:
+                        result['progress'] = 100 - remaining_pct
+            else:
+                self_test_block = ata_data.get('self_test', {})
+                st_status = self_test_block.get('status', {})
+                st_value = st_status.get('value', 0)
+                remaining_pct = st_status.get('remaining_percent')
+                # smartctl status value 241 (0xF1) = self-test in progress
+                if st_value == 241 or (remaining_pct is not None and 0 < remaining_pct <= 100):
+                    result['status'] = 'running'
+                    if remaining_pct is not None:
+                        result['progress'] = 100 - remaining_pct
+
             # Fallback text detection in case JSON misses it
             if result['status'] != 'running':
                 try:
@@ -6812,11 +6858,15 @@ def api_smart_status(disk_name):
                     pass
 
             # --- Progress reporting capability ---
-            # Disks without self_test block (e.g. Phison/Kingston) cannot report test progress
-            has_self_test_block = 'self_test' in ata_data
-            supports_self_test = capabilities.get('self_tests_supported', False) or has_self_test_block
-            result['supports_progress_reporting'] = has_self_test_block
-            result['supports_self_test'] = supports_self_test
+            if is_scsi:
+                # SAS drives generally support self-test progress via SCSI log pages
+                result['supports_progress_reporting'] = True
+                result['supports_self_test'] = True
+            else:
+                has_self_test_block = 'self_test' in ata_data
+                supports_self_test = capabilities.get('self_tests_supported', False) or has_self_test_block
+                result['supports_progress_reporting'] = has_self_test_block
+                result['supports_self_test'] = supports_self_test
 
             # --- SMART health status ---
             if data.get('smart_status', {}).get('passed') is True:
@@ -6833,29 +6883,67 @@ def api_smart_status(disk_name):
             trim_supported = data.get('trim', {}).get('supported', False)
             sata_version = data.get('sata_version', {}).get('string', '')
             interface_speed = data.get('interface_speed', {}).get('current', {}).get('string', '')
+            # SAS-specific: scsi_transport_protocol and logical_block_size
+            scsi_transport = data.get('scsi_transport_protocol', {}).get('name', '')
+            scsi_product = data.get('scsi_product', '')
+            scsi_vendor = data.get('scsi_vendor', '')
+            scsi_revision = data.get('scsi_revision', '')
+            logical_block_size = data.get('logical_block_size', 512)
 
             # --- Self-test polling times ---
-            polling_short = self_test_block.get('polling_minutes', {}).get('short')
-            polling_extended = self_test_block.get('polling_minutes', {}).get('extended')
+            if is_scsi:
+                polling_short = None
+                polling_extended = None
+            else:
+                self_test_block = ata_data.get('self_test', {})
+                polling_short = self_test_block.get('polling_minutes', {}).get('short')
+                polling_extended = self_test_block.get('polling_minutes', {}).get('extended')
 
             # --- Error log count ---
-            error_log_count = data.get('ata_smart_error_log', {}).get('summary', {}).get('count', 0)
+            if is_scsi:
+                # For SCSI, sum uncorrected errors across read/write/verify
+                ecl = data.get('scsi_error_counter_log', {})
+                error_log_count = (
+                    ecl.get('read', {}).get('total_uncorrected_errors', 0) +
+                    ecl.get('write', {}).get('total_uncorrected_errors', 0) +
+                    ecl.get('verify', {}).get('total_uncorrected_errors', 0)
+                )
+            else:
+                error_log_count = data.get('ata_smart_error_log', {}).get('summary', {}).get('count', 0)
 
             # --- Self-test history ---
-            st_table = data.get('ata_smart_self_test_log', {}).get('standard', {}).get('table', [])
             self_test_history = []
-            for entry in st_table:
-                type_str = entry.get('type', {}).get('string', 'Unknown')
-                t_norm = 'short' if 'Short' in type_str else 'long' if ('Extended' in type_str or 'Long' in type_str) else 'other'
-                st_entry = entry.get('status', {})
-                passed_flag = st_entry.get('passed', True)
-                self_test_history.append({
-                    'type': t_norm,
-                    'type_str': type_str,
-                    'status': 'passed' if passed_flag else 'failed',
-                    'status_str': st_entry.get('string', ''),
-                    'lifetime_hours': entry.get('lifetime_hours'),
-                })
+            if is_scsi:
+                # SCSI self-test log format
+                scsi_st_table = data.get('scsi_self_test_log', {}).get('table', [])
+                for entry in scsi_st_table:
+                    code = entry.get('code', {})
+                    type_str = code.get('string', 'Unknown')
+                    t_norm = 'short' if 'Short' in type_str or 'short' in type_str else 'long' if ('Extended' in type_str or 'Long' in type_str or 'long' in type_str) else 'other'
+                    result_val = entry.get('result', {}).get('value', 0)
+                    passed_flag = result_val == 0  # 0 = completed without error
+                    result_str = entry.get('result', {}).get('string', '')
+                    self_test_history.append({
+                        'type': t_norm,
+                        'type_str': type_str,
+                        'status': 'passed' if passed_flag else 'failed',
+                        'status_str': result_str,
+                        'lifetime_hours': entry.get('power_on_time', {}).get('hours'),
+                    })
+            else:
+                st_table = data.get('ata_smart_self_test_log', {}).get('standard', {}).get('table', [])
+                for entry in st_table:
+                    type_str = entry.get('type', {}).get('string', 'Unknown')
+                    t_norm = 'short' if 'Short' in type_str else 'long' if ('Extended' in type_str or 'Long' in type_str) else 'other'
+                    st_entry = entry.get('status', {})
+                    passed_flag = st_entry.get('passed', True)
+                    self_test_history.append({
+                        'type': t_norm,
+                        'type_str': type_str,
+                        'status': 'passed' if passed_flag else 'failed',
+                        'status_str': st_entry.get('string', ''),
+                        'lifetime_hours': entry.get('lifetime_hours'),
+                    })
 
             if self_test_history:
                 result['last_test'] = {
@@ -6865,65 +6953,283 @@ def api_smart_status(disk_name):
                     'lifetime_hours': self_test_history[0]['lifetime_hours']
                 }
 
-            # --- Parse SMART attributes from JSON ---
-            ata_attrs = data.get('ata_smart_attributes', {}).get('table', [])
+            # --- Parse SMART attributes ---
             attrs = []
-            for attr in ata_attrs:
-                attr_id = attr.get('id')
-                name = attr.get('name', '')
-                value = attr.get('value', 0)
-                worst = attr.get('worst', 0)
-                thresh = attr.get('thresh', 0)
-                raw_obj = attr.get('raw', {})
-                raw_value = raw_obj.get('string', str(raw_obj.get('value', 0)))
-                flags = attr.get('flags', {})
-                prefailure = flags.get('prefailure', False)
-                when_failed = attr.get('when_failed', '')
 
-                if when_failed == 'now':
-                    status = 'critical'
-                elif prefailure and thresh > 0 and value <= thresh:
-                    status = 'critical'
-                elif prefailure and thresh > 0:
-                    # Proportional margin: smaller when thresh is close to 100
-                    # thresh=97 → margin 2, thresh=50 → margin 10, thresh=10 → margin 10
-                    warn_margin = min(10, max(2, (100 - thresh) // 3))
-                    status = 'warning' if value <= thresh + warn_margin else 'ok'
-                else:
-                    status = 'ok'
+            if is_scsi:
+                # SCSI/SAS: Build virtual attributes from SCSI log pages
+                # These disks don't have ATA attribute IDs — we synthesize a table
+                ecl = data.get('scsi_error_counter_log', {})
+                attr_idx = 1
+
+                # Grown Defect List (equivalent to Reallocated Sectors)
+                gdl = data.get('scsi_grown_defect_list', 0)
+                if isinstance(gdl, dict):
+                    gdl = gdl.get('count', 0)
+                gdl_status = 'ok' if gdl == 0 else ('warning' if gdl < 50 else 'critical')
+                attrs.append({
+                    'id': attr_idx, 'name': 'Grown Defect List',
+                    'value': '-', 'worst': '-', 'threshold': '-',
+                    'raw_value': str(gdl), 'status': gdl_status
+                })
+                attr_idx += 1
+
+                # Read Error Counters
+                read_log = ecl.get('read', {})
+                read_corrected_fast = read_log.get('errors_corrected_by_eccfast', 0)
+                read_corrected_delayed = read_log.get('errors_corrected_by_eccdelayed', 0)
+                read_total_corrected = read_log.get('total_errors_corrected', 0)
+                read_uncorrected = read_log.get('total_uncorrected_errors', 0)
+                read_processed = read_log.get('gigabytes_processed', 0)
 
                 attrs.append({
-                    'id': attr_id,
-                    'name': name,
-                    'value': value,
-                    'worst': worst,
-                    'threshold': thresh,
-                    'raw_value': raw_value,
-                    'status': status,
-                    'prefailure': prefailure,
-                    'flags': flags.get('string', '').strip()
+                    'id': attr_idx, 'name': 'Read Errors Corrected',
+                    'value': '-', 'worst': '-', 'threshold': '-',
+                    'raw_value': f'{read_total_corrected:,}', 'status': 'ok'
                 })
+                attr_idx += 1
 
-            # Fallback: if JSON gave no attributes, try text parser
-            if not attrs:
-                try:
-                    aproc = subprocess.run(['smartctl', '-A', device], capture_output=True, text=True, timeout=10)
-                    if aproc.returncode == 0:
-                        attrs = _parse_smart_attributes(aproc.stdout.split('\n'))
-                except Exception:
-                    pass
+                if read_corrected_fast or read_corrected_delayed:
+                    attrs.append({
+                        'id': attr_idx, 'name': 'Read ECC Fast',
+                        'value': '-', 'worst': '-', 'threshold': '-',
+                        'raw_value': f'{read_corrected_fast:,}', 'status': 'ok'
+                    })
+                    attr_idx += 1
+                    attrs.append({
+                        'id': attr_idx, 'name': 'Read ECC Delayed',
+                        'value': '-', 'worst': '-', 'threshold': '-',
+                        'raw_value': f'{read_corrected_delayed:,}',
+                        'status': 'ok' if read_corrected_delayed == 0 else 'warning'
+                    })
+                    attr_idx += 1
+
+                read_unc_status = 'ok' if read_uncorrected == 0 else 'critical'
+                attrs.append({
+                    'id': attr_idx, 'name': 'Read Uncorrected Errors',
+                    'value': '-', 'worst': '-', 'threshold': '-',
+                    'raw_value': str(read_uncorrected), 'status': read_unc_status
+                })
+                attr_idx += 1
+
+                if read_processed:
+                    attrs.append({
+                        'id': attr_idx, 'name': 'Read Data Processed',
+                        'value': '-', 'worst': '-', 'threshold': '-',
+                        'raw_value': f'{read_processed:,.2f} GB', 'status': 'ok'
+                    })
+                    attr_idx += 1
+
+                # Write Error Counters
+                write_log = ecl.get('write', {})
+                write_total_corrected = write_log.get('total_errors_corrected', 0)
+                write_uncorrected = write_log.get('total_uncorrected_errors', 0)
+                write_processed = write_log.get('gigabytes_processed', 0)
+
+                attrs.append({
+                    'id': attr_idx, 'name': 'Write Errors Corrected',
+                    'value': '-', 'worst': '-', 'threshold': '-',
+                    'raw_value': f'{write_total_corrected:,}', 'status': 'ok'
+                })
+                attr_idx += 1
+
+                write_unc_status = 'ok' if write_uncorrected == 0 else 'critical'
+                attrs.append({
+                    'id': attr_idx, 'name': 'Write Uncorrected Errors',
+                    'value': '-', 'worst': '-', 'threshold': '-',
+                    'raw_value': str(write_uncorrected), 'status': write_unc_status
+                })
+                attr_idx += 1
+
+                if write_processed:
+                    attrs.append({
+                        'id': attr_idx, 'name': 'Write Data Processed',
+                        'value': '-', 'worst': '-', 'threshold': '-',
+                        'raw_value': f'{write_processed:,.2f} GB', 'status': 'ok'
+                    })
+                    attr_idx += 1
+
+                # Verify Error Counters (background verify operations)
+                verify_log = ecl.get('verify', {})
+                if verify_log:
+                    verify_total_corrected = verify_log.get('total_errors_corrected', 0)
+                    verify_uncorrected = verify_log.get('total_uncorrected_errors', 0)
+
+                    attrs.append({
+                        'id': attr_idx, 'name': 'Verify Errors Corrected',
+                        'value': '-', 'worst': '-', 'threshold': '-',
+                        'raw_value': f'{verify_total_corrected:,}', 'status': 'ok'
+                    })
+                    attr_idx += 1
+
+                    verify_unc_status = 'ok' if verify_uncorrected == 0 else 'critical'
+                    attrs.append({
+                        'id': attr_idx, 'name': 'Verify Uncorrected Errors',
+                        'value': '-', 'worst': '-', 'threshold': '-',
+                        'raw_value': str(verify_uncorrected), 'status': verify_unc_status
+                    })
+                    attr_idx += 1
+
+                # Non-medium errors (controller/bus errors, not media-related)
+                non_medium = data.get('scsi_error_counter_log', {}).get('non_medium_error', {}).get('count')
+                if non_medium is not None:
+                    nm_status = 'ok' if non_medium < 100 else 'warning'
+                    attrs.append({
+                        'id': attr_idx, 'name': 'Non-Medium Errors',
+                        'value': '-', 'worst': '-', 'threshold': '-',
+                        'raw_value': f'{non_medium:,}', 'status': nm_status
+                    })
+                    attr_idx += 1
+
+                # Temperature
+                temp_val = data.get('temperature', {}).get('current', 0)
+                if temp_val > 0:
+                    temp_status = 'ok' if temp_val <= 55 else ('warning' if temp_val <= 65 else 'critical')
+                    attrs.append({
+                        'id': attr_idx, 'name': 'Temperature',
+                        'value': '-', 'worst': '-', 'threshold': '-',
+                        'raw_value': f'{temp_val}°C', 'status': temp_status
+                    })
+                    attr_idx += 1
+
+                # Power-On Hours
+                poh_val = data.get('power_on_time', {}).get('hours', 0)
+                if poh_val > 0:
+                    attrs.append({
+                        'id': attr_idx, 'name': 'Power On Hours',
+                        'value': '-', 'worst': '-', 'threshold': '-',
+                        'raw_value': f'{poh_val:,}', 'status': 'ok'
+                    })
+                    attr_idx += 1
+
+                # Start-Stop Cycle Counter
+                scsi_ssc = data.get('scsi_start_stop_cycle_counter', {})
+                acc_cycles = scsi_ssc.get('accumulated_start_stop_cycles')
+                spec_cycles = scsi_ssc.get('specified_cycle_count_over_device_lifetime')
+                if acc_cycles is not None:
+                    cycle_status = 'ok'
+                    if spec_cycles and spec_cycles > 0:
+                        usage_ratio = acc_cycles / spec_cycles
+                        cycle_status = 'ok' if usage_ratio < 0.8 else ('warning' if usage_ratio < 0.95 else 'critical')
+                    attrs.append({
+                        'id': attr_idx, 'name': 'Start-Stop Cycles',
+                        'value': '-', 'worst': '-', 'threshold': '-',
+                        'raw_value': f'{acc_cycles:,}' + (f' / {spec_cycles:,}' if spec_cycles else ''),
+                        'status': cycle_status
+                    })
+                    attr_idx += 1
+
+                # Load-Unload Cycle Counter (for SAS HDDs)
+                acc_load = scsi_ssc.get('accumulated_load_unload_cycles')
+                spec_load = scsi_ssc.get('specified_load_unload_count_over_device_lifetime')
+                if acc_load is not None:
+                    load_status = 'ok'
+                    if spec_load and spec_load > 0:
+                        load_ratio = acc_load / spec_load
+                        load_status = 'ok' if load_ratio < 0.8 else ('warning' if load_ratio < 0.95 else 'critical')
+                    attrs.append({
+                        'id': attr_idx, 'name': 'Load-Unload Cycles',
+                        'value': '-', 'worst': '-', 'threshold': '-',
+                        'raw_value': f'{acc_load:,}' + (f' / {spec_load:,}' if spec_load else ''),
+                        'status': load_status
+                    })
+                    attr_idx += 1
+
+                # Background scan results
+                bg_scan = data.get('scsi_background_scan_results', {})
+                if bg_scan:
+                    bg_status_val = bg_scan.get('status', {}).get('value', 0)
+                    bg_scan_progress = bg_scan.get('status', {}).get('string', '')
+                    scan_errors = bg_scan.get('number_of_background_medium_scans_performed', 0)
+                    bg_media_errors = bg_scan.get('number_of_background_scans_performed', 0)
+
+                    if 'scan_errors' in bg_scan or bg_status_val > 0:
+                        attrs.append({
+                            'id': attr_idx, 'name': 'Background Scan Status',
+                            'value': '-', 'worst': '-', 'threshold': '-',
+                            'raw_value': bg_scan_progress or 'OK',
+                            'status': 'ok' if bg_status_val == 0 else 'warning'
+                        })
+                        attr_idx += 1
+
+                # SAS PHY log (link errors)
+                sas_phy = data.get('sas_phy_event_counter_log', [])
+                if sas_phy:
+                    for phy_entry in sas_phy[:1]:  # First PHY only
+                        events = phy_entry.get('phy_event_counters', [])
+                        for ev in events:
+                            ev_name = ev.get('name', '')
+                            ev_value = ev.get('value', 0)
+                            if ev_value > 0 and ('error' in ev_name.lower() or 'invalid' in ev_name.lower()):
+                                attrs.append({
+                                    'id': attr_idx, 'name': ev_name[:40],
+                                    'value': '-', 'worst': '-', 'threshold': '-',
+                                    'raw_value': f'{ev_value:,}',
+                                    'status': 'warning' if ev_value < 100 else 'critical'
+                                })
+                                attr_idx += 1
+
+            else:
+                # ATA: Parse SMART attributes from JSON
+                ata_attrs = data.get('ata_smart_attributes', {}).get('table', [])
+                for attr in ata_attrs:
+                    attr_id = attr.get('id')
+                    name = attr.get('name', '')
+                    value = attr.get('value', 0)
+                    worst = attr.get('worst', 0)
+                    thresh = attr.get('thresh', 0)
+                    raw_obj = attr.get('raw', {})
+                    raw_value = raw_obj.get('string', str(raw_obj.get('value', 0)))
+                    flags = attr.get('flags', {})
+                    prefailure = flags.get('prefailure', False)
+                    when_failed = attr.get('when_failed', '')
+
+                    if when_failed == 'now':
+                        status = 'critical'
+                    elif prefailure and thresh > 0 and value <= thresh:
+                        status = 'critical'
+                    elif prefailure and thresh > 0:
+                        # Proportional margin: smaller when thresh is close to 100
+                        # thresh=97 → margin 2, thresh=50 → margin 10, thresh=10 → margin 10
+                        warn_margin = min(10, max(2, (100 - thresh) // 3))
+                        status = 'warning' if value <= thresh + warn_margin else 'ok'
+                    else:
+                        status = 'ok'
+
+                    attrs.append({
+                        'id': attr_id,
+                        'name': name,
+                        'value': value,
+                        'worst': worst,
+                        'threshold': thresh,
+                        'raw_value': raw_value,
+                        'status': status,
+                        'prefailure': prefailure,
+                        'flags': flags.get('string', '').strip()
+                    })
+
+                # Fallback: if JSON gave no attributes, try text parser
+                if not attrs:
+                    try:
+                        aproc = subprocess.run(['smartctl', '-A', device], capture_output=True, text=True, timeout=10)
+                        if aproc.returncode == 0:
+                            attrs = _parse_smart_attributes(aproc.stdout.split('\n'))
+                    except Exception:
+                        pass
 
             # --- Build enriched smart_data ---
             temp = data.get('temperature', {}).get('current', 0)
             poh = data.get('power_on_time', {}).get('hours', 0)
             cycles = data.get('power_cycle_count', 0)
+            if cycles == 0 and is_scsi:
+                cycles = data.get('scsi_start_stop_cycle_counter', {}).get('accumulated_start_stop_cycles', 0)
 
             result['smart_data'] = {
                 'device': disk_name,
-                'model': data.get('model_name', 'Unknown'),
+                'model': data.get('model_name', '') or (f'{scsi_vendor} {scsi_product}'.strip() if is_scsi else 'Unknown'),
                 'model_family': model_family,
                 'serial': data.get('serial_number', 'Unknown'),
-                'firmware': data.get('firmware_version', 'Unknown'),
+                'firmware': data.get('firmware_version', '') or scsi_revision or 'Unknown',
                 'smart_status': result.get('smart_status', 'unknown'),
                 'temperature': temp,
                 'power_on_hours': poh,
@@ -6932,14 +7238,16 @@ def api_smart_status(disk_name):
                 'form_factor': form_factor,
                 'physical_block_size': physical_block_size,
                 'trim_supported': trim_supported,
-                'sata_version': sata_version,
-                'interface_speed': interface_speed,
+                'sata_version': sata_version if not is_scsi else '',
+                'interface_speed': interface_speed or (scsi_transport if is_scsi else ''),
                 'polling_minutes_short': polling_short,
                 'polling_minutes_extended': polling_extended,
-                'supports_progress_reporting': has_self_test_block,
+                'supports_progress_reporting': result.get('supports_progress_reporting', False),
                 'error_log_count': error_log_count,
                 'self_test_history': self_test_history,
-                'attributes': attrs
+                'attributes': attrs,
+                'is_sas': is_scsi,
+                'logical_block_size': logical_block_size if is_scsi else None,
             }
         
         return jsonify(result)

@@ -1858,10 +1858,13 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
     }
   }
 
-  // Determine disk type
+  // Determine disk type (SAS detected via backend flag or connection_type)
+  const isSasDisk = sd?.is_sas === true || disk.connection_type === 'sas'
   let diskType = "HDD"
   if (disk.name.startsWith("nvme")) {
     diskType = "NVMe"
+  } else if (isSasDisk) {
+    diskType = "SAS"
   } else if (!disk.rotation_rate || disk.rotation_rate === 0) {
     diskType = "SSD"
   }
@@ -1888,71 +1891,213 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
   // Explanations for NVMe metrics
   const nvmeExplanations: Record<string, string> = {
     'Critical Warning': 'Active alert flags from the NVMe controller. Any non-zero value requires immediate investigation.',
-    'Temperature': 'Composite temperature. Sustained high temps cause throttling and reduce lifespan.',
-    'Available Spare': 'Spare NAND blocks remaining. Alert triggers below 5%.',
-    'Available Spare Threshold': 'Threshold below which spare blocks are considered critical.',
-    'Percentage Used': "Drive's own estimate of endurance consumed. 100% means rated lifespan has been reached.",
-    'Percent Used': "Drive's own estimate of endurance consumed. 100% means rated lifespan has been reached.",
-    'Media Errors': 'Unrecoverable errors involving the NAND flash. Any non-zero value indicates flash cell damage.',
-    'Unsafe Shutdowns': 'Power losses without proper shutdown. Very high counts can cause firmware corruption.',
+    'Temperature': 'Composite temperature reported by the controller. Sustained high temps cause thermal throttling and reduce NAND lifespan.',
+    'Temperature Sensor 1': 'Primary temperature sensor, usually the NAND flash. Most representative of flash health.',
+    'Temperature Sensor 2': 'Secondary sensor, often the controller die. Typically runs hotter than Sensor 1.',
+    'Temperature Sensor 3': 'Tertiary sensor, if present. Location varies by manufacturer.',
+    'Available Spare': 'Percentage of spare NAND blocks remaining for bad-block replacement. Alert triggers below threshold.',
+    'Available Spare Threshold': 'Manufacturer-set minimum for Available Spare. Below this, the drive flags a critical warning.',
+    'Percentage Used': "Drive's own estimate of endurance consumed based on actual vs. rated write cycles. 100% = rated TBW reached; drive may continue working beyond this.",
+    'Percent Used': "Drive's own estimate of endurance consumed based on actual vs. rated write cycles. 100% = rated TBW reached; drive may continue working beyond this.",
+    'Media Errors': 'Unrecoverable read/write errors on the NAND flash. Any non-zero value indicates permanent cell damage. Growing count = replace soon.',
+    'Media and Data Integrity Errors': 'Unrecoverable errors detected by the controller. Non-zero means data corruption risk.',
+    'Unsafe Shutdowns': 'Power losses without proper flush/shutdown. Very high counts risk metadata corruption and firmware issues.',
     'Power Cycles': 'Total on/off cycles. Frequent cycling increases connector and capacitor wear.',
-    'Power On Hours': 'Total hours the drive has been powered on.',
-    'Data Units Read': 'Total data read from the drive in 512KB units.',
-    'Data Units Written': 'Total data written to the drive in 512KB units.',
-    'Host Read Commands': 'Total read commands processed by the controller.',
-    'Host Write Commands': 'Total write commands processed by the controller.',
-    'Controller Busy Time': 'Minutes the controller was busy processing commands.',
-    'Error Log Entries': 'Number of entries in the error log. Often includes benign self-test artifacts.',
-    'Warning Temp Time': 'Minutes spent in the warning temperature range. Zero is ideal.',
-    'Critical Temp Time': 'Minutes spent in the critical temperature range. Should always be zero.',
+    'Power On Hours': 'Total cumulative hours the drive has been powered on since manufacture.',
+    'Data Units Read': 'Total data read in 512KB units. Multiply by 512,000 for bytes. Useful for calculating daily read workload.',
+    'Data Units Written': 'Total data written in 512KB units. Compare with TBW rating to estimate remaining endurance.',
+    'Host Read Commands': 'Total read commands issued by the host. High ratio vs. write commands indicates read-heavy workload.',
+    'Host Write Commands': 'Total write commands issued by the host. Includes filesystem metadata writes.',
+    'Controller Busy Time': 'Total minutes the controller spent processing I/O commands. High values indicate sustained heavy workload.',
+    'Error Log Entries': 'Number of entries in the error information log. Often includes benign self-test artifacts; cross-check with Media Errors.',
+    'Error Information Log Entries': 'Number of entries in the error information log. Often includes benign self-test artifacts.',
+    'Warning Temp Time': 'Total minutes spent above the warning temperature threshold. Causes performance throttling. Zero is ideal.',
+    'Critical Temp Time': 'Total minutes spent above the critical temperature threshold. Drive may shut down to prevent damage. Should always be zero.',
+    'Warning Composite Temperature Time': 'Total minutes the composite temperature exceeded the warning threshold.',
+    'Critical Composite Temperature Time': 'Total minutes the composite temperature exceeded the critical threshold. Must be zero.',
+    'Thermal Management T1 Trans Count': 'Number of times the drive entered light thermal throttling (T1). Indicates cooling issues.',
+    'Thermal Management T2 Trans Count': 'Number of times the drive entered heavy thermal throttling (T2). Significant performance impact.',
+    'Thermal Management T1 Total Time': 'Total seconds spent in light thermal throttling. Indicates sustained cooling problems.',
+    'Thermal Management T2 Total Time': 'Total seconds spent in heavy thermal throttling. Severe performance degradation.',
   }
   
-  // Explanations for SATA/SSD attributes
+  // Explanations for SATA/SSD attributes — covers HDD, SSD, and mixed-use attributes
   const sataExplanations: Record<string, string> = {
-    'Raw Read Error Rate': 'Raw read errors detected. High values on Seagate drives are often normal (uses proprietary formula).',
+    // === Read/Write Errors ===
+    'Raw Read Error Rate': 'Hardware read errors detected. High raw values on Seagate/Samsung drives are normal (proprietary formula where VALUE, not raw, matters).',
+    'Write Error Rate': 'Errors encountered during write operations. Growing count may indicate head or media issues.',
+    'Multi Zone Error Rate': 'Errors when writing to multi-zone regions. Manufacturer-specific; rising trend is concerning.',
+    'Soft Read Error Rate': 'Read errors corrected by firmware without data loss. High values may indicate degrading media.',
+    'Read Error Retry Rate': 'Number of read retries needed. Occasional retries are normal; persistent growth indicates wear.',
+    'Reported Uncorrect': 'Errors that ECC could not correct. Any non-zero value means data was lost or unreadable.',
+    'Reported Uncorrectable Errors': 'Errors that ECC could not correct. Non-zero = data loss risk.',
+
+    // === Reallocated / Pending / Offline ===
+    'Reallocated Sector Ct': 'Bad sectors replaced by spare sectors from the reserve pool. Growing count = drive degradation.',
     'Reallocated Sector Count': 'Bad sectors replaced by spare sectors. Growing count indicates drive degradation.',
     'Reallocated Sectors': 'Bad sectors replaced by spare sectors. Growing count indicates drive degradation.',
-    'Spin Up Time': 'Time needed for platters to reach operating speed (HDD only).',
-    'Start Stop Count': 'Number of spindle start/stop cycles (HDD only).',
-    'Power On Hours': 'Total hours the drive has been powered on.',
-    'Power Cycle Count': 'Total number of complete power on/off cycles.',
-    'Temperature': 'Current drive temperature. High temps reduce lifespan.',
-    'Temperature Celsius': 'Current drive temperature in Celsius. High temps reduce lifespan.',
-    'Current Pending Sector': 'Sectors waiting to be remapped. May resolve or become reallocated.',
+    'Retired Block Count': 'NAND blocks retired due to wear or failure (SSD). Similar to Reallocated Sector Count for HDDs.',
+    'Reallocated Event Count': 'Number of remap operations performed. Each event means a bad sector was replaced.',
+    'Current Pending Sector': 'Unstable sectors waiting to be remapped on next write. May resolve or become permanently reallocated.',
+    'Current Pending Sector Count': 'Unstable sectors waiting to be remapped on next write. Non-zero warrants monitoring.',
     'Pending Sectors': 'Sectors waiting to be remapped. May resolve or become reallocated.',
-    'Offline Uncorrectable': 'Uncorrectable errors found during offline scan. Indicates potential data loss.',
-    'UDMA CRC Error Count': 'Interface communication errors. Usually caused by cable or connection issues.',
+    'Offline Uncorrectable': 'Sectors that failed during offline scan and could not be corrected. Indicates potential data loss.',
+    'Offline Uncorrectable Sector Count': 'Uncorrectable sectors found during background scan. Data on these sectors is lost.',
+
+    // === Temperature ===
+    'Temperature': 'Current drive temperature. Sustained high temps accelerate wear and reduce lifespan.',
+    'Temperature Celsius': 'Current drive temperature in Celsius. HDDs: keep below 45°C; SSDs: below 60°C.',
+    'Airflow Temperature Cel': 'Temperature measured by the airflow sensor. Usually slightly lower than the main temp sensor.',
+    'Temperature Case': 'Temperature of the drive casing. Useful for monitoring enclosure ventilation.',
+    'Temperature Internal': 'Internal temperature sensor. May read higher than case temperature.',
+
+    // === Power & Uptime ===
+    'Power On Hours': 'Total cumulative hours the drive has been powered on. Used to estimate age and plan replacements.',
+    'Power On Hours and Msec': 'Total powered-on time with millisecond precision.',
+    'Power Cycle Count': 'Total number of complete power on/off cycles. Frequent cycling stresses electronics.',
+    'Power Off Retract Count': 'Times the heads were retracted due to power loss (HDD). High values indicate unstable power supply.',
+    'Unexpected Power Loss Ct': 'Unexpected power losses (SSD). Can cause metadata corruption if write-cache was active.',
+    'Unsafe Shutdown Count': 'Power losses without proper shutdown (SSD). High values risk firmware corruption.',
+    'Start Stop Count': 'Spindle motor start/stop cycles (HDD). Each cycle causes mechanical wear.',
+
+    // === Mechanical (HDD-specific) ===
+    'Spin Up Time': 'Time for platters to reach full operating speed (HDD). Increasing values may indicate motor bearing wear.',
+    'Spin Retry Count': 'Failed attempts to spin up the motor (HDD). Non-zero usually indicates power supply or motor issues.',
+    'Calibration Retry Count': 'Number of head calibration retries (HDD). Non-zero may indicate mechanical issues.',
+    'Seek Error Rate': 'Errors during head positioning (HDD). High raw values on Seagate are often normal (proprietary formula).',
+    'Seek Time Performance': 'Average seek operation performance (HDD). Declining values suggest mechanical degradation.',
+    'Load Cycle Count': 'Head load/unload cycles (HDD). Rated for 300K-600K cycles on most drives.',
+    'Load Unload Cycle Count': 'Head load/unload cycles (HDD). Each cycle causes micro-wear on the ramp mechanism.',
+    'Head Flying Hours': 'Hours the read/write heads have been positioned over the platters (HDD).',
+    'High Fly Writes': 'Writes where the head flew higher than expected (HDD). Data may not be written correctly.',
+    'G Sense Error Rate': 'Shock/vibration events detected by the accelerometer (HDD). High values indicate physical disturbance.',
+    'Disk Shift': 'Distance the disk has shifted from its original position (HDD). Temperature or shock-related.',
+    'Loaded Hours': 'Hours spent with heads loaded over the platters (HDD).',
+    'Load In Time': 'Time of the head loading process. Manufacturer-specific diagnostic metric.',
+    'Torque Amplification Count': 'Times the drive needed extra torque to spin up. May indicate stiction or motor issues.',
+    'Flying Height': 'Head-to-platter distance during operation (HDD). Critical for read/write reliability.',
+    'Load Friction': 'Friction detected during head loading (HDD). Increasing values suggest ramp mechanism wear.',
+    'Load Unload Retry Count': 'Failed head load/unload attempts (HDD). Non-zero indicates mechanical issues.',
+
+    // === Interface Errors ===
+    'UDMA CRC Error Count': 'Data transfer checksum errors on the SATA cable. Usually caused by a bad cable, loose connection, or port issue.',
     'CRC Errors': 'Interface communication errors. Usually caused by cable or connection issues.',
-    'Wear Leveling Count': 'SSD wear indicator. Lower values mean more wear.',
-    'Media Wearout Indicator': 'SSD life remaining estimate. Lower values mean less life remaining.',
-    'Total LBAs Written': 'Total logical blocks written to the drive.',
-    'Total LBAs Read': 'Total logical blocks read from the drive.',
-    'SSD Life Left': 'Estimated remaining lifespan percentage.',
-    'Percent Lifetime Remain': 'Estimated remaining lifespan percentage.',
+    'CRC Error Count': 'Data transfer checksum errors. Replace the SATA cable if this value grows.',
+    'Command Timeout': 'Commands that took too long and timed out. May indicate controller or connection issues.',
+    'Interface CRC Error Count': 'CRC errors on the interface link. Cable or connector problem.',
+
+    // === ECC & Data Integrity ===
+    'Hardware ECC Recovered': 'Read errors corrected by hardware ECC. Non-zero is normal; rapid growth warrants attention.',
+    'ECC Error Rate': 'Rate of ECC-corrected errors. Proprietary formula; VALUE matters more than raw count.',
+    'End to End Error': 'Data corruption detected between the controller cache and host interface. Should always be zero.',
+    'End to End Error Detection Count': 'Number of parity errors in the data path. Non-zero indicates controller issues.',
+
+    // === SSD Wear & Endurance ===
+    'Wear Leveling Count': 'Average erase cycles per NAND block (SSD). Lower VALUE = more wear consumed.',
+    'Wear Range Delta': 'Difference between most-worn and least-worn blocks (SSD). High values indicate uneven wear.',
+    'Media Wearout Indicator': 'Intel SSD life remaining estimate. Starts at 100, decreases to 0 as endurance is consumed.',
+    'SSD Life Left': 'Estimated remaining SSD lifespan percentage based on NAND wear.',
+    'Percent Lifetime Remain': 'Estimated remaining lifespan percentage. 100 = new; 0 = end of rated life.',
+    'Percent Lifetime Used': 'Percentage of rated endurance consumed. Inverse of Percent Lifetime Remain.',
+    'Available Reservd Space': 'Remaining spare blocks as a percentage of total reserves (SSD). Similar to NVMe Available Spare.',
+    'Available Reserved Space': 'Remaining spare blocks as a percentage (SSD). Low values reduce the drive\'s ability to handle bad blocks.',
+    'Used Rsvd Blk Cnt Tot': 'Total reserve blocks consumed for bad-block replacement (SSD). Growing = aging.',
+    'Used Reserved Block Count': 'Number of reserve blocks used for bad-block replacement (SSD).',
+    'Unused Rsvd Blk Cnt Tot': 'Remaining reserve blocks available (SSD). Zero = no more bad-block replacement possible.',
+    'Unused Reserve Block Count': 'Reserve blocks still available for bad-block replacement (SSD).',
+    'Program Fail Cnt Total': 'Total NAND program (write) failures (SSD). Non-zero indicates flash cell degradation.',
+    'Program Fail Count': 'NAND write failures (SSD). Growing count means flash cells are wearing out.',
+    'Program Fail Count Chip': 'Program failures at chip level (SSD). Non-zero indicates NAND degradation.',
+    'Erase Fail Count': 'NAND erase operation failures (SSD). Non-zero indicates severe flash wear.',
+    'Erase Fail Count Total': 'Total NAND erase failures (SSD). Combined with Program Fail Count shows overall NAND health.',
+    'Erase Fail Count Chip': 'Erase failures at chip level (SSD). Non-zero = NAND degradation.',
+    'Runtime Bad Block': 'Bad blocks discovered during normal operation (SSD). Different from factory-mapped bad blocks.',
+    'Runtime Bad Blocks': 'Blocks that failed during use (SSD). Growing count = flash wearing out.',
+
+    // === Data Volume ===
+    'Total LBAs Written': 'Total logical block addresses written. Multiply by 512 bytes for total data volume.',
+    'Total LBAs Read': 'Total logical block addresses read. Useful for calculating daily workload.',
+    'Lifetime Writes GiB': 'Total data written in GiB over the drive\'s lifetime.',
+    'Lifetime Reads GiB': 'Total data read in GiB over the drive\'s lifetime.',
+    'Total Writes GiB': 'Total data written in GiB. Compare with TBW rating for endurance estimate.',
+    'Total Reads GiB': 'Total data read in GiB.',
+    'NAND Writes GiB': 'Raw NAND writes in GiB. Higher than host writes due to write amplification.',
+    'Host Writes 32MiB': 'Total data written by the host in 32MiB units.',
+    'Host Reads 32MiB': 'Total data read by the host in 32MiB units.',
+    'Host Writes MiB': 'Total data written by the host in MiB.',
+    'Host Reads MiB': 'Total data read by the host in MiB.',
+    'NAND GB Written TLC': 'Total data written to TLC NAND cells in GB. Includes write amplification overhead.',
+    'NAND GiB Written': 'Total NAND writes in GiB. Higher than host writes due to write amplification and garbage collection.',
+
+    // === SSD-Specific Advanced ===
+    'Ave Block Erase Count': 'Average number of erase cycles per NAND block (SSD). Drives are typically rated for 3K-100K cycles.',
+    'Average Erase Count': 'Average erase cycles per block. Compare with rated endurance for remaining life estimate.',
+    'Max Erase Count': 'Maximum erase cycles on any single block. Large gap with average indicates uneven wear.',
+    'Total Erase Count': 'Sum of all erase cycles across all blocks. Overall NAND write volume indicator.',
+    'Power Loss Cap Test': 'Result of the power-loss protection capacitor self-test (SSD). Failed = risk of data loss on power failure.',
+    'Power Loss Protection': 'Status of the power-loss protection mechanism. Enterprise SSDs use capacitors to flush cache on power loss.',
+    'Successful RAIN Recov Cnt': 'Successful recoveries using RAIN (Redundant Array of Independent NAND). Shows NAND parity is working.',
+    'SSD Erase Fail Count': 'Total erase failures across the SSD. Indicates overall NAND degradation.',
+    'SSD Program Fail Count': 'Total write failures across the SSD. Indicates flash cell reliability issues.',
+
+    // === Throughput ===
+    'Throughput Performance': 'Overall throughput performance rating (HDD). Declining values indicate degradation.',
+
+    // === Other / Vendor-specific ===
+    'Unknown Attribute': 'Vendor-specific attribute not defined in the SMART standard. Check manufacturer documentation.',
+    'Free Fall Sensor': 'Free-fall events detected (laptop HDD). The heads are parked to prevent damage during drops.',
   }
   
-  const getAttrExplanation = (name: string, isNvme: boolean): string => {
+  // Explanations for SAS/SCSI metrics
+  const sasExplanations: Record<string, string> = {
+    'Grown Defect List': 'Sectors remapped due to defects found during operation. Equivalent to Reallocated Sectors on SATA. Growing count = drive degradation.',
+    'Read Errors Corrected': 'Read errors corrected by ECC. Normal for enterprise drives under heavy workload — only uncorrected errors are critical.',
+    'Read ECC Fast': 'Errors corrected by fast (on-the-fly) ECC during read operations. Normal in SAS drives.',
+    'Read ECC Delayed': 'Errors requiring delayed (offline) ECC correction during reads. Non-zero is acceptable but should not grow rapidly.',
+    'Read Uncorrected Errors': 'Read errors that ECC could not correct. Non-zero means data was lost or unreadable. Critical metric.',
+    'Read Data Processed': 'Total data read by the drive. Useful for calculating daily workload.',
+    'Write Errors Corrected': 'Write errors corrected by ECC. Normal for enterprise drives.',
+    'Write Uncorrected Errors': 'Write errors that ECC could not correct. Non-zero = potential data loss. Critical.',
+    'Write Data Processed': 'Total data written to the drive. Useful for workload analysis.',
+    'Verify Errors Corrected': 'Verification errors corrected during background verify operations.',
+    'Verify Uncorrected Errors': 'Verify errors that could not be corrected. Non-zero indicates media degradation.',
+    'Non-Medium Errors': 'Controller/bus errors not related to the media itself. High count may indicate backplane or cable issues.',
+    'Temperature': 'Current drive temperature. Enterprise SAS drives tolerate up to 55-60°C under sustained load.',
+    'Power On Hours': 'Total hours the drive has been powered on. Enterprise drives are rated for 24/7 operation.',
+    'Start-Stop Cycles': 'Motor start/stop cycles. Enterprise SAS drives are rated for 50,000+ cycles.',
+    'Load-Unload Cycles': 'Head load/unload cycles. Enterprise drives are rated for 600,000+ cycles.',
+    'Background Scan Status': 'Status of the SCSI background media scan. Runs continuously to detect surface defects.',
+  }
+
+  const getAttrExplanation = (name: string, diskKind: string): string => {
     const cleanName = name.replace(/_/g, ' ')
-    if (isNvme) {
+    if (diskKind === 'NVMe') {
       return nvmeExplanations[cleanName] || nvmeExplanations[name] || ''
+    }
+    if (diskKind === 'SAS') {
+      return sasExplanations[cleanName] || sasExplanations[name] || ''
     }
     return sataExplanations[cleanName] || sataExplanations[name] || ''
   }
-  
+
+  // SAS and NVMe use simplified table format (Metric | Value | Status)
+  const useSimpleTable = isNvmeForTable || isSasDisk
+
   const attributeRows = smartAttributes.map((attr, i) => {
   const statusColor = attr.status === 'ok' ? '#16a34a' : attr.status === 'warning' ? '#ca8a04' : '#dc2626'
   const statusBg = attr.status === 'ok' ? '#16a34a15' : attr.status === 'warning' ? '#ca8a0415' : '#dc262615'
-  const explanation = getAttrExplanation(attr.name, isNvmeForTable)
-  
-  if (isNvmeForTable) {
-    // NVMe format: Metric | Value | Status (with explanation)
+  const explanation = getAttrExplanation(attr.name, diskType)
+
+  if (useSimpleTable) {
+    // NVMe/SAS format: Metric | Value | Status (with explanation)
+    const displayValue = isSasDisk ? attr.raw_value : attr.value
     return `
     <tr>
       <td class="col-name">
         <div style="font-weight:500;">${attr.name}</div>
         ${explanation ? `<div style="font-size:10px;color:#64748b;margin-top:2px;">${explanation}</div>` : ''}
       </td>
-      <td style="text-align:center;font-family:monospace;vertical-align:top;padding-top:12px;">${attr.value}</td>
+      <td style="text-align:center;font-family:monospace;vertical-align:top;padding-top:12px;">${displayValue}</td>
       <td style="vertical-align:top;padding-top:8px;"><span class="f-tag" style="background:${statusBg};color:${statusColor}">${attr.status === 'ok' ? 'OK' : attr.status.toUpperCase()}</span></td>
     </tr>
     `
@@ -1967,7 +2112,7 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
       </td>
       <td style="text-align:center;vertical-align:top;padding-top:12px;">${attr.value}</td>
       <td style="text-align:center;vertical-align:top;padding-top:12px;">${attr.worst}</td>
-      <td class="hide-mobile" style="text-align:center;vertical-align:top;padding-top:12px;">${attr.threshold}</td>
+      <td style="text-align:center;vertical-align:top;padding-top:12px;">${attr.threshold}</td>
       <td class="col-raw" style="vertical-align:top;padding-top:12px;">${attr.raw_value}</td>
       <td style="vertical-align:top;padding-top:8px;"><span class="f-tag" style="background:${statusBg};color:${statusColor}">${attr.status === 'ok' ? 'OK' : attr.status.toUpperCase()}</span></td>
     </tr>
@@ -1993,6 +2138,11 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
         if (temp <= 59) return '#16a34a'
         if (temp <= 70) return '#ca8a04'
         return '#dc2626'
+      case 'SAS':
+        // SAS enterprise: <=55 green, 56-65 yellow, >65 red
+        if (temp <= 55) return '#16a34a'
+        if (temp <= 65) return '#ca8a04'
+        return '#dc2626'
       case 'HDD':
       default:
         // HDD: <=45 green, 46-55 yellow, >55 red
@@ -2003,12 +2153,14 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
   }
   
   // Temperature thresholds for display
-  const tempThresholds = diskType === 'NVMe' 
+  const tempThresholds = diskType === 'NVMe'
     ? { optimal: '<=70°C', warning: '71-80°C', critical: '>80°C' }
     : diskType === 'SSD'
     ? { optimal: '<=59°C', warning: '60-70°C', critical: '>70°C' }
+    : diskType === 'SAS'
+    ? { optimal: '<=55°C', warning: '56-65°C', critical: '>65°C' }
     : { optimal: '<=45°C', warning: '46-55°C', critical: '>55°C' }
-  
+
   const isNvmeDisk = diskType === 'NVMe'
   
   // NVMe Wear & Lifetime data
@@ -2220,31 +2372,46 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1a2e; background: #fff; font-size: 13px; line-height: 1.5; }
   @page { margin: 10mm; size: A4; }
   @media print {
+    html, body { margin: 0 !important; padding: 0 !important; }
     .no-print { display: none !important; }
     .page-break { page-break-before: always; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    body { font-size: 11px; padding-top: 0; max-width: none; width: 100%; }
+    body { font-size: 11px; padding-top: 0; }
     .section { page-break-inside: avoid; break-inside: avoid; }
-    .grid-4 { grid-template-columns: 1fr 1fr 1fr 1fr !important; }
-    .grid-3 { grid-template-columns: 1fr 1fr 1fr !important; }
-    .grid-2 { grid-template-columns: 1fr 1fr !important; }
-    .rpt-header { flex-direction: row !important; }
-    .hide-mobile { display: table-cell !important; }
+    .exec-box { page-break-inside: avoid; break-inside: avoid; }
+    .card { page-break-inside: avoid; break-inside: avoid; }
+    .grid-2, .grid-3, .grid-4 { page-break-inside: avoid; break-inside: avoid; }
+    .section-title { page-break-after: avoid; break-after: avoid; }
+    .attr-tbl tr { page-break-inside: avoid; break-inside: avoid; }
+    .attr-tbl thead { display: table-header-group; }
+    .rpt-footer { page-break-inside: avoid; break-inside: avoid; margin-top: 20px; }
+    .section { margin-bottom: 15px; }
+    svg { max-width: 100%; height: auto; }
+    /* Darken light grays for PDF readability */
+    .rpt-header-left p, .rpt-header-right { color: #374151; }
+    .rpt-header-right .rid { color: #4b5563; }
+    .exec-text p { color: #374151; }
+    .card-label { color: #4b5563; }
+    .rpt-footer { color: #4b5563; }
+    [style*="color:#64748b"] { color: #374151 !important; }
+    [style*="color:#94a3b8"] { color: #4b5563 !important; }
+    [style*="color: #64748b"] { color: #374151 !important; }
+    [style*="color: #94a3b8"] { color: #4b5563 !important; }
+    [style*="color:#16a34a"], [style*="color: #16a34a"] { color: #16a34a !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    [style*="color:#dc2626"] { color: #dc2626 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    [style*="color:#ca8a04"] { color: #ca8a04 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .health-ring, .card-value, .f-tag { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
   @media screen {
     body { max-width: 1000px; margin: 0 auto; padding: 24px 32px; padding-top: 64px; overflow-x: hidden; }
   }
-  @media screen and (max-width: 640px) {
-    body { padding: 16px; padding-top: 64px; }
-    .grid-4 { grid-template-columns: 1fr 1fr; }
-    .rpt-header { flex-direction: column; gap: 12px; align-items: flex-start; }
-    .rpt-header-right { text-align: left; }
-  }
-  
-  /* Top bar */
+  @media print { .top-bar { display: none; } body { padding-top: 0; } }
+
+  /* Top bar for screen only */
   .top-bar {
     position: fixed; top: 0; left: 0; right: 0; background: #0f172a; color: #e2e8f0;
-    padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; z-index: 100;
+    padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; z-index: 100;
+    font-size: 13px;
   }
   .top-bar-left { display: flex; align-items: center; gap: 12px; }
   .top-bar-title { font-weight: 600; }
@@ -2254,7 +2421,6 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
     font-size: 14px; font-weight: 600; cursor: pointer;
   }
   .top-bar button:hover { background: #0891b2; }
-  @media print { .top-bar { display: none; } body { padding-top: 0; } }
 
   /* Header */
   .rpt-header {
@@ -2279,7 +2445,6 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
   .exec-box {
     display: flex; align-items: flex-start; gap: 20px; padding: 20px;
     background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 16px;
-    flex-wrap: wrap;
   }
   .health-ring {
     width: 96px; height: 96px; border-radius: 50%; display: flex; flex-direction: column;
@@ -2311,15 +2476,6 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
   .attr-tbl tr:hover { background: #f8fafc; }
   .attr-tbl .col-name { word-break: break-word; }
   .attr-tbl .col-raw { font-family: monospace; font-size: 10px; }
-  .hide-mobile { display: table-cell; }
-  @media screen and (max-width: 640px) {
-    .hide-mobile { display: none !important; }
-    .attr-tbl { font-size: 11px; }
-    .attr-tbl th { font-size: 11px; padding: 5px 3px; }
-    .attr-tbl td { padding: 5px 3px; }
-    .attr-tbl .col-name { padding-right: 6px; }
-    .attr-tbl .col-raw { font-size: 11px; word-break: break-all; }
-  }
 
   /* Recommendations */
   .rec-item { display: flex; align-items: flex-start; gap: 12px; padding: 12px; border-radius: 6px; margin-bottom: 8px; }
@@ -2340,16 +2496,32 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
     margin-top: 32px; padding-top: 12px; border-top: 1px solid #e2e8f0;
     display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8;
   }
+
+  /* NOTE: No mobile-specific layout overrides — print layout is always A4/desktop
+     regardless of the device generating the PDF. The @media print block above
+     handles all necessary print adjustments. */
 </style>
 </head>
 <body>
+
+<script>
+function pmxPrint(){
+  try { window.print(); }
+  catch(e) {
+    var isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    var el = document.getElementById('pmx-print-hint');
+    if(el) el.textContent = isMac ? 'Use Cmd+P to save as PDF' : 'Use Ctrl+P to save as PDF';
+  }
+}
+</script>
+
 <!-- Top bar (screen only) -->
 <div class="top-bar no-print">
-  <div class="top-bar-left">
-    <div class="top-bar-title">SMART Health Report</div>
-    <div class="top-bar-subtitle">/dev/${disk.name}</div>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <strong>SMART Health Report</strong>
+    <span id="pmx-print-hint" style="font-size:11px;opacity:0.7;">/dev/${disk.name}</span>
   </div>
-  <button onclick="window.print()">Print Report</button>
+  <button onclick="pmxPrint()">Print / Save as PDF</button>
 </div>
 
 <!-- Header -->
@@ -2463,15 +2635,16 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
     </div>
     <div class="card">
       <div class="card-label">Type</div>
-      <div class="card-value" style="font-size:11px;">${diskType === 'HDD' && disk.rotation_rate ? `HDD ${disk.rotation_rate} RPM` : diskType}</div>
+      <div class="card-value" style="font-size:11px;">${diskType === 'SAS' ? (disk.rotation_rate ? `SAS ${disk.rotation_rate} RPM` : 'SAS SSD') : diskType === 'HDD' && disk.rotation_rate ? `HDD ${disk.rotation_rate} RPM` : diskType}</div>
     </div>
   </div>
   ${(modelFamily || formFactor || sataVersion || ifaceSpeed) ? `
   <div class="grid-4" style="margin-top:8px;">
     ${modelFamily ? `<div class="card"><div class="card-label">Family</div><div class="card-value" style="font-size:11px;">${modelFamily}</div></div>` : ''}
     ${formFactor ? `<div class="card"><div class="card-label">Form Factor</div><div class="card-value" style="font-size:11px;">${formFactor}</div></div>` : ''}
-    ${sataVersion ? `<div class="card"><div class="card-label">Interface</div><div class="card-value" style="font-size:11px;">${sataVersion}${ifaceSpeed ? ` · ${ifaceSpeed}` : ''}</div></div>` : (ifaceSpeed ? `<div class="card"><div class="card-label">Link Speed</div><div class="card-value" style="font-size:11px;">${ifaceSpeed}</div></div>` : '')}
-    ${!isNvmeDisk ? `<div class="card"><div class="card-label">TRIM</div><div class="card-value" style="font-size:11px;color:${trimSupported ? '#16a34a' : '#94a3b8'};">${trimSupported ? 'Supported' : 'Not supported'}${physBlockSize === 4096 ? ' · 4K AF' : ''}</div></div>` : ''}
+    ${sataVersion ? `<div class="card"><div class="card-label">Interface</div><div class="card-value" style="font-size:11px;">${sataVersion}${ifaceSpeed ? ` · ${ifaceSpeed}` : ''}</div></div>` : (ifaceSpeed ? `<div class="card"><div class="card-label">${isSasDisk ? 'Transport' : 'Link Speed'}</div><div class="card-value" style="font-size:11px;">${ifaceSpeed}</div></div>` : '')}
+    ${!isNvmeDisk && !isSasDisk ? `<div class="card"><div class="card-label">TRIM</div><div class="card-value" style="font-size:11px;color:${trimSupported ? '#16a34a' : '#94a3b8'};">${trimSupported ? 'Supported' : 'Not supported'}${physBlockSize === 4096 ? ' · 4K AF' : ''}</div></div>` : ''}
+    ${isSasDisk && sd?.logical_block_size ? `<div class="card"><div class="card-label">Block Size</div><div class="card-value" style="font-size:11px;">${sd.logical_block_size} bytes</div></div>` : ''}
   </div>
   ` : ''}
   <div class="grid-4">
@@ -2498,15 +2671,15 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
   <div class="grid-3" style="margin-top:8px;">
     <div class="card card-c">
       <div class="card-value" style="color:${(disk.pending_sectors ?? 0) > 0 ? '#dc2626' : '#16a34a'}">${disk.pending_sectors ?? 0}</div>
-      <div class="card-label">Pending Sectors</div>
+      <div class="card-label">${isSasDisk ? 'Uncorrected Errors' : 'Pending Sectors'}</div>
     </div>
     <div class="card card-c">
-      <div class="card-value" style="color:${(disk.crc_errors ?? 0) > 0 ? '#ca8a04' : '#16a34a'}">${disk.crc_errors ?? 0}</div>
+      <div class="card-value" style="color:${isSasDisk ? '#94a3b8' : (disk.crc_errors ?? 0) > 0 ? '#ca8a04' : '#16a34a'}">${isSasDisk ? 'N/A' : (disk.crc_errors ?? 0)}</div>
       <div class="card-label">CRC Errors</div>
     </div>
     <div class="card card-c">
       <div class="card-value" style="color:${(disk.reallocated_sectors ?? 0) > 0 ? '#dc2626' : '#16a34a'}">${disk.reallocated_sectors ?? 0}</div>
-      <div class="card-label">Reallocated Sectors</div>
+      <div class="card-label">${isSasDisk ? 'Grown Defects' : 'Reallocated Sectors'}</div>
     </div>
   </div>
   ` : ''}
@@ -2722,23 +2895,23 @@ ${!isNvmeDisk && diskType === 'SSD' ? (() => {
   return ''
 })() : ''}
 
-<!-- ${isNvmeDisk ? '4' : (diskType === 'SSD' && (disk.wear_leveling_count !== undefined || disk.ssd_life_left !== undefined || smartAttributes.some(a => a.name?.toLowerCase().includes('wear'))) ? '4' : '3')}. SMART Attributes / NVMe Health Metrics -->
+<!-- SMART Attributes / NVMe Health Metrics / SAS Error Counters -->
 <div class="section">
-  <div class="section-title">${isNvmeDisk ? '4' : (diskType === 'SSD' && (disk.wear_leveling_count !== undefined || disk.ssd_life_left !== undefined || smartAttributes.some(a => a.name?.toLowerCase().includes('wear'))) ? '4' : '3')}. ${isNvmeDisk ? 'NVMe Health Metrics' : 'SMART Attributes'} (${smartAttributes.length} total${hasCritical ? `, ${criticalAttrs.length} warning(s)` : ''})</div>
+  <div class="section-title">${isNvmeDisk ? '4' : (diskType === 'SSD' && (disk.wear_leveling_count !== undefined || disk.ssd_life_left !== undefined || smartAttributes.some(a => a.name?.toLowerCase().includes('wear'))) ? '4' : '3')}. ${isNvmeDisk ? 'NVMe Health Metrics' : isSasDisk ? 'SAS/SCSI Health Metrics' : 'SMART Attributes'} (${smartAttributes.length} total${hasCritical ? `, ${criticalAttrs.length} warning(s)` : ''})</div>
   <table class="attr-tbl">
     <thead>
       <tr>
-        ${isNvmeDisk ? '' : '<th style="width:28px;">ID</th>'}
-        <th class="col-name">${isNvmeDisk ? 'Metric' : 'Attribute'}</th>
-        <th style="text-align:center;width:${isNvmeDisk ? '80px' : '40px'};">Value</th>
-        ${isNvmeDisk ? '' : '<th style="text-align:center;width:40px;">Worst</th>'}
-        ${isNvmeDisk ? '' : '<th class="hide-mobile" style="text-align:center;width:40px;">Thr</th>'}
-        ${isNvmeDisk ? '' : '<th class="col-raw" style="width:60px;">Raw</th>'}
+        ${useSimpleTable ? '' : '<th style="width:28px;">ID</th>'}
+        <th class="col-name">${isNvmeDisk ? 'Metric' : isSasDisk ? 'Metric' : 'Attribute'}</th>
+        <th style="text-align:center;width:${useSimpleTable ? '80px' : '40px'};">Value</th>
+        ${useSimpleTable ? '' : '<th style="text-align:center;width:40px;">Worst</th>'}
+        ${useSimpleTable ? '' : '<th style="text-align:center;width:40px;">Thr</th>'}
+        ${useSimpleTable ? '' : '<th class="col-raw" style="width:60px;">Raw</th>'}
         <th style="width:36px;"></th>
       </tr>
     </thead>
     <tbody>
-      ${attributeRows || '<tr><td colspan="' + (isNvmeDisk ? '3' : '7') + '" style="text-align:center;color:#64748b;padding:20px;">No ' + (isNvmeDisk ? 'NVMe metrics' : 'SMART attributes') + ' available</td></tr>'}
+      ${attributeRows || '<tr><td colspan="' + (useSimpleTable ? '3' : '7') + '" style="text-align:center;color:#64748b;padding:20px;">No ' + (isNvmeDisk ? 'NVMe metrics' : isSasDisk ? 'SAS metrics' : 'SMART attributes') + ' available</td></tr>'}
     </tbody>
   </table>
 </div>
@@ -2938,6 +3111,8 @@ interface SmartTestStatus {
     self_test_history?: SmartSelfTestEntry[]
     attributes: SmartAttribute[]
     nvme_raw?: NvmeRaw
+    is_sas?: boolean
+    logical_block_size?: number
   }
   tools_installed?: {
     smartctl: boolean
@@ -3261,23 +3436,23 @@ function SmartTestTab({ disk, observations = [], lastTestDate }: SmartTestTabPro
         <div className="space-y-3">
           <h4 className="font-semibold flex items-center gap-2">
             <Activity className="h-4 w-4" />
-            {isNvme ? 'NVMe Health Metrics' : 'SMART Attributes'}
+            {isNvme ? 'NVMe Health Metrics' : testStatus.smart_data?.is_sas ? 'SAS/SCSI Health Metrics' : 'SMART Attributes'}
           </h4>
           <div className="border rounded-lg overflow-hidden">
-            <div className={`grid ${isNvme ? 'grid-cols-10' : 'grid-cols-12'} gap-2 p-3 bg-muted/30 text-xs font-medium text-muted-foreground`}>
-              {!isNvme && <div className="col-span-1">ID</div>}
-              <div className={isNvme ? 'col-span-5' : 'col-span-5'}>Attribute</div>
-              <div className={isNvme ? 'col-span-3 text-center' : 'col-span-2 text-center'}>Value</div>
-              {!isNvme && <div className="col-span-2 text-center">Worst</div>}
+            <div className={`grid ${(isNvme || testStatus.smart_data?.is_sas) ? 'grid-cols-10' : 'grid-cols-12'} gap-2 p-3 bg-muted/30 text-xs font-medium text-muted-foreground`}>
+              {!isNvme && !testStatus.smart_data?.is_sas && <div className="col-span-1">ID</div>}
+              <div className={(isNvme || testStatus.smart_data?.is_sas) ? 'col-span-5' : 'col-span-5'}>Attribute</div>
+              <div className={(isNvme || testStatus.smart_data?.is_sas) ? 'col-span-3 text-center' : 'col-span-2 text-center'}>Value</div>
+              {!isNvme && !testStatus.smart_data?.is_sas && <div className="col-span-2 text-center">Worst</div>}
               <div className="col-span-2 text-center">Status</div>
             </div>
             <div className="divide-y divide-border max-h-[200px] overflow-y-auto">
               {testStatus.smart_data.attributes.slice(0, 15).map((attr) => (
-                <div key={attr.id} className={`grid ${isNvme ? 'grid-cols-10' : 'grid-cols-12'} gap-2 p-3 text-sm items-center`}>
-                  {!isNvme && <div className="col-span-1 text-muted-foreground">{attr.id}</div>}
-                  <div className={`${isNvme ? 'col-span-5' : 'col-span-5'} truncate`} title={attr.name}>{attr.name}</div>
-                  <div className={`${isNvme ? 'col-span-3' : 'col-span-2'} text-center font-mono`}>{attr.value}</div>
-                  {!isNvme && <div className="col-span-2 text-center font-mono text-muted-foreground">{attr.worst}</div>}
+                <div key={attr.id} className={`grid ${(isNvme || testStatus.smart_data?.is_sas) ? 'grid-cols-10' : 'grid-cols-12'} gap-2 p-3 text-sm items-center`}>
+                  {!isNvme && !testStatus.smart_data?.is_sas && <div className="col-span-1 text-muted-foreground">{attr.id}</div>}
+                  <div className={`${(isNvme || testStatus.smart_data?.is_sas) ? 'col-span-5' : 'col-span-5'} truncate`} title={attr.name}>{attr.name}</div>
+                  <div className={`${(isNvme || testStatus.smart_data?.is_sas) ? 'col-span-3' : 'col-span-2'} text-center font-mono`}>{testStatus.smart_data?.is_sas ? attr.raw_value : attr.value}</div>
+                  {!isNvme && !testStatus.smart_data?.is_sas && <div className="col-span-2 text-center font-mono text-muted-foreground">{attr.worst}</div>}
                   <div className="col-span-2 text-center">
                     {attr.status === 'ok' ? (
                       <CheckCircle2 className="h-4 w-4 text-green-500 mx-auto" />
