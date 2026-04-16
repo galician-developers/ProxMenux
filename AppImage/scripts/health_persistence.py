@@ -338,20 +338,25 @@ class HealthPersistence:
         else:
             print(f"[HealthPersistence] Database initialized with {len(tables)} tables")
 
-        # ─── Startup migration: clean stale looping disk I/O errors ───
-        # Previous versions had a bug where journal-based disk errors were
+        # ─── Startup migration: clean stale errors from previous bug ───
+        # Previous versions had a bug where journal-based errors were
         # re-processed every cycle, causing infinite notification loops.
-        # On upgrade, clean up any stale disk errors that are stuck in the
+        # On upgrade, clean up any stale errors that are stuck in the
         # active state from the old buggy behavior.
+        # Covers: disk I/O (smart_*, disk_*), VM/CT (vm_*, ct_*, vmct_*),
+        # and log errors (log_*) — all journal-sourced categories.
         try:
             cursor = conn.cursor()
-            # Delete active (unresolved) disk errors from journal that are
-            # older than 2 hours — these are leftovers from the feedback loop.
-            # Real new errors will be re-detected from fresh journal entries.
             cutoff = (datetime.now() - timedelta(hours=2)).isoformat()
             cursor.execute('''
                 DELETE FROM errors
-                WHERE error_key LIKE 'smart_%'
+                WHERE (   error_key LIKE 'smart_%'
+                       OR error_key LIKE 'disk_%'
+                       OR error_key LIKE 'vm_%'
+                       OR error_key LIKE 'ct_%'
+                       OR error_key LIKE 'vmct_%'
+                       OR error_key LIKE 'log_%'
+                      )
                   AND resolved_at IS NULL
                   AND acknowledged = 0
                   AND last_seen < ?
@@ -359,7 +364,7 @@ class HealthPersistence:
             cleaned = cursor.rowcount
             if cleaned > 0:
                 conn.commit()
-                print(f"[HealthPersistence] Startup cleanup: removed {cleaned} stale disk error(s) from previous bug")
+                print(f"[HealthPersistence] Startup cleanup: removed {cleaned} stale error(s) from previous versions")
         except Exception as e:
             print(f"[HealthPersistence] Startup cleanup warning: {e}")
 
