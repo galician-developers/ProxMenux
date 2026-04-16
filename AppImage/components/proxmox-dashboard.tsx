@@ -74,6 +74,7 @@ export function ProxmoxDashboard() {
     serverName: "Loading...",
     nodeId: "Loading...",
   })
+  const [isInitialLoading, setIsInitialLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isServerConnected, setIsServerConnected] = useState(true)
   const [componentKey, setComponentKey] = useState(0)
@@ -192,10 +193,10 @@ export function ProxmoxDashboard() {
   }, [])
 
   useEffect(() => {
-  // Siempre fetch inicial
-  fetchSystemData()
-  fetchHealthInfoCount() // Fetch info count on initial load
-  fetchUpdateStatus() // Fetch ProxMenux update status on initial load
+  // Siempre fetch inicial — mark loading done when system data arrives
+  fetchSystemData().finally(() => setIsInitialLoading(false))
+  fetchHealthInfoCount()
+  fetchUpdateStatus()
 
     // En overview: cada 30 segundos para actualización frecuente del estado de salud
     // En otras tabs: cada 60 segundos para reducir carga
@@ -370,6 +371,21 @@ export function ProxmoxDashboard() {
       default:
         return "Navigation Menu"
     }
+  }
+
+  if (isInitialLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="relative">
+            <div className="h-12 w-12 rounded-full border-2 border-muted"></div>
+            <div className="absolute inset-0 h-12 w-12 rounded-full border-2 border-transparent border-t-primary animate-spin"></div>
+          </div>
+          <div className="text-sm font-medium text-foreground">Loading ProxMenux Monitor...</div>
+          <p className="text-xs text-muted-foreground">Connecting to server and fetching system status</p>
+        </div>
+      </div>
+    )
   }
 
   return (

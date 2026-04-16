@@ -54,7 +54,12 @@ class HealthPersistence:
         self._init_database()
     
     def _get_conn(self) -> sqlite3.Connection:
-        """Get a SQLite connection with timeout and WAL mode for safe concurrency."""
+        """Get a SQLite connection with timeout and WAL mode for safe concurrency.
+
+        IMPORTANT: Always close the connection when done, preferably using
+        the _db_connection() context manager. If not closed explicitly,
+        Python's GC will close it, but this is unreliable under load.
+        """
         conn = sqlite3.connect(str(self.db_path), timeout=30)
         conn.execute('PRAGMA journal_mode=WAL')
         conn.execute('PRAGMA busy_timeout=10000')
@@ -332,7 +337,32 @@ class HealthPersistence:
             print(f"[HealthPersistence] WARNING: Missing tables after init: {missing}")
         else:
             print(f"[HealthPersistence] Database initialized with {len(tables)} tables")
-        
+
+        # ─── Startup migration: clean stale looping disk I/O errors ───
+        # Previous versions had a bug where journal-based disk errors were
+        # re-processed every cycle, causing infinite notification loops.
+        # On upgrade, clean up any stale disk errors that are stuck in the
+        # active state from the old buggy behavior.
+        try:
+            cursor = conn.cursor()
+            # Delete active (unresolved) disk errors from journal that are
+            # older than 2 hours — these are leftovers from the feedback loop.
+            # Real new errors will be re-detected from fresh journal entries.
+            cutoff = (datetime.now() - timedelta(hours=2)).isoformat()
+            cursor.execute('''
+                DELETE FROM errors
+                WHERE error_key LIKE 'smart_%'
+                  AND resolved_at IS NULL
+                  AND acknowledged = 0
+                  AND last_seen < ?
+            ''', (cutoff,))
+            cleaned = cursor.rowcount
+            if cleaned > 0:
+                conn.commit()
+                print(f"[HealthPersistence] Startup cleanup: removed {cleaned} stale disk error(s) from previous bug")
+        except Exception as e:
+            print(f"[HealthPersistence] Startup cleanup warning: {e}")
+
         conn.close()
     
     def record_error(self, error_key: str, category: str, severity: str, 
@@ -345,21 +375,17 @@ class HealthPersistence:
             return self._record_error_impl(error_key, category, severity, reason, details)
     
     def _record_error_impl(self, error_key, category, severity, reason, details):
-        # === RESOURCE EXISTENCE CHECK ===
+        # === RESOURCE EXISTENCE CHECK (before DB access) ===
         # Skip recording errors for resources that no longer exist
-        # This prevents "ghost" errors from stale journal entries
-        
-        # Check VM/CT existence
         if error_key and (error_key.startswith(('vm_', 'ct_', 'vmct_'))):
             import re
             vmid_match = re.search(r'(?:vm_|ct_|vmct_)(\d+)', error_key)
             if vmid_match:
                 vmid = vmid_match.group(1)
                 if not self._check_vm_ct_exists(vmid):
-                    return {'type': 'skipped', 'needs_notification': False, 
+                    return {'type': 'skipped', 'needs_notification': False,
                             'reason': f'VM/CT {vmid} no longer exists'}
-        
-        # Check disk existence
+
         if error_key and any(error_key.startswith(p) for p in ('smart_', 'disk_', 'io_error_')):
             import re
             import os
@@ -370,161 +396,151 @@ class HealthPersistence:
                 if not os.path.exists(f'/dev/{disk_name}') and not os.path.exists(f'/dev/{base_disk}'):
                     return {'type': 'skipped', 'needs_notification': False,
                             'reason': f'Disk /dev/{disk_name} no longer exists'}
-        
+
         conn = self._get_conn()
-        cursor = conn.cursor()
-        
-        now = datetime.now().isoformat()
-        details_json = json.dumps(details) if details else None
-        
-        cursor.execute('''
-            SELECT id, acknowledged, resolved_at, category, severity, first_seen, 
-                   notification_sent, suppression_hours
-            FROM errors WHERE error_key = ?
-        ''', (error_key,))
-        existing = cursor.fetchone()
-        
-        event_info = {'type': 'updated', 'needs_notification': False}
-        
-        if existing:
-            err_id, ack, resolved_at, old_cat, old_severity, first_seen, notif_sent, stored_suppression = existing
-            
-            if ack == 1:
-                # SAFETY OVERRIDE: Critical CPU temperature ALWAYS re-triggers
-                # regardless of any dismiss/permanent setting (hardware protection)
-                if error_key == 'cpu_temperature' and severity == 'CRITICAL':
-                    cursor.execute('DELETE FROM errors WHERE error_key = ?', (error_key,))
-                    cursor.execute('''
-                        INSERT INTO errors 
-                        (error_key, category, severity, reason, details, first_seen, last_seen)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ''', (error_key, category, severity, reason, details_json, now, now))
-                    event_info = {'type': 'new', 'needs_notification': True}
-                    self._record_event(cursor, 'new', error_key, 
-                                      {'severity': severity, 'reason': reason,
-                                       'note': 'CRITICAL temperature override - safety alert'})
-                    conn.commit()
-                    conn.close()
-                    return event_info
-                
-                # Check suppression: use per-record stored hours (set at dismiss time)
-                sup_hours = stored_suppression if stored_suppression is not None else self.DEFAULT_SUPPRESSION_HOURS
-                
-                # Permanent dismiss (sup_hours == -1): always suppress
-                if sup_hours == -1:
-                    conn.close()
-                    return {'type': 'skipped_acknowledged', 'needs_notification': False}
-                
-                # Time-limited suppression
-                still_suppressed = False
-                if resolved_at:
-                    try:
-                        resolved_dt = datetime.fromisoformat(resolved_at)
-                        elapsed_hours = (datetime.now() - resolved_dt).total_seconds() / 3600
-                        still_suppressed = elapsed_hours < sup_hours
-                    except Exception:
-                        pass
-                
-                if still_suppressed:
-                    conn.close()
-                    return {'type': 'skipped_acknowledged', 'needs_notification': False}
-                else:
-                    # Suppression expired.
-                    # For log-based errors (spike, persistent, cascade),
-                    # do NOT re-trigger.  The journal always contains old
-                    # messages, so re-creating the error would cause an
-                    # infinite notification cycle.  Instead, just delete
-                    # the stale record so it stops appearing in the UI.
-                    is_log_error = (
-                        error_key.startswith('log_persistent_')
-                        or error_key.startswith('log_spike_')
-                        or error_key.startswith('log_cascade_')
-                        or error_key.startswith('log_critical_')
-                        or category == 'logs'
-                    )
-                    if is_log_error:
+        try:
+            cursor = conn.cursor()
+            now = datetime.now().isoformat()
+            details_json = json.dumps(details) if details else None
+
+            cursor.execute('''
+                SELECT id, acknowledged, resolved_at, category, severity, first_seen,
+                       notification_sent, suppression_hours
+                FROM errors WHERE error_key = ?
+            ''', (error_key,))
+            existing = cursor.fetchone()
+
+            event_info = {'type': 'updated', 'needs_notification': False}
+
+            if existing:
+                err_id, ack, resolved_at, old_cat, old_severity, first_seen, notif_sent, stored_suppression = existing
+
+                if ack == 1:
+                    # SAFETY OVERRIDE: Critical CPU temperature ALWAYS re-triggers
+                    if error_key == 'cpu_temperature' and severity == 'CRITICAL':
                         cursor.execute('DELETE FROM errors WHERE error_key = ?', (error_key,))
-                        conn.commit()
-                        conn.close()
-                        return {'type': 'skipped_expired_log', 'needs_notification': False}
-                    
-                    # For non-log errors (hardware, services, etc.),
-                    # re-triggering is correct -- the condition is real
-                    # and still present.
-                    cursor.execute('DELETE FROM errors WHERE error_key = ?', (error_key,))
-                    cursor.execute('''
-                        INSERT INTO errors 
-                        (error_key, category, severity, reason, details, first_seen, last_seen)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ''', (error_key, category, severity, reason, details_json, now, now))
-                    event_info = {'type': 'new', 'needs_notification': True}
-                    self._record_event(cursor, 'new', error_key, 
-                                      {'severity': severity, 'reason': reason,
-                                       'note': 'Re-triggered after suppression expired'})
-                    conn.commit()
-                    conn.close()
-                    return event_info
-            
-            # Not acknowledged - update existing active error
-            cursor.execute('''
-                UPDATE errors 
-                SET last_seen = ?, severity = ?, reason = ?, details = ?
-                WHERE error_key = ? AND acknowledged = 0
-            ''', (now, severity, reason, details_json, error_key))
-            
-            # Check if severity escalated
-            if old_severity == 'WARNING' and severity == 'CRITICAL':
-                event_info['type'] = 'escalated'
-                event_info['needs_notification'] = True
-        else:
-            # Insert new error
-            cursor.execute('''
-                INSERT INTO errors 
-                (error_key, category, severity, reason, details, first_seen, last_seen)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (error_key, category, severity, reason, details_json, now, now))
-            
-            event_info['type'] = 'new'
-            event_info['needs_notification'] = True
-        
-        # ─── Auto-suppress: if the category has a non-default setting, ───
-        # auto-dismiss immediately so the user never sees it as active.
-        # Exception: CRITICAL CPU temperature is never auto-suppressed.
-        if not (error_key == 'cpu_temperature' and severity == 'CRITICAL'):
-            setting_key = self.CATEGORY_SETTING_MAP.get(category, '')
-            if setting_key:
-                # P4 fix: use _get_setting_impl with existing connection to avoid deadlock
-                stored = self._get_setting_impl(conn, setting_key)
-                if stored is not None:
-                    configured_hours = int(stored)
-                    if configured_hours != self.DEFAULT_SUPPRESSION_HOURS:
-                        # Non-default setting found: auto-acknowledge
-                        # Mark as acknowledged but DO NOT set resolved_at - error remains active
                         cursor.execute('''
-                            UPDATE errors 
-                            SET acknowledged = 1, acknowledged_at = ?, suppression_hours = ?
-                            WHERE error_key = ? AND acknowledged = 0
-                        ''', (now, configured_hours, error_key))
-                        
-                        if cursor.rowcount > 0:
-                            self._record_event(cursor, 'auto_suppressed', error_key, {
-                                'severity': severity,
-                                'reason': reason,
-                                'suppression_hours': configured_hours,
-                                'note': 'Auto-suppressed by user settings'
-                            })
-                            event_info['type'] = 'auto_suppressed'
-                            event_info['needs_notification'] = False
+                            INSERT INTO errors
+                            (error_key, category, severity, reason, details, first_seen, last_seen)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ''', (error_key, category, severity, reason, details_json, now, now))
+                        event_info = {'type': 'new', 'needs_notification': True}
+                        self._record_event(cursor, 'new', error_key,
+                                          {'severity': severity, 'reason': reason,
+                                           'note': 'CRITICAL temperature override - safety alert'})
+                        conn.commit()
+                        return event_info
+
+                    # Check suppression: use per-record stored hours (set at dismiss time)
+                    sup_hours = stored_suppression if stored_suppression is not None else self.DEFAULT_SUPPRESSION_HOURS
+
+                    # Permanent dismiss (sup_hours == -1): always suppress
+                    if sup_hours == -1:
+                        return {'type': 'skipped_acknowledged', 'needs_notification': False}
+
+                    # Time-limited suppression
+                    still_suppressed = False
+                    if resolved_at:
+                        try:
+                            resolved_dt = datetime.fromisoformat(resolved_at)
+                            elapsed_hours = (datetime.now() - resolved_dt).total_seconds() / 3600
+                            still_suppressed = elapsed_hours < sup_hours
+                        except Exception:
+                            pass
+
+                    if still_suppressed:
+                        return {'type': 'skipped_acknowledged', 'needs_notification': False}
+                    else:
+                        # Suppression expired.
+                        # Journal-sourced errors (logs AND disk I/O) should NOT
+                        # re-trigger after suppression.  The journal always contains
+                        # old messages, so re-creating the error causes an infinite
+                        # notification loop.  Delete the stale record instead.
+                        is_journal_error = (
+                            error_key.startswith('log_persistent_')
+                            or error_key.startswith('log_spike_')
+                            or error_key.startswith('log_cascade_')
+                            or error_key.startswith('log_critical_')
+                            or error_key.startswith('smart_')
+                            or error_key.startswith('disk_')
+                            or error_key.startswith('io_error_')
+                            or category == 'logs'
+                        )
+                        if is_journal_error:
+                            cursor.execute('DELETE FROM errors WHERE error_key = ?', (error_key,))
                             conn.commit()
-                            conn.close()
-                            return event_info
-        
-        # Record event
-        self._record_event(cursor, event_info['type'], error_key, 
-                          {'severity': severity, 'reason': reason})
-        
-        conn.commit()
-        conn.close()
+                            return {'type': 'skipped_expired_journal', 'needs_notification': False}
+
+                        # For non-log errors (hardware, services, etc.),
+                        # re-triggering is correct -- the condition is real and still present.
+                        cursor.execute('DELETE FROM errors WHERE error_key = ?', (error_key,))
+                        cursor.execute('''
+                            INSERT INTO errors
+                            (error_key, category, severity, reason, details, first_seen, last_seen)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ''', (error_key, category, severity, reason, details_json, now, now))
+                        event_info = {'type': 'new', 'needs_notification': True}
+                        self._record_event(cursor, 'new', error_key,
+                                          {'severity': severity, 'reason': reason,
+                                           'note': 'Re-triggered after suppression expired'})
+                        conn.commit()
+                        return event_info
+
+                # Not acknowledged - update existing active error
+                cursor.execute('''
+                    UPDATE errors
+                    SET last_seen = ?, severity = ?, reason = ?, details = ?
+                    WHERE error_key = ? AND acknowledged = 0
+                ''', (now, severity, reason, details_json, error_key))
+
+                # Check if severity escalated
+                if old_severity == 'WARNING' and severity == 'CRITICAL':
+                    event_info['type'] = 'escalated'
+                    event_info['needs_notification'] = True
+            else:
+                # Insert new error
+                cursor.execute('''
+                    INSERT INTO errors
+                    (error_key, category, severity, reason, details, first_seen, last_seen)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (error_key, category, severity, reason, details_json, now, now))
+
+                event_info['type'] = 'new'
+                event_info['needs_notification'] = True
+
+            # ─── Auto-suppress: if the category has a non-default setting, ───
+            if not (error_key == 'cpu_temperature' and severity == 'CRITICAL'):
+                setting_key = self.CATEGORY_SETTING_MAP.get(category, '')
+                if setting_key:
+                    stored = self._get_setting_impl(conn, setting_key)
+                    if stored is not None:
+                        configured_hours = int(stored)
+                        if configured_hours != self.DEFAULT_SUPPRESSION_HOURS:
+                            cursor.execute('''
+                                UPDATE errors
+                                SET acknowledged = 1, acknowledged_at = ?, suppression_hours = ?
+                                WHERE error_key = ? AND acknowledged = 0
+                            ''', (now, configured_hours, error_key))
+
+                            if cursor.rowcount > 0:
+                                self._record_event(cursor, 'auto_suppressed', error_key, {
+                                    'severity': severity,
+                                    'reason': reason,
+                                    'suppression_hours': configured_hours,
+                                    'note': 'Auto-suppressed by user settings'
+                                })
+                                event_info['type'] = 'auto_suppressed'
+                                event_info['needs_notification'] = False
+                                conn.commit()
+                                return event_info
+
+            # Record event
+            self._record_event(cursor, event_info['type'], error_key,
+                              {'severity': severity, 'reason': reason})
+
+            conn.commit()
+        finally:
+            conn.close()
         
         return event_info
     
@@ -534,22 +550,20 @@ class HealthPersistence:
             return self._resolve_error_impl(error_key, reason)
     
     def _resolve_error_impl(self, error_key, reason):
-        conn = self._get_conn()
-        cursor = conn.cursor()
-        
-        now = datetime.now().isoformat()
-        
-        cursor.execute('''
-            UPDATE errors 
-            SET resolved_at = ?
-            WHERE error_key = ? AND resolved_at IS NULL
-        ''', (now, error_key))
-        
-        if cursor.rowcount > 0:
-            self._record_event(cursor, 'resolved', error_key, {'reason': reason})
-        
-        conn.commit()
-        conn.close()
+        with self._db_connection() as conn:
+            cursor = conn.cursor()
+            now = datetime.now().isoformat()
+
+            cursor.execute('''
+                UPDATE errors
+                SET resolved_at = ?
+                WHERE error_key = ? AND resolved_at IS NULL
+            ''', (now, error_key))
+
+            if cursor.rowcount > 0:
+                self._record_event(cursor, 'resolved', error_key, {'reason': reason})
+
+            conn.commit()
     
     def is_error_active(self, error_key: str, category: Optional[str] = None) -> bool:
         """
@@ -626,37 +640,34 @@ class HealthPersistence:
         we delete the record entirely so it can re-trigger as a fresh
         event if the condition returns later.
         """
-        conn = self._get_conn()
-        cursor = conn.cursor()
-        
-        now = datetime.now().isoformat()
-        
-        # Check if this error was acknowledged (dismissed)
-        cursor.execute('''
-            SELECT acknowledged FROM errors WHERE error_key = ?
-        ''', (error_key,))
-        row = cursor.fetchone()
-        
-        if row and row[0] == 1:
-            # Dismissed error that naturally resolved - delete entirely
-            # so it can re-trigger as a new event if it happens again
-            cursor.execute('DELETE FROM errors WHERE error_key = ?', (error_key,))
-            if cursor.rowcount > 0:
-                self._record_event(cursor, 'cleared', error_key, 
-                                  {'reason': 'condition_resolved_after_dismiss'})
-        else:
-            # Normal active error - mark as resolved
+        with self._db_connection() as conn:
+            cursor = conn.cursor()
+            now = datetime.now().isoformat()
+
+            # Check if this error was acknowledged (dismissed)
             cursor.execute('''
-                UPDATE errors 
-                SET resolved_at = ?
-                WHERE error_key = ? AND resolved_at IS NULL
-            ''', (now, error_key))
-            
-            if cursor.rowcount > 0:
-                self._record_event(cursor, 'cleared', error_key, {'reason': 'condition_resolved'})
-        
-        conn.commit()
-        conn.close()
+                SELECT acknowledged FROM errors WHERE error_key = ?
+            ''', (error_key,))
+            row = cursor.fetchone()
+
+            if row and row[0] == 1:
+                # Dismissed error that naturally resolved - delete entirely
+                cursor.execute('DELETE FROM errors WHERE error_key = ?', (error_key,))
+                if cursor.rowcount > 0:
+                    self._record_event(cursor, 'cleared', error_key,
+                                      {'reason': 'condition_resolved_after_dismiss'})
+            else:
+                # Normal active error - mark as resolved
+                cursor.execute('''
+                    UPDATE errors
+                    SET resolved_at = ?
+                    WHERE error_key = ? AND resolved_at IS NULL
+                ''', (now, error_key))
+
+                if cursor.rowcount > 0:
+                    self._record_event(cursor, 'cleared', error_key, {'reason': 'condition_resolved'})
+
+            conn.commit()
     
     def acknowledge_error(self, error_key: str) -> Dict[str, Any]:
         """
@@ -671,17 +682,19 @@ class HealthPersistence:
     def _acknowledge_error_impl(self, error_key):
         conn = self._get_conn()
         conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        now = datetime.now().isoformat()
-        
-        # Get current error info before acknowledging
-        cursor.execute('SELECT * FROM errors WHERE error_key = ?', (error_key,))
-        row = cursor.fetchone()
-        
-        result = {'success': False, 'error_key': error_key}
-        
-        if not row:
+        category = ''
+        sup_hours = self.DEFAULT_SUPPRESSION_HOURS
+        try:
+            cursor = conn.cursor()
+            now = datetime.now().isoformat()
+
+            # Get current error info before acknowledging
+            cursor.execute('SELECT * FROM errors WHERE error_key = ?', (error_key,))
+            row = cursor.fetchone()
+
+            result = {'success': False, 'error_key': error_key}
+
+            if not row:
             # Error not in DB yet -- create a minimal record so the dismiss persists.
             # Try to infer category from the error_key prefix.
             category = ''
@@ -738,15 +751,6 @@ class HealthPersistence:
                 'acknowledged_at': now
             }
             conn.commit()
-            conn.close()
-            
-            # ── Clear cooldowns for newly dismissed errors too ──
-            if sup_hours != -1:
-                if category == 'disks':
-                    self._clear_disk_io_cooldown(error_key)
-                else:
-                    self._clear_notification_cooldown(error_key)
-            
             return result
         
         if row:
@@ -809,21 +813,17 @@ class HealthPersistence:
                 'suppression_hours': sup_hours
             }
         
-        conn.commit()
-        conn.close()
-        
+            conn.commit()
+        finally:
+            conn.close()
+
         # ── Coordinate with notification cooldowns ──
-        # When an error is dismissed with non-permanent suppression,
-        # clear the corresponding cooldown in notification_last_sent
-        # so it can re-notify after the suppression period expires.
-        # This applies to ALL categories, not just disks.
         if sup_hours != -1:
             if category == 'disks':
                 self._clear_disk_io_cooldown(error_key)
             else:
-                # For non-disk categories, clear the PollingCollector cooldown
                 self._clear_notification_cooldown(error_key)
-        
+
         return result
     
     def is_error_acknowledged(self, error_key: str) -> bool:
@@ -928,12 +928,13 @@ class HealthPersistence:
     
     def _cleanup_old_errors_impl(self):
         conn = self._get_conn()
-        cursor = conn.cursor()
-        
-        now = datetime.now()
-        now_iso = now.isoformat()
-        
-        # Delete resolved errors older than 7 days
+        try:
+            cursor = conn.cursor()
+
+            now = datetime.now()
+            now_iso = now.isoformat()
+
+            # Delete resolved errors older than 7 days
         cutoff_resolved = (now - timedelta(days=7)).isoformat()
         cursor.execute('DELETE FROM errors WHERE resolved_at < ?', (cutoff_resolved,))
         
@@ -1127,12 +1128,13 @@ class HealthPersistence:
         except Exception:
             pass  # If we can't read uptime, skip this cleanup
         
-        conn.commit()
-        conn.close()
-        
+            conn.commit()
+        finally:
+            conn.close()
+
         # Clean up errors for resources that no longer exist (VMs/CTs deleted, disks removed)
         self._cleanup_stale_resources()
-        
+
         # Clean up disk observations for devices that no longer exist
         self.cleanup_orphan_observations()
     
@@ -2174,6 +2176,8 @@ class HealthPersistence:
             last_col = 'last_occurrence' if 'last_occurrence' in columns else 'last_seen'
             
             # Upsert observation: if same (disk, type, signature), bump count + update last timestamp
+            # IMPORTANT: Do NOT reset dismissed — if the user dismissed this observation,
+            # re-detecting the same journal entry must not un-dismiss it.
             cursor.execute(f'''
                 INSERT INTO disk_observations
                     (disk_registry_id, {type_col}, error_signature, {first_col},
@@ -2182,8 +2186,7 @@ class HealthPersistence:
                 ON CONFLICT(disk_registry_id, {type_col}, error_signature) DO UPDATE SET
                     {last_col} = excluded.{last_col},
                     occurrence_count = occurrence_count + 1,
-                    severity = CASE WHEN excluded.severity = 'critical' THEN 'critical' ELSE severity END,
-                    dismissed = 0
+                    severity = CASE WHEN excluded.severity = 'critical' THEN 'critical' ELSE severity END
             ''', (disk_id, error_type, error_signature, now, now, raw_message, severity))
             
             conn.commit()

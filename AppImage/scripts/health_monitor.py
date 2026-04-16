@@ -272,6 +272,8 @@ class HealthMonitor:
         # SMART check cache - reduces disk queries from every 5 min to every 30 min
         self._smart_cache = {}  # {disk_name: {'result': 'PASSED', 'time': timestamp}}
         self._SMART_CACHE_TTL = 1620  # 27 min - offset to avoid sync with other processes
+        # Disk identity cache - avoids repeated smartctl -i calls for serial/model
+        self._disk_identity_cache: Dict[str, Dict[str, str]] = {}  # {disk_name: {'serial': ..., 'model': ...}}
         
         # Journalctl 24h cache - reduces full log reads from every 5 min to every 1 hour
         self._journalctl_24h_cache = {'count': 0, 'time': 0}
@@ -280,11 +282,14 @@ class HealthMonitor:
         # Journalctl 10min cache - shared across checks to avoid duplicate calls
         # Multiple checks (cpu_temp, vms_cts) use the same journalctl query
         self._journalctl_10min_cache = {'output': '', 'time': 0}
-        self._JOURNALCTL_10MIN_CACHE_TTL = 60  # 1 minute - fresh enough for health checks
+        self._JOURNALCTL_10MIN_CACHE_TTL = 120  # 2 minutes - covers full health check cycle
         
         # Journalctl 1hour cache - for disk health events (SMART warnings, I/O errors)
         self._journalctl_1hour_cache = {'output': '', 'time': 0}
         self._JOURNALCTL_1HOUR_CACHE_TTL = 300  # 5 min cache - disk events don't need real-time
+        # Timestamp watermark: track last successfully processed journalctl entry
+        # to avoid re-processing old entries on subsequent checks
+        self._disk_journal_last_ts: Optional[str] = None
         
         # System capabilities - derived from Proxmox storage types at runtime (Priority 1.5)
         # SMART detection still uses filesystem check on init (lightweight)
@@ -316,7 +321,7 @@ class HealthMonitor:
                 ['journalctl', '-b', '0', '--since', '10 minutes ago', '--no-pager', '-p', 'warning'],
                 capture_output=True,
                 text=True,
-                timeout=20
+                timeout=10
             )
             if result.returncode == 0:
                 cache['output'] = result.stdout
@@ -330,37 +335,49 @@ class HealthMonitor:
         return cache.get('output', '')  # Return stale cache on error
     
     def _get_journalctl_1hour_warnings(self) -> str:
-        """Get journalctl warnings from last 1 hour, cached for disk health checks.
-        
+        """Get journalctl warnings since last check, cached for disk health checks.
+
         Used by _check_disk_health_from_events for SMART warnings and I/O errors.
+        Uses a timestamp watermark (_disk_journal_last_ts) to only read NEW entries
+        since the last successful check, preventing re-processing of old errors.
+        On first run (no watermark), reads the last 10 minutes to catch recent events
+        without pulling in stale history.
         Cached for 5 minutes since disk events don't require real-time detection.
         """
         current_time = time.time()
         cache = self._journalctl_1hour_cache
-        
+
         # Return cached result if fresh
-        if cache['output'] and (current_time - cache['time']) < self._JOURNALCTL_1HOUR_CACHE_TTL:
+        if cache['output'] is not None and cache['time'] > 0 and (current_time - cache['time']) < self._JOURNALCTL_1HOUR_CACHE_TTL:
             return cache['output']
-        
-        # Execute journalctl and cache result
-        # Use -b 0 to only include logs from the current boot
+
+        # Determine --since value: use watermark if available, otherwise 10 minutes
+        if self._disk_journal_last_ts:
+            since_arg = self._disk_journal_last_ts
+        else:
+            since_arg = '10 minutes ago'
+
         try:
             result = subprocess.run(
-                ['journalctl', '-b', '0', '--since', '1 hour ago', '--no-pager', '-p', 'warning',
+                ['journalctl', '-b', '0', '--since', since_arg, '--no-pager', '-p', 'warning',
                  '--output=short-precise'],
                 capture_output=True,
                 text=True,
                 timeout=15
             )
             if result.returncode == 0:
-                cache['output'] = result.stdout
+                output = result.stdout
+                cache['output'] = output
                 cache['time'] = current_time
-                return cache['output']
+                # Advance watermark to "now" so next check only gets new entries
+                from datetime import datetime as _dt
+                self._disk_journal_last_ts = _dt.now().strftime('%Y-%m-%d %H:%M:%S')
+                return output
         except subprocess.TimeoutExpired:
-            print("[HealthMonitor] journalctl 1hour cache: timeout")
+            print("[HealthMonitor] journalctl disk cache: timeout")
         except Exception as e:
-            print(f"[HealthMonitor] journalctl 1hour cache error: {e}")
-        
+            print(f"[HealthMonitor] journalctl disk cache error: {e}")
+
         return cache.get('output', '')  # Return stale cache on error
     
     # ─── Lightweight sampling methods for the dedicated vital-signs thread ───
@@ -1260,21 +1277,10 @@ class HealthMonitor:
                 reason = f'{disk}: {issue["reason"]}'
                 severity = issue.get('status', 'WARNING')
                 
-                # Get serial for this disk to properly track it (important for USB disks)
-                disk_serial = ''
-                disk_model = ''
-                try:
-                    smart_result = subprocess.run(
-                        ['smartctl', '-i', '-j', f'/dev/{device}'],
-                        capture_output=True, text=True, timeout=5
-                    )
-                    if smart_result.returncode in (0, 4):
-                        import json
-                        smart_data = json.loads(smart_result.stdout)
-                        disk_serial = smart_data.get('serial_number', '')
-                        disk_model = smart_data.get('model_name', '') or smart_data.get('model_family', '')
-                except Exception:
-                    pass
+                # Get serial for this disk (cached to avoid repeated smartctl calls)
+                disk_id = self._get_disk_identity(device)
+                disk_serial = disk_id['serial']
+                disk_model = disk_id['model']
                 
                 try:
                     if (not health_persistence.is_error_active(io_error_key, category='disks') and
@@ -1323,21 +1329,10 @@ class HealthMonitor:
                 device = disk_path.replace('/dev/', '')
                 io_severity = disk_info.get('status', 'WARNING').lower()
                 
-                # Get serial for proper disk tracking (important for USB)
-                io_serial = ''
-                io_model = ''
-                try:
-                    smart_result = subprocess.run(
-                        ['smartctl', '-i', '-j', f'/dev/{device}'],
-                        capture_output=True, text=True, timeout=5
-                    )
-                    if smart_result.returncode in (0, 4):
-                        import json
-                        smart_data = json.loads(smart_result.stdout)
-                        io_serial = smart_data.get('serial_number', '')
-                        io_model = smart_data.get('model_name', '') or smart_data.get('model_family', '')
-                except Exception:
-                    pass
+                # Get serial for proper disk tracking (cached)
+                io_id = self._get_disk_identity(device)
+                io_serial = io_id['serial']
+                io_model = io_id['model']
                 
                 # Register the disk for observation tracking (worst_health no longer used)
                 try:
@@ -1946,20 +1941,53 @@ class HealthMonitor:
         except Exception:
             return ''
     
+    def _get_disk_identity(self, disk_name: str) -> Dict[str, str]:
+        """Get disk serial/model with caching. Avoids repeated smartctl -i calls.
+
+        Returns {'serial': '...', 'model': '...'} or empty values on failure.
+        Cache persists for the lifetime of the monitor (serial/model don't change).
+        """
+        if disk_name in self._disk_identity_cache:
+            return self._disk_identity_cache[disk_name]
+
+        result = {'serial': '', 'model': ''}
+        try:
+            dev_path = f'/dev/{disk_name}' if not disk_name.startswith('/') else disk_name
+            proc = subprocess.run(
+                ['smartctl', '-i', '-j', dev_path],
+                capture_output=True, text=True, timeout=5
+            )
+            if proc.returncode in (0, 4):
+                import json as _json
+                data = _json.loads(proc.stdout)
+                result['serial'] = data.get('serial_number', '')
+                result['model'] = data.get('model_name', '') or data.get('model_family', '')
+        except Exception:
+            pass
+
+        self._disk_identity_cache[disk_name] = result
+        return result
+
     def _quick_smart_health(self, disk_name: str) -> str:
         """Quick SMART health check for a single disk. Returns 'PASSED', 'FAILED', or 'UNKNOWN'.
-        
+
         Results are cached for 30 minutes to reduce disk queries - SMART status rarely changes.
         """
         if not disk_name or disk_name.startswith('ata') or disk_name.startswith('zram'):
             return 'UNKNOWN'
         
-        # Check cache first
+        # Check cache first (and evict stale entries periodically)
         current_time = time.time()
         cache_key = disk_name
         cached = self._smart_cache.get(cache_key)
         if cached and current_time - cached['time'] < self._SMART_CACHE_TTL:
             return cached['result']
+        # Evict expired entries to prevent unbounded growth
+        if len(self._smart_cache) > 50:
+            self._smart_cache = {
+                k: v for k, v in self._smart_cache.items()
+                if current_time - v['time'] < self._SMART_CACHE_TTL * 2
+            }
         
         try:
             dev_path = f'/dev/{disk_name}' if not disk_name.startswith('/') else disk_name
@@ -2130,7 +2158,11 @@ class HealthMonitor:
                         t for t in self.io_error_history[disk]
                         if current_time - t < 300
                     ]
-                    
+                    # Remove empty entries to prevent unbounded dict growth
+                    if not self.io_error_history[disk]:
+                        del self.io_error_history[disk]
+                        continue
+
                     error_count = len(self.io_error_history[disk])
                     error_key = f'disk_{disk}'
                     sample = disk_samples.get(disk, '')
@@ -4662,19 +4694,9 @@ class HealthMonitor:
                     
                     obs_sig = f'{sig_base}_{disk_name}'
                     
-                    # Try to get serial for proper cross-referencing
-                    obs_serial = None
-                    try:
-                        sm = subprocess.run(
-                            ['smartctl', '-i', dev_path],
-                            capture_output=True, text=True, timeout=3)
-                        if sm.returncode in (0, 4):
-                            for sline in sm.stdout.split('\n'):
-                                if 'Serial Number' in sline or 'Serial number' in sline:
-                                    obs_serial = sline.split(':')[-1].strip()
-                                    break
-                    except Exception:
-                        pass
+                    # Get serial for proper cross-referencing (cached)
+                    obs_id = self._get_disk_identity(disk_name)
+                    obs_serial = obs_id['serial'] or None
                     
                     health_persistence.record_disk_observation(
                         device_name=disk_name,
