@@ -2813,14 +2813,12 @@ ${observationsHtml}
 </body>
 </html>`
 
+  const blob = new Blob([html], { type: "text/html" })
+  const url = URL.createObjectURL(blob)
   if (targetWindow && !targetWindow.closed) {
-    // Write directly into the already-open window (avoids popup blocker)
-    targetWindow.document.open()
-    targetWindow.document.write(html)
-    targetWindow.document.close()
+    // Navigate the already-open window to the blob URL (proper navigation with back/close in webapp)
+    targetWindow.location.href = url
   } else {
-    const blob = new Blob([html], { type: "text/html" })
-    const url = URL.createObjectURL(blob)
     window.open(url, "_blank")
   }
 }
