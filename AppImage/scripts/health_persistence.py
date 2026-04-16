@@ -695,124 +695,113 @@ class HealthPersistence:
             result = {'success': False, 'error_key': error_key}
 
             if not row:
-            # Error not in DB yet -- create a minimal record so the dismiss persists.
-            # Try to infer category from the error_key prefix.
-            category = ''
-            # Order matters: more specific prefixes MUST come before shorter ones
-            # e.g. 'security_updates' (updates) before 'security_' (security)
-            for cat, prefix in [('updates', 'security_updates'), ('updates', 'system_age'),
-                                ('updates', 'pending_updates'), ('updates', 'kernel_pve'),
-                                ('security', 'security_'), 
-                                ('pve_services', 'pve_service_'), ('vms', 'vmct_'), ('vms', 'vm_'), ('vms', 'ct_'),
-                                ('disks', 'disk_smart_'), ('disks', 'disk_'), ('disks', 'smart_'), ('disks', 'zfs_pool_'),
-                                ('logs', 'log_'), ('network', 'net_'),
-                                ('temperature', 'temp_')]:
-                if error_key == prefix or error_key.startswith(prefix):
-                    category = cat
-                    break
-            
-            # Fallback: if no category matched, try to infer from common patterns
-            if not category:
-                if 'disk' in error_key or 'smart' in error_key or 'sda' in error_key or 'sdb' in error_key or 'nvme' in error_key:
-                    category = 'disks'
-                else:
-                    category = 'general'  # Use 'general' as ultimate fallback instead of empty string
-            
-            setting_key = self.CATEGORY_SETTING_MAP.get(category, '')
-            sup_hours = self.DEFAULT_SUPPRESSION_HOURS
-            if setting_key:
-                # P4 fix: use _get_setting_impl with existing connection
-                stored = self._get_setting_impl(conn, setting_key)
-                if stored is not None:
-                    try:
-                        sup_hours = int(stored)
-                    except (ValueError, TypeError):
-                        pass
-            
-            # Insert as acknowledged but NOT resolved - error remains active
-            cursor.execute('''
-                INSERT INTO errors (error_key, category, severity, reason, first_seen, last_seen,
-                                    occurrence_count, acknowledged, acknowledged_at, suppression_hours)
-                VALUES (?, ?, 'WARNING', 'Dismissed by user', ?, ?, 1, 1, ?, ?)
-            ''', (error_key, category, now, now, now, sup_hours))
-            
-            self._record_event(cursor, 'acknowledged', error_key, {
-                'original_severity': 'WARNING',
-                'category': category,
-                'suppression_hours': sup_hours
-            })
-            
-            result = {
-                'success': True,
-                'error_key': error_key,
-                'original_severity': 'WARNING',
-                'category': category,
-                'suppression_hours': sup_hours,
-                'acknowledged_at': now
-            }
-            conn.commit()
-            return result
-        
-        if row:
-            error_dict = dict(row)
-            original_severity = error_dict.get('severity', 'WARNING')
-            category = error_dict.get('category', '')
-            
-            # Look up the user's configured suppression for this category
-            setting_key = self.CATEGORY_SETTING_MAP.get(category, '')
-            sup_hours = self.DEFAULT_SUPPRESSION_HOURS
-            if setting_key:
-                # P4 fix: use _get_setting_impl with existing connection
-                stored = self._get_setting_impl(conn, setting_key)
-                if stored is not None:
-                    try:
-                        sup_hours = int(stored)
-                    except (ValueError, TypeError):
-                        pass
-            
-            # Mark as acknowledged but DO NOT set resolved_at
-            # The error remains active until it actually disappears from the system
-            # resolved_at should only be set when the error is truly resolved
-            cursor.execute('''
-                UPDATE errors 
-                SET acknowledged = 1, acknowledged_at = ?, suppression_hours = ?
-                WHERE error_key = ?
-            ''', (now, sup_hours, error_key))
-            
-            self._record_event(cursor, 'acknowledged', error_key, {
-                'original_severity': original_severity,
-                'category': category,
-                'suppression_hours': sup_hours
-            })
-            
-            # Cascade acknowledge: when dismissing a group check
-            # (e.g. log_persistent_errors), also dismiss all individual
-            # sub-errors that share the same prefix in the DB.
-            # Currently only persistent errors have per-pattern sub-records
-            # (e.g. log_persistent_a1b2c3d4).
-            CASCADE_PREFIXES = {
-                'log_persistent_errors': 'log_persistent_',
-            }
-            child_prefix = CASCADE_PREFIXES.get(error_key)
-            if child_prefix:
-                # Only cascade to active (unresolved) child errors.
-                # Already-resolved/expired entries must NOT be re-surfaced.
+                # Error not in DB yet -- create a minimal record so the dismiss persists.
+                # Try to infer category from the error_key prefix.
+                category = ''
+                # Order matters: more specific prefixes MUST come before shorter ones
+                # e.g. 'security_updates' (updates) before 'security_' (security)
+                for cat, prefix in [('updates', 'security_updates'), ('updates', 'system_age'),
+                                    ('updates', 'pending_updates'), ('updates', 'kernel_pve'),
+                                    ('security', 'security_'),
+                                    ('pve_services', 'pve_service_'), ('vms', 'vmct_'), ('vms', 'vm_'), ('vms', 'ct_'),
+                                    ('disks', 'disk_smart_'), ('disks', 'disk_'), ('disks', 'smart_'), ('disks', 'zfs_pool_'),
+                                    ('logs', 'log_'), ('network', 'net_'),
+                                    ('temperature', 'temp_')]:
+                    if error_key == prefix or error_key.startswith(prefix):
+                        category = cat
+                        break
+
+                # Fallback: if no category matched, try to infer from common patterns
+                if not category:
+                    if 'disk' in error_key or 'smart' in error_key or 'sda' in error_key or 'sdb' in error_key or 'nvme' in error_key:
+                        category = 'disks'
+                    else:
+                        category = 'general'
+
+                setting_key = self.CATEGORY_SETTING_MAP.get(category, '')
+                sup_hours = self.DEFAULT_SUPPRESSION_HOURS
+                if setting_key:
+                    stored = self._get_setting_impl(conn, setting_key)
+                    if stored is not None:
+                        try:
+                            sup_hours = int(stored)
+                        except (ValueError, TypeError):
+                            pass
+
+                # Insert as acknowledged but NOT resolved - error remains active
+                cursor.execute('''
+                    INSERT INTO errors (error_key, category, severity, reason, first_seen, last_seen,
+                                        occurrence_count, acknowledged, acknowledged_at, suppression_hours)
+                    VALUES (?, ?, 'WARNING', 'Dismissed by user', ?, ?, 1, 1, ?, ?)
+                ''', (error_key, category, now, now, now, sup_hours))
+
+                self._record_event(cursor, 'acknowledged', error_key, {
+                    'original_severity': 'WARNING',
+                    'category': category,
+                    'suppression_hours': sup_hours
+                })
+
+                result = {
+                    'success': True,
+                    'error_key': error_key,
+                    'original_severity': 'WARNING',
+                    'category': category,
+                    'suppression_hours': sup_hours,
+                    'acknowledged_at': now
+                }
+                conn.commit()
+                return result
+
+            if row:
+                error_dict = dict(row)
+                original_severity = error_dict.get('severity', 'WARNING')
+                category = error_dict.get('category', '')
+
+                # Look up the user's configured suppression for this category
+                setting_key = self.CATEGORY_SETTING_MAP.get(category, '')
+                sup_hours = self.DEFAULT_SUPPRESSION_HOURS
+                if setting_key:
+                    stored = self._get_setting_impl(conn, setting_key)
+                    if stored is not None:
+                        try:
+                            sup_hours = int(stored)
+                        except (ValueError, TypeError):
+                            pass
+
                 # Mark as acknowledged but DO NOT set resolved_at
                 cursor.execute('''
-                    UPDATE errors 
+                    UPDATE errors
                     SET acknowledged = 1, acknowledged_at = ?, suppression_hours = ?
-                    WHERE error_key LIKE ? AND acknowledged = 0 AND resolved_at IS NULL
-                ''', (now, sup_hours, child_prefix + '%'))
-            
-            result = {
-                'success': True,
-                'error_key': error_key,
-                'original_severity': original_severity,
-                'category': category,
-                'acknowledged_at': now,
-                'suppression_hours': sup_hours
-            }
-        
+                    WHERE error_key = ?
+                ''', (now, sup_hours, error_key))
+
+                self._record_event(cursor, 'acknowledged', error_key, {
+                    'original_severity': original_severity,
+                    'category': category,
+                    'suppression_hours': sup_hours
+                })
+
+                # Cascade acknowledge: when dismissing a group check
+                CASCADE_PREFIXES = {
+                    'log_persistent_errors': 'log_persistent_',
+                }
+                child_prefix = CASCADE_PREFIXES.get(error_key)
+                if child_prefix:
+                    cursor.execute('''
+                        UPDATE errors
+                        SET acknowledged = 1, acknowledged_at = ?, suppression_hours = ?
+                        WHERE error_key LIKE ? AND acknowledged = 0 AND resolved_at IS NULL
+                    ''', (now, sup_hours, child_prefix + '%'))
+
+                result = {
+                    'success': True,
+                    'error_key': error_key,
+                    'original_severity': original_severity,
+                    'category': category,
+                    'acknowledged_at': now,
+                    'suppression_hours': sup_hours
+                }
+
             conn.commit()
         finally:
             conn.close()
@@ -935,199 +924,161 @@ class HealthPersistence:
             now_iso = now.isoformat()
 
             # Delete resolved errors older than 7 days
-        cutoff_resolved = (now - timedelta(days=7)).isoformat()
-        cursor.execute('DELETE FROM errors WHERE resolved_at < ?', (cutoff_resolved,))
-        
-        # ── Auto-resolve stale errors using Suppression Duration settings ──
-        # Read per-category suppression hours from user_settings.
-        # If the user hasn't configured a value, use DEFAULT_SUPPRESSION_HOURS.
-        # This is the SINGLE source of truth for auto-resolution timing.
-        user_settings = {}
-        try:
-            cursor.execute(
-                'SELECT setting_key, setting_value FROM user_settings WHERE setting_key LIKE ?',
-                ('suppress_%',)
-            )
-            for row in cursor.fetchall():
-                user_settings[row[0]] = row[1]
-        except Exception:
-            pass
-        
-        for category, setting_key in self.CATEGORY_SETTING_MAP.items():
-            stored = user_settings.get(setting_key)
+            cutoff_resolved = (now - timedelta(days=7)).isoformat()
+            cursor.execute('DELETE FROM errors WHERE resolved_at < ?', (cutoff_resolved,))
+
+            # ── Auto-resolve stale errors using Suppression Duration settings ──
+            user_settings = {}
             try:
-                hours = int(stored) if stored else self.DEFAULT_SUPPRESSION_HOURS
-            except (ValueError, TypeError):
-                hours = self.DEFAULT_SUPPRESSION_HOURS
-            
-            # -1 means permanently suppressed -- skip auto-resolve
-            if hours < 0:
-                continue
-            
-            cutoff = (now - timedelta(hours=hours)).isoformat()
-            cursor.execute('''
-                UPDATE errors 
-                SET resolved_at = ?
-                WHERE category = ?
-                  AND resolved_at IS NULL 
-                  AND last_seen < ?
-                  AND acknowledged = 0
-            ''', (now_iso, category, cutoff))
-        
-        # Catch-all: auto-resolve any error from an unmapped category
-        # whose last_seen exceeds DEFAULT_SUPPRESSION_HOURS.
-        fallback_cutoff = (now - timedelta(hours=self.DEFAULT_SUPPRESSION_HOURS)).isoformat()
-        cursor.execute('''
-            UPDATE errors
-            SET resolved_at = ?
-            WHERE resolved_at IS NULL
-              AND acknowledged = 0
-              AND last_seen < ?
-        ''', (now_iso, fallback_cutoff))
-        
-        # Delete old events (>30 days)
-        cutoff_events = (now - timedelta(days=30)).isoformat()
-        cursor.execute('DELETE FROM events WHERE timestamp < ?', (cutoff_events,))
-        
-        # ══════════════════════════════════════════════════════════════════════
-        # SMART AUTO-RESOLVE: Based on system state, not hardcoded patterns
-        # ══════════════════════════════════════════════════════════════════════
-        # Logic: If an error hasn't been seen recently AND the system is healthy,
-        # the error is stale and should be auto-resolved.
-        # This works for ANY error pattern, not just predefined ones.
-        try:
-            import psutil
-            # Get system uptime
-            with open('/proc/uptime', 'r') as f:
-                uptime_seconds = float(f.read().split()[0])
-            
-            # Only auto-resolve if system has been stable for at least 10 minutes
-            if uptime_seconds > 600:  # 10 minutes
-                current_cpu = psutil.cpu_percent(interval=0.1)
-                current_mem = psutil.virtual_memory().percent
-                
-                # ── 1. LOGS category: Auto-resolve if not seen in 15 minutes ──
-                # Log errors are transient - if journalctl hasn't reported them recently,
-                # they are from a previous state and should be resolved.
-                stale_logs_cutoff = (now - timedelta(minutes=15)).isoformat()
+                cursor.execute(
+                    'SELECT setting_key, setting_value FROM user_settings WHERE setting_key LIKE ?',
+                    ('suppress_%',)
+                )
+                for row in cursor.fetchall():
+                    user_settings[row[0]] = row[1]
+            except Exception:
+                pass
+
+            for category, setting_key in self.CATEGORY_SETTING_MAP.items():
+                stored = user_settings.get(setting_key)
+                try:
+                    hours = int(stored) if stored else self.DEFAULT_SUPPRESSION_HOURS
+                except (ValueError, TypeError):
+                    hours = self.DEFAULT_SUPPRESSION_HOURS
+
+                if hours < 0:
+                    continue
+
+                cutoff = (now - timedelta(hours=hours)).isoformat()
                 cursor.execute('''
-                    UPDATE errors 
+                    UPDATE errors
                     SET resolved_at = ?
-                    WHERE category = 'logs'
-                      AND resolved_at IS NULL 
-                      AND acknowledged = 0
+                    WHERE category = ?
+                      AND resolved_at IS NULL
                       AND last_seen < ?
-                ''', (now_iso, stale_logs_cutoff))
-                
-                # ── 2. CPU category: Auto-resolve if CPU is normal (<75%) ──
-                if current_cpu < 75:
-                    stale_cpu_cutoff = (now - timedelta(minutes=5)).isoformat()
-                    cursor.execute('''
-                        UPDATE errors 
-                        SET resolved_at = ?
-                        WHERE (category = 'cpu' OR category = 'temperature')
-                          AND resolved_at IS NULL 
-                          AND acknowledged = 0
-                          AND last_seen < ?
-                          AND (error_key LIKE 'cpu_%' OR reason LIKE '%CPU%')
-                    ''', (now_iso, stale_cpu_cutoff))
-                
-                # ── 3. MEMORY category: Auto-resolve if memory is normal (<80%) ──
-                if current_mem < 80:
-                    stale_mem_cutoff = (now - timedelta(minutes=5)).isoformat()
-                    cursor.execute('''
-                        UPDATE errors 
-                        SET resolved_at = ?
-                        WHERE (category = 'memory' OR category = 'logs')
-                          AND resolved_at IS NULL 
-                          AND acknowledged = 0
-                          AND last_seen < ?
-                          AND (error_key LIKE '%oom%' 
-                               OR error_key LIKE '%memory%'
-                               OR reason LIKE '%memory%'
-                               OR reason LIKE '%OOM%'
-                               OR reason LIKE '%killed%process%')
-                    ''', (now_iso, stale_mem_cutoff))
-                
-                # ── 4. VMS category: Auto-resolve if VM/CT is now running or deleted ──
-                # Check all active VM/CT errors and resolve if the VM/CT is now running
-                # NOTE: We do this inline to avoid deadlock (check_vm_running uses _db_lock)
-                cursor.execute('''
-                    SELECT error_key, category, reason FROM errors 
-                    WHERE (category IN ('vms', 'vmct') OR error_key LIKE 'vm_%' OR error_key LIKE 'ct_%' OR error_key LIKE 'vmct_%')
-                      AND resolved_at IS NULL 
                       AND acknowledged = 0
-                ''')
-                vm_errors = cursor.fetchall()
-                for error_key, cat, reason in vm_errors:
-                    # Extract VM/CT ID from error_key
-                    vmid_match = re.search(r'(?:vm_|ct_|vmct_)(\d+)', error_key)
-                    if vmid_match:
-                        vmid = vmid_match.group(1)
-                        try:
-                            # Check if VM/CT exists and is running
-                            vm_running = False
-                            ct_running = False
-                            vm_exists = False
-                            ct_exists = False
-                            
-                            # Check VM
-                            result_vm = subprocess.run(
-                                ['qm', 'status', vmid],
-                                capture_output=True, text=True, timeout=2
-                            )
-                            if result_vm.returncode == 0:
-                                vm_exists = True
-                                vm_running = 'running' in result_vm.stdout.lower()
-                            
-                            # Check CT
-                            if not vm_exists:
-                                result_ct = subprocess.run(
-                                    ['pct', 'status', vmid],
-                                    capture_output=True, text=True, timeout=2
-                                )
-                                if result_ct.returncode == 0:
-                                    ct_exists = True
-                                    ct_running = 'running' in result_ct.stdout.lower()
-                            
-                            # Resolve if deleted
-                            if not vm_exists and not ct_exists:
-                                cursor.execute('''
-                                    UPDATE errors SET resolved_at = ?
-                                    WHERE error_key = ? AND resolved_at IS NULL
-                                ''', (now_iso, error_key))
-                            # Resolve transient errors if running (not persistent config errors)
-                            elif vm_running or ct_running:
-                                reason_lower = (reason or '').lower()
-                                is_persistent = any(x in reason_lower for x in [
-                                    'device', 'missing', 'does not exist', 'permission',
-                                    'not found', 'no such', 'invalid'
-                                ])
-                                if not is_persistent:
+                ''', (now_iso, category, cutoff))
+
+            # Catch-all: auto-resolve any error from an unmapped category
+            fallback_cutoff = (now - timedelta(hours=self.DEFAULT_SUPPRESSION_HOURS)).isoformat()
+            cursor.execute('''
+                UPDATE errors
+                SET resolved_at = ?
+                WHERE resolved_at IS NULL
+                  AND acknowledged = 0
+                  AND last_seen < ?
+            ''', (now_iso, fallback_cutoff))
+
+            # Delete old events (>30 days)
+            cutoff_events = (now - timedelta(days=30)).isoformat()
+            cursor.execute('DELETE FROM events WHERE timestamp < ?', (cutoff_events,))
+        
+            # ── SMART AUTO-RESOLVE: Based on system state ──
+            try:
+                import psutil
+                with open('/proc/uptime', 'r') as f:
+                    uptime_seconds = float(f.read().split()[0])
+
+                if uptime_seconds > 600:
+                    current_cpu = psutil.cpu_percent(interval=0.1)
+                    current_mem = psutil.virtual_memory().percent
+
+                    # 1. LOGS: Auto-resolve if not seen in 15 minutes
+                    stale_logs_cutoff = (now - timedelta(minutes=15)).isoformat()
+                    cursor.execute('''
+                        UPDATE errors SET resolved_at = ?
+                        WHERE category = 'logs' AND resolved_at IS NULL
+                          AND acknowledged = 0 AND last_seen < ?
+                    ''', (now_iso, stale_logs_cutoff))
+
+                    # 2. CPU: Auto-resolve if CPU is normal (<75%)
+                    if current_cpu < 75:
+                        stale_cpu_cutoff = (now - timedelta(minutes=5)).isoformat()
+                        cursor.execute('''
+                            UPDATE errors SET resolved_at = ?
+                            WHERE (category = 'cpu' OR category = 'temperature')
+                              AND resolved_at IS NULL AND acknowledged = 0
+                              AND last_seen < ?
+                              AND (error_key LIKE 'cpu_%' OR reason LIKE '%CPU%')
+                        ''', (now_iso, stale_cpu_cutoff))
+
+                    # 3. MEMORY: Auto-resolve if memory is normal (<80%)
+                    if current_mem < 80:
+                        stale_mem_cutoff = (now - timedelta(minutes=5)).isoformat()
+                        cursor.execute('''
+                            UPDATE errors SET resolved_at = ?
+                            WHERE (category = 'memory' OR category = 'logs')
+                              AND resolved_at IS NULL AND acknowledged = 0
+                              AND last_seen < ?
+                              AND (error_key LIKE '%oom%' OR error_key LIKE '%memory%'
+                                   OR reason LIKE '%memory%' OR reason LIKE '%OOM%'
+                                   OR reason LIKE '%killed%process%')
+                        ''', (now_iso, stale_mem_cutoff))
+
+                    # 4. VMS: Auto-resolve if VM/CT is now running or deleted
+                    cursor.execute('''
+                        SELECT error_key, category, reason FROM errors
+                        WHERE (category IN ('vms', 'vmct') OR error_key LIKE 'vm_%'
+                               OR error_key LIKE 'ct_%' OR error_key LIKE 'vmct_%')
+                          AND resolved_at IS NULL AND acknowledged = 0
+                    ''')
+                    vm_errors = cursor.fetchall()
+                    for vm_ek, cat, vm_reason in vm_errors:
+                        vmid_match = re.search(r'(?:vm_|ct_|vmct_)(\d+)', vm_ek)
+                        if vmid_match:
+                            vmid = vmid_match.group(1)
+                            try:
+                                vm_running = False
+                                ct_running = False
+                                vm_exists = False
+                                ct_exists = False
+
+                                result_vm = subprocess.run(
+                                    ['qm', 'status', vmid],
+                                    capture_output=True, text=True, timeout=2)
+                                if result_vm.returncode == 0:
+                                    vm_exists = True
+                                    vm_running = 'running' in result_vm.stdout.lower()
+
+                                if not vm_exists:
+                                    result_ct = subprocess.run(
+                                        ['pct', 'status', vmid],
+                                        capture_output=True, text=True, timeout=2)
+                                    if result_ct.returncode == 0:
+                                        ct_exists = True
+                                        ct_running = 'running' in result_ct.stdout.lower()
+
+                                if not vm_exists and not ct_exists:
                                     cursor.execute('''
                                         UPDATE errors SET resolved_at = ?
                                         WHERE error_key = ? AND resolved_at IS NULL
-                                    ''', (now_iso, error_key))
-                        except Exception:
-                            pass  # Skip this VM/CT if check fails
-                
-                # ── 5. GENERIC: Any error not seen in 30 minutes while system is healthy ──
-                # If CPU < 80% and Memory < 85% and error hasn't been seen in 30 min,
-                # the system has recovered and the error is stale.
-                if current_cpu < 80 and current_mem < 85:
-                    stale_generic_cutoff = (now - timedelta(minutes=30)).isoformat()
-                    cursor.execute('''
-                        UPDATE errors 
-                        SET resolved_at = ?
-                        WHERE resolved_at IS NULL 
-                          AND acknowledged = 0
-                          AND last_seen < ?
-                          AND category NOT IN ('disks', 'storage')
-                    ''', (now_iso, stale_generic_cutoff))
-                    
-        except Exception:
-            pass  # If we can't read uptime, skip this cleanup
-        
+                                    ''', (now_iso, vm_ek))
+                                elif vm_running or ct_running:
+                                    reason_lower = (vm_reason or '').lower()
+                                    is_persistent = any(x in reason_lower for x in [
+                                        'device', 'missing', 'does not exist', 'permission',
+                                        'not found', 'no such', 'invalid'])
+                                    if not is_persistent:
+                                        cursor.execute('''
+                                            UPDATE errors SET resolved_at = ?
+                                            WHERE error_key = ? AND resolved_at IS NULL
+                                        ''', (now_iso, vm_ek))
+                            except Exception:
+                                pass
+
+                    # 5. GENERIC: Any error not seen in 30 min while system is healthy
+                    if current_cpu < 80 and current_mem < 85:
+                        stale_generic_cutoff = (now - timedelta(minutes=30)).isoformat()
+                        cursor.execute('''
+                            UPDATE errors SET resolved_at = ?
+                            WHERE resolved_at IS NULL AND acknowledged = 0
+                              AND last_seen < ?
+                              AND category NOT IN ('disks', 'storage')
+                        ''', (now_iso, stale_generic_cutoff))
+
+            except Exception:
+                pass  # If we can't read uptime, skip this cleanup
+
             conn.commit()
         finally:
             conn.close()
