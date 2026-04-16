@@ -2362,19 +2362,45 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=1024">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SMART Health Report - /dev/${disk.name}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1a2e; background: #fff; font-size: 13px; line-height: 1.5; }
   @page { margin: 10mm; size: A4; }
+
+  /* === SCREEN: responsive layout === */
+  @media screen {
+    body { max-width: 1000px; margin: 0 auto; padding: 24px 32px; padding-top: 64px; overflow-x: hidden; }
+  }
+  @media screen and (max-width: 640px) {
+    body { padding: 16px; padding-top: 64px; }
+    .grid-4 { grid-template-columns: 1fr 1fr; }
+    .grid-3 { grid-template-columns: 1fr 1fr; }
+    .rpt-header { flex-direction: column; gap: 12px; align-items: flex-start; }
+    .rpt-header-right { text-align: left; }
+    .exec-box { flex-wrap: wrap; }
+    .card-c .card-value { font-size: 16px; }
+  }
+
+  /* === PRINT: force desktop A4 layout from any device === */
   @media print {
-    html, body { margin: 0 !important; padding: 0 !important; }
+    html, body { margin: 0 !important; padding: 0 !important; width: 100% !important; max-width: none !important; }
     .no-print { display: none !important; }
+    .top-bar { display: none !important; }
     .page-break { page-break-before: always; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    body { font-size: 11px; padding-top: 0; }
-    .section { page-break-inside: avoid; break-inside: avoid; }
+    body { font-size: 11px; padding-top: 0 !important; }
+    /* Force desktop grid layout regardless of viewport */
+    .grid-4 { grid-template-columns: 1fr 1fr 1fr 1fr !important; }
+    .grid-3 { grid-template-columns: 1fr 1fr 1fr !important; }
+    .grid-2 { grid-template-columns: 1fr 1fr !important; }
+    .rpt-header { flex-direction: row !important; align-items: center !important; }
+    .rpt-header-right { text-align: right !important; }
+    .exec-box { flex-wrap: nowrap !important; }
+    .card-c .card-value { font-size: 20px !important; }
+    /* Page break control */
+    .section { page-break-inside: avoid; break-inside: avoid; margin-bottom: 15px; }
     .exec-box { page-break-inside: avoid; break-inside: avoid; }
     .card { page-break-inside: avoid; break-inside: avoid; }
     .grid-2, .grid-3, .grid-4 { page-break-inside: avoid; break-inside: avoid; }
@@ -2382,7 +2408,6 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
     .attr-tbl tr { page-break-inside: avoid; break-inside: avoid; }
     .attr-tbl thead { display: table-header-group; }
     .rpt-footer { page-break-inside: avoid; break-inside: avoid; margin-top: 20px; }
-    .section { margin-bottom: 15px; }
     svg { max-width: 100%; height: auto; }
     /* Darken light grays for PDF readability */
     .rpt-header-left p, .rpt-header-right { color: #374151; }
@@ -2399,10 +2424,6 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
     [style*="color:#ca8a04"] { color: #ca8a04 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .health-ring, .card-value, .f-tag { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
-  @media screen {
-    body { max-width: 1000px; margin: 0 auto; padding: 24px 32px; padding-top: 64px; overflow-x: hidden; }
-  }
-  @media print { .top-bar { display: none; } body { padding-top: 0; } }
 
   /* Top bar for screen only */
   .top-bar {
