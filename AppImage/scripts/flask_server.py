@@ -6622,7 +6622,8 @@ def api_smart_status(disk_name):
                                     result['last_test'] = {
                                         'type': test_type,
                                         'status': test_status,
-                                        'timestamp': f'POH: {report.get("Power on hours", "N/A")}'
+                                        'timestamp': 'Completed without error' if test_result == 0 else f'Failed (code {test_result})',
+                                        'lifetime_hours': report.get('Power on hours')
                                     }
                                     break
                     except json.JSONDecodeError:
@@ -6896,8 +6897,11 @@ def api_smart_status(disk_name):
                     status = 'critical'
                 elif prefailure and thresh > 0 and value <= thresh:
                     status = 'critical'
-                elif prefailure and thresh > 0 and value <= thresh + 10:
-                    status = 'warning'
+                elif prefailure and thresh > 0:
+                    # Proportional margin: smaller when thresh is close to 100
+                    # thresh=97 → margin 2, thresh=50 → margin 10, thresh=10 → margin 10
+                    warn_margin = min(10, max(2, (100 - thresh) // 3))
+                    status = 'warning' if value <= thresh + warn_margin else 'ok'
                 else:
                     status = 'ok'
 
@@ -6975,6 +6979,48 @@ def api_smart_history(disk_name):
             'history': history,
             'total': len(history)
         })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/storage/smart/<disk_name>/history/<filename>', methods=['GET'])
+@require_auth
+def api_smart_history_download(disk_name, filename):
+    """Download a specific SMART test JSON file."""
+    try:
+        if not re.match(r'^[a-zA-Z0-9]+$', disk_name):
+            return jsonify({'error': 'Invalid disk name'}), 400
+        if not re.match(r'^[\w\-\.]+\.json$', filename):
+            return jsonify({'error': 'Invalid filename'}), 400
+        disk_dir = _get_smart_disk_dir(disk_name)
+        filepath = os.path.join(disk_dir, filename)
+        if not os.path.exists(filepath):
+            return jsonify({'error': 'File not found'}), 404
+        if not os.path.realpath(filepath).startswith(os.path.realpath(disk_dir)):
+            return jsonify({'error': 'Invalid path'}), 403
+        return send_file(filepath, as_attachment=True, download_name=f'{disk_name}_{filename}')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/storage/smart/<disk_name>/history/<filename>', methods=['DELETE'])
+@require_auth
+def api_smart_history_delete(disk_name, filename):
+    """Delete a specific SMART test JSON file."""
+    try:
+        if not re.match(r'^[a-zA-Z0-9]+$', disk_name):
+            return jsonify({'error': 'Invalid disk name'}), 400
+        if not re.match(r'^[\w\-\.]+\.json$', filename):
+            return jsonify({'error': 'Invalid filename'}), 400
+        disk_dir = _get_smart_disk_dir(disk_name)
+        filepath = os.path.join(disk_dir, filename)
+        if not os.path.exists(filepath):
+            return jsonify({'error': 'File not found'}), 404
+        # Ensure path stays within smart directory (prevent traversal)
+        if not os.path.realpath(filepath).startswith(os.path.realpath(disk_dir)):
+            return jsonify({'error': 'Invalid path'}), 403
+        os.remove(filepath)
+        return jsonify({'success': True, 'deleted': filename})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

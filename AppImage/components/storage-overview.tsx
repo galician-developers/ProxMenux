@@ -121,7 +121,7 @@ export function StorageOverview() {
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [diskObservations, setDiskObservations] = useState<DiskObservation[]>([])
   const [loadingObservations, setLoadingObservations] = useState(false)
-  const [activeModalTab, setActiveModalTab] = useState<"overview" | "smart" | "schedule">("overview")
+  const [activeModalTab, setActiveModalTab] = useState<"overview" | "smart" | "history" | "schedule">("overview")
   const [smartJsonData, setSmartJsonData] = useState<{
     has_data: boolean
     data?: Record<string, unknown>
@@ -1292,6 +1292,17 @@ export function StorageOverview() {
               SMART Test
             </button>
             <button
+              onClick={() => setActiveModalTab("history")}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                activeModalTab === "history"
+                  ? "border-orange-500 text-orange-500"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Archive className="h-4 w-4" />
+              History
+            </button>
+            <button
               onClick={() => setActiveModalTab("schedule")}
               className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
                 activeModalTab === "schedule"
@@ -1335,197 +1346,154 @@ export function StorageOverview() {
                 </div>
               </div>
 
-              {/* Wear & Lifetime — SMART test data takes priority over basic DiskInfo */}
-              {(loadingSmartJson || smartJsonData?.has_data) ? (
-                <div className="border-t pt-4">
-                  <h4 className="font-semibold mb-3 flex items-center gap-2">
-                    Wear & Lifetime
-                    {smartJsonData?.has_data && (
-                      <Badge className="bg-green-500/10 text-green-400 border-green-500/20 text-[10px] px-1.5">
-                        Real Test
-                      </Badge>
-                    )}
-                  </h4>
-                  {loadingSmartJson ? (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-                      <div className="h-4 w-4 rounded-full border-2 border-transparent border-t-blue-400 animate-spin" />
-                      Loading SMART test data...
-                    </div>
-                  ) : smartJsonData?.has_data && smartJsonData.data ? (
-                    <div className="space-y-3">
-                      {(() => {
-                        const data = smartJsonData.data as Record<string, unknown>
-                        const ataAttrs = data?.ata_smart_attributes as { table?: Array<{ id: number; name: string; value: number; raw?: { value: number } }> }
-                        const table = ataAttrs?.table || []
+              {/* Wear & Lifetime — DiskInfo (real-time, refreshed every 60s) is the primary source.
+                   JSON from SMART test only supplements with fields DiskInfo doesn't have (available_spare). */}
+              {(() => {
+                // --- Step 1: DiskInfo = primary source (always fresh) ---
+                let wearUsed: number | null = null
+                let lifeRemaining: number | null = null
+                let estimatedLife = ''
+                let dataWritten = ''
+                let spare: number | undefined
 
-                        const wearAttr = table.find(a =>
-                          a.name?.toLowerCase().includes('wear_leveling') ||
-                          a.name?.toLowerCase().includes('media_wearout') ||
-                          a.name?.toLowerCase().includes('percent_lifetime') ||
-                          a.name?.toLowerCase().includes('ssd_life_left') ||
-                          a.id === 177 || a.id === 231
-                        )
+                const wi = getWearIndicator(selectedDisk)
+                if (wi) {
+                  wearUsed = wi.value
+                  lifeRemaining = 100 - wearUsed
+                  estimatedLife = getEstimatedLifeRemaining(selectedDisk) || ''
+                  if (selectedDisk.total_lbas_written && selectedDisk.total_lbas_written > 0) {
+                    const tb = selectedDisk.total_lbas_written / 1024
+                    dataWritten = tb >= 1 ? `${tb.toFixed(2)} TB` : `${selectedDisk.total_lbas_written.toFixed(2)} GB`
+                  }
+                }
 
-                        const lbasAttr = table.find(a =>
-                          a.name?.toLowerCase().includes('total_lbas_written') ||
-                          a.name?.toLowerCase().includes('writes_gib') ||
-                          a.name?.toLowerCase().includes('lifetime_writes') ||
-                          a.id === 241
-                        )
+                // --- Step 2: Supplement with SMART test JSON for extra fields only ---
+                if (smartJsonData?.has_data && smartJsonData.data) {
+                  const data = smartJsonData.data as Record<string, unknown>
+                  const nvmeHealth = (data?.nvme_smart_health_information_log || data) as Record<string, unknown>
 
-                        const pohAttr = table.find(a =>
-                          a.name?.toLowerCase().includes('power_on_hours') ||
-                          a.id === 9
-                        )
+                  // Available spare (only from SMART/NVMe data)
+                  if (spare === undefined) {
+                    spare = (nvmeHealth?.avail_spare ?? nvmeHealth?.available_spare) as number | undefined
+                  }
 
-                        // NVMe: check both nvme_smart_health_information_log (smartctl) and top-level (nvme smart-log)
-                        const nvmeHealth = (data?.nvme_smart_health_information_log || data) as Record<string, unknown>
-                        const isNvmeData = nvmeHealth?.percent_used !== undefined || nvmeHealth?.percentage_used !== undefined
+                  // Data written — use SMART JSON if DiskInfo didn't provide it
+                  if (!dataWritten) {
+                    const ataAttrs = data?.ata_smart_attributes as { table?: Array<{ id: number; name: string; value: number; raw?: { value: number } }> }
+                    const table = ataAttrs?.table || []
+                    const lbasAttr = table.find(a =>
+                      a.name?.toLowerCase().includes('total_lbas_written') ||
+                      a.name?.toLowerCase().includes('writes_gib') ||
+                      a.name?.toLowerCase().includes('lifetime_writes') ||
+                      a.id === 241
+                    )
+                    if (lbasAttr && lbasAttr.raw?.value) {
+                      const n = (lbasAttr.name || '').toLowerCase()
+                      const tb = (n.includes('gib') || n.includes('_gb') || n.includes('writes_gib'))
+                        ? lbasAttr.raw.value / 1024
+                        : (lbasAttr.raw.value * 512) / (1024 ** 4)
+                      dataWritten = tb >= 1 ? `${tb.toFixed(2)} TB` : `${(tb * 1024).toFixed(2)} GB`
+                    } else if (nvmeHealth?.data_units_written) {
+                      const tb = ((nvmeHealth.data_units_written as number) * 512000) / (1024 ** 4)
+                      dataWritten = tb >= 1 ? `${tb.toFixed(2)} TB` : `${(tb * 1024).toFixed(2)} GB`
+                    }
+                  }
 
-                        // Data written
-                        let dataWrittenLabel = ''
-                        if (lbasAttr && lbasAttr.raw?.value) {
-                          const attrName = (lbasAttr.name || '').toLowerCase()
-                          let tb = 0
-                          if (attrName.includes('gib') || attrName.includes('_gb') || attrName.includes('writes_gib')) {
-                            tb = lbasAttr.raw.value / 1024
-                          } else {
-                            tb = (lbasAttr.raw.value * 512) / (1024 ** 4)
-                          }
-                          dataWrittenLabel = tb >= 1 ? `${tb.toFixed(2)} TB` : `${(tb * 1024).toFixed(2)} GB`
-                        } else if (nvmeHealth?.data_units_written) {
-                          const units = nvmeHealth.data_units_written as number
-                          const tb = (units * 512000) / (1024 ** 4)
-                          dataWrittenLabel = tb >= 1 ? `${tb.toFixed(2)} TB` : `${(tb * 1024).toFixed(2)} GB`
+                  // Wear/life — use SMART JSON only if DiskInfo didn't provide it (SSD without backend support)
+                  if (lifeRemaining === null) {
+                    const ataAttrs = data?.ata_smart_attributes as { table?: Array<{ id: number; name: string; value: number; raw?: { value: number } }> }
+                    const table = ataAttrs?.table || []
+                    const wearAttr = table.find(a =>
+                      a.name?.toLowerCase().includes('wear_leveling') ||
+                      a.name?.toLowerCase().includes('media_wearout') ||
+                      a.name?.toLowerCase().includes('ssd_life_left') ||
+                      a.id === 177 || a.id === 231
+                    )
+                    const nvmeIsPresent = nvmeHealth?.percent_used !== undefined || nvmeHealth?.percentage_used !== undefined
+
+                    if (wearAttr) {
+                      lifeRemaining = (wearAttr.id === 230) ? (100 - wearAttr.value) : wearAttr.value
+                    } else if (nvmeIsPresent) {
+                      lifeRemaining = 100 - ((nvmeHealth.percent_used ?? nvmeHealth.percentage_used ?? 0) as number)
+                    }
+
+                    if (lifeRemaining !== null) {
+                      wearUsed = 100 - lifeRemaining
+                      const poh = selectedDisk.power_on_hours || 0
+                      if (lifeRemaining > 0 && lifeRemaining < 100 && poh > 0) {
+                        const used = 100 - lifeRemaining
+                        if (used > 0) {
+                          const ry = ((poh / (used / 100)) - poh) / (24 * 365)
+                          estimatedLife = ry >= 1 ? `~${ry.toFixed(1)} years` : `~${(ry * 12).toFixed(0)} months`
                         }
+                      }
+                    }
+                  }
+                }
 
-                        // Life remaining %
-                        let wearPercent: number | null = null
-                        if (wearAttr) {
-                          wearPercent = (wearAttr.id === 230) ? (100 - wearAttr.value) : wearAttr.value
-                        } else if (isNvmeData) {
-                          const pctUsed = (nvmeHealth.percent_used ?? nvmeHealth.percentage_used ?? 0) as number
-                          wearPercent = 100 - pctUsed
-                        }
+                // --- Only render if we have meaningful wear data ---
+                if (wearUsed === null && lifeRemaining === null) return null
 
-                        // Estimated life
-                        let estimatedLife = ''
-                        const powerOnHrs = pohAttr?.raw?.value || selectedDisk.power_on_hours || 0
-                        if (wearPercent !== null && wearPercent > 0 && wearPercent < 100 && powerOnHrs > 0) {
-                          const usedPct = 100 - wearPercent
-                          if (usedPct > 0) {
-                            const remYears = ((powerOnHrs / (usedPct / 100)) - powerOnHrs) / (24 * 365)
-                            estimatedLife = remYears >= 1 ? `~${remYears.toFixed(1)} years` : `~${(remYears * 12).toFixed(0)} months`
-                          }
-                        }
+                const lifeColor = lifeRemaining !== null
+                  ? (lifeRemaining >= 50 ? '#22c55e' : lifeRemaining >= 20 ? '#eab308' : '#ef4444')
+                  : '#6b7280'
 
-                        const availableSpare = (nvmeHealth?.avail_spare ?? nvmeHealth?.available_spare) as number | undefined
-
-                        // Wear used % (inverse of life remaining)
-                        const wearUsed = wearPercent !== null ? 100 - wearPercent : null
-                        // Life ring color: green ≥50%, yellow 20-49%, red <20%
-                        const lifeColor = wearPercent !== null
-                          ? (wearPercent >= 50 ? '#22c55e' : wearPercent >= 20 ? '#eab308' : '#ef4444')
-                          : '#6b7280'
-
-                        if (wearUsed !== null || dataWrittenLabel) {
-                          return (
-                            <div className="flex gap-4 items-start">
-                              {/* Life remaining ring */}
-                              {wearPercent !== null && (
-                                <div className="flex flex-col items-center gap-1 flex-shrink-0">
-                                  <svg width="72" height="72" viewBox="0 0 72 72">
-                                    <circle cx="36" cy="36" r="28" fill="none" stroke="currentColor" strokeWidth="6" className="text-muted/20" />
-                                    <circle cx="36" cy="36" r="28" fill="none" stroke={lifeColor} strokeWidth="6"
-                                      strokeDasharray={`${wearPercent * 1.759} 175.9`}
-                                      strokeLinecap="round" transform="rotate(-90 36 36)" />
-                                    <text x="36" y="33" textAnchor="middle" fill={lifeColor} fontSize="16" fontWeight="700">{wearPercent}%</text>
-                                    <text x="36" y="46" textAnchor="middle" fill="currentColor" fontSize="7" className="text-muted-foreground">life</text>
-                                  </svg>
-                                </div>
-                              )}
-                              {/* Wear bar + stats */}
-                              <div className="flex-1 space-y-3 min-w-0">
-                                {wearUsed !== null && (
-                                  <div>
-                                    <div className="flex items-center justify-between mb-1.5">
-                                      <p className="text-xs text-muted-foreground">Wear</p>
-                                      <p className="text-sm font-medium text-blue-400">{wearUsed}%</p>
-                                    </div>
-                                    <Progress
-                                      value={wearUsed}
-                                      className="h-1.5 [&>div]:bg-blue-500"
-                                    />
-                                  </div>
-                                )}
-                                <div className="grid grid-cols-2 gap-3">
-                                  {estimatedLife && (
-                                    <div>
-                                      <p className="text-xs text-muted-foreground">Est. Life</p>
-                                      <p className="text-sm font-medium">{estimatedLife}</p>
-                                    </div>
-                                  )}
-                                  {dataWrittenLabel && (
-                                    <div>
-                                      <p className="text-xs text-muted-foreground">Data Written</p>
-                                      <p className="text-sm font-medium">{dataWrittenLabel}</p>
-                                    </div>
-                                  )}
-                                  {availableSpare !== undefined && (
-                                    <div>
-                                      <p className="text-xs text-muted-foreground">Avail. Spare</p>
-                                      <p className={`text-sm font-medium ${availableSpare < 20 ? 'text-red-400' : 'text-blue-400'}`}>{availableSpare}%</p>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        }
-                        return null
-                      })()}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">Run a SMART test to get detailed wear data.</p>
-                  )}
-                </div>
-              ) : getWearIndicator(selectedDisk) ? (
-                <div className="border-t pt-4">
-                  <h4 className="font-semibold mb-3">Wear & Lifetime</h4>
-                  <div className="space-y-3">
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-sm text-muted-foreground">{getWearIndicator(selectedDisk)!.label}</p>
-                        <p className={`font-medium ${getWearColor(getWearIndicator(selectedDisk)!.value)}`}>
-                          {getWearIndicator(selectedDisk)!.value}%
-                        </p>
-                      </div>
-                      <Progress
-                        value={getWearIndicator(selectedDisk)!.value}
-                        className={`h-2 ${getWearProgressColor(getWearIndicator(selectedDisk)!.value)}`}
-                      />
-                    </div>
-                    {getEstimatedLifeRemaining(selectedDisk) && (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-sm text-muted-foreground">Estimated Life Remaining</p>
-                          <p className="font-medium">{getEstimatedLifeRemaining(selectedDisk)}</p>
+                return (
+                  <div className="border-t pt-4">
+                    <h4 className="font-semibold mb-3 flex items-center gap-2">
+                      Wear & Lifetime
+                      {smartJsonData?.has_data && (
+                        <Badge className="bg-green-500/10 text-green-400 border-green-500/20 text-[10px] px-1.5">Real Test</Badge>
+                      )}
+                    </h4>
+                    <div className="flex gap-4 items-start">
+                      {lifeRemaining !== null && (
+                        <div className="flex flex-col items-center gap-1 flex-shrink-0">
+                          <svg width="72" height="72" viewBox="0 0 72 72">
+                            <circle cx="36" cy="36" r="28" fill="none" stroke="currentColor" strokeWidth="6" className="text-muted/20" />
+                            <circle cx="36" cy="36" r="28" fill="none" stroke={lifeColor} strokeWidth="6"
+                              strokeDasharray={`${lifeRemaining * 1.759} 175.9`}
+                              strokeLinecap="round" transform="rotate(-90 36 36)" />
+                            <text x="36" y="33" textAnchor="middle" fill={lifeColor} fontSize="16" fontWeight="700">{lifeRemaining}%</text>
+                            <text x="36" y="46" textAnchor="middle" fill="currentColor" fontSize="7" className="text-muted-foreground">life</text>
+                          </svg>
                         </div>
-                        {selectedDisk.total_lbas_written && selectedDisk.total_lbas_written > 0 && (
+                      )}
+                      <div className="flex-1 space-y-3 min-w-0">
+                        {wearUsed !== null && (
                           <div>
-                            <p className="text-sm text-muted-foreground">Total Data Written</p>
-                            <p className="font-medium">
-                              {selectedDisk.total_lbas_written >= 1024
-                                ? `${(selectedDisk.total_lbas_written / 1024).toFixed(2)} TB`
-                                : `${selectedDisk.total_lbas_written.toFixed(2)} GB`}
-                            </p>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <p className="text-xs text-muted-foreground">Wear</p>
+                              <p className="text-sm font-medium text-blue-400">{wearUsed}%</p>
+                            </div>
+                            <Progress value={wearUsed} className="h-1.5 [&>div]:bg-blue-500" />
                           </div>
                         )}
+                        <div className="grid grid-cols-2 gap-3">
+                          {estimatedLife && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Est. Life</p>
+                              <p className="text-sm font-medium">{estimatedLife}</p>
+                            </div>
+                          )}
+                          {dataWritten && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Data Written</p>
+                              <p className="text-sm font-medium">{dataWritten}</p>
+                            </div>
+                          )}
+                          {spare !== undefined && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Avail. Spare</p>
+                              <p className={`text-sm font-medium ${spare < 20 ? 'text-red-400' : 'text-blue-400'}`}>{spare}%</p>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    )}
+                    </div>
                   </div>
-                </div>
-              ) : null}
+                )
+              })()}
 
               <div className="border-t pt-4">
                 <h4 className="font-semibold mb-3">SMART Attributes</h4>
@@ -1833,6 +1801,11 @@ export function StorageOverview() {
             <SmartTestTab disk={selectedDisk} observations={diskObservations} lastTestDate={smartJsonData?.timestamp || undefined} />
           )}
           
+          {/* History Tab */}
+          {selectedDisk && activeModalTab === "history" && (
+            <HistoryTab disk={selectedDisk} />
+          )}
+
           {/* Schedule Tab */}
           {selectedDisk && activeModalTab === "schedule" && (
             <ScheduleTab disk={selectedDisk} />
@@ -1845,7 +1818,7 @@ export function StorageOverview() {
 }
 
 // Generate SMART Report HTML and open in new window (same pattern as Lynis/Latency reports)
-function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttributes: SmartAttribute[], observations: DiskObservation[] = []) {
+function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttributes: SmartAttribute[], observations: DiskObservation[] = [], lastTestDate?: string) {
   const now = new Date().toLocaleString()
   const logoUrl = `${window.location.origin}/images/proxmenux-logo.png`
   const reportId = `SMART-${Date.now().toString(36).toUpperCase()}`
@@ -1873,6 +1846,17 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
     modelFamily.toLowerCase().includes('barracuda') ||
     modelFamily.toLowerCase().includes('ironwolf') ||
     (disk.model || '').startsWith('ST')
+
+  // Test age warning
+  let testAgeDays = 0
+  let testAgeWarning = ''
+  if (lastTestDate) {
+    const testDate = new Date(lastTestDate)
+    testAgeDays = Math.floor((Date.now() - testDate.getTime()) / (1000 * 60 * 60 * 24))
+    if (testAgeDays > 90) {
+      testAgeWarning = `This report is based on a SMART test performed ${testAgeDays} days ago (${testDate.toLocaleDateString()}). Disk health may have changed since then. We recommend running a new SMART test for up-to-date results.`
+    }
+  }
 
   // Determine disk type
   let diskType = "HDD"
@@ -2445,6 +2429,15 @@ function openSmartReport(disk: DiskInfo, testStatus: SmartTestStatus, smartAttri
       <div style="font-size:12px;font-weight:600;color:#1e293b;">${smartAttributes.length}</div>
     </div>
   </div>
+  ${testAgeWarning ? `
+  <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:12px 16px;margin-top:12px;display:flex;align-items:flex-start;gap:10px;">
+    <span style="font-size:18px;flex-shrink:0;">&#9888;</span>
+    <div>
+      <div style="font-weight:700;font-size:12px;color:#92400e;margin-bottom:4px;">Outdated Test Data (${testAgeDays} days old)</div>
+      <p style="font-size:11px;color:#92400e;margin:0;">${testAgeWarning}</p>
+    </div>
+  </div>
+  ` : ''}
 </div>
 
 <!-- 2. Disk Information -->
@@ -3206,55 +3199,28 @@ function SmartTestTab({ disk, observations = [], lastTestDate }: SmartTestTabPro
         </div>
       )}
       
-      {/* Last Test Result */}
+      {/* Last Test Result — compact: type + status + date */}
       {testStatus.last_test && (
-        <div className="space-y-3">
-          <h4 className="font-semibold flex items-center gap-2">
-            <FileText className="h-4 w-4" />
-            Last Test Result
-            {lastTestDate && (
-              <span className="text-xs font-normal text-muted-foreground">
-                — {new Date(lastTestDate).toLocaleString()}
-              </span>
-            )}
-          </h4>
-          <div className={`border rounded-lg p-4 ${
-            testStatus.last_test.status === 'passed' 
-              ? 'bg-green-500/5 border-green-500/20' 
-              : 'bg-red-500/5 border-red-500/20'
-          }`}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                {testStatus.last_test.status === 'passed' ? (
-                  <CheckCircle2 className="h-5 w-5 text-green-500" />
-                ) : (
-                  <XCircle className="h-5 w-5 text-red-500" />
-                )}
-                <span className="font-medium">
-                  {testStatus.last_test.type === 'short' ? 'Short' : 'Extended'} Test - {' '}
-                  {testStatus.last_test.status === 'passed' ? 'Passed' : 'Failed'}
-                </span>
-              </div>
-              <Badge className={testStatus.last_test.status === 'passed' 
-                ? 'bg-green-500/10 text-green-500 border-green-500/20'
-                : 'bg-red-500/10 text-red-500 border-red-500/20'
-              }>
-                {testStatus.last_test.status}
-              </Badge>
-            </div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <p className="text-muted-foreground">Result</p>
-                <p className="font-medium">{testStatus.last_test.timestamp}</p>
-              </div>
-              {testStatus.last_test.lifetime_hours && (
-                <div>
-                  <p className="text-muted-foreground">At Power-On Hours</p>
-                  <p className="font-medium">{testStatus.last_test.lifetime_hours.toLocaleString('en-US')}h</p>
-                </div>
-              )}
-            </div>
-          </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          {testStatus.last_test.status === 'passed' ? (
+            <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+          ) : (
+            <XCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
+          )}
+          <span className="text-sm font-medium">
+            Last Test: {testStatus.last_test.type === 'short' ? 'Short' : 'Extended'}
+          </span>
+          <Badge className={testStatus.last_test.status === 'passed'
+            ? 'bg-green-500/10 text-green-500 border-green-500/20'
+            : 'bg-red-500/10 text-red-500 border-red-500/20'
+          }>
+            {testStatus.last_test.status}
+          </Badge>
+          {lastTestDate && (
+            <span className="text-xs text-muted-foreground">
+              {new Date(lastTestDate).toLocaleString()}
+            </span>
+          )}
         </div>
       )}
       
@@ -3301,7 +3267,7 @@ function SmartTestTab({ disk, observations = [], lastTestDate }: SmartTestTabPro
         <Button 
           variant="outline" 
           className="w-full gap-2 bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400"
-          onClick={() => openSmartReport(disk, testStatus, smartAttributes, observations)}
+          onClick={() => openSmartReport(disk, testStatus, smartAttributes, observations, lastTestDate)}
         >
           <FileText className="h-4 w-4" />
           View Full SMART Report
@@ -3312,6 +3278,182 @@ function SmartTestTab({ disk, observations = [], lastTestDate }: SmartTestTabPro
       </div>
       
 
+    </div>
+  )
+}
+
+// ─── History Tab Component ──────────────────────────────────────────────────────
+
+interface SmartHistoryEntry {
+  filename: string
+  path: string
+  timestamp: string
+  test_type: string
+  date_readable: string
+}
+
+function HistoryTab({ disk }: { disk: DiskInfo }) {
+  const [history, setHistory] = useState<SmartHistoryEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [deleting, setDeleting] = useState<string | null>(null)
+
+  const fetchHistory = async () => {
+    try {
+      setLoading(true)
+      const data = await fetchApi<{ history: SmartHistoryEntry[] }>(`/api/storage/smart/${disk.name}/history?limit=50`)
+      setHistory(data.history || [])
+    } catch {
+      setHistory([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { fetchHistory() }, [disk.name])
+
+  const handleDelete = async (filename: string) => {
+    try {
+      setDeleting(filename)
+      await fetchApi(`/api/storage/smart/${disk.name}/history/${filename}`, { method: 'DELETE' })
+      setHistory(prev => prev.filter(h => h.filename !== filename))
+    } catch {
+      // Silently fail — entry stays in list
+    } finally {
+      setDeleting(null)
+    }
+  }
+
+  const handleDownload = (filename: string) => {
+    const baseUrl = window.location.origin
+    const token = document.cookie.split(';').find(c => c.trim().startsWith('auth_token='))?.split('=')?.[1]
+    const url = `${baseUrl}/api/storage/smart/${disk.name}/history/${filename}${token ? `?token=${token}` : ''}`
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${disk.name}_${filename}`
+    a.click()
+  }
+
+  const handleViewReport = async (entry: SmartHistoryEntry) => {
+    try {
+      const data = await fetchApi<{ has_data: boolean; data?: Record<string, unknown> }>(
+        `/api/storage/smart/${disk.name}/latest`
+      )
+      if (data.has_data && data.data) {
+        // Use the openSmartReport function — it needs testStatus with smart_data
+        // For now we open the JSON in a new tab as formatted view
+        const blob = new Blob([JSON.stringify(data.data, null, 2)], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        window.open(url, '_blank')
+      }
+    } catch {
+      // Fallback: download the file
+      handleDownload(entry.filename)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 gap-3">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">Loading test history...</p>
+      </div>
+    )
+  }
+
+  if (history.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
+        <Archive className="h-10 w-10 text-muted-foreground/50" />
+        <div>
+          <p className="text-sm font-medium">No test history</p>
+          <p className="text-xs text-muted-foreground mt-1">Run a SMART test to start building history for this disk.</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h4 className="font-semibold flex items-center gap-2">
+          <Archive className="h-4 w-4" />
+          Test History
+          <Badge className="bg-orange-500/10 text-orange-400 border-orange-500/20 text-[10px] px-1.5">
+            {history.length}
+          </Badge>
+        </h4>
+      </div>
+
+      <div className="space-y-2">
+        {history.map((entry, i) => {
+          const isLatest = i === 0
+          const testDate = new Date(entry.timestamp)
+          const ageDays = Math.floor((Date.now() - testDate.getTime()) / (1000 * 60 * 60 * 24))
+          const isDeleting = deleting === entry.filename
+
+          return (
+            <div
+              key={entry.filename}
+              className={`border rounded-lg p-3 flex items-center gap-3 transition-colors ${
+                isLatest ? 'border-orange-500/30 bg-orange-500/5' : 'border-border'
+              } ${isDeleting ? 'opacity-50' : ''}`}
+            >
+              {/* Test type badge */}
+              <Badge className={`text-[10px] px-1.5 flex-shrink-0 ${
+                entry.test_type === 'long'
+                  ? 'bg-orange-500/10 text-orange-400 border-orange-500/20'
+                  : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+              }`}>
+                {entry.test_type === 'long' ? 'Extended' : 'Short'}
+              </Badge>
+
+              {/* Date and info */}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">
+                  {testDate.toLocaleString()}
+                  {isLatest && (
+                    <span className="text-[10px] text-orange-400 ml-2">latest</span>
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {ageDays === 0 ? 'Today' : ageDays === 1 ? 'Yesterday' : `${ageDays} days ago`}
+                </p>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-blue-400"
+                  onClick={() => handleDownload(entry.filename)}
+                  title="Download JSON"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400"
+                  onClick={() => handleDelete(entry.filename)}
+                  disabled={isDeleting}
+                  title="Delete"
+                >
+                  {isDeleting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <p className="text-xs text-muted-foreground text-center pt-2">
+        Test results are stored locally and used to generate detailed SMART reports.
+      </p>
     </div>
   )
 }
