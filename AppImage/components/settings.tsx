@@ -11,6 +11,149 @@ import { Badge } from "./ui/badge"
 import { getNetworkUnit } from "../lib/format-network"
 import { fetchApi } from "../lib/api-config"
 
+// GitHub Dark color palette for bash syntax highlighting
+const BASH_KEYWORDS = new Set([
+  'if','then','else','elif','fi','for','while','until','do','done','case','esac',
+  'function','return','local','readonly','export','declare','typeset','unset',
+  'source','alias','exit','break','continue','in','select','time','trap',
+])
+const BASH_BUILTINS = new Set([
+  'echo','printf','read','cd','pwd','ls','cat','grep','sed','awk','cut','sort','uniq','tee','wc',
+  'head','tail','find','xargs','chmod','chown','chgrp','mkdir','rmdir','rm','cp','mv','ln','touch',
+  'ps','kill','killall','pkill','pgrep','top','htop','df','du','free','uptime','uname','hostname',
+  'systemctl','journalctl','service','apt','apt-get','dpkg','dnf','yum','zypper','pacman',
+  'curl','wget','ssh','scp','rsync','tar','gzip','gunzip','bzip2','zip','unzip',
+  'mount','umount','lsblk','blkid','fdisk','parted','mkfs','fsck','swapon','swapoff',
+  'ip','ifconfig','iptables','netstat','ss','ping','traceroute','dig','nslookup','nc',
+  'sudo','su','whoami','id','groups','passwd','useradd','userdel','usermod','groupadd',
+  'test','true','false','sleep','wait','eval','exec','command','type','which','hash',
+  'set','getopts','shift','let','expr','jq','sed','grep','awk','tr',
+  'modprobe','lsmod','rmmod','insmod','dmesg','sysctl','ulimit','nohup','disown','bg','fg',
+  'zpool','zfs','qm','pct','pvesh','pvesm','pvenode','pveam','pveversion','vzdump',
+  'smartctl','nvme','ipmitool','sensors','upsc','dkms','modinfo','lspci','lsusb','lscpu',
+])
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function highlightBash(code: string): string {
+  // Token-based highlighter — processes line by line to avoid cross-line state issues
+  const lines = code.split('\n')
+  const out: string[] = []
+
+  for (const line of lines) {
+    let i = 0
+    let result = ''
+
+    while (i < line.length) {
+      const ch = line[i]
+
+      // Comments (# to end of line, but not inside strings — simple heuristic)
+      if (ch === '#' && (i === 0 || /\s/.test(line[i - 1]))) {
+        result += `<span style="color:#8b949e">${escapeHtml(line.slice(i))}</span>`
+        i = line.length
+        continue
+      }
+
+      // Strings: double-quoted (may contain $variables)
+      if (ch === '"') {
+        let j = i + 1
+        let content = ''
+        while (j < line.length && line[j] !== '"') {
+          if (line[j] === '\\' && j + 1 < line.length) {
+            content += line[j] + line[j + 1]
+            j += 2
+          } else {
+            content += line[j]
+            j++
+          }
+        }
+        const str = '"' + content + (line[j] === '"' ? '"' : '')
+        // Highlight $vars inside strings
+        const strHtml = escapeHtml(str).replace(
+          /(\$\{[^}]+\}|\$[A-Za-z_][A-Za-z0-9_]*|\$[0-9@#?*$!-])/g,
+          '<span style="color:#79c0ff">$1</span>'
+        )
+        result += `<span style="color:#a5d6ff">${strHtml}</span>`
+        i = j + 1
+        continue
+      }
+
+      // Strings: single-quoted (literal, no interpolation)
+      if (ch === "'") {
+        let j = i + 1
+        while (j < line.length && line[j] !== "'") j++
+        const str = line.slice(i, j + 1)
+        result += `<span style="color:#a5d6ff">${escapeHtml(str)}</span>`
+        i = j + 1
+        continue
+      }
+
+      // Variables outside strings
+      if (ch === '$') {
+        const rest = line.slice(i)
+        let m = rest.match(/^\$\{[^}]+\}/)
+        if (!m) m = rest.match(/^\$[A-Za-z_][A-Za-z0-9_]*/)
+        if (!m) m = rest.match(/^\$[0-9@#?*$!-]/)
+        if (m) {
+          result += `<span style="color:#79c0ff">${escapeHtml(m[0])}</span>`
+          i += m[0].length
+          continue
+        }
+      }
+
+      // Numbers
+      if (/[0-9]/.test(ch) && (i === 0 || /[\s=(\[,:;+\-*/]/.test(line[i - 1]))) {
+        const rest = line.slice(i)
+        const m = rest.match(/^[0-9]+/)
+        if (m) {
+          result += `<span style="color:#79c0ff">${m[0]}</span>`
+          i += m[0].length
+          continue
+        }
+      }
+
+      // Identifiers — check if keyword, builtin, or function definition
+      if (/[A-Za-z_]/.test(ch)) {
+        const rest = line.slice(i)
+        const m = rest.match(/^[A-Za-z_][A-Za-z0-9_-]*/)
+        if (m) {
+          const word = m[0]
+          const after = line.slice(i + word.length)
+          if (BASH_KEYWORDS.has(word)) {
+            result += `<span style="color:#ff7b72">${word}</span>`
+          } else if (/^\s*\(\)\s*\{?/.test(after)) {
+            // function definition: name() { ... }
+            result += `<span style="color:#d2a8ff">${word}</span>`
+          } else if (BASH_BUILTINS.has(word) && (i === 0 || /[\s|;&(]/.test(line[i - 1]))) {
+            result += `<span style="color:#ffa657">${word}</span>`
+          } else {
+            result += escapeHtml(word)
+          }
+          i += word.length
+          continue
+        }
+      }
+
+      // Operators and special chars
+      if (/[|&;<>(){}[\]=!+*\/%~^]/.test(ch)) {
+        result += `<span style="color:#ff7b72">${escapeHtml(ch)}</span>`
+        i++
+        continue
+      }
+
+      // Default: escape and append
+      result += escapeHtml(ch)
+      i++
+    }
+
+    out.push(result)
+  }
+
+  return out.join('\n')
+}
+
 interface SuppressionCategory {
   key: string
   label: string
@@ -874,27 +1017,23 @@ export function Settings() {
                 <span className="text-sm font-semibold text-orange-500">{proxmenuxTools.length} active</span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {proxmenuxTools.map((tool) => (
-                  <div
-                    key={tool.key}
-                    className="flex items-center justify-between gap-2 p-3 bg-muted/50 rounded-lg border border-border hover:bg-muted transition-colors"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
-                      <span className="text-sm font-medium truncate">{tool.name}</span>
+                {proxmenuxTools.map((tool) => {
+                  const clickable = !!tool.has_source
+                  return (
+                    <div
+                      key={tool.key}
+                      onClick={clickable ? () => viewToolSource(tool) : undefined}
+                      className={`flex items-center justify-between gap-2 p-3 bg-muted/50 rounded-lg border border-border transition-colors ${clickable ? 'hover:bg-muted hover:border-orange-500/40 cursor-pointer' : ''}`}
+                      title={clickable ? 'Click to view source code' : undefined}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
+                        <span className="text-sm font-medium truncate">{tool.name}</span>
+                      </div>
                       <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono flex-shrink-0">v{tool.version || '1.0'}</span>
                     </div>
-                    {tool.has_source && (
-                      <button
-                        onClick={() => viewToolSource(tool)}
-                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-                        title="View source code"
-                      >
-                        <Code className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}
@@ -953,7 +1092,11 @@ export function Settings() {
                   <p className="text-sm">{codeModal.error}</p>
                 </div>
               ) : (
-                <pre className="text-xs leading-relaxed font-mono p-4 overflow-x-auto whitespace-pre text-foreground bg-muted/30"><code>{codeModal.source}</code></pre>
+                <pre
+                  className="text-xs leading-relaxed font-mono p-4 overflow-x-auto whitespace-pre bg-[#0d1117] text-[#e6edf3]"
+                  style={{ tabSize: 4 }}
+                  dangerouslySetInnerHTML={{ __html: `<code>${highlightBash(codeModal.source)}</code>` }}
+                />
               )}
             </div>
           </div>
