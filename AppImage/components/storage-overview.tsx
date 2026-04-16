@@ -1442,20 +1442,20 @@ export function StorageOverview() {
                   <div className="border-t pt-4">
                     <h4 className="font-semibold mb-3 flex items-center gap-2">
                       Wear & Lifetime
-                      {smartJsonData?.has_data && (
+                      {smartJsonData?.has_data && !wi && (
                         <Badge className="bg-green-500/10 text-green-400 border-green-500/20 text-[10px] px-1.5">Real Test</Badge>
                       )}
                     </h4>
-                    <div className="flex gap-4 items-start">
+                    <div className="flex gap-5 items-start">
                       {lifeRemaining !== null && (
                         <div className="flex flex-col items-center gap-1 flex-shrink-0">
-                          <svg width="72" height="72" viewBox="0 0 72 72">
-                            <circle cx="36" cy="36" r="28" fill="none" stroke="currentColor" strokeWidth="6" className="text-muted/20" />
-                            <circle cx="36" cy="36" r="28" fill="none" stroke={lifeColor} strokeWidth="6"
-                              strokeDasharray={`${lifeRemaining * 1.759} 175.9`}
-                              strokeLinecap="round" transform="rotate(-90 36 36)" />
-                            <text x="36" y="33" textAnchor="middle" fill={lifeColor} fontSize="16" fontWeight="700">{lifeRemaining}%</text>
-                            <text x="36" y="46" textAnchor="middle" fill="currentColor" fontSize="7" className="text-muted-foreground">life</text>
+                          <svg width="88" height="88" viewBox="0 0 88 88">
+                            <circle cx="44" cy="44" r="35" fill="none" stroke="currentColor" strokeWidth="6" className="text-muted/20" />
+                            <circle cx="44" cy="44" r="35" fill="none" stroke={lifeColor} strokeWidth="6"
+                              strokeDasharray={`${lifeRemaining * 2.199} 219.9`}
+                              strokeLinecap="round" transform="rotate(-90 44 44)" />
+                            <text x="44" y="40" textAnchor="middle" fill={lifeColor} fontSize="20" fontWeight="700">{lifeRemaining}%</text>
+                            <text x="44" y="55" textAnchor="middle" fill="currentColor" fontSize="9" className="text-muted-foreground">life</text>
                           </svg>
                         </div>
                       )}
@@ -3438,17 +3438,22 @@ function HistoryTab({ disk }: { disk: DiskInfo }) {
           return (
             <div
               key={entry.filename}
-              className={`border rounded-lg p-3 flex items-center gap-3 transition-colors ${
+              onClick={() => !isDeleting && handleViewReport(entry)}
+              className={`border rounded-lg p-3 flex items-center gap-3 transition-colors cursor-pointer hover:bg-white/5 ${
                 isLatest ? 'border-orange-500/30' : 'border-border'
-              } ${isDeleting ? 'opacity-50' : ''}`}
+              } ${isDeleting ? 'opacity-50 pointer-events-none' : ''} ${isViewing ? 'opacity-70' : ''}`}
             >
-              <Badge className={`text-[10px] px-1.5 flex-shrink-0 ${
-                entry.test_type === 'long'
-                  ? 'bg-orange-500/10 text-orange-400 border-orange-500/20'
-                  : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-              }`}>
-                {entry.test_type === 'long' ? 'Extended' : 'Short'}
-              </Badge>
+              {isViewing ? (
+                <Loader2 className="h-4 w-4 animate-spin text-orange-400 flex-shrink-0" />
+              ) : (
+                <Badge className={`text-[10px] px-1.5 flex-shrink-0 ${
+                  entry.test_type === 'long'
+                    ? 'bg-orange-500/10 text-orange-400 border-orange-500/20'
+                    : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                }`}>
+                  {entry.test_type === 'long' ? 'Extended' : 'Short'}
+                </Badge>
+              )}
 
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">
@@ -3463,17 +3468,8 @@ function HistoryTab({ disk }: { disk: DiskInfo }) {
               <div className="flex items-center gap-1 flex-shrink-0">
                 <Button
                   variant="ghost" size="sm"
-                  className="h-7 w-7 p-0 text-muted-foreground hover:text-green-400"
-                  onClick={() => handleViewReport(entry)}
-                  disabled={isViewing}
-                  title="View Report"
-                >
-                  {isViewing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
-                </Button>
-                <Button
-                  variant="ghost" size="sm"
                   className="h-7 w-7 p-0 text-muted-foreground hover:text-blue-400"
-                  onClick={() => handleDownload(entry.filename)}
+                  onClick={(e: unknown) => { (e as MouseEvent).stopPropagation(); handleDownload(entry.filename) }}
                   title="Download JSON"
                 >
                   <Download className="h-3.5 w-3.5" />
@@ -3481,7 +3477,7 @@ function HistoryTab({ disk }: { disk: DiskInfo }) {
                 <Button
                   variant="ghost" size="sm"
                   className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400"
-                  onClick={() => handleDelete(entry.filename)}
+                  onClick={(e: unknown) => { (e as MouseEvent).stopPropagation(); if (confirm('Delete this test record?')) handleDelete(entry.filename) }}
                   disabled={isDeleting}
                   title="Delete"
                 >
