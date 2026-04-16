@@ -1346,16 +1346,16 @@ export function StorageOverview() {
                 </div>
               </div>
 
-              {/* Wear & Lifetime — DiskInfo (real-time, refreshed every 60s) is the primary source.
-                   JSON from SMART test only supplements with fields DiskInfo doesn't have (available_spare). */}
+              {/* Wear & Lifetime — DiskInfo (real-time, 60s refresh) for NVMe + SSD. SMART JSON as fallback. HDD: hidden. */}
               {(() => {
-                // --- Step 1: DiskInfo = primary source (always fresh) ---
                 let wearUsed: number | null = null
                 let lifeRemaining: number | null = null
                 let estimatedLife = ''
                 let dataWritten = ''
                 let spare: number | undefined
 
+                // --- Step 1: DiskInfo = primary source (refreshed every 60s, always fresh) ---
+                // Works for NVMe (percentage_used) and SSD (media_wearout_indicator, ssd_life_left)
                 const wi = getWearIndicator(selectedDisk)
                 if (wi) {
                   wearUsed = wi.value
@@ -1367,7 +1367,7 @@ export function StorageOverview() {
                   }
                 }
 
-                // --- Step 2: Supplement with SMART test JSON for extra fields only ---
+                // --- Step 2: SMART test JSON — primary for SSD, supplement for NVMe ---
                 if (smartJsonData?.has_data && smartJsonData.data) {
                   const data = smartJsonData.data as Record<string, unknown>
                   const nvmeHealth = (data?.nvme_smart_health_information_log || data) as Record<string, unknown>
@@ -3296,6 +3296,7 @@ function HistoryTab({ disk }: { disk: DiskInfo }) {
   const [history, setHistory] = useState<SmartHistoryEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [viewingReport, setViewingReport] = useState<string | null>(null)
 
   const fetchHistory = async () => {
     try {
@@ -3317,37 +3318,79 @@ function HistoryTab({ disk }: { disk: DiskInfo }) {
       await fetchApi(`/api/storage/smart/${disk.name}/history/${filename}`, { method: 'DELETE' })
       setHistory(prev => prev.filter(h => h.filename !== filename))
     } catch {
-      // Silently fail — entry stays in list
+      // Silently fail
     } finally {
       setDeleting(null)
     }
   }
 
-  const handleDownload = (filename: string) => {
-    const baseUrl = window.location.origin
-    const token = document.cookie.split(';').find(c => c.trim().startsWith('auth_token='))?.split('=')?.[1]
-    const url = `${baseUrl}/api/storage/smart/${disk.name}/history/${filename}${token ? `?token=${token}` : ''}`
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${disk.name}_${filename}`
-    a.click()
+  const handleDownload = async (filename: string) => {
+    try {
+      const response = await fetchApi<Record<string, unknown>>(`/api/storage/smart/${disk.name}/history/${filename}`)
+      const blob = new Blob([JSON.stringify(response, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${disk.name}_${filename}`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      // Silently fail
+    }
   }
 
   const handleViewReport = async (entry: SmartHistoryEntry) => {
     try {
-      const data = await fetchApi<{ has_data: boolean; data?: Record<string, unknown> }>(
-        `/api/storage/smart/${disk.name}/latest`
-      )
-      if (data.has_data && data.data) {
-        // Use the openSmartReport function — it needs testStatus with smart_data
-        // For now we open the JSON in a new tab as formatted view
-        const blob = new Blob([JSON.stringify(data.data, null, 2)], { type: 'application/json' })
-        const url = URL.createObjectURL(blob)
-        window.open(url, '_blank')
+      setViewingReport(entry.filename)
+      const jsonData = await fetchApi<Record<string, unknown>>(`/api/storage/smart/${disk.name}/history/${entry.filename}`)
+
+      // Build attributes from JSON for openSmartReport
+      const isNvme = disk.name.includes('nvme')
+      let attrs: SmartAttribute[] = []
+
+      if (isNvme) {
+        // NVMe: build from nvme smart-log fields
+        const fieldMap: [string, string][] = [
+          ['critical_warning', 'Critical Warning'], ['temperature', 'Temperature'],
+          ['avail_spare', 'Available Spare'], ['percent_used', 'Percentage Used'],
+          ['data_units_written', 'Data Units Written'], ['data_units_read', 'Data Units Read'],
+          ['power_cycles', 'Power Cycles'], ['power_on_hours', 'Power On Hours'],
+          ['unsafe_shutdowns', 'Unsafe Shutdowns'], ['media_errors', 'Media Errors'],
+          ['num_err_log_entries', 'Error Log Entries'],
+        ]
+        fieldMap.forEach(([key, name], i) => {
+          if (jsonData[key] !== undefined) {
+            const v = jsonData[key] as number
+            const status = (key === 'critical_warning' || key === 'media_errors') && v > 0 ? 'critical' as const : 'ok' as const
+            attrs.push({ id: i + 1, name, value: String(v), worst: '-', threshold: '-', raw_value: String(v), status })
+          }
+        })
+      } else {
+        // SATA: parse from ata_smart_attributes
+        const ataTable = (jsonData as Record<string, unknown>)?.ata_smart_attributes as { table?: Array<Record<string, unknown>> }
+        if (ataTable?.table) {
+          attrs = ataTable.table.map(a => ({
+            id: (a.id as number) || 0,
+            name: (a.name as string) || '',
+            value: (a.value as number) || 0,
+            worst: (a.worst as number) || 0,
+            threshold: (a.thresh as number) || 0,
+            raw_value: (a.raw as Record<string, unknown>)?.string as string || String((a.raw as Record<string, unknown>)?.value || 0),
+            status: 'ok' as const
+          }))
+        }
       }
+
+      const testStatus: SmartTestStatus = {
+        status: 'idle',
+        smart_data: { device: disk.name, model: disk.model || '', serial: disk.serial || '', firmware: '', smart_status: 'passed', temperature: disk.temperature, power_on_hours: disk.power_on_hours || 0, attributes: attrs }
+      }
+
+      openSmartReport(disk, testStatus, attrs, [], entry.timestamp)
     } catch {
-      // Fallback: download the file
-      handleDownload(entry.filename)
+      // Silently fail
+    } finally {
+      setViewingReport(null)
     }
   }
 
@@ -3363,7 +3406,7 @@ function HistoryTab({ disk }: { disk: DiskInfo }) {
   if (history.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
-        <Archive className="h-10 w-10 text-muted-foreground/50" />
+        <Archive className="h-10 w-10 text-muted-foreground/30" />
         <div>
           <p className="text-sm font-medium">No test history</p>
           <p className="text-xs text-muted-foreground mt-1">Run a SMART test to start building history for this disk.</p>
@@ -3390,15 +3433,15 @@ function HistoryTab({ disk }: { disk: DiskInfo }) {
           const testDate = new Date(entry.timestamp)
           const ageDays = Math.floor((Date.now() - testDate.getTime()) / (1000 * 60 * 60 * 24))
           const isDeleting = deleting === entry.filename
+          const isViewing = viewingReport === entry.filename
 
           return (
             <div
               key={entry.filename}
               className={`border rounded-lg p-3 flex items-center gap-3 transition-colors ${
-                isLatest ? 'border-orange-500/30 bg-orange-500/5' : 'border-border'
+                isLatest ? 'border-orange-500/30' : 'border-border'
               } ${isDeleting ? 'opacity-50' : ''}`}
             >
-              {/* Test type badge */}
               <Badge className={`text-[10px] px-1.5 flex-shrink-0 ${
                 entry.test_type === 'long'
                   ? 'bg-orange-500/10 text-orange-400 border-orange-500/20'
@@ -3407,24 +3450,28 @@ function HistoryTab({ disk }: { disk: DiskInfo }) {
                 {entry.test_type === 'long' ? 'Extended' : 'Short'}
               </Badge>
 
-              {/* Date and info */}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">
                   {testDate.toLocaleString()}
-                  {isLatest && (
-                    <span className="text-[10px] text-orange-400 ml-2">latest</span>
-                  )}
+                  {isLatest && <span className="text-[10px] text-orange-400 ml-2">latest</span>}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {ageDays === 0 ? 'Today' : ageDays === 1 ? 'Yesterday' : `${ageDays} days ago`}
                 </p>
               </div>
 
-              {/* Action buttons */}
               <div className="flex items-center gap-1 flex-shrink-0">
                 <Button
-                  variant="ghost"
-                  size="sm"
+                  variant="ghost" size="sm"
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-green-400"
+                  onClick={() => handleViewReport(entry)}
+                  disabled={isViewing}
+                  title="View Report"
+                >
+                  {isViewing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+                </Button>
+                <Button
+                  variant="ghost" size="sm"
                   className="h-7 w-7 p-0 text-muted-foreground hover:text-blue-400"
                   onClick={() => handleDownload(entry.filename)}
                   title="Download JSON"
@@ -3432,18 +3479,13 @@ function HistoryTab({ disk }: { disk: DiskInfo }) {
                   <Download className="h-3.5 w-3.5" />
                 </Button>
                 <Button
-                  variant="ghost"
-                  size="sm"
+                  variant="ghost" size="sm"
                   className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400"
                   onClick={() => handleDelete(entry.filename)}
                   disabled={isDeleting}
                   title="Delete"
                 >
-                  {isDeleting ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-3.5 w-3.5" />
-                  )}
+                  {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                 </Button>
               </div>
             </div>
