@@ -1289,7 +1289,7 @@ export function StorageOverview() {
               }`}
             >
               <Activity className="h-4 w-4" />
-              SMART Test
+              SMART
             </button>
             <button
               onClick={() => setActiveModalTab("history")}
@@ -1450,7 +1450,7 @@ export function StorageOverview() {
                       {lifeRemaining !== null && (
                         <div className="flex flex-col items-center gap-1 flex-shrink-0">
                           <svg width="88" height="88" viewBox="0 0 88 88">
-                            <circle cx="44" cy="44" r="35" fill="none" stroke="currentColor" strokeWidth="6" className="text-muted/20" />
+                            <circle cx="44" cy="44" r="35" fill="none" stroke="currentColor" strokeWidth="6" className="text-muted/10" />
                             <circle cx="44" cy="44" r="35" fill="none" stroke={lifeColor} strokeWidth="6"
                               strokeDasharray={`${lifeRemaining * 2.199} 219.9`}
                               strokeLinecap="round" transform="rotate(-90 44 44)" />
@@ -3340,16 +3340,20 @@ function HistoryTab({ disk }: { disk: DiskInfo }) {
   }
 
   const handleViewReport = async (entry: SmartHistoryEntry) => {
+    // Open window IMMEDIATELY on user click (before async) to avoid popup blocker
+    const reportWindow = window.open('about:blank', '_blank')
+    if (reportWindow) {
+      reportWindow.document.write('<html><body style="background:#0f172a;color:#e2e8f0;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><div style="border:3px solid transparent;border-top-color:#06b6d4;border-radius:50%;width:40px;height:40px;animation:spin 1s linear infinite;margin:0 auto"></div><p style="margin-top:16px">Loading report...</p><style>@keyframes spin{to{transform:rotate(360deg)}}</style></div></body></html>')
+    }
+
     try {
       setViewingReport(entry.filename)
       const jsonData = await fetchApi<Record<string, unknown>>(`/api/storage/smart/${disk.name}/history/${entry.filename}`)
 
-      // Build attributes from JSON for openSmartReport
       const isNvme = disk.name.includes('nvme')
       let attrs: SmartAttribute[] = []
 
       if (isNvme) {
-        // NVMe: build from nvme smart-log fields
         const fieldMap: [string, string][] = [
           ['critical_warning', 'Critical Warning'], ['temperature', 'Temperature'],
           ['avail_spare', 'Available Spare'], ['percent_used', 'Percentage Used'],
@@ -3366,7 +3370,6 @@ function HistoryTab({ disk }: { disk: DiskInfo }) {
           }
         })
       } else {
-        // SATA: parse from ata_smart_attributes
         const ataTable = (jsonData as Record<string, unknown>)?.ata_smart_attributes as { table?: Array<Record<string, unknown>> }
         if (ataTable?.table) {
           attrs = ataTable.table.map(a => ({
@@ -3386,9 +3389,17 @@ function HistoryTab({ disk }: { disk: DiskInfo }) {
         smart_data: { device: disk.name, model: disk.model || '', serial: disk.serial || '', firmware: '', smart_status: 'passed', temperature: disk.temperature, power_on_hours: disk.power_on_hours || 0, attributes: attrs }
       }
 
+      // Generate the report HTML using the same function as SMART tab
       openSmartReport(disk, testStatus, attrs, [], entry.timestamp)
+
+      // Close the loading window — openSmartReport already opened the real one
+      if (reportWindow && !reportWindow.closed) {
+        reportWindow.close()
+      }
     } catch {
-      // Silently fail
+      if (reportWindow && !reportWindow.closed) {
+        reportWindow.document.body.innerHTML = '<p style="color:#ef4444;text-align:center;margin-top:40vh">Failed to load report data.</p>'
+      }
     } finally {
       setViewingReport(null)
     }
