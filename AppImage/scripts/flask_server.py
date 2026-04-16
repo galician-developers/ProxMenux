@@ -2814,38 +2814,48 @@ def get_smart_data(disk_name):
                                     elif attr_id == 199:  # UDMA_CRC_Error_Count
                                         smart_data['crc_errors'] = raw_value
 
-                                    elif attr_id == 230:  # Media_Wearout_Indicator (WD/SanDisk)
-                                        # normalized_value = endurance used % (0=new, 100=fully worn)
-                                        smart_data['media_wearout_indicator'] = normalized_value
-                                        smart_data['ssd_life_left'] = max(0, 100 - normalized_value)
+                                    # --- SSD/NVMe wear & lifetime — NAME-based detection ---
+                                    # Same SMART ID means different things on different manufacturers.
+                                    # Always check attr name to avoid cross-manufacturer misinterpretation.
+                                    elif attr_id in (177, 202, 230, 231, 233, 241):
+                                        attr_name = attr.get('name', '').lower()
 
-                                    elif attr_id == 233:  # Media_Wearout_Indicator (Intel/Samsung SSD)
-                                        # Normalized: 100=new, 0=worn → invert to get wear used %
-                                        smart_data['media_wearout_indicator'] = 100 - normalized_value
+                                        # --- Wear / Life indicators ---
+                                        if attr_id == 230 and ('wearout' in attr_name or 'media' in attr_name):
+                                            # WD/SanDisk Media_Wearout_Indicator: value = endurance used %
+                                            smart_data['media_wearout_indicator'] = normalized_value
+                                            smart_data['ssd_life_left'] = max(0, 100 - normalized_value)
 
-                                    elif attr_id == 177:  # Wear_Leveling_Count
-                                        # Normalized: 100=new, 0=worn → invert to get wear used %
-                                        smart_data['wear_leveling_count'] = 100 - normalized_value
+                                        elif attr_id == 233 and ('wearout' in attr_name or 'media' in attr_name):
+                                            # Intel/Samsung Media_Wearout_Indicator: value = life remaining %
+                                            # Skip if already set by ID 230 (prevents overwrite)
+                                            if smart_data.get('media_wearout_indicator') is None:
+                                                smart_data['media_wearout_indicator'] = 100 - normalized_value
 
-                                    elif attr_id == 202:  # Percentage_Lifetime_Remain
-                                        # Normalized: 100=new, 0=worn → value IS life remaining
-                                        smart_data['ssd_life_left'] = normalized_value
+                                        elif attr_id == 177 and ('wear' in attr_name or 'leveling' in attr_name):
+                                            # Samsung/Crucial Wear_Leveling_Count: value = life remaining %
+                                            smart_data['wear_leveling_count'] = 100 - normalized_value
 
-                                    elif attr_id == 231:  # SSD_Life_Left
-                                        # Normalized: value IS life remaining %
-                                        smart_data['ssd_life_left'] = normalized_value
-                                    elif attr_id == 241:  # Total_LBAs_Written / Host_Writes_GiB
-                                        attr_name = attr.get('name', '')
-                                        if 'gib' in attr_name.lower() or '_gb' in attr_name.lower():
-                                            # WD/Kingston: raw value already in GiB
-                                            smart_data['total_lbas_written'] = round(raw_value, 2)
-                                        else:
-                                            # Standard: raw value in LBA sectors (512 bytes each)
-                                            try:
-                                                total_gb = (raw_value * 512) / (1024 * 1024 * 1024)
-                                                smart_data['total_lbas_written'] = round(total_gb, 2)
-                                            except (ValueError, TypeError):
-                                                pass
+                                        elif attr_id == 202 and ('lifetime' in attr_name or 'life' in attr_name):
+                                            # Micron/Crucial Percent_Lifetime_Remain: value = life remaining %
+                                            smart_data['ssd_life_left'] = normalized_value
+
+                                        elif attr_id == 231 and ('life' in attr_name):
+                                            # Kingston/Phison SSD_Life_Left: value = life remaining %
+                                            smart_data['ssd_life_left'] = normalized_value
+
+                                        # --- Data written ---
+                                        elif attr_id == 241:
+                                            if 'gib' in attr_name or '_gb' in attr_name or 'writes_g' in attr_name:
+                                                # WD/Kingston: raw value already in GiB
+                                                smart_data['total_lbas_written'] = round(raw_value, 2)
+                                            elif 'lba' in attr_name or 'written' in attr_name:
+                                                # Seagate/Standard: raw value in LBA sectors (512 bytes)
+                                                try:
+                                                    total_gb = (raw_value * 512) / (1024 * 1024 * 1024)
+                                                    smart_data['total_lbas_written'] = round(total_gb, 2)
+                                                except (ValueError, TypeError):
+                                                    pass
                             
                             # If we got good data, break out of the loop
                             if smart_data['model'] != 'Unknown' and smart_data['serial'] != 'Unknown':
@@ -2984,63 +2994,40 @@ def get_smart_data(disk_name):
                                             smart_data['crc_errors'] = int(raw_value)
                                             # print(f"[v0] CRC Errors: {smart_data['crc_errors']}")
                                             pass
-                                        elif attr_id == '230': 
-                                            try:
-                                                wear_used = None
-                                                raw_str = str(raw_value).strip()
+                                        # --- SSD wear & data written (text path) — NAME-based ---
+                                        elif attr_id in ('177', '202', '230', '231', '233', '241'):
+                                            a_name = parts[1].lower() if len(parts) > 1 else ''
+                                            nv = int(parts[3]) if len(parts) > 3 else 100
 
-                                                if raw_str.startswith("0x") and len(raw_str) >= 8:
-      
-                                                    wear_hex = raw_str[4:8]
-                                                    wear_used = int(wear_hex, 16)
-                                                else:
-                                                    wear_used = int(raw_str)
+                                            if attr_id == '230' and ('wearout' in a_name or 'media' in a_name):
+                                                # WD/SanDisk: value = endurance used %
+                                                smart_data['media_wearout_indicator'] = nv
+                                                smart_data['ssd_life_left'] = max(0, 100 - nv)
 
-                                                if wear_used is None or wear_used < 0 or wear_used > 100:
-                                                    normalized_value = int(parts[3]) if len(parts) > 3 else 100
-                                                    wear_used = max(0, min(100, 100 - normalized_value))
+                                            elif attr_id == '233' and ('wearout' in a_name or 'media' in a_name):
+                                                # Intel/Samsung: value = life remaining %
+                                                if smart_data.get('media_wearout_indicator') is None:
+                                                    smart_data['media_wearout_indicator'] = 100 - nv
 
-                                                smart_data['media_wearout_indicator'] = wear_used
-                                                smart_data['ssd_life_left'] = max(0, 100 - wear_used)
-                                                # print(f"[v0] Media Wearout Indicator (ID 230): {wear_used}% used, {smart_data['ssd_life_left']}% life left")
-                                                pass
-                                            except Exception as e:
-                                                # print(f"[v0] Error parsing Media_Wearout_Indicator (ID 230): {e}")
-                                                pass
-                                        elif attr_id == '233':  # Media_Wearout_Indicator (Intel/Samsung SSD)
-                                            # Valor normalizado: 100 = nuevo, 0 = gastado
-                                            # Invertimos para mostrar desgaste: 0% = nuevo, 100% = gastado
-                                            normalized_value = int(parts[3]) if len(parts) > 3 else 100
-                                            smart_data['media_wearout_indicator'] = 100 - normalized_value
-                                            # print(f"[v0] Media Wearout Indicator (ID 233): {smart_data['media_wearout_indicator']}% used")
-                                            pass
-                                        elif attr_id == '177':  # Wear_Leveling_Count
-                                            # Valor normalizado: 100 = nuevo, 0 = gastado
-                                            normalized_value = int(parts[3]) if len(parts) > 3 else 100
-                                            smart_data['wear_leveling_count'] = 100 - normalized_value
-                                            # print(f"[v0] Wear Leveling Count (ID 177): {smart_data['wear_leveling_count']}% used")
-                                            pass
-                                        elif attr_id == '202':  # Percentage_Lifetime_Remain (algunos fabricantes)
-                                            # Valor normalizado: 100 = nuevo, 0 = gastado
-                                            normalized_value = int(parts[3]) if len(parts) > 3 else 100
-                                            smart_data['ssd_life_left'] = normalized_value
-                                            # print(f"[v0] SSD Life Left (ID 202): {smart_data['ssd_life_left']}%")
-                                            pass
-                                        elif attr_id == '231':  # SSD_Life_Left (algunos fabricantes)
-                                            normalized_value = int(parts[3]) if len(parts) > 3 else 100
-                                            smart_data['ssd_life_left'] = normalized_value
-                                            # print(f"[v0] SSD Life Left (ID 231): {smart_data['ssd_life_left']}%")
-                                            pass
-                                        elif attr_id == '241':  # Total_LBAs_Written
-                                            # Convertir a GB (raw_value es en sectores de 512 bytes)
-                                            try:
-                                                raw_int = int(raw_value.replace(',', ''))
-                                                total_gb = (raw_int * 512) / (1024 * 1024 * 1024)
-                                                smart_data['total_lbas_written'] = round(total_gb, 2)
-                                                # print(f"[v0] Total LBAs Written (ID 241): {smart_data['total_lbas_written']} GB")
-                                                pass
-                                            except ValueError:
-                                                pass
+                                            elif attr_id == '177' and ('wear' in a_name or 'leveling' in a_name):
+                                                smart_data['wear_leveling_count'] = 100 - nv
+
+                                            elif attr_id == '202' and ('lifetime' in a_name or 'life' in a_name):
+                                                smart_data['ssd_life_left'] = nv
+
+                                            elif attr_id == '231' and 'life' in a_name:
+                                                smart_data['ssd_life_left'] = nv
+
+                                            elif attr_id == '241':
+                                                try:
+                                                    raw_int = int(raw_value.replace(',', ''))
+                                                    if 'gib' in a_name or '_gb' in a_name or 'writes_g' in a_name:
+                                                        smart_data['total_lbas_written'] = round(raw_int, 2)
+                                                    elif 'lba' in a_name or 'written' in a_name:
+                                                        total_gb = (raw_int * 512) / (1024 * 1024 * 1024)
+                                                        smart_data['total_lbas_written'] = round(total_gb, 2)
+                                                except ValueError:
+                                                    pass
                                             
                                     except (ValueError, IndexError) as e:
                                         # print(f"[v0] Error parsing attribute line '{line}': {e}")
