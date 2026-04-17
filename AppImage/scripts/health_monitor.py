@@ -1462,38 +1462,15 @@ class HealthMonitor:
         except Exception:
             pass
         
-        # Check disk_observations for active (non-dismissed) warnings
-        # This ensures disks with persistent observations appear in Health Monitor
-        # even if the error is not currently in the logs
-        try:
-            all_observations = health_persistence.get_disk_observations()
-            for obs in all_observations:
-                device_name = obs.get('device_name', '').replace('/dev/', '')
-                if not device_name:
-                    continue
-                severity = (obs.get('severity') or 'warning').upper()
-                # Only include if WARNING/CRITICAL and not already dismissed
-                if severity in ('WARNING', 'CRITICAL') and not obs.get('dismissed'):
-                    # Check if there's a corresponding acknowledged error in the errors table
-                    # If so, skip this observation (it was dismissed via Health Monitor)
-                    error_key = f"disk_smart_{device_name}"
-                    error_record = health_persistence.get_error_by_key(error_key)
-                    if error_record and error_record.get('acknowledged'):
-                        continue  # Skip - this was dismissed
-                    
-                    # Add to disk_errors_by_device if not already present
-                    if device_name not in disk_errors_by_device:
-                        obs_reason = obs.get('raw_message', f'{device_name}: Disk observation recorded')
-                        disk_errors_by_device[device_name] = {
-                            'status': severity,
-                            'reason': obs_reason,
-                            'error_type': obs.get('error_type', 'disk_observation'),
-                            'serial': obs.get('serial', ''),
-                            'model': obs.get('model', ''),
-                            'dismissable': True,
-                        }
-        except Exception:
-            pass
+        # NOTE: disk_observations is the PERMANENT historical record of disk events
+        # and must NOT be used as a source for Health Monitor warnings.
+        # Only the `errors` table (active alerts) drives the Health Monitor view.
+        # Observations are visible separately in the disk detail UI, where users
+        # can review the full history and dismiss individual entries if desired.
+        #
+        # Previous behavior read disk_observations here and created phantom warnings
+        # that persisted even after the underlying error was gone — conflating the
+        # permanent history with the current health state.
         
         # Add consolidated disk entries (only for disks with errors)
         for device_name, error_info in disk_errors_by_device.items():

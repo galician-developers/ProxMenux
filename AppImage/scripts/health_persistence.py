@@ -343,6 +343,12 @@ class HealthPersistence:
         # re-processed every cycle, causing infinite notification loops.
         # On upgrade, clean up any stale errors that are stuck in the
         # active state from the old buggy behavior.
+        #
+        # IMPORTANT: Only cleans the `errors` table (health monitor state).
+        # The `disk_observations` table is a PERMANENT historical record
+        # and must NEVER be auto-modified on startup. Users dismiss
+        # observations manually from the disk detail UI.
+        #
         # Covers: disk I/O (smart_*, disk_*), VM/CT (vm_*, ct_*, vmct_*),
         # and log errors (log_*) — all journal-sourced categories.
         try:
@@ -363,26 +369,9 @@ class HealthPersistence:
             ''', (cutoff,))
             cleaned_errors = cursor.rowcount
 
-            # Also dismiss stale disk observations that are still active
-            # but haven't been updated recently — leftovers from the
-            # feedback loop bug where occurrence_count kept incrementing.
-            # Detect column names for backward compatibility
-            cursor.execute('PRAGMA table_info(disk_observations)')
-            obs_cols = [col[1] for col in cursor.fetchall()]
-            last_col = 'last_occurrence' if 'last_occurrence' in obs_cols else 'last_seen'
-
-            cursor.execute(f'''
-                UPDATE disk_observations
-                SET dismissed = 1
-                WHERE dismissed = 0
-                  AND {last_col} < ?
-            ''', (cutoff,))
-            cleaned_obs = cursor.rowcount
-
-            total_cleaned = cleaned_errors + cleaned_obs
-            if total_cleaned > 0:
+            if cleaned_errors > 0:
                 conn.commit()
-                print(f"[HealthPersistence] Startup cleanup: removed {cleaned_errors} stale error(s), dismissed {cleaned_obs} stale observation(s)")
+                print(f"[HealthPersistence] Startup cleanup: removed {cleaned_errors} stale error(s) from health monitor")
         except Exception as e:
             print(f"[HealthPersistence] Startup cleanup warning: {e}")
 

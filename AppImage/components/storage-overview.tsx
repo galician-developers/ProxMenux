@@ -1450,12 +1450,11 @@ export function StorageOverview() {
                       {lifeRemaining !== null && (
                         <div className="flex flex-col items-center gap-1 flex-shrink-0">
                           <svg width="88" height="88" viewBox="0 0 88 88">
-                            <circle cx="44" cy="44" r="35" fill="none" stroke="currentColor" strokeWidth="6" className="text-muted/10" />
                             <circle cx="44" cy="44" r="35" fill="none" stroke={lifeColor} strokeWidth="6"
                               strokeDasharray={`${lifeRemaining * 2.199} 219.9`}
                               strokeLinecap="round" transform="rotate(-90 44 44)" />
                             <text x="44" y="40" textAnchor="middle" fill={lifeColor} fontSize="20" fontWeight="700">{lifeRemaining}%</text>
-                            <text x="44" y="55" textAnchor="middle" fill="currentColor" fontSize="9" className="text-muted-foreground">life</text>
+                            <text x="44" y="56" textAnchor="middle" fill="currentColor" fontSize="12" className="text-muted-foreground">life</text>
                           </svg>
                         </div>
                       )}
@@ -1466,7 +1465,7 @@ export function StorageOverview() {
                               <p className="text-xs text-muted-foreground">Wear</p>
                               <p className="text-sm font-medium text-blue-400">{wearUsed}%</p>
                             </div>
-                            <Progress value={wearUsed} className="h-1.5 [&>div]:bg-blue-500" />
+                            <Progress value={wearUsed} className="h-2 [&>div]:bg-blue-500" />
                           </div>
                         )}
                         <div className="grid grid-cols-2 gap-3">
@@ -2737,10 +2736,10 @@ ${isNvmeDisk ? `
       <div style="margin-bottom:16px;">
         <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
           <span style="font-size:12px;color:#475569;">Percentage Used</span>
-          <span style="font-size:14px;font-weight:600;color:${getWearColorHex(nvmePercentUsed)};">${nvmePercentUsed}%</span>
+          <span style="font-size:14px;font-weight:600;color:#3b82f6;">${nvmePercentUsed}%</span>
         </div>
         <div style="background:#e2e8f0;border-radius:4px;height:8px;overflow:hidden;">
-          <div style="background:${getWearColorHex(nvmePercentUsed)};height:100%;width:${Math.min(nvmePercentUsed, 100)}%;border-radius:4px;"></div>
+          <div style="background:#3b82f6;height:100%;width:${Math.min(nvmePercentUsed, 100)}%;border-radius:4px;"></div>
         </div>
       </div>
       
@@ -2885,10 +2884,10 @@ ${!isNvmeDisk && diskType === 'SSD' ? (() => {
       <div style="margin-bottom:16px;">
         <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
           <span style="font-size:12px;color:#475569;">Wear Level</span>
-          <span style="font-size:14px;font-weight:600;color:${getWearColorHex(lifeUsed)};">${lifeUsed}%</span>
+          <span style="font-size:14px;font-weight:600;color:#3b82f6;">${lifeUsed}%</span>
         </div>
         <div style="background:#e2e8f0;border-radius:4px;height:8px;overflow:hidden;">
-          <div style="background:${getWearColorHex(lifeUsed)};height:100%;width:${Math.min(lifeUsed, 100)}%;border-radius:4px;"></div>
+          <div style="background:#3b82f6;height:100%;width:${Math.min(lifeUsed, 100)}%;border-radius:4px;"></div>
         </div>
       </div>
       
@@ -3602,12 +3601,10 @@ function HistoryTab({ disk }: { disk: DiskInfo }) {
 
   if (history.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
-        <Archive className="h-10 w-10 text-muted-foreground/30" />
-        <div>
-          <p className="text-sm font-medium">No test history</p>
-          <p className="text-xs text-muted-foreground mt-1">Run a SMART test to start building history for this disk.</p>
-        </div>
+      <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+        <Archive className="h-12 w-12 mb-3 opacity-30" />
+        <span className="text-sm">No test history</span>
+        <span className="text-xs mt-1">Run a SMART test to start building history for this disk.</span>
       </div>
     )
   }

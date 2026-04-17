@@ -1194,7 +1194,7 @@ return (
                                           <span className="text-xs text-muted-foreground">{engineName}</span>
                                           <span className="text-xs font-medium">{utilizationNum.toFixed(1)}%</span>
                                         </div>
-                                        <Progress value={utilizationNum} className="h-1.5 [&>div]:bg-blue-500" />
+                                        <Progress value={utilizationNum} className="h-2 [&>div]:bg-blue-500" />
                                       </div>
                                     )
                                   })}
