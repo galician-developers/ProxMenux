@@ -4901,7 +4901,7 @@ def get_hardware_live_info():
 
     # Coral TPU and USB devices are cheap (sysfs reads + cached lsusb) and we
     # want them live so the "Install Drivers" button disappears as soon as the
-    # user finishes running install_coral_pve9.sh without needing a reload.
+    # user finishes running install_coral.sh without needing a reload.
     try:
         result['coral_tpus'] = get_coral_info()
     except Exception:

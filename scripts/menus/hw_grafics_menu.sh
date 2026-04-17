@@ -53,7 +53,7 @@ while true; do
             bash "$LOCAL_SCRIPTS/gpu_tpu/nvidia_installer.sh"
             ;;
         2)
-            bash "$LOCAL_SCRIPTS/gpu_tpu/install_coral_pve9.sh"
+            bash "$LOCAL_SCRIPTS/gpu_tpu/install_coral.sh"
             ;;
         3)
             bash "$LOCAL_SCRIPTS/gpu_tpu/add_gpu_lxc.sh"

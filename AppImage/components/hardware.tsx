@@ -238,7 +238,7 @@ export default function Hardware() {
 
   // Merge: static fields from initial load, live fields from the 5s poll.
   // coral_tpus and usb_devices live in the dynamic payload so that the
-  // "Install Drivers" button disappears immediately after install_coral_pve9.sh
+  // "Install Drivers" button disappears immediately after install_coral.sh
   // finishes, without requiring a page reload.
   const hardwareData = staticHardwareData
     ? {
@@ -2726,8 +2726,8 @@ title="AMD GPU Tools Installation"
       setShowCoralInstaller(false)
       mutateStatic()
     }}
-    scriptPath="/usr/local/share/proxmenux/scripts/gpu_tpu/install_coral_pve9.sh"
-    scriptName="install_coral_pve9"
+    scriptPath="/usr/local/share/proxmenux/scripts/gpu_tpu/install_coral.sh"
+    scriptName="install_coral"
     params={{
       EXECUTION_MODE: "web",
     }}
