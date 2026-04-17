@@ -520,6 +520,7 @@ unload_nvidia_modules() {
 }
 
 complete_nvidia_uninstall() {
+  msg_info "$(translate 'Completing NVIDIA uninstallation...')"
   stop_and_disable_nvidia_services
   unload_nvidia_modules
   

@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Cpu, HardDrive, Thermometer, Zap, Loader2, CpuIcon, Cpu as Gpu, Network, MemoryStick, PowerIcon, FanIcon, Battery } from "lucide-react"
+import { Cpu, HardDrive, Thermometer, Zap, Loader2, CpuIcon, Cpu as Gpu, Network, MemoryStick, PowerIcon, FanIcon, Battery, Usb, BrainCircuit, AlertCircle } from "lucide-react"
 import { Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import useSWR from "swr"
@@ -14,6 +14,8 @@ import {
   type GPU,
   type PCIDevice,
   type StorageDevice,
+  type CoralTPU,
+  type UsbDevice,
   fetcher as swrFetcher,
 } from "../types/hardware"
 import { fetchApi } from "@/lib/api-config"
@@ -189,6 +191,9 @@ export default function Hardware() {
   })
 
   // Merge: static fields from initial load, live fields from the 5s poll.
+  // coral_tpus and usb_devices live in the dynamic payload so that the
+  // "Install Drivers" button disappears immediately after install_coral_pve9.sh
+  // finishes, without requiring a page reload.
   const hardwareData = staticHardwareData
     ? {
         ...staticHardwareData,
@@ -197,6 +202,8 @@ export default function Hardware() {
         power_meter: dynamicHardwareData?.power_meter ?? staticHardwareData.power_meter,
         power_supplies: dynamicHardwareData?.power_supplies ?? staticHardwareData.power_supplies,
         ups: dynamicHardwareData?.ups ?? staticHardwareData.ups,
+        coral_tpus: dynamicHardwareData?.coral_tpus ?? staticHardwareData.coral_tpus,
+        usb_devices: dynamicHardwareData?.usb_devices ?? staticHardwareData.usb_devices,
       }
     : undefined
 
@@ -230,6 +237,9 @@ export default function Hardware() {
   const [installingNvidiaDriver, setInstallingNvidiaDriver] = useState(false)
   const [showAmdInstaller, setShowAmdInstaller] = useState(false)
   const [showIntelInstaller, setShowIntelInstaller] = useState(false)
+  const [showCoralInstaller, setShowCoralInstaller] = useState(false)
+  const [selectedCoral, setSelectedCoral] = useState<CoralTPU | null>(null)
+  const [selectedUsbDevice, setSelectedUsbDevice] = useState<UsbDevice | null>(null)
   
   // GPU Switch Mode states
   const [editingSwitchModeGpu, setEditingSwitchModeGpu] = useState<string | null>(null) // GPU slot being edited
@@ -1306,6 +1316,222 @@ return (
         </DialogContent>
       </Dialog>
 
+      {/* Coral TPU / AI Accelerators — only rendered when at least one device is detected.
+          Unlike GPUs, Coral exposes no temperature/utilization/power counters, so the
+          modal shows identity + driver state + an Install CTA when drivers are missing. */}
+      {hardwareData?.coral_tpus && hardwareData.coral_tpus.length > 0 && (
+        <Card className="border-border/50 bg-card/50 p-6">
+          <div className="mb-4 flex items-center gap-2">
+            <BrainCircuit className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold">Coral TPU / AI Accelerators</h2>
+            <Badge variant="outline" className="ml-auto">
+              {hardwareData.coral_tpus.length} device{hardwareData.coral_tpus.length > 1 ? "s" : ""}
+            </Badge>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {hardwareData.coral_tpus.map((coral, index) => (
+              <div
+                key={`coral-${index}-${coral.slot || coral.bus_device}`}
+                onClick={() => setSelectedCoral(coral)}
+                className="cursor-pointer rounded-lg border border-white/10 sm:border-border bg-white/5 sm:bg-card sm:hover:bg-white/5 p-4 transition-colors"
+              >
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="text-sm font-medium line-clamp-2 break-words flex-1">
+                    {coral.name}
+                  </span>
+                  <Badge
+                    className={
+                      coral.type === "usb"
+                        ? "bg-purple-500/10 text-purple-500 border-purple-500/20 px-2.5 py-0.5 shrink-0"
+                        : "bg-blue-500/10 text-blue-500 border-blue-500/20 px-2.5 py-0.5 shrink-0"
+                    }
+                  >
+                    {coral.type === "usb" ? "USB" : "PCIe"}
+                  </Badge>
+                </div>
+
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  {coral.form_factor && (
+                    <div className="flex items-center gap-1.5">
+                      <span>{coral.form_factor}</span>
+                      {coral.interface_speed && <span className="text-muted-foreground/60">· {coral.interface_speed}</span>}
+                    </div>
+                  )}
+                  <div className="font-mono">
+                    {coral.type === "pcie" ? coral.slot : coral.bus_device}
+                  </div>
+                </div>
+
+                <div className="mt-3 flex items-center gap-2 text-xs">
+                  {coral.drivers_ready ? (
+                    <>
+                      <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                      <span className="text-green-500">Drivers ready</span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="h-3.5 w-3.5 text-yellow-500" />
+                      <span className="text-yellow-500">Drivers not installed</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Primary CTA at the section level when ANY of the detected Coral devices
+              is missing drivers — avoids a per-card button repetition. */}
+          {hardwareData.coral_tpus.some((c) => !c.drivers_ready) && (
+            <div className="mt-4 rounded-lg border border-blue-500/20 bg-blue-500/10 p-3 flex items-center justify-between gap-3">
+              <div className="flex items-start gap-3 flex-1">
+                <AlertCircle className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
+                <div className="text-sm">
+                  <p className="font-medium text-blue-500">Install Coral TPU drivers</p>
+                  <p className="text-xs text-muted-foreground">
+                    One or more detected Coral devices need drivers. A server reboot is required after installation.
+                  </p>
+                </div>
+              </div>
+              <Button
+                onClick={() => setShowCoralInstaller(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white shrink-0"
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Install Drivers
+              </Button>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Coral TPU detail modal */}
+      <Dialog open={selectedCoral !== null} onOpenChange={(open) => !open && setSelectedCoral(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{selectedCoral?.name}</DialogTitle>
+            <DialogDescription>Coral TPU Device Information</DialogDescription>
+          </DialogHeader>
+
+          {selectedCoral && (
+            <div className="space-y-3">
+              <div className="flex justify-between border-b border-border/50 pb-2">
+                <span className="text-sm font-medium text-muted-foreground">Connection</span>
+                <Badge
+                  className={
+                    selectedCoral.type === "usb"
+                      ? "bg-purple-500/10 text-purple-500 border-purple-500/20"
+                      : "bg-blue-500/10 text-blue-500 border-blue-500/20"
+                  }
+                >
+                  {selectedCoral.type === "usb" ? "USB" : "PCIe / M.2"}
+                </Badge>
+              </div>
+
+              {selectedCoral.form_factor && (
+                <div className="flex justify-between border-b border-border/50 pb-2">
+                  <span className="text-sm font-medium text-muted-foreground">Form Factor</span>
+                  <span className="text-sm">{selectedCoral.form_factor}</span>
+                </div>
+              )}
+
+              {selectedCoral.interface_speed && (
+                <div className="flex justify-between border-b border-border/50 pb-2">
+                  <span className="text-sm font-medium text-muted-foreground">Link</span>
+                  <span className="font-mono text-sm">{selectedCoral.interface_speed}</span>
+                </div>
+              )}
+
+              <div className="flex justify-between border-b border-border/50 pb-2">
+                <span className="text-sm font-medium text-muted-foreground">
+                  {selectedCoral.type === "usb" ? "Bus:Device" : "PCI Slot"}
+                </span>
+                <span className="font-mono text-sm">
+                  {selectedCoral.type === "usb" ? selectedCoral.bus_device : selectedCoral.slot}
+                </span>
+              </div>
+
+              <div className="flex justify-between border-b border-border/50 pb-2">
+                <span className="text-sm font-medium text-muted-foreground">Vendor / Product ID</span>
+                <span className="font-mono text-sm">
+                  {selectedCoral.vendor_id}:{selectedCoral.device_id}
+                </span>
+              </div>
+
+              <div className="flex justify-between border-b border-border/50 pb-2">
+                <span className="text-sm font-medium text-muted-foreground">Vendor</span>
+                <span className="text-sm">{selectedCoral.vendor}</span>
+              </div>
+
+              {selectedCoral.type === "pcie" && selectedCoral.kernel_driver && (
+                <div className="flex justify-between border-b border-border/50 pb-2">
+                  <span className="text-sm font-medium text-muted-foreground">Kernel Driver</span>
+                  <span className={`font-mono text-sm ${selectedCoral.kernel_driver === "apex" ? "text-green-500" : "text-yellow-500"}`}>
+                    {selectedCoral.kernel_driver}
+                  </span>
+                </div>
+              )}
+
+              {selectedCoral.kernel_modules && (
+                <div className="flex justify-between border-b border-border/50 pb-2">
+                  <span className="text-sm font-medium text-muted-foreground">Kernel Modules</span>
+                  <div className="flex gap-2">
+                    <Badge variant="outline" className={selectedCoral.kernel_modules.gasket ? "text-green-500 border-green-500/20" : "text-red-500 border-red-500/20"}>
+                      gasket {selectedCoral.kernel_modules.gasket ? "✓" : "✗"}
+                    </Badge>
+                    <Badge variant="outline" className={selectedCoral.kernel_modules.apex ? "text-green-500 border-green-500/20" : "text-red-500 border-red-500/20"}>
+                      apex {selectedCoral.kernel_modules.apex ? "✓" : "✗"}
+                    </Badge>
+                  </div>
+                </div>
+              )}
+
+              {selectedCoral.device_nodes && selectedCoral.device_nodes.length > 0 && (
+                <div className="flex justify-between border-b border-border/50 pb-2">
+                  <span className="text-sm font-medium text-muted-foreground">Device Nodes</span>
+                  <span className="font-mono text-xs text-right">
+                    {selectedCoral.device_nodes.join(", ")}
+                  </span>
+                </div>
+              )}
+
+              {selectedCoral.type === "usb" && (
+                <div className="flex justify-between border-b border-border/50 pb-2">
+                  <span className="text-sm font-medium text-muted-foreground">Runtime State</span>
+                  <span className="text-sm">
+                    {selectedCoral.programmed ? "Programmed (runtime loaded)" : "Unprogrammed (runtime not loaded)"}
+                  </span>
+                </div>
+              )}
+
+              <div className="flex justify-between border-b border-border/50 pb-2">
+                <span className="text-sm font-medium text-muted-foreground">Edge TPU Runtime</span>
+                <span className="text-sm text-right">
+                  {selectedCoral.edgetpu_runtime || <span className="text-muted-foreground/60">not installed</span>}
+                </span>
+              </div>
+
+              <div className="mt-4 rounded-md border border-border/50 bg-muted/30 p-3 text-xs text-muted-foreground">
+                <strong className="text-foreground">Note:</strong> Coral TPUs do not expose temperature, utilization or power telemetry through standard interfaces. Monitoring is limited to device presence and driver state.
+              </div>
+
+              {!selectedCoral.drivers_ready && (
+                <Button
+                  onClick={() => {
+                    setSelectedCoral(null)
+                    setShowCoralInstaller(true)
+                  }}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Install Coral TPU Drivers
+                </Button>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Power Consumption */}
       {hardwareData?.power_meter && (
         <Card className="border-border/50 bg-card/50 p-6">
@@ -2215,6 +2441,125 @@ return (
         </DialogContent>
       </Dialog>
 
+      {/* USB Devices — everything physically plugged into the host's USB ports.
+          Root hubs (vendor 1d6b) are already filtered out by the backend. The
+          section is hidden on headless servers that have nothing attached. */}
+      {hardwareData?.usb_devices && hardwareData.usb_devices.length > 0 && (
+        <Card className="border-border/50 bg-card/50 p-6">
+          <div className="mb-4 flex items-center gap-2">
+            <Usb className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold">USB Devices</h2>
+            <Badge variant="outline" className="ml-auto">
+              {hardwareData.usb_devices.length} device{hardwareData.usb_devices.length > 1 ? "s" : ""}
+            </Badge>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {hardwareData.usb_devices.map((usb, index) => (
+              <div
+                key={`usb-${index}-${usb.bus_device}`}
+                onClick={() => setSelectedUsbDevice(usb)}
+                className="cursor-pointer rounded-lg border border-white/10 sm:border-border bg-white/5 sm:bg-card sm:hover:bg-white/5 p-3 transition-colors"
+              >
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="text-sm font-medium line-clamp-2 break-words flex-1">
+                    {usb.name}
+                  </span>
+                  <Badge className={getDeviceTypeColor(usb.class_label)}>
+                    {usb.class_label}
+                  </Badge>
+                </div>
+                <div className="space-y-0.5 text-xs text-muted-foreground">
+                  {usb.speed_label && <div>{usb.speed_label}</div>}
+                  <div className="font-mono">
+                    {usb.bus_device} · {usb.vendor_id}:{usb.product_id}
+                  </div>
+                  {usb.driver && (
+                    <div className="font-mono text-green-500/80">Driver: {usb.driver}</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* USB Device detail modal — mirrors the PCI Device modal for consistency. */}
+      <Dialog open={selectedUsbDevice !== null} onOpenChange={(open) => !open && setSelectedUsbDevice(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{selectedUsbDevice?.name}</DialogTitle>
+            <DialogDescription>USB Device Information</DialogDescription>
+          </DialogHeader>
+
+          {selectedUsbDevice && (
+            <div className="space-y-3">
+              <div className="flex justify-between border-b border-border/50 pb-2">
+                <span className="text-sm font-medium text-muted-foreground">Class</span>
+                <Badge className={getDeviceTypeColor(selectedUsbDevice.class_label)}>
+                  {selectedUsbDevice.class_label}
+                </Badge>
+              </div>
+
+              <div className="flex justify-between border-b border-border/50 pb-2">
+                <span className="text-sm font-medium text-muted-foreground">Bus:Device</span>
+                <span className="font-mono text-sm">{selectedUsbDevice.bus_device}</span>
+              </div>
+
+              <div className="flex justify-between border-b border-border/50 pb-2">
+                <span className="text-sm font-medium text-muted-foreground">Device Name</span>
+                <span className="text-sm text-right">{selectedUsbDevice.name}</span>
+              </div>
+
+              {selectedUsbDevice.vendor && (
+                <div className="flex justify-between border-b border-border/50 pb-2">
+                  <span className="text-sm font-medium text-muted-foreground">Vendor</span>
+                  <span className="text-sm">{selectedUsbDevice.vendor}</span>
+                </div>
+              )}
+
+              <div className="flex justify-between border-b border-border/50 pb-2">
+                <span className="text-sm font-medium text-muted-foreground">Vendor / Product ID</span>
+                <span className="font-mono text-sm">
+                  {selectedUsbDevice.vendor_id}:{selectedUsbDevice.product_id}
+                </span>
+              </div>
+
+              {selectedUsbDevice.speed_label && (
+                <div className="flex justify-between border-b border-border/50 pb-2">
+                  <span className="text-sm font-medium text-muted-foreground">Speed</span>
+                  <span className="text-sm">
+                    {selectedUsbDevice.speed_label}
+                    {selectedUsbDevice.speed_mbps > 0 && (
+                      <span className="text-muted-foreground/60 ml-2">({selectedUsbDevice.speed_mbps} Mbps)</span>
+                    )}
+                  </span>
+                </div>
+              )}
+
+              <div className="flex justify-between border-b border-border/50 pb-2">
+                <span className="text-sm font-medium text-muted-foreground">Class Code</span>
+                <span className="font-mono text-sm">0x{selectedUsbDevice.class_code}</span>
+              </div>
+
+              {selectedUsbDevice.driver && (
+                <div className="flex justify-between border-b border-border/50 pb-2">
+                  <span className="text-sm font-medium text-muted-foreground">Driver</span>
+                  <span className="font-mono text-sm text-green-500">{selectedUsbDevice.driver}</span>
+                </div>
+              )}
+
+              {selectedUsbDevice.serial && (
+                <div className="flex justify-between border-b border-border/50 pb-2">
+                  <span className="text-sm font-medium text-muted-foreground">Serial</span>
+                  <span className="font-mono text-sm text-right break-all">{selectedUsbDevice.serial}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* NVIDIA Installation Monitor */}
       {/* <HybridScriptMonitor
         sessionId={nvidiaSessionId}
@@ -2272,6 +2617,20 @@ title="AMD GPU Tools Installation"
   }}
   title="Intel GPU Tools Installation"
   description="Installing intel-gpu-tools for Intel GPU monitoring..."
+  />
+  <ScriptTerminalModal
+    open={showCoralInstaller}
+    onClose={() => {
+      setShowCoralInstaller(false)
+      mutateStatic()
+    }}
+    scriptPath="/usr/local/share/proxmenux/scripts/gpu_tpu/install_coral_pve9.sh"
+    scriptName="install_coral_pve9"
+    params={{
+      EXECUTION_MODE: "web",
+    }}
+    title="Coral TPU Driver Installation"
+    description="Installing gasket + apex kernel modules and Edge TPU runtime..."
   />
   
   {/* GPU Switch Mode Modal */}

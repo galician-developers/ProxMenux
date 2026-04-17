@@ -7,6 +7,7 @@ ProxMenux Flask Server
 - Integrates a web terminal powered by xterm.js
 """
 
+import glob
 import json
 import logging
 import math
@@ -1185,6 +1186,17 @@ _ipmi_cache = {
 }
 _IPMI_CACHE_TTL = 10  # 10 seconds
 
+# Cache for `lsusb -v` output. Parsed for the USB devices section and the Coral
+# USB detector. USB plug/unplug events are rare enough that a 60s TTL is safe.
+_lsusb_cache = {
+    'simple': None,        # output of `lsusb` (short form)
+    'simple_time': 0,
+    'verbose': None,       # output of `lsusb -v` (detailed form with speed, driver)
+    'verbose_time': 0,
+    'unavailable': False,  # set True if lsusb is missing
+}
+_LSUSB_CACHE_TTL = 60  # 60 seconds
+
 # Cache for hardware info (lspci, dmidecode, lsblk)
 _hardware_cache = {
     'lspci': None,
@@ -1290,16 +1302,16 @@ def get_cached_lspci_k():
     """Get lspci -k output with 5 minute cache."""
     global _hardware_cache
     now = time.time()
-    
+
     cache_key = 'lspci_k'
     if cache_key not in _hardware_cache:
         _hardware_cache[cache_key] = None
         _hardware_cache[cache_key + '_time'] = 0
-    
+
     if _hardware_cache[cache_key] is not None and \
        now - _hardware_cache[cache_key + '_time'] < _HARDWARE_CACHE_TTL:
         return _hardware_cache[cache_key]
-    
+
     try:
         result = subprocess.run(['lspci', '-k'], capture_output=True, text=True, timeout=10)
         if result.returncode == 0:
@@ -1309,6 +1321,416 @@ def get_cached_lspci_k():
     except Exception:
         pass
     return _hardware_cache[cache_key] or ''
+
+
+# ============================================================================
+# USB device enumeration (used by both USB section and Coral USB detector)
+# ============================================================================
+
+def get_cached_lsusb():
+    """Get plain `lsusb` output with 60s cache. Lightweight; just IDs + names."""
+    global _lsusb_cache
+    now = time.time()
+
+    if _lsusb_cache['unavailable']:
+        return ''
+
+    if _lsusb_cache['simple'] is not None and \
+       now - _lsusb_cache['simple_time'] < _LSUSB_CACHE_TTL:
+        return _lsusb_cache['simple']
+
+    try:
+        result = subprocess.run(['lsusb'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            _lsusb_cache['simple'] = result.stdout
+            _lsusb_cache['simple_time'] = now
+            return result.stdout
+    except FileNotFoundError:
+        _lsusb_cache['unavailable'] = True
+        return ''
+    except Exception:
+        pass
+    return _lsusb_cache['simple'] or ''
+
+
+def _usb_speed_label(mbps):
+    """Map USB sysfs speed (Mbps) to a human-readable label."""
+    try:
+        m = int(mbps)
+    except (ValueError, TypeError):
+        return ''
+    # These are the standard USB generation speeds.
+    if m >= 20000:
+        return 'USB 3.2 Gen 2x2'
+    if m >= 10000:
+        return 'USB 3.1 Gen 2'
+    if m >= 5000:
+        return 'USB 3.0'
+    if m >= 480:
+        return 'USB 2.0'
+    if m >= 12:
+        return 'USB 1.1'
+    return 'USB 1.0'
+
+
+_USB_CLASS_LABELS = {
+    '00': 'Device Specific',
+    '01': 'Audio',
+    '02': 'Communications',
+    '03': 'HID',
+    '05': 'Physical',
+    '06': 'Imaging',
+    '07': 'Printer',
+    '08': 'Mass Storage',
+    '09': 'Hub',
+    '0a': 'CDC Data',
+    '0b': 'Smart Card',
+    '0d': 'Content Security',
+    '0e': 'Video',
+    '0f': 'Personal Healthcare',
+    '10': 'Audio/Video',
+    '11': 'Billboard',
+    'dc': 'Diagnostic',
+    'e0': 'Wireless Controller',
+    'ef': 'Miscellaneous',
+    'fe': 'Application Specific',
+    'ff': 'Vendor Specific',
+}
+
+
+def _read_sysfs(path, default=''):
+    """Read and trim a sysfs attribute file. Returns default on error."""
+    try:
+        with open(path, 'r') as f:
+            return f.read().strip()
+    except Exception:
+        return default
+
+
+def _interface_class_from_usb_device(dev_path):
+    """When bDeviceClass is 00, the device delegates classification to the
+    first interface. Read bInterfaceClass from <dev>/<dev>:1.0/bInterfaceClass.
+    """
+    try:
+        # Sysfs names interfaces as <busnum>-<portpath>:1.0 etc.
+        base = os.path.basename(dev_path)
+        iface_file = os.path.join(dev_path, f'{base}:1.0', 'bInterfaceClass')
+        return _read_sysfs(iface_file, '')
+    except Exception:
+        return ''
+
+
+def _get_usb_driver(dev_path):
+    """Best-effort bound driver name for a USB device.
+
+    USB drivers are usually bound at the *interface* level (:1.0, :1.1...),
+    not the device level. We peek at the first interface.
+    """
+    try:
+        base = os.path.basename(dev_path)
+        for ifnum in ('1.0', '1.1', '1.2'):
+            drv_link = os.path.join(dev_path, f'{base}:{ifnum}', 'driver')
+            if os.path.islink(drv_link):
+                return os.path.basename(os.readlink(drv_link))
+    except Exception:
+        pass
+    return ''
+
+
+def get_usb_devices():
+    """Enumerate physically connected USB peripherals.
+
+    Skips virtual root hubs (vendor 1d6b = Linux Foundation). Each entry is
+    a dict with fields suited to the "USB Devices" section in the hardware UI.
+    """
+    devices = []
+    usb_root = '/sys/bus/usb/devices'
+    if not os.path.isdir(usb_root):
+        return devices
+
+    # Human-readable vendor/product names live in `lsusb` simple output.
+    # Build a quick lookup by "bus:dev".
+    name_map = {}
+    try:
+        for line in get_cached_lsusb().split('\n'):
+            m = re.match(
+                r'Bus\s+(\d+)\s+Device\s+(\d+):\s+ID\s+([0-9a-f]{4}):([0-9a-f]{4})\s+(.*)',
+                line, re.IGNORECASE)
+            if m:
+                bus, dev, _vid, _pid, rest = m.groups()
+                name_map[f'{int(bus):03d}:{int(dev):03d}'] = rest.strip()
+    except Exception:
+        pass
+
+    try:
+        for entry in sorted(os.listdir(usb_root)):
+            dev_path = os.path.join(usb_root, entry)
+            # Interface nodes look like "1-0:1.0" — skip, we only want devices.
+            if ':' in entry:
+                continue
+
+            vendor_id = _read_sysfs(os.path.join(dev_path, 'idVendor'))
+            product_id = _read_sysfs(os.path.join(dev_path, 'idProduct'))
+            if not vendor_id or not product_id:
+                continue
+
+            # Skip virtual root hubs (Linux Foundation hubs).
+            if vendor_id.lower() == '1d6b':
+                continue
+
+            busnum = _read_sysfs(os.path.join(dev_path, 'busnum'), '0')
+            devnum = _read_sysfs(os.path.join(dev_path, 'devnum'), '0')
+            bus_device = f'{int(busnum):03d}:{int(devnum):03d}'
+
+            manufacturer = _read_sysfs(os.path.join(dev_path, 'manufacturer'))
+            product_name = _read_sysfs(os.path.join(dev_path, 'product'))
+
+            # Fall back to lsusb-derived name when sysfs strings are absent.
+            lsusb_name = name_map.get(bus_device, '')
+            display_name = product_name or lsusb_name or f'USB device {vendor_id}:{product_id}'
+            display_vendor = manufacturer or (lsusb_name.split()[0] if lsusb_name else '')
+
+            speed_raw = _read_sysfs(os.path.join(dev_path, 'speed'))
+            speed_label = _usb_speed_label(speed_raw)
+
+            device_class = _read_sysfs(os.path.join(dev_path, 'bDeviceClass'), '00').lower()
+            if device_class == '00':
+                device_class = _interface_class_from_usb_device(dev_path).lower()
+            class_label = _USB_CLASS_LABELS.get(device_class, 'Unknown')
+
+            serial = _read_sysfs(os.path.join(dev_path, 'serial'))
+            driver = _get_usb_driver(dev_path)
+
+            devices.append({
+                'bus_device': bus_device,
+                'vendor_id': vendor_id.lower(),
+                'product_id': product_id.lower(),
+                'vendor': display_vendor,
+                'name': display_name,
+                'class_code': device_class,
+                'class_label': class_label,
+                'speed_mbps': int(speed_raw) if speed_raw.isdigit() else 0,
+                'speed_label': speed_label,
+                'serial': serial,
+                'driver': driver,
+            })
+    except Exception:
+        # Never break the hardware payload just because USB enumeration fails.
+        pass
+
+    return devices
+
+
+# ============================================================================
+# Coral TPU (Edge TPU) detection — M.2 / PCIe + USB
+# Google Edge TPU USB IDs:
+#   1a6e:089a  Global Unichip Corp.  (unprogrammed — before runtime loads fw)
+#   18d1:9302  Google Inc.           (programmed   — after runtime talks to it)
+# M.2 / Mini PCIe Coral uses vendor 0x1ac1 (Global Unichip Corp.).
+# ============================================================================
+
+CORAL_USB_IDS = {('1a6e', '089a'), ('18d1', '9302')}
+CORAL_PCI_VENDOR = '0x1ac1'
+
+
+def _coral_kernel_modules_loaded():
+    """Returns (gasket_loaded, apex_loaded) based on /proc/modules."""
+    gasket = apex = False
+    try:
+        with open('/proc/modules', 'r') as f:
+            for line in f:
+                name = line.split(' ', 1)[0]
+                if name == 'gasket':
+                    gasket = True
+                elif name == 'apex':
+                    apex = True
+    except Exception:
+        pass
+    return gasket, apex
+
+
+def _coral_device_nodes():
+    """Find /dev/apex_* device nodes (PCIe Coral creates these)."""
+    try:
+        from glob import glob
+        return sorted(glob('/dev/apex_*'))
+    except Exception:
+        return []
+
+
+def _coral_edgetpu_runtime_version():
+    """Return the installed libedgetpu1 package version, or empty string.
+
+    Checks both -std and -max variants (max enables full clock; std is default).
+    """
+    for pkg in ('libedgetpu1-std', 'libedgetpu1-max'):
+        try:
+            result = subprocess.run(
+                ['dpkg-query', '-W', '-f=${Version}', pkg],
+                capture_output=True, text=True, timeout=3)
+            if result.returncode == 0 and result.stdout.strip():
+                return f'{pkg} {result.stdout.strip()}'
+        except Exception:
+            continue
+    return ''
+
+
+def _coral_pcie_name_from_lspci(slot):
+    """Best-effort human name for a PCIe Coral from cached lspci output."""
+    try:
+        # Match either full slot (0000:0c:00.0) or short form (0c:00.0).
+        short = slot.split(':', 1)[1] if slot.count(':') >= 2 else slot
+        for line in get_cached_lspci().split('\n'):
+            if line.startswith(short):
+                # Format: "0c:00.0 <class>: <vendor> <device>"
+                parts = line.split(':', 2)
+                if len(parts) >= 3:
+                    return parts[2].strip()
+    except Exception:
+        pass
+    return 'Coral Edge TPU'
+
+
+def _coral_pci_form_factor(dev_path):
+    """Heuristic form factor for a Coral PCIe/M.2 device.
+
+    Without a perfectly reliable sysfs indicator we key off the PCIe link
+    width: Coral M.2 modules are always x1. This keeps the label simple and
+    accurate for the common cases without over-promising.
+    """
+    try:
+        width = _read_sysfs(os.path.join(dev_path, 'current_link_width'), '')
+        if width == '1':
+            return 'M.2 / Mini PCIe (x1)'
+    except Exception:
+        pass
+    return 'PCIe'
+
+
+def _coral_pci_speed(dev_path):
+    try:
+        speed = _read_sysfs(os.path.join(dev_path, 'current_link_speed'), '')
+        width = _read_sysfs(os.path.join(dev_path, 'current_link_width'), '')
+        if speed and width:
+            return f'PCIe {speed} x{width}'
+    except Exception:
+        pass
+    return ''
+
+
+def get_coral_info():
+    """Detect Coral TPU accelerators (PCIe/M.2 + USB).
+
+    Returns a list of dicts — empty if no Coral is present. The payload is
+    intentionally minimal: Coral exposes no temperature/utilization/power
+    counters, so the UI only needs identity + driver/runtime state.
+    """
+    coral_devices = []
+    gasket_loaded, apex_loaded = _coral_kernel_modules_loaded()
+    device_nodes = _coral_device_nodes()
+    runtime = _coral_edgetpu_runtime_version()
+
+    # ── PCIe / M.2 Coral ────────────────────────────────────────────────
+    try:
+        for dev_path in sorted(glob.glob('/sys/bus/pci/devices/*')):
+            vendor = _read_sysfs(os.path.join(dev_path, 'vendor'))
+            if vendor.lower() != CORAL_PCI_VENDOR:
+                continue
+
+            slot = os.path.basename(dev_path)
+            device_id = _read_sysfs(os.path.join(dev_path, 'device'), '').replace('0x', '')
+            vendor_id = vendor.replace('0x', '')
+
+            driver_name = ''
+            drv_link = os.path.join(dev_path, 'driver')
+            if os.path.islink(drv_link):
+                driver_name = os.path.basename(os.readlink(drv_link))
+
+            # "drivers_ready" for PCIe = apex bound and kernel modules present
+            drivers_ready = (driver_name == 'apex') and apex_loaded
+
+            coral_devices.append({
+                'type': 'pcie',
+                'name': _coral_pcie_name_from_lspci(slot),
+                'vendor': 'Global Unichip Corp.',
+                'vendor_id': vendor_id,
+                'device_id': device_id,
+                'slot': slot,
+                'form_factor': _coral_pci_form_factor(dev_path),
+                'interface_speed': _coral_pci_speed(dev_path),
+                'kernel_driver': driver_name or None,
+                'kernel_modules': {
+                    'gasket': gasket_loaded,
+                    'apex': apex_loaded,
+                },
+                'device_nodes': device_nodes,
+                'edgetpu_runtime': runtime,
+                'drivers_ready': drivers_ready,
+            })
+    except Exception:
+        pass
+
+    # ── USB Coral Accelerator ───────────────────────────────────────────
+    try:
+        for line in get_cached_lsusb().split('\n'):
+            m = re.match(
+                r'Bus\s+(\d+)\s+Device\s+(\d+):\s+ID\s+([0-9a-f]{4}):([0-9a-f]{4})\s+(.*)',
+                line, re.IGNORECASE)
+            if not m:
+                continue
+            bus, dev, vid, pid, rest = m.groups()
+            vid = vid.lower()
+            pid = pid.lower()
+            if (vid, pid) not in CORAL_USB_IDS:
+                continue
+
+            programmed = (vid == '18d1')  # switched-state vendor/product after fw load
+
+            # Best-effort sysfs path for USB speed.
+            bus_device = f'{int(bus):03d}:{int(dev):03d}'
+            usb_speed_label = ''
+            usb_driver = ''
+            try:
+                for usb_dev_dir in glob.glob('/sys/bus/usb/devices/*'):
+                    base = os.path.basename(usb_dev_dir)
+                    if ':' in base:
+                        continue
+                    b = _read_sysfs(os.path.join(usb_dev_dir, 'busnum'), '0')
+                    d = _read_sysfs(os.path.join(usb_dev_dir, 'devnum'), '0')
+                    if f'{int(b):03d}:{int(d):03d}' == bus_device:
+                        usb_speed_label = _usb_speed_label(
+                            _read_sysfs(os.path.join(usb_dev_dir, 'speed'), ''))
+                        usb_driver = _get_usb_driver(usb_dev_dir)
+                        break
+            except Exception:
+                pass
+
+            # "drivers_ready" for USB = edgetpu runtime is installed.
+            # The USB Accelerator does not use a kernel driver; it speaks libusb
+            # straight to userspace via the libedgetpu1 library.
+            drivers_ready = bool(runtime)
+
+            coral_devices.append({
+                'type': 'usb',
+                'name': 'Coral USB Accelerator',
+                'vendor': rest.strip() or 'Google Inc.',
+                'vendor_id': vid,
+                'device_id': pid,
+                'bus_device': bus_device,
+                'form_factor': 'USB Accelerator',
+                'interface_speed': usb_speed_label,
+                'programmed': programmed,
+                'usb_driver': usb_driver or None,
+                'kernel_driver': None,   # USB Coral uses libusb in userspace
+                'kernel_modules': {'gasket': gasket_loaded, 'apex': apex_loaded},
+                'device_nodes': [],       # No /dev/apex_* for USB
+                'edgetpu_runtime': runtime,
+                'drivers_ready': drivers_ready,
+            })
+    except Exception:
+        pass
+
+    return coral_devices
 
 
 def get_proxmox_version():
@@ -4299,6 +4721,8 @@ def get_hardware_live_info():
         'power_meter': None,
         'power_supplies': [],
         'ups': None,
+        'coral_tpus': [],
+        'usb_devices': [],
     }
 
     try:
@@ -4334,6 +4758,19 @@ def get_hardware_live_info():
         ups_info = get_ups_info()
         if ups_info:
             result['ups'] = ups_info
+    except Exception:
+        pass
+
+    # Coral TPU and USB devices are cheap (sysfs reads + cached lsusb) and we
+    # want them live so the "Install Drivers" button disappears as soon as the
+    # user finishes running install_coral_pve9.sh without needing a reload.
+    try:
+        result['coral_tpus'] = get_coral_info()
+    except Exception:
+        pass
+
+    try:
+        result['usb_devices'] = get_usb_devices()
     except Exception:
         pass
 
@@ -6293,7 +6730,7 @@ def get_hardware_info():
             hardware_data['ups'] = ups_info
         
         hardware_data['gpus'] = get_gpu_info()
-        
+
         # Enrich PCI devices with GPU info where applicable
         for pci_device in hardware_data['pci_devices']:
             if pci_device.get('type') == 'Graphics Card':
@@ -6301,7 +6738,16 @@ def get_hardware_info():
                     if pci_device.get('slot') == gpu.get('slot'):
                         pci_device['gpu_info'] = gpu # Add the detected GPU info directly
                         break
-        
+
+        # Coral TPU (Edge TPU) — dedicated section in the Hardware UI.
+        # Empty list when no Coral is connected; the frontend skips the section.
+        hardware_data['coral_tpus'] = get_coral_info()
+
+        # USB peripherals currently plugged into the host. Lists non-hub
+        # devices (Coral USB accelerators, UPSs, keyboards/mice, pendrives,
+        # serial adapters, etc.). Empty list on headless servers.
+        hardware_data['usb_devices'] = get_usb_devices()
+
         return hardware_data
         
     except Exception as e:
@@ -9368,7 +9814,9 @@ def api_hardware():
             'power_supplies': hardware_info.get('ipmi_power', {}).get('power_supplies', []),
             'power_meter': hardware_info.get('power_meter'),
             'ups': hardware_info.get('ups') if hardware_info.get('ups') else None,
-            'gpus': hardware_info.get('gpus', [])
+            'gpus': hardware_info.get('gpus', []),
+            'coral_tpus': hardware_info.get('coral_tpus', []),
+            'usb_devices': hardware_info.get('usb_devices', []),
         }
         
 
