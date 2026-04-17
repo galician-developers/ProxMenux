@@ -191,6 +191,7 @@ interface ProxMenuxTool {
   enabled: boolean
   version?: string
   has_source?: boolean
+  deprecated?: boolean
 }
 
 interface RemoteStorage {
@@ -234,7 +235,8 @@ export function Settings() {
     source: string
     script: string
     error: string
-  }>({ open: false, loading: false, toolName: '', version: '', functionName: '', source: '', script: '', error: '' })
+    deprecated: boolean
+  }>({ open: false, loading: false, toolName: '', version: '', functionName: '', source: '', script: '', error: '', deprecated: false })
   const [codeCopied, setCodeCopied] = useState(false)
   
   // Health Monitor suppression settings
@@ -278,11 +280,11 @@ export function Settings() {
   }
 
   const viewToolSource = async (tool: ProxMenuxTool) => {
-    setCodeModal({ open: true, loading: true, toolName: tool.name, version: tool.version || '1.0', functionName: '', source: '', script: '', error: '' })
+    setCodeModal({ open: true, loading: true, toolName: tool.name, version: tool.version || '1.0', functionName: '', source: '', script: '', error: '', deprecated: !!tool.deprecated })
     try {
       const data = await fetchApi(`/api/proxmenux/tool-source/${tool.key}`)
       if (data.success) {
-        setCodeModal(prev => ({ ...prev, loading: false, functionName: data.function, source: data.source, script: data.script }))
+        setCodeModal(prev => ({ ...prev, loading: false, functionName: data.function, source: data.source, script: data.script, deprecated: !!data.deprecated }))
       } else {
         setCodeModal(prev => ({ ...prev, loading: false, error: data.error || 'Source code not available' }))
       }
@@ -1019,16 +1021,22 @@ export function Settings() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {proxmenuxTools.map((tool) => {
                   const clickable = !!tool.has_source
+                  const isDeprecated = !!tool.deprecated
                   return (
                     <div
                       key={tool.key}
                       onClick={clickable ? () => viewToolSource(tool) : undefined}
                       className={`flex items-center justify-between gap-2 p-3 bg-muted/50 rounded-lg border border-border transition-colors ${clickable ? 'hover:bg-muted hover:border-orange-500/40 cursor-pointer' : ''}`}
-                      title={clickable ? 'Click to view source code' : undefined}
+                      title={clickable ? (isDeprecated ? 'Legacy optimization — click to view source' : 'Click to view source code') : undefined}
                     >
                       <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
+                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isDeprecated ? 'bg-amber-500' : 'bg-green-500'}`} />
                         <span className="text-sm font-medium truncate">{tool.name}</span>
+                        {isDeprecated && (
+                          <span className="text-[9px] uppercase tracking-wider text-amber-500 bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded flex-shrink-0">
+                            legacy
+                          </span>
+                        )}
                       </div>
                       <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono flex-shrink-0">v{tool.version || '1.0'}</span>
                     </div>
@@ -1051,9 +1059,16 @@ export function Settings() {
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-border">
               <div className="flex items-center gap-3 min-w-0">
-                <Code className="h-5 w-5 text-orange-500 flex-shrink-0" />
+                <Code className={`h-5 w-5 flex-shrink-0 ${codeModal.deprecated ? 'text-amber-500' : 'text-orange-500'}`} />
                 <div className="min-w-0">
-                  <h3 className="text-sm font-semibold truncate">{codeModal.toolName}</h3>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-sm font-semibold truncate">{codeModal.toolName}</h3>
+                    {codeModal.deprecated && (
+                      <span className="text-[9px] uppercase tracking-wider text-amber-500 bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded flex-shrink-0">
+                        legacy
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     {codeModal.functionName && <span className="font-mono">{codeModal.functionName}()</span>}
                     {codeModal.script && <span> — {codeModal.script}</span>}

@@ -3368,15 +3368,6 @@ function SmartTestTab({ disk, observations = [], lastTestDate }: SmartTestTabPro
             )}
             Extended Test (background)
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={fetchSmartStatus}
-            className="gap-2 bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400"
-          >
-            <Activity className="h-4 w-4" />
-            Refresh Status
-          </Button>
         </div>
         <p className="text-xs text-muted-foreground">
           Short test takes ~2 minutes. Extended test runs in the background and can take several hours for large disks.

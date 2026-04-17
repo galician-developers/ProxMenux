@@ -30,10 +30,60 @@ TOOL_METADATA = {
     'vfio_iommu':           {'name': 'VFIO/IOMMU Passthrough',                'function': 'enable_vfio_iommu',            'version': '1.0'},
     'lvm_repair':           {'name': 'LVM PV Headers Repair',                 'function': 'repair_lvm_headers',           'version': '1.0'},
     'repo_cleanup':         {'name': 'Repository Cleanup',                    'function': 'cleanup_repos',                'version': '1.0'},
+    # ── Legacy / Deprecated entries ──
+    # These optimizations were applied by previous ProxMenux versions but are
+    # no longer needed or have been removed from the current scripts. We still
+    # expose their source code for transparency with existing users.
+    'entropy':              {'name': 'Entropy Generation (haveged)',           'function': 'configure_entropy',            'version': '1.0', 'deprecated': True},
 }
 
 # Backward-compatible description mapping (used by get_installed_tools)
 TOOL_DESCRIPTIONS = {k: v['name'] for k, v in TOOL_METADATA.items()}
+
+# Source code preserved for deprecated/removed optimization functions.
+# When a function is removed from the active bash scripts (because it's
+# no longer needed, e.g. obsoleted by kernel improvements), keep its code
+# here so users who installed it in the past can still inspect what ran.
+DEPRECATED_SOURCES = {
+    'configure_entropy': {
+        'script': 'customizable_post_install.sh (legacy)',
+        'source': '''# ─────────────────────────────────────────────────────────────────
+# NOTE: This optimization has been REMOVED from current ProxMenux versions.
+# Modern Linux kernels (5.6+, shipped with Proxmox VE 7.x and 8.x) include
+# built-in entropy generation via the Jitter RNG and CRNG, making haveged
+# unnecessary. The function below is preserved here for transparency so
+# users who applied it in the past can see exactly what was installed.
+# New ProxMenux installations no longer include this optimization.
+# ─────────────────────────────────────────────────────────────────
+
+configure_entropy() {
+    msg_info2 "$(translate "Configuring entropy generation to prevent slowdowns...")"
+
+    # Install haveged
+    msg_info "$(translate "Installing haveged...")"
+    /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' install haveged > /dev/null 2>&1
+    msg_ok "$(translate "haveged installed successfully")"
+
+    # Configure haveged
+    msg_info "$(translate "Configuring haveged...")"
+    cat <<EOF > /etc/default/haveged
+#   -w sets low entropy watermark (in bits)
+DAEMON_ARGS="-w 1024"
+EOF
+
+    # Reload systemd daemon
+    systemctl daemon-reload > /dev/null 2>&1
+
+    # Enable haveged service
+    systemctl enable haveged > /dev/null 2>&1
+    msg_ok "$(translate "haveged service enabled successfully")"
+
+    register_tool "entropy" true
+    msg_success "$(translate "Entropy generation configuration completed")"
+}
+''',
+    },
+}
 
 # Scripts to search for function source code (in order of preference)
 _SCRIPT_PATHS = [
@@ -43,14 +93,26 @@ _SCRIPT_PATHS = [
 
 
 def _extract_bash_function(function_name: str) -> dict:
-    """Extract a bash function's source code from the post-install scripts.
+    """Extract a bash function's source code.
 
-    Searches each script for `function_name() {` and captures everything
-    until the matching closing `}` at column 0, respecting brace nesting.
+    Checks DEPRECATED_SOURCES first (for functions removed from active scripts),
+    then searches the live bash scripts for `function_name() {` and captures
+    everything until the matching closing `}`, respecting brace nesting.
 
     Returns {'source': str, 'script': str, 'line_start': int, 'line_end': int}
     or {'source': '', 'error': '...'} on failure.
     """
+    # Check preserved deprecated source code first
+    if function_name in DEPRECATED_SOURCES:
+        entry = DEPRECATED_SOURCES[function_name]
+        source = entry['source']
+        return {
+            'source': source,
+            'script': entry['script'],
+            'line_start': 1,
+            'line_end': len(source.split('\n')),
+        }
+
     for script_path in _SCRIPT_PATHS:
         if not os.path.isfile(script_path):
             continue
@@ -158,6 +220,7 @@ def get_installed_tools():
                     'enabled': enabled,
                     'version': meta.get('version', '1.0'),
                     'has_source': bool(meta.get('function')),
+                    'deprecated': bool(meta.get('deprecated', False)),
                 })
         
         # Sort alphabetically by name
@@ -218,6 +281,7 @@ def get_tool_source(tool_key):
             'tool': tool_key,
             'name': meta['name'],
             'version': meta.get('version', '1.0'),
+            'deprecated': bool(meta.get('deprecated', False)),
             'function': func_name,
             'source': result['source'],
             'script': result['script'],
