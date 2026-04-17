@@ -90,33 +90,49 @@ export function TwoFactorSetup({ open, onClose, onSuccess }: TwoFactorSetupProps
   }
 
   const copyToClipboard = async (text: string, type: "secret" | "codes") => {
+    let ok = false
+
+    // Preferred path (HTTPS / localhost). On plain HTTP the Promise rejects,
+    // so we catch and fall through to the textarea fallback.
     try {
-      if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(text)
-      } else {
-        // Fallback for non-secure contexts (HTTP)
+        ok = true
+      }
+    } catch {
+      // fall through to execCommand fallback
+    }
+
+    if (!ok) {
+      try {
         const textarea = document.createElement("textarea")
         textarea.value = text
         textarea.style.position = "fixed"
         textarea.style.left = "-9999px"
         textarea.style.top = "-9999px"
         textarea.style.opacity = "0"
+        textarea.readOnly = true
         document.body.appendChild(textarea)
         textarea.focus()
         textarea.select()
-        document.execCommand("copy")
+        ok = document.execCommand("copy")
         document.body.removeChild(textarea)
+      } catch {
+        ok = false
       }
+    }
 
-      if (type === "secret") {
-        setCopiedSecret(true)
-        setTimeout(() => setCopiedSecret(false), 2000)
-      } else {
-        setCopiedCodes(true)
-        setTimeout(() => setCopiedCodes(false), 2000)
-      }
-    } catch {
+    if (!ok) {
       console.error("Failed to copy to clipboard")
+      return
+    }
+
+    if (type === "secret") {
+      setCopiedSecret(true)
+      setTimeout(() => setCopiedSecret(false), 2000)
+    } else {
+      setCopiedCodes(true)
+      setTimeout(() => setCopiedCodes(false), 2000)
     }
   }
 

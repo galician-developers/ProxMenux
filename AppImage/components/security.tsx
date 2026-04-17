@@ -948,23 +948,31 @@ export function Security() {
   }
 
   const copyToClipboard = async (text: string) => {
+    // Preferred path (HTTPS / localhost). On plain HTTP the Promise rejects,
+    // so we catch and fall through to the textarea fallback.
     try {
-      if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(text)
-      } else {
-        const textarea = document.createElement("textarea")
-        textarea.value = text
-        textarea.style.position = "fixed"
-        textarea.style.left = "-9999px"
-        textarea.style.top = "-9999px"
-        textarea.style.opacity = "0"
-        document.body.appendChild(textarea)
-        textarea.focus()
-        textarea.select()
-        document.execCommand("copy")
-        document.body.removeChild(textarea)
+        return true
       }
-      return true
+    } catch {
+      // fall through to execCommand fallback
+    }
+
+    try {
+      const textarea = document.createElement("textarea")
+      textarea.value = text
+      textarea.style.position = "fixed"
+      textarea.style.left = "-9999px"
+      textarea.style.top = "-9999px"
+      textarea.style.opacity = "0"
+      textarea.readOnly = true
+      document.body.appendChild(textarea)
+      textarea.focus()
+      textarea.select()
+      const ok = document.execCommand("copy")
+      document.body.removeChild(textarea)
+      return ok
     } catch {
       return false
     }

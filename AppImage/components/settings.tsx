@@ -293,10 +293,44 @@ export function Settings() {
     }
   }
 
-  const copySourceCode = () => {
-    navigator.clipboard.writeText(codeModal.source)
-    setCodeCopied(true)
-    setTimeout(() => setCodeCopied(false), 2000)
+  const copySourceCode = async () => {
+    const text = codeModal.source
+    let ok = false
+
+    // Preferred path (HTTPS / localhost). On plain HTTP the Promise rejects,
+    // so we catch and fall through to the textarea fallback.
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+        ok = true
+      }
+    } catch {
+      // fall through
+    }
+
+    if (!ok) {
+      try {
+        const ta = document.createElement("textarea")
+        ta.value = text
+        ta.style.position = "fixed"
+        ta.style.left = "-9999px"
+        ta.style.top = "-9999px"
+        ta.style.opacity = "0"
+        ta.readOnly = true
+        document.body.appendChild(ta)
+        ta.focus()
+        ta.select()
+        ok = document.execCommand("copy")
+        document.body.removeChild(ta)
+      } catch {
+        ok = false
+      }
+    }
+
+    if (ok) {
+      setCodeCopied(true)
+      setTimeout(() => setCodeCopied(false), 2000)
+    }
   }
 
   const changeNetworkUnit = (unit: string) => {
