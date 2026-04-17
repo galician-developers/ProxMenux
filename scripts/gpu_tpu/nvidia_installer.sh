@@ -532,44 +532,48 @@ download_nvidia_installer() {
     "${NVIDIA_BASE_URL}/${version}/NVIDIA-Linux-x86_64-${version}.run"
     "${NVIDIA_BASE_URL}/${version}/NVIDIA-Linux-x86_64-${version}-no-compat32.run"
   )
-  
+
+  # Header line on the real terminal so it stays visible regardless of caller redirects.
+  printf '\n  %s NVIDIA-Linux-x86_64-%s.run\n' \
+    "$(translate 'Downloading')" "$version" >/dev/tty
+
   local success=false
   local url_index=0
-  
+
   for url in "${urls[@]}"; do
     ((url_index++))
     echo "Attempting download from: $url" >> "$LOG_FILE"
-    
 
     rm -f "$run_file"
-    
 
-    if curl -fL --connect-timeout 30 --max-time 600 "$url" -o "$run_file" >> "$LOG_FILE" 2>&1; then
+    # wget --show-progress writes its progress bar to stderr. We route it to
+    # /dev/tty explicitly so the user always sees it (same UX as ISO downloads
+    # in vm_creator.sh). The file contents still go to $run_file.
+    if wget --no-verbose --show-progress \
+            --connect-timeout=30 --timeout=600 --tries=1 \
+            -O "$run_file" "$url" 2>/dev/tty; then
       echo "Download completed, verifying file..." >> "$LOG_FILE"
-      
-   
+
       if [[ ! -f "$run_file" ]]; then
         echo "ERROR: File not created after download" >> "$LOG_FILE"
         continue
       fi
-      
- 
+
       local file_size
       file_size=$(stat -c%s "$run_file" 2>/dev/null || stat -f%z "$run_file" 2>/dev/null || echo "0")
       echo "Downloaded file size: $file_size bytes" >> "$LOG_FILE"
-      
+
       if [[ $file_size -lt 40000000 ]]; then
         echo "ERROR: File too small ($file_size bytes, expected >40MB)" >> "$LOG_FILE"
         head -c 200 "$run_file" >> "$LOG_FILE" 2>&1
         rm -f "$run_file"
         continue
       fi
-      
 
       local file_type
       file_type=$(file "$run_file" 2>/dev/null)
       echo "File type: $file_type" >> "$LOG_FILE"
-      
+
       if echo "$file_type" | grep -q "executable"; then
         echo "SUCCESS: Valid executable downloaded" >> "$LOG_FILE"
         success=true
@@ -580,11 +584,11 @@ download_nvidia_installer() {
         rm -f "$run_file"
       fi
     else
-      echo "ERROR: curl failed for $url (exit code: $?)" >> "$LOG_FILE"
+      echo "ERROR: wget failed for $url (exit code: $?)" >> "$LOG_FILE"
       rm -f "$run_file"
     fi
   done
-  
+
   if ! $success; then
     msg_error "$(translate 'Download failed for all attempted URLs')" >&2
     msg_error "Version $version may not be available for your architecture" >&2
@@ -930,18 +934,20 @@ main() {
       stop_and_disable_nvidia_services
       unload_nvidia_modules
 
-      msg_info "$(translate 'Downloading NVIDIA driver version:') $DRIVER_VERSION"
-      
+      # No msg_info spinner here — it would clash with wget --show-progress,
+      # which writes its progress bar directly to /dev/tty from inside the
+      # download function. Stderr from the function is allowed through so
+      # warnings/errors reach the user.
       local installer
-      installer=$(download_nvidia_installer "$DRIVER_VERSION" 2>>"$LOG_FILE")
+      installer=$(download_nvidia_installer "$DRIVER_VERSION")
       local download_result=$?
-      
+
       if [[ $download_result -ne 0 ]]; then
         msg_error "$(translate 'Failed to download NVIDIA installer')"
         exit 1
       fi
-      
-      msg_ok "$(translate 'NVIDIA installer downloaded successfully')"
+
+      msg_ok "$(translate 'NVIDIA installer downloaded successfully')" | tee -a "$screen_capture"
 
       if [[ -z "$installer" || ! -f "$installer" ]]; then
         msg_error "$(translate 'Internal error: NVIDIA installer path is empty or file not found.')"

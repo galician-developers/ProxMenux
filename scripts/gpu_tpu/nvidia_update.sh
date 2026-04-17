@@ -523,25 +523,38 @@ download_nvidia_installer() {
     return 1
   fi
 
-  msg_info "$(translate 'Downloading NVIDIA driver') ${version}..." >&2
-
   local urls=(
     "${NVIDIA_BASE_URL}/${version}/NVIDIA-Linux-x86_64-${version}.run"
     "${NVIDIA_BASE_URL}/${version}/NVIDIA-Linux-x86_64-${version}-no-compat32.run"
   )
 
+  # Header line on the real terminal so it stays visible regardless of caller redirects.
+  printf '\n  %s NVIDIA-Linux-x86_64-%s.run\n' \
+    "$(translate 'Downloading')" "$version" >/dev/tty
+
   local success=false
   for url in "${urls[@]}"; do
     rm -f "$run_file"
-    if curl -fL --connect-timeout 30 --max-time 600 "$url" -o "$run_file" >> "$LOG_FILE" 2>&1; then
-      [[ ! -f "$run_file" ]] && continue
+    echo "Attempting download from: $url" >> "$LOG_FILE"
+
+    # wget --show-progress writes its progress bar to stderr. We route it to
+    # /dev/tty explicitly so the user always sees it (same UX as ISO downloads
+    # in vm_creator.sh). The file contents still go to $run_file.
+    if wget --no-verbose --show-progress \
+            --connect-timeout=30 --timeout=600 --tries=1 \
+            -O "$run_file" "$url" 2>/dev/tty; then
+      [[ ! -f "$run_file" ]] && { echo "ERROR: File not created" >> "$LOG_FILE"; continue; }
       local file_size file_type
       file_size=$(stat -c%s "$run_file" 2>/dev/null || echo "0")
       file_type=$(file "$run_file" 2>/dev/null)
+      echo "Downloaded file size: $file_size bytes, type: $file_type" >> "$LOG_FILE"
       if [[ $file_size -gt 40000000 ]] && echo "$file_type" | grep -q "executable"; then
         success=true
         break
       fi
+      rm -f "$run_file"
+    else
+      echo "ERROR: wget failed for $url (exit: $?)" >> "$LOG_FILE"
       rm -f "$run_file"
     fi
   done
@@ -874,9 +887,11 @@ main() {
 
   ensure_repos_and_headers
 
-  # Download installer once — shared between LXC and host updates
+  # Download installer once — shared between LXC and host updates.
+  # No 2>>"$LOG_FILE" redirect: we want msg_warn/msg_error from the function to
+  # reach the user's terminal, and wget's progress bar goes to /dev/tty directly.
   local installer
-  installer=$(download_nvidia_installer "$TARGET_VERSION" 2>>"$LOG_FILE")
+  installer=$(download_nvidia_installer "$TARGET_VERSION")
   local download_result=$?
 
   if [[ $download_result -ne 0 || -z "$installer" || ! -f "$installer" ]]; then
