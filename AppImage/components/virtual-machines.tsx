@@ -295,10 +295,10 @@ export function VirtualMachines() {
     isLoading,
     mutate,
   } = useSWR<VMData[]>("/api/vms", fetcher, {
-    refreshInterval: 23000,
-    revalidateOnFocus: false,
+    refreshInterval: 5000,
+    revalidateOnFocus: true,
     revalidateOnReconnect: true,
-    dedupingInterval: 10000,
+    dedupingInterval: 2000,
     errorRetryCount: 2,
   })
 

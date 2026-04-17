@@ -67,7 +67,7 @@ class HealthMonitor:
     # Memory Thresholds
     MEMORY_WARNING = 85
     MEMORY_CRITICAL = 95
-    MEMORY_DURATION = 60
+    MEMORY_DURATION = 300  # 5 minutes sustained (aligned with CPU)
     SWAP_WARNING_DURATION = 300
     SWAP_CRITICAL_PERCENT = 5
     SWAP_CRITICAL_DURATION = 120
@@ -402,6 +402,30 @@ class HealthMonitor:
         except Exception:
             pass  # Sampling must never crash the thread
     
+    def _sample_memory_usage(self):
+        """Lightweight memory sample: read RAM/swap % and append to history. ~1ms cost."""
+        try:
+            memory = psutil.virtual_memory()
+            swap = psutil.swap_memory()
+            current_time = time.time()
+            mem_percent = memory.percent
+            swap_percent = swap.percent if swap.total > 0 else 0
+            swap_vs_ram = (swap.used / memory.total * 100) if memory.total > 0 else 0
+            state_key = 'memory_usage'
+            self.state_history[state_key].append({
+                'mem_percent': mem_percent,
+                'swap_percent': swap_percent,
+                'swap_vs_ram': swap_vs_ram,
+                'time': current_time
+            })
+            # Prune entries older than 10 minutes
+            self.state_history[state_key] = [
+                e for e in self.state_history[state_key]
+                if current_time - e['time'] < 600
+            ]
+        except Exception:
+            pass  # Sampling must never crash the thread
+
     def _sample_cpu_temperature(self):
         """Lightweight temperature sample: read sensor and append to history. ~50ms cost."""
         try:
@@ -1050,34 +1074,46 @@ class HealthMonitor:
                 if current_time - entry['time'] < 600
             ]
             
-            mem_critical = sum(
-                1 for entry in self.state_history[state_key]
+            mem_critical_samples = [
+                entry for entry in self.state_history[state_key]
                 if entry['mem_percent'] >= 90 and
                 current_time - entry['time'] <= self.MEMORY_DURATION
-            )
-            
-            mem_warning = sum(
-                1 for entry in self.state_history[state_key]
+            ]
+
+            mem_warning_samples = [
+                entry for entry in self.state_history[state_key]
                 if entry['mem_percent'] >= self.MEMORY_WARNING and
                 current_time - entry['time'] <= self.MEMORY_DURATION
-            )
-            
+            ]
+
             swap_critical = sum(
                 1 for entry in self.state_history[state_key]
                 if entry['swap_vs_ram'] > 20 and
                 current_time - entry['time'] <= self.SWAP_CRITICAL_DURATION
             )
-            
-            
-            if mem_critical >= 2:
+
+            # Require sustained high usage across most of the 300s window.
+            # With ~30s sampling: 300s = ~10 samples, so 8 ≈ 240s sustained.
+            # Mirrors CPU's ~83% coverage threshold (25/30).
+            MEM_CRITICAL_MIN_SAMPLES = 8
+            MEM_WARNING_MIN_SAMPLES = 8
+
+            mem_critical_count = len(mem_critical_samples)
+            mem_warning_count = len(mem_warning_samples)
+
+            if mem_critical_count >= MEM_CRITICAL_MIN_SAMPLES:
+                oldest = min(s['time'] for s in mem_critical_samples)
+                actual_duration = int(current_time - oldest)
                 status = 'CRITICAL'
-                reason = f'RAM >90% for {self.MEMORY_DURATION}s'
+                reason = f'RAM >90% sustained for {actual_duration}s'
             elif swap_critical >= 2:
                 status = 'CRITICAL'
                 reason = f'Swap >20% of RAM ({swap_vs_ram:.1f}%)'
-            elif mem_warning >= 2:
+            elif mem_warning_count >= MEM_WARNING_MIN_SAMPLES:
+                oldest = min(s['time'] for s in mem_warning_samples)
+                actual_duration = int(current_time - oldest)
                 status = 'WARNING'
-                reason = f'RAM >{self.MEMORY_WARNING}% for {self.MEMORY_DURATION}s'
+                reason = f'RAM >{self.MEMORY_WARNING}% sustained for {actual_duration}s'
             else:
                 status = 'OK'
                 reason = None
@@ -1088,7 +1124,7 @@ class HealthMonitor:
             swap_total_gb = round(swap.total / (1024**3), 2)
             
             # Determine per-sub-check status
-            ram_status = 'CRITICAL' if mem_percent >= 90 and mem_critical >= 2 else ('WARNING' if mem_percent >= self.MEMORY_WARNING and mem_warning >= 2 else 'OK')
+            ram_status = 'CRITICAL' if mem_percent >= 90 and mem_critical_count >= MEM_CRITICAL_MIN_SAMPLES else ('WARNING' if mem_percent >= self.MEMORY_WARNING and mem_warning_count >= MEM_WARNING_MIN_SAMPLES else 'OK')
             swap_status = 'CRITICAL' if swap_critical >= 2 else 'OK'
             
             result = {

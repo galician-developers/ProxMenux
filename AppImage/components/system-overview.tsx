@@ -222,7 +222,7 @@ export function SystemOverview() {
     const systemInterval = setInterval(async () => {
       const data = await fetchSystemData()
       if (data) setSystemData(data)
-    }, 9000)
+    }, 5000)
 
     const vmInterval = setInterval(async () => {
       const data = await fetchVMData()

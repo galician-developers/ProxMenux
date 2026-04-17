@@ -1088,43 +1088,50 @@ def _health_collector_loop():
 
 
 def _vital_signs_sampler():
-    """Dedicated thread for rapid CPU & temperature sampling.
-    
+    """Dedicated thread for rapid CPU, memory & temperature sampling.
+
     Runs independently of the 5-min health collector loop.
-    - CPU usage:   sampled every 30s  (3 samples in 1.5 min for hysteresis)
+    - CPU usage:   sampled every 30s  (10 samples in 5 min for sustained detection)
+    - Memory:      sampled every 30s  (10 samples in 5 min for sustained detection)
     - Temperature: sampled every 15s  (12 samples in 3 min for temporal logic)
     Uses time.monotonic() to avoid drift.
-    
-    Staggered intervals: CPU at offset 0, Temp at offset 7s to avoid collision.
+
+    Staggered intervals to avoid collision: CPU at 0, Temp at +7s, Mem at +15s.
     """
     from health_monitor import health_monitor
-    
+
     # Wait 15s after startup for sensors to be ready
     time.sleep(15)
-    
+
     TEMP_INTERVAL = 15   # seconds (was 10s - reduced frequency by 33%)
     CPU_INTERVAL  = 30   # seconds
-    
-    # Stagger: CPU starts immediately, Temp starts after 7s offset
+    MEM_INTERVAL  = 30   # seconds (aligned with CPU for sustained-RAM detection)
+
+    # Stagger: CPU starts immediately, Temp after 7s, Mem after 15s
     next_cpu  = time.monotonic()
     next_temp = time.monotonic() + 7
-    
-    print("[ProxMenux] Vital signs sampler started (CPU: 30s, Temp: 10s)")
-    
+    next_mem  = time.monotonic() + 15
+
+    print("[ProxMenux] Vital signs sampler started (CPU: 30s, Mem: 30s, Temp: 15s)")
+
     while True:
         try:
             now = time.monotonic()
-            
+
             if now >= next_temp:
                 health_monitor._sample_cpu_temperature()
                 next_temp = now + TEMP_INTERVAL
-            
+
             if now >= next_cpu:
                 health_monitor._sample_cpu_usage()
                 next_cpu = now + CPU_INTERVAL
-            
+
+            if now >= next_mem:
+                health_monitor._sample_memory_usage()
+                next_mem = now + MEM_INTERVAL
+
             # Sleep until the next earliest event (with 0.5s min to avoid busy-loop)
-            sleep_until = min(next_temp, next_cpu) - time.monotonic()
+            sleep_until = min(next_temp, next_cpu, next_mem) - time.monotonic()
             time.sleep(max(sleep_until, 0.5))
         except Exception as e:
             print(f"[ProxMenux] Vital signs sampler error: {e}")
@@ -1160,7 +1167,7 @@ _pvesh_cache = {
     'storage_list': None,
     'storage_list_time': 0,
 }
-_PVESH_CACHE_TTL = 30  # 30 seconds - balances freshness with performance
+_PVESH_CACHE_TTL = 5  # 5 seconds - near real-time for active UI; pvesh local cost is ~200-400ms
 
 # Cache for sensors output (temperature readings)
 _sensors_cache = {
@@ -1168,6 +1175,15 @@ _sensors_cache = {
     'time': 0,
 }
 _SENSORS_CACHE_TTL = 10  # 10 seconds - temperature changes slowly
+
+# Cache for ipmitool sensor output (shared between fans, power supplies, power meter)
+# ipmitool is slow (1-3s per call) and was called twice per /api/hardware hit.
+_ipmi_cache = {
+    'output': None,
+    'time': 0,
+    'unavailable': False,  # set True if ipmitool is missing, avoid retrying
+}
+_IPMI_CACHE_TTL = 10  # 10 seconds
 
 # Cache for hardware info (lspci, dmidecode, lsblk)
 _hardware_cache = {
@@ -3820,13 +3836,42 @@ def get_proxmox_vms():
         # Return empty array instead of error object - frontend expects array
         return []
 
-def get_ipmi_fans():
-    """Get fan information from IPMI"""
-    fans = []
+def get_cached_ipmi_sensors():
+    """Get ipmitool sensor output with 10s cache. Shared between fans/power parsers.
+
+    Returns empty string if ipmitool is unavailable (cached to avoid repeated FileNotFoundError).
+    """
+    global _ipmi_cache
+    now = time.time()
+
+    if _ipmi_cache['unavailable']:
+        return ''
+
+    if _ipmi_cache['output'] is not None and \
+       now - _ipmi_cache['time'] < _IPMI_CACHE_TTL:
+        return _ipmi_cache['output']
+
     try:
         result = subprocess.run(['ipmitool', 'sensor'], capture_output=True, text=True, timeout=10)
         if result.returncode == 0:
-            for line in result.stdout.split('\n'):
+            _ipmi_cache['output'] = result.stdout
+            _ipmi_cache['time'] = now
+            return result.stdout
+    except FileNotFoundError:
+        _ipmi_cache['unavailable'] = True
+        return ''
+    except Exception:
+        pass
+    return _ipmi_cache['output'] or ''
+
+
+def get_ipmi_fans():
+    """Get fan information from IPMI (uses cached sensor output)."""
+    fans = []
+    try:
+        output = get_cached_ipmi_sensors()
+        if output:
+            for line in output.split('\n'):
                 if 'fan' in line.lower() and '|' in line:
                     parts = [p.strip() for p in line.split('|')]
                     if len(parts) >= 3:
@@ -3862,14 +3907,14 @@ def get_ipmi_fans():
     return fans
 
 def get_ipmi_power():
-    """Get power supply information from IPMI"""
+    """Get power supply information from IPMI (uses cached sensor output)."""
     power_supplies = []
     power_meter = None
-    
+
     try:
-        result = subprocess.run(['ipmitool', 'sensor'], capture_output=True, text=True, timeout=10)
-        if result.returncode == 0:
-            for line in result.stdout.split('\n'):
+        output = get_cached_ipmi_sensors()
+        if output:
+            for line in output.split('\n'):
                 if ('power supply' in line.lower() or 'power meter' in line.lower()) and '|' in line:
                     parts = [p.strip() for p in line.split('|')]
                     if len(parts) >= 3:
@@ -4202,7 +4247,97 @@ def identify_fan(sensor_name, adapter, chip_name=None):
         return sensor_name
     
     # Default: return original name
-    return sensor_name   
+    return sensor_name
+
+
+def _parse_sensor_fans(sensors_output):
+    """Parse fan entries from `sensors` output. Extracted for reuse between
+    get_hardware_info (static full payload) and get_hardware_live_info (live endpoint)."""
+    fans = []
+    if not sensors_output:
+        return fans
+    current_adapter = None
+    current_chip = None
+    for line in sensors_output.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        if not ':' in line and not line.startswith(' ') and not line.startswith('Adapter'):
+            current_chip = line
+            continue
+        if line.startswith('Adapter:'):
+            current_adapter = line.replace('Adapter:', '').strip()
+            continue
+        if ':' in line and not line.startswith(' '):
+            parts = line.split(':', 1)
+            sensor_name = parts[0].strip()
+            value_part = parts[1].strip()
+            if 'RPM' in value_part:
+                rpm_match = re.search(r'([\d.]+)\s*RPM', value_part)
+                if rpm_match:
+                    fan_speed = int(float(rpm_match.group(1)))
+                    identified_name = identify_fan(sensor_name, current_adapter, current_chip)
+                    fans.append({
+                        'name': identified_name,
+                        'original_name': sensor_name,
+                        'speed': fan_speed,
+                        'unit': 'RPM',
+                        'adapter': current_adapter
+                    })
+    return fans
+
+
+def get_hardware_live_info():
+    """Build only the live/dynamic hardware fields for /api/hardware/live.
+
+    Skips all the heavy static collection (lscpu, dmidecode, lsblk, smartctl, lspci...).
+    Uses cached sensors + cached ipmitool output to stay cheap under 5s polling.
+    """
+    result = {
+        'temperatures': [],
+        'fans': [],
+        'power_meter': None,
+        'power_supplies': [],
+        'ups': None,
+    }
+
+    try:
+        temp_info = get_temperature_info()
+        result['temperatures'] = temp_info.get('temperatures', [])
+        result['power_meter'] = temp_info.get('power_meter')
+    except Exception:
+        pass
+
+    try:
+        sensor_fans = _parse_sensor_fans(get_cached_sensors_output())
+    except Exception:
+        sensor_fans = []
+
+    try:
+        ipmi_fans = get_ipmi_fans()
+    except Exception:
+        ipmi_fans = []
+
+    result['fans'] = sensor_fans + ipmi_fans
+
+    try:
+        ipmi_power = get_ipmi_power()
+        if ipmi_power:
+            result['power_supplies'] = ipmi_power.get('power_supplies', [])
+            # Fallback: if sensors didn't provide a power_meter, use IPMI's
+            if result['power_meter'] is None and ipmi_power.get('power_meter'):
+                result['power_meter'] = ipmi_power['power_meter']
+    except Exception:
+        pass
+
+    try:
+        ups_info = get_ups_info()
+        if ups_info:
+            result['ups'] = ups_info
+    except Exception:
+        pass
+
+    return result
 
 
 def get_temperature_info():
@@ -6102,52 +6237,8 @@ def get_hardware_info():
             pass
         
         try:
-            sensors_output = get_cached_sensors_output()
-            if sensors_output:
-                current_adapter = None
-                current_chip = None  # Add chip name tracking
-                fans = []
-                
-                for line in sensors_output.split('\n'):
-                    line = line.strip()
-                    if not line:
-                        continue
-                    
-                    # Chip names don't have ":" and are not indented
-                    if not ':' in line and not line.startswith(' ') and not line.startswith('Adapter'):
-                        current_chip = line
-                        continue
-                    
-                    # Detect adapter line
-                    if line.startswith('Adapter:'):
-                        current_adapter = line.replace('Adapter:', '').strip()
-                        continue
-                    
-                    # Parse fan sensors
-                    if ':' in line and not line.startswith(' '):
-                        parts = line.split(':', 1)
-                        sensor_name = parts[0].strip()
-                        value_part = parts[1].strip()
-                        
-                        # Look for fan sensors (RPM)
-                        if 'RPM' in value_part:
-                            rpm_match = re.search(r'([\d.]+)\s*RPM', value_part)
-                            if rpm_match:
-                                fan_speed = int(float(rpm_match.group(1)))
-                                
-                                identified_name = identify_fan(sensor_name, current_adapter, current_chip)
-                                
-                                fans.append({
-                                    'name': identified_name,
-                                    'original_name': sensor_name,
-                                    'speed': fan_speed,
-                                    'unit': 'RPM',
-                                    'adapter': current_adapter
-                                })
-                
-                hardware_data['sensors']['fans'] = fans
-        except Exception as e:
-            # print(f"[v0] Error getting fan sensors: {e}")
+            hardware_data['sensors']['fans'] = _parse_sensor_fans(get_cached_sensors_output())
+        except Exception:
             pass
         
         # Power Supply / UPS
@@ -6226,7 +6317,9 @@ def get_hardware_info():
 def api_system():
     """Get system information including CPU, memory, and temperature"""
     try:
-        cpu_usage = psutil.cpu_percent(interval=0.5)
+        # Non-blocking: returns %CPU since the last psutil call (sampler or prior API hit).
+        # The background vital-signs sampler keeps psutil's internal state primed.
+        cpu_usage = psutil.cpu_percent(interval=0)
         
         memory = psutil.virtual_memory()
         memory_used_gb = memory.used / (1024 ** 3)
@@ -9286,6 +9379,23 @@ def api_hardware():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/hardware/live', methods=['GET'])
+@require_auth
+def api_hardware_live():
+    """Lightweight endpoint: only dynamic hardware fields (temps, fans, power, UPS).
+
+    Designed for the active Hardware page to poll every 3-5s without re-running the
+    expensive static collectors (lscpu, dmidecode, lsblk, smartctl). ipmitool output
+    is cached internally (10s) so repeated polls don't hammer the BMC.
+    """
+    try:
+        return jsonify(get_hardware_live_info())
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/gpu/<slot>/realtime', methods=['GET'])
 @require_auth
 def api_gpu_realtime(slot):
@@ -9526,8 +9636,11 @@ def api_vm_control(vmid):
             control_result = subprocess.run(
                 ['pvesh', 'create', f'/nodes/{node}/{vm_type}/{vmid}/status/{action}'],
                 capture_output=True, text=True, timeout=30)
-            
+
             if control_result.returncode == 0:
+                # Invalidate VM resources cache so the next /api/vms call
+                # returns fresh status instead of the pre-action snapshot.
+                _pvesh_cache['cluster_resources_vm_time'] = 0
                 return jsonify({
                     'success': True,
                     'vmid': vmid,
