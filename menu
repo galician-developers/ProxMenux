@@ -4,70 +4,72 @@
 # ProxMenux - A menu-driven script for Proxmox VE management
 # ==========================================================
 # Author      : MacRimi
-# Copyright   : (c) 2024 MacRimi
-# License     : (GPL-3.0) (https://github.com/MacRimi/ProxMenux/blob/main/LICENSE)
-# Version     : 1.1
-# Last Updated: 04/07/2025
+# Copyright   : (c) 2024-2025 MacRimi
+# License     : GPL-3.0 (https://github.com/MacRimi/ProxMenux/blob/main/LICENSE)
+# Version     : 1.2
+# Last Updated: 18/03/2026
 # ==========================================================
 # Description:
-# This script serves as the main entry point for ProxMenux,
-# a menu-driven tool designed for Proxmox VE management.
-# - Displays the ProxMenux logo on startup.
-# - Loads necessary configurations and language settings.
-# - Checks for available updates and installs them if confirmed.
-# - Downloads and executes the latest main menu script.
-#
-# Key Features:
-# - Ensures ProxMenux is always up-to-date by fetching the latest version.
-# - Uses whiptail for interactive menus and language selection.
-# - Loads utility functions and translation support.
-# - Maintains a cache system to improve performance.
-# - Executes the ProxMenux main menu dynamically from the repository.
-#
-# This script ensures a streamlined and automated experience
-# for managing Proxmox VE using ProxMenux.
+# Main entry point for ProxMenux.
+# - Loads configuration and utility functions.
+# - Detects if running in Beta Program mode (develop branch).
+# - Checks for updates from the appropriate branch (main or develop).
+# - In beta mode: compares beta_version.txt; notifies when a stable
+#   release is available and prompts the user to switch.
+# - Launches the main menu.
 # ==========================================================
 
-# Configuration ============================================
-REPO_URL="https://raw.githubusercontent.com/MacRimi/ProxMenux/main"
+# ── Configuration ──────────────────────────────────────────
 BASE_DIR="/usr/local/share/proxmenux"
 LOCAL_SCRIPTS="$BASE_DIR/scripts"
 CONFIG_FILE="$BASE_DIR/config.json"
 CACHE_FILE="$BASE_DIR/cache.json"
 UTILS_FILE="$BASE_DIR/utils.sh"
 LOCAL_VERSION_FILE="$BASE_DIR/version.txt"
+BETA_VERSION_FILE="$BASE_DIR/beta_version.txt"
 VENV_PATH="/opt/googletrans-env"
 
-if [[ -f "$UTILS_FILE" ]]; then
+REPO_MAIN="https://raw.githubusercontent.com/MacRimi/ProxMenux/main"
+REPO_DEVELOP="https://raw.githubusercontent.com/MacRimi/ProxMenux/develop"
 
-    source "$UTILS_FILE"
-fi
+# ── Load utilities ─────────────────────────────────────────
+[[ -f "$UTILS_FILE" ]] && source "$UTILS_FILE"
 
 : "${LOCAL_SCRIPTS:=/usr/local/share/proxmenux/scripts}"
 
-# =========================================================
+# ── Detect beta mode ───────────────────────────────────────
+# Returns 0 (true) if this install is part of the beta program.
+is_beta() {
+    [[ -f "$CONFIG_FILE" ]] || return 1
+    local beta_flag
+    beta_flag=$(jq -r '.beta_program.status // empty' "$CONFIG_FILE" 2>/dev/null)
+    [[ "$beta_flag" == "active" ]]
+}
 
+# ── Check for updates ──────────────────────────────────────
 check_updates() {
-    local VERSION_URL INSTALL_URL INSTALL_SCRIPT
-    local REMOTE_VERSION LOCAL_VERSION
+    if is_beta; then
+        check_updates_beta
+    else
+        check_updates_stable
+    fi
+}
 
-    VERSION_URL="$REPO_URL/version.txt"
-    INSTALL_URL="$REPO_URL/install_proxmenux.sh"
-    INSTALL_SCRIPT="$BASE_DIR/install_proxmenux.sh"
-
+# ── Stable update check (main branch) ─────────────────────
+check_updates_stable() {
+    local VERSION_URL="$REPO_MAIN/version.txt"
+    local INSTALL_URL="$REPO_MAIN/install_proxmenux.sh"
+    local INSTALL_SCRIPT="$BASE_DIR/install_proxmenux.sh"
 
     [[ ! -f "$LOCAL_VERSION_FILE" ]] && return 0
 
+    local REMOTE_VERSION LOCAL_VERSION
     REMOTE_VERSION="$(curl -fsSL "$VERSION_URL" 2>/dev/null | head -n 1)"
     [[ -z "$REMOTE_VERSION" ]] && return 0
 
-
     LOCAL_VERSION="$(head -n 1 "$LOCAL_VERSION_FILE" 2>/dev/null)"
     [[ -z "$LOCAL_VERSION" ]] && return 0
-
-
     [[ "$LOCAL_VERSION" = "$REMOTE_VERSION" ]] && return 0
-
 
     if whiptail --title "$(translate 'Update Available')" \
                 --yesno "$(translate 'New version available') ($REMOTE_VERSION)\n\n$(translate 'Do you want to update now?')" \
@@ -75,27 +77,84 @@ check_updates() {
 
         msg_warn "$(translate 'Starting ProxMenux update...')"
 
-
         if curl -fsSL "$INSTALL_URL" -o "$INSTALL_SCRIPT"; then
             chmod +x "$INSTALL_SCRIPT"
-
-
             bash "$INSTALL_SCRIPT" --update
-
-            return 0
-
         fi
-
     fi
 }
 
+# ── Beta update check (develop branch) ────────────────────
+check_updates_beta() {
+    local BETA_VERSION_URL="$REPO_DEVELOP/beta_version.txt"
+    local STABLE_VERSION_URL="$REPO_MAIN/version.txt"
+    local INSTALL_BETA_URL="$REPO_DEVELOP/install_proxmenux_beta.sh"
+    local INSTALL_STABLE_URL="$REPO_MAIN/install_proxmenux.sh"
+    local INSTALL_SCRIPT="$BASE_DIR/install_proxmenux_beta.sh"
 
+    # ── 1. Check if a stable release has superseded the beta ──
+    # If main's version.txt exists and is newer than local beta_version.txt,
+    # the beta cycle is over and we invite the user to switch to stable.
+    local STABLE_VERSION BETA_LOCAL_VERSION
+    STABLE_VERSION="$(curl -fsSL "$STABLE_VERSION_URL" 2>/dev/null | head -n 1)"
+    BETA_LOCAL_VERSION="$(head -n 1 "$BETA_VERSION_FILE" 2>/dev/null)"
 
+    if [[ -n "$STABLE_VERSION" && -n "$BETA_LOCAL_VERSION" ]]; then
+        # Simple string comparison is enough if versions follow semver x.y.z
+        if [[ "$STABLE_VERSION" != "$BETA_LOCAL_VERSION" ]] && \
+           printf '%s\n' "$BETA_LOCAL_VERSION" "$STABLE_VERSION" | sort -V | tail -1 | grep -qx "$STABLE_VERSION"; then
 
+            # Stable is newer — offer migration out of beta
+            if whiptail --title "🎉 Stable Release Available" \
+                        --yesno "A stable release of ProxMenux is now available!\n\nStable version : $STABLE_VERSION\nYour beta      : $BETA_LOCAL_VERSION\n\nThe beta program for this cycle is complete.\nWould you like to switch to the stable release now?\n\n(Choosing 'No' keeps you on the beta for now.)" \
+                        16 68; then
 
+                msg_warn "Switching to stable release $STABLE_VERSION ..."
+
+                local tmp_installer="/tmp/install_proxmenux_stable_$$.sh"
+                if curl -fsSL "$INSTALL_STABLE_URL" -o "$tmp_installer"; then
+                    chmod +x "$tmp_installer"
+                    bash "$tmp_installer"
+                    rm -f "$tmp_installer"
+                else
+                    msg_error "Could not download the stable installer. Try manually:"
+                    echo
+                    echo "  bash -c \"\$(wget -qLO - $INSTALL_STABLE_URL)\""
+                    echo
+                fi
+                return 0
+            fi
+            # User chose to stay on beta — continue normally
+            return 0
+        fi
+    fi
+
+    # ── 2. Check for a newer beta build on develop ─────────────
+    [[ ! -f "$BETA_VERSION_FILE" ]] && return 0
+
+    local REMOTE_BETA_VERSION
+    REMOTE_BETA_VERSION="$(curl -fsSL "$BETA_VERSION_URL" 2>/dev/null | head -n 1)"
+    [[ -z "$REMOTE_BETA_VERSION" ]] && return 0
+    [[ "$BETA_LOCAL_VERSION" = "$REMOTE_BETA_VERSION" ]] && return 0
+
+    if whiptail --title "Beta Update Available" \
+                --yesno "A new beta build is available!\n\nInstalled beta : $BETA_LOCAL_VERSION\nNew beta build : $REMOTE_BETA_VERSION\n\nThis is a pre-release build from the develop branch.\nDo you want to update now?" \
+                13 64 --defaultno; then
+
+        msg_warn "Updating to beta build $REMOTE_BETA_VERSION ..."
+
+        if curl -fsSL "$INSTALL_BETA_URL" -o "$INSTALL_SCRIPT"; then
+            chmod +x "$INSTALL_SCRIPT"
+            bash "$INSTALL_SCRIPT" --update
+        else
+            msg_error "Could not download the beta installer from the develop branch."
+        fi
+    fi
+}
+
+# ── Main ───────────────────────────────────────────────────
 main_menu() {
     local MAIN_MENU="$LOCAL_SCRIPTS/menus/main_menu.sh"
-
     exec bash "$MAIN_MENU"
 }
 

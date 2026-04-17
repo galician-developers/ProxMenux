@@ -112,6 +112,50 @@ export interface UPS {
   [key: string]: any
 }
 
+export interface CoralTPU {
+  type: "pcie" | "usb"
+  name: string
+  vendor: string
+  vendor_id: string
+  device_id: string
+  slot?: string           // PCIe only, e.g. "0000:0c:00.0"
+  bus_device?: string     // USB only, e.g. "002:007"
+  form_factor?: string    // "M.2 / Mini PCIe (x1)" | "USB Accelerator" | ...
+  interface_speed?: string // "PCIe 2.5GT/s x1" | "USB 3.0" | ...
+  kernel_driver?: string | null
+  usb_driver?: string | null
+  kernel_modules?: {
+    gasket: boolean
+    apex: boolean
+  }
+  device_nodes?: string[]
+  edgetpu_runtime?: string
+  programmed?: boolean     // USB only: runtime has interacted with the device
+  drivers_ready: boolean
+  // Thermal data — PCIe/M.2 only (apex driver). Always null for USB Coral.
+  temperature?: number | null           // °C current die temperature
+  temperature_trips?: number[] | null   // trip_point0/1/2_temp, ordered warn→critical
+  thermal_warnings?: Array<{
+    name: string                        // e.g. "hw_temp_warn1"
+    threshold_c: number | null
+    enabled: boolean
+  }> | null
+}
+
+export interface UsbDevice {
+  bus_device: string       // "002:007"
+  vendor_id: string        // "18d1"
+  product_id: string       // "9302"
+  vendor: string
+  name: string
+  class_code: string       // "ff"
+  class_label: string      // "Vendor Specific", "HID", "Mass Storage", ...
+  speed_mbps: number
+  speed_label: string      // "USB 3.0" | "USB 2.0" | ...
+  serial?: string
+  driver?: string
+}
+
 export interface GPU {
   slot: string
   name: string
@@ -208,6 +252,8 @@ export interface HardwareData {
   fans?: Fan[]
   power_supplies?: PowerSupply[]
   ups?: UPS | UPS[]
+  coral_tpus?: CoralTPU[]
+  usb_devices?: UsbDevice[]
 }
 
 export const fetcher = async (url: string) => {
