@@ -9485,7 +9485,7 @@ def api_health():
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
-        'version': '1.0.2'
+        'version': '1.2.0'
     })
 
 @app.route('/api/health/acknowledge', methods=['POST'])
@@ -9767,7 +9767,7 @@ def api_info():
     """Root endpoint with API information"""
     return jsonify({
         'name': 'ProxMenux Monitor API',
-        'version': '1.0.2',
+        'version': '1.2.0',
         'endpoints': [
             '/api/system',
             '/api/system-info',
