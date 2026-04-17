@@ -576,9 +576,17 @@ install_beta() {
     cp "./install_proxmenux.sh" "$BASE_DIR/install_proxmenux.sh" 2>/dev/null || true
     cp "./install_proxmenux_beta.sh" "$BASE_DIR/install_proxmenux_beta.sh" 2>/dev/null || true
 
+    # Wipe the scripts tree before copying so any file removed upstream
+    # (renamed, consolidated, deprecated) disappears from the user install.
+    # Only $BASE_DIR/scripts/ is cleared; config.json, cache.json,
+    # components_status.json, version.txt, beta_version.txt, monitor.db,
+    # smart/, oci/ and the AppImage live outside this path and are preserved.
+    rm -rf "$BASE_DIR/scripts"
     mkdir -p "$BASE_DIR/scripts"
     cp -r "./scripts/"* "$BASE_DIR/scripts/"
-    chmod -R +x "$BASE_DIR/scripts/"
+    # Only .sh files need the executable bit. Applying +x recursively would
+    # also flag README.md, .json, .py etc. as executable for no reason.
+    find "$BASE_DIR/scripts" -type f -name '*.sh' -exec chmod +x {} +
 
     if [ -d "./oci" ]; then
         mkdir -p "$BASE_DIR/oci"
