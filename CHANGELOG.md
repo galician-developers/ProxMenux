@@ -244,8 +244,6 @@ This release also consolidates significant work on the core ProxMenux scripts.
 - **Intel / AMD GPU tools** kept in sync with the new shared patterns
 - **Hardware & graphics menu** restructured for consistency with the rest of ProxMenux
 
-### UI flow consistency
-All recently-touched scripts follow the unified `msg_info` / `stop_spinner` / `show_proxmenux_logo` pattern between dialog menus and during the main execution phase, resulting in cleaner screen transitions and no more spinner artifacts over dialogs.
 
 ---
 
