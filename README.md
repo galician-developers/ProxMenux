@@ -160,7 +160,6 @@ Contributions, bug reports and feature suggestions are welcome!
 - 💡 [Suggest a feature](https://github.com/MacRimi/ProxMenux/discussions)
 - 🔀 [Submit a pull request](https://github.com/MacRimi/ProxMenux/pulls)
 
-If you find ProxMenux useful, consider giving it a ⭐ on GitHub — it helps others discover the project!
 
 ---
 
