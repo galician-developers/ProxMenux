@@ -1,0 +1,117 @@
+title: "[Prompt] "
+labels:
+  - custom-prompt
+  - community
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Share Your Custom Prompt
+        
+        Thank you for sharing your custom prompt with the community!
+        
+        **Title format suggestion:** Include the provider in the title for easy filtering.
+        Example: `[Gemini] Clean Spanish - Structured, no emojis`
+        
+        This helps others find prompts for their specific AI provider.
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: AI Provider
+      description: Which AI provider did you test this prompt with?
+      options:
+        - OpenAI
+        - Gemini
+        - Groq
+        - Ollama
+        - Anthropic
+        - OpenRouter
+        - DeepSeek
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      description: The specific model you tested with
+      placeholder: "e.g., gpt-4o-mini, gemini-2.0-flash, llama3.2:3b"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe what your prompt does, main features, and output language
+      placeholder: |
+        This prompt generates concise notifications in Spanish.
+        
+        Features:
+        - Brief format (2-3 lines)
+        - Includes severity indicators
+        - Uses emojis for visual clarity
+    validations:
+      required: true
+
+  - type: textarea
+    id: prompt-content
+    attributes:
+      label: Prompt Content
+      description: Paste your complete custom prompt here
+      render: text
+      placeholder: |
+        You are a notification formatter for ProxMenux Monitor.
+        
+        Your task is to...
+        
+        RULES:
+        1. ...
+        2. ...
+        
+        OUTPUT FORMAT:
+        [TITLE]
+        ...
+        [BODY]
+        ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: example-output
+    attributes:
+      label: Example Output
+      description: Show an example of how a notification looks with your prompt
+      placeholder: |
+        **Input notification:**
+        CPU usage high on node pve01
+        
+        **Output with this prompt:**
+        pve01: High CPU Usage
+        CPU at 95% for 5 minutes. Check running processes.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-notes
+    attributes:
+      label: Additional Notes
+      description: Any tips, variations, or known limitations
+      placeholder: |
+        - Works best with models that support system prompts
+        - May need adjustment for very long notifications
+        - Tested with Proxmox VE 8.x
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have tested this prompt and it works correctly
+          required: true
+        - label: I am sharing this prompt for the community to use freely
+          required: true

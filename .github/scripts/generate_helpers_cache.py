@@ -3,26 +3,28 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 import requests
 
-# ---------- Config ----------
-API_URL = "https://api.github.com/repos/community-scripts/ProxmoxVE/contents/frontend/public/json"
 SCRIPT_BASE = "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main"
+POCKETBASE_BASE = "https://db.community-scripts.org/api/collections"
+SCRIPT_COLLECTION_URL = f"{POCKETBASE_BASE}/script_scripts/records"
+CATEGORY_COLLECTION_URL = f"{POCKETBASE_BASE}/script_categories/records"
 
-# Escribimos siempre en <raiz_repo>/json/helpers_cache.json, independientemente del cwd
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUTPUT_FILE = REPO_ROOT / "json" / "helpers_cache.json"
 OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-# ----------------------------
+
+TYPE_TO_PATH_PREFIX = {
+    "lxc": "ct",
+    "vm": "vm",
+    "addon": "tools/addon",
+    "pve": "tools/pve",
+}
 
 
 def to_mirror_url(raw_url: str) -> str:
-    """
-    Convierte una URL raw de GitHub al raw del mirror.
-    GH : https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/docker.sh
-    MIR: https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/docker.sh
-    """
     m = re.match(r"^https://raw\.githubusercontent\.com/([^/]+)/([^/]+)/([^/]+)/(.+)$", raw_url or "")
     if not m:
         return ""
@@ -32,143 +34,202 @@ def to_mirror_url(raw_url: str) -> str:
     return f"https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/{branch}/{path}"
 
 
-def guess_os_from_script_path(script_path: str) -> str | None:
-    """
-    Heurística suave cuando el JSON no publica resources.os:
-      - tools/pve/*   -> proxmox
-      - ct/alpine-*   -> alpine
-      - tools/addon/* -> generic (suele ejecutarse sobre LXC existente)
-      - ct/*          -> debian (por defecto para CTs)
-    """
-    if not script_path:
-        return None
-    if script_path.startswith("tools/pve/") or script_path == "tools/pve/host-backup.sh" or script_path.startswith("vm/"):
-        return "proxmox"
-    if "/alpine-" in script_path or script_path.startswith("ct/alpine-"):
-        return "alpine"
-    if script_path.startswith("tools/addon/"):
-        return "generic"
-    if script_path.startswith("ct/"):
-        return "debian"
-    return None
-
-
-def fetch_directory_json(api_url: str) -> list[dict]:
-    r = requests.get(api_url, timeout=30)
+def fetch_json(url: str, *, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    r = requests.get(url, params=params, timeout=60)
     r.raise_for_status()
     data = r.json()
-    if not isinstance(data, list):
-        raise RuntimeError("GitHub API no devolvió una lista.")
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Unexpected response from {url}: expected object")
     return data
+
+
+def fetch_all_records(url: str, *, expand: str | None = None, per_page: int = 500) -> list[dict[str, Any]]:
+    page = 1
+    items: list[dict[str, Any]] = []
+
+    while True:
+        params: dict[str, Any] = {"page": page, "perPage": per_page}
+        if expand:
+            params["expand"] = expand
+
+        data = fetch_json(url, params=params)
+        page_items = data.get("items", [])
+        if not isinstance(page_items, list):
+            raise RuntimeError(f"Unexpected items list from {url}")
+
+        items.extend(page_items)
+
+        total_pages = data.get("totalPages", page)
+        if not isinstance(total_pages, int) or page >= total_pages:
+            break
+        page += 1
+
+    return items
+
+
+def normalize_os_variants(install_methods_json: list[dict[str, Any]]) -> list[str]:
+    os_values: list[str] = []
+    for item in install_methods_json:
+        if not isinstance(item, dict):
+            continue
+        resources = item.get("resources", {})
+        if not isinstance(resources, dict):
+            continue
+        os_name = resources.get("os")
+        if isinstance(os_name, str) and os_name.strip():
+            normalized = os_name.strip().lower()
+            if normalized not in os_values:
+                os_values.append(normalized)
+    return os_values
+
+
+def build_script_path(type_name: str, slug: str) -> str:
+    type_name = (type_name or "").strip().lower()
+    slug = (slug or "").strip()
+
+    if type_name == "turnkey":
+        return "turnkey/turnkey.sh"
+
+    prefix = TYPE_TO_PATH_PREFIX.get(type_name)
+    if not prefix or not slug:
+        return ""
+
+    return f"{prefix}/{slug}.sh"
 
 
 def main() -> int:
     try:
-        directory = fetch_directory_json(API_URL)
+        scripts = fetch_all_records(SCRIPT_COLLECTION_URL, expand="type,categories")
+        categories = fetch_all_records(CATEGORY_COLLECTION_URL)
     except Exception as e:
-        print(f"ERROR: No se pudo leer el índice de JSONs: {e}", file=sys.stderr)
+        print(f"ERROR: Unable to fetch PocketBase data: {e}", file=sys.stderr)
         return 1
 
-    cache: list[dict] = []
-    seen: set[tuple[str, str]] = set()  # (slug, script) para evitar duplicados
+    category_map: dict[str, dict[str, Any]] = {}
+    for category in categories:
+        category_id = category.get("id")
+        if isinstance(category_id, str) and category_id:
+            category_map[category_id] = category
 
-    total_items = len(directory)
-    processed = 0
-    kept = 0
+    cache: list[dict[str, Any]] = []
 
-    for item in directory:
-        url = item.get("download_url")
-        name_in_dir = item.get("name", "")
-        if not url or not url.endswith(".json"):
+    print(f"Fetched {len(scripts)} scripts and {len(category_map)} categories")
+
+    for idx, raw in enumerate(scripts, start=1):
+        if not isinstance(raw, dict):
             continue
 
-        try:
-            raw = requests.get(url, timeout=30).json()
-            if not isinstance(raw, dict):
-                continue
-        except Exception:
-            print(f"❌ Error al obtener/parsing {name_in_dir}", file=sys.stderr)
-            continue
-
-        processed += 1
-
-        name = raw.get("name", "")
         slug = raw.get("slug")
-        type_ = raw.get("type", "")
+        name = raw.get("name", "")
         desc = raw.get("description", "")
-        categories = raw.get("categories", [])
-        notes = [n.get("text", "") for n in raw.get("notes", []) if isinstance(n, dict)]
 
-        # Credenciales (si existen, se copian tal cual)
-        credentials = raw.get("default_credentials", {})
-        cred_username = credentials.get("username") if isinstance(credentials, dict) else None
-        cred_password = credentials.get("password") if isinstance(credentials, dict) else None
-        add_credentials = any([
-            cred_username not in (None, ""),
-            cred_password not in (None, "")
-        ])
-
-        install_methods = raw.get("install_methods", [])
-        if not isinstance(install_methods, list) or not install_methods:
-            # Sin install_methods válidos -> continuamos
+        if not isinstance(slug, str) or not slug.strip():
             continue
 
-        for im in install_methods:
-            if not isinstance(im, dict):
-                continue
-            script = im.get("script", "")
-            if not script:
-                continue
+        expand = raw.get("expand", {}) if isinstance(raw.get("expand"), dict) else {}
+        type_expanded = expand.get("type", {}) if isinstance(expand.get("type"), dict) else {}
+        type_name = type_expanded.get("type", "") if isinstance(type_expanded.get("type"), str) else ""
 
-            # OS desde resources u heurística
-            resources = im.get("resources", {}) if isinstance(im, dict) else {}
-            os_name = resources.get("os") if isinstance(resources, dict) else None
-            if not os_name:
-                os_name = guess_os_from_script_path(script)
-            if isinstance(os_name, str):
-                os_name = os_name.strip().lower()
+        script_path = build_script_path(type_name, slug)
+        if not script_path:
+            print(f"[{idx:03d}] WARNING: Unable to build script path for slug={slug} type={type_name!r}", file=sys.stderr)
+            continue
 
-            full_script_url = f"{SCRIPT_BASE}/{script}"
-            script_url_mirror = to_mirror_url(full_script_url)
+        full_script_url = f"{SCRIPT_BASE}/{script_path}"
+        script_url_mirror = to_mirror_url(full_script_url)
 
-            key = (slug or "", script)
-            if key in seen:
-                continue
-            seen.add(key)
+        install_methods_json = raw.get("install_methods_json", [])
+        if not isinstance(install_methods_json, list):
+            install_methods_json = []
 
-            entry = {
-                "name": name,
-                "slug": slug,
-                "desc": desc,
-                "script": script,
-                "script_url": full_script_url,
-                "script_url_mirror": script_url_mirror,  # nuevo
-                "os": os_name,                            # nuevo
-                "categories": categories,
-                "notes": notes,
-                "type": type_,
+        notes_json = raw.get("notes_json", [])
+        if not isinstance(notes_json, list):
+            notes_json = []
+
+        notes = [
+            note.get("text", "")
+            for note in notes_json
+            if isinstance(note, dict) and isinstance(note.get("text"), str) and note.get("text", "").strip()
+        ]
+
+        category_ids = raw.get("categories", [])
+        if not isinstance(category_ids, list):
+            category_ids = []
+
+        expanded_categories = expand.get("categories", []) if isinstance(expand.get("categories"), list) else []
+        category_names: list[str] = []
+        for cat in expanded_categories:
+            if isinstance(cat, dict):
+                cat_name = cat.get("name")
+                if isinstance(cat_name, str) and cat_name.strip():
+                    category_names.append(cat_name.strip())
+
+        if not category_names:
+            for cat_id in category_ids:
+                cat = category_map.get(cat_id, {})
+                cat_name = cat.get("name")
+                if isinstance(cat_name, str) and cat_name.strip():
+                    category_names.append(cat_name.strip())
+
+        # Shared fields across all install method entries
+        default_user = raw.get("default_user")
+        default_passwd = raw.get("default_passwd")
+        default_credentials: dict[str, str] | None = None
+        if (isinstance(default_user, str) and default_user.strip()) or (isinstance(default_passwd, str) and default_passwd.strip()):
+            default_credentials = {
+                "username": default_user if isinstance(default_user, str) else "",
+                "password": default_passwd if isinstance(default_passwd, str) else "",
             }
-            if add_credentials:
-                entry["default_credentials"] = {
-                    "username": cred_username,
-                    "password": cred_password,
-                }
 
+        base_entry: dict[str, Any] = {
+            "name": name,
+            "slug": slug,
+            "desc": desc,
+            "script": script_path,
+            "script_url": full_script_url,
+            "script_url_mirror": script_url_mirror,
+            "type": type_name,
+            "type_id": raw.get("type", ""),
+            "categories": category_ids,
+            "category_names": category_names,
+            "notes": notes,
+            "port": raw.get("port", 0),
+            "website": raw.get("website", ""),
+            "documentation": raw.get("documentation", ""),
+            "logo": raw.get("logo", ""),
+            "updateable": bool(raw.get("updateable", False)),
+            "privileged": bool(raw.get("privileged", False)),
+            "has_arm": bool(raw.get("has_arm", False)),
+            "is_dev": bool(raw.get("is_dev", False)),
+            "execute_in": raw.get("execute_in", []),
+            "config_path": raw.get("config_path", ""),
+        }
+        if default_credentials:
+            base_entry["default_credentials"] = default_credentials
+
+        # Emit one entry per install method so the menu shell can offer an
+        # explicit OS choice. When there is only one method (or none), a
+        # single entry is emitted with os="" (script decides at runtime).
+        os_variants = normalize_os_variants(install_methods_json)
+
+        if len(os_variants) > 1:
+            for os_name in os_variants:
+                entry = {**base_entry, "os": os_name}
+                cache.append(entry)
+                print(f"[{len(cache):03d}] {slug:<24} → {script_path:<28} type={type_name:<7} os={os_name}")
+        else:
+            os_name = os_variants[0] if os_variants else ""
+            entry = {**base_entry, "os": os_name}
             cache.append(entry)
-            kept += 1
+            print(f"[{len(cache):03d}] {slug:<24} → {script_path:<28} type={type_name:<7} os={os_name or 'n/a'}")
 
-            # Progreso ligero
-            print(f"[{kept:03d}] {slug or name:<24} → {script:<28} os={os_name or 'n/a'} src={'GH+MR' if script_url_mirror else 'GH'}")
-
-    # Orden estable para commits reproducibles
     cache.sort(key=lambda x: (x.get("slug") or "", x.get("script") or ""))
 
     with OUTPUT_FILE.open("w", encoding="utf-8") as f:
         json.dump(cache, f, ensure_ascii=False, indent=2)
 
     print(f"\n✅ helpers_cache.json → {OUTPUT_FILE}")
-    print(f"   Total JSON en índice: {total_items}")
-    print(f"   Procesados: {processed} | Guardados: {kept} | Únicos (slug,script): {len(seen)}")
+    print(f"   Guardados: {len(cache)}")
 
     return 0
 
