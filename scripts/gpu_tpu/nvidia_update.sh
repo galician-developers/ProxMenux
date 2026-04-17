@@ -147,12 +147,15 @@ get_latest_version() {
 # Version selection menu
 # ============================================================
 select_target_version() {
+  show_proxmenux_logo
+  msg_title "$(translate 'NVIDIA Driver Update')"
   msg_info "$(translate 'Fetching available NVIDIA versions...')"
   local latest versions_list
   latest=$(get_latest_version 2>/dev/null)
   versions_list=$(list_available_versions 2>/dev/null)
   msg_ok "$(translate 'Version list retrieved.')"
-
+  sleep 1
+  
   if [[ -z "$latest" && -z "$versions_list" ]]; then
     dialog --backtitle "ProxMenux" \
       --title "$(translate 'Error')" \
