@@ -104,18 +104,64 @@ const formatClock = (clockString: string | number): string => {
 
 const getDeviceTypeColor = (type: string): string => {
   const lowerType = type.toLowerCase()
+
+  // UPS / battery — amber: warm orange-yellow, distinct from the orange used
+  // for Storage and avoids the "warning" connotation of pure yellow.
+  if (lowerType === "ups" || lowerType.includes("battery")) {
+    return "bg-amber-500/10 text-amber-500 border-amber-500/20"
+  }
+
+  // Storage family — orange (Mass Storage USB class + PCI storage controllers)
   if (lowerType.includes("storage") || lowerType.includes("sata") || lowerType.includes("raid")) {
     return "bg-orange-500/10 text-orange-500 border-orange-500/20"
   }
+
+  // Printer — rose, unmistakable
+  if (lowerType.includes("printer")) {
+    return "bg-rose-500/10 text-rose-500 border-rose-500/20"
+  }
+
+  // Audio family — teal (Audio, Audio/Video); placed before video so that
+  // combined "Audio/Video" class labels read as audio-family.
+  if (lowerType.includes("audio")) {
+    return "bg-teal-500/10 text-teal-500 border-teal-500/20"
+  }
+
+  // Graphics / Video / Imaging — green (cameras, webcams, displays, GPUs).
+  if (
+    lowerType.includes("graphics") ||
+    lowerType.includes("vga") ||
+    lowerType.includes("display") ||
+    lowerType.includes("video") ||
+    lowerType.includes("imaging")
+  ) {
+    return "bg-green-500/10 text-green-500 border-green-500/20"
+  }
+
+  // Network family — blue (Ethernet / Wi-Fi PCI controllers, USB Communications,
+  // CDC Data, Wireless Controllers like Bluetooth dongles).
+  if (
+    lowerType.includes("network") ||
+    lowerType.includes("ethernet") ||
+    lowerType.includes("communications") ||
+    lowerType.includes("wireless") ||
+    lowerType === "cdc data"
+  ) {
+    return "bg-blue-500/10 text-blue-500 border-blue-500/20"
+  }
+
+  // HID — purple: keyboards, mice, game controllers.
+  if (lowerType === "hid") {
+    return "bg-purple-500/10 text-purple-500 border-purple-500/20"
+  }
+
+  // USB host controllers (PCI-level) keep the existing purple identity.
   if (lowerType.includes("usb")) {
     return "bg-purple-500/10 text-purple-500 border-purple-500/20"
   }
-  if (lowerType.includes("network") || lowerType.includes("ethernet")) {
-    return "bg-blue-500/10 text-blue-500 border-blue-500/20"
-  }
-  if (lowerType.includes("graphics") || lowerType.includes("vga") || lowerType.includes("display")) {
-    return "bg-green-500/10 text-green-500 border-green-500/20"
-  }
+
+  // Smart Card, Billboard, Diagnostic, Hub, Physical, Content Security,
+  // Personal Healthcare, Miscellaneous, Application/Vendor Specific, unknown.
   return "bg-gray-500/10 text-gray-500 border-gray-500/20"
 }
 
@@ -1511,9 +1557,67 @@ return (
                 </span>
               </div>
 
-              <div className="mt-4 rounded-md border border-border/50 bg-muted/30 p-3 text-xs text-muted-foreground">
-                <strong className="text-foreground">Note:</strong> Coral TPUs do not expose temperature, utilization or power telemetry through standard interfaces. Monitoring is limited to device presence and driver state.
-              </div>
+              {typeof selectedCoral.temperature === "number" && (() => {
+                const trips = selectedCoral.temperature_trips
+                // Dynamic thresholds when the driver exposes trip points.
+                // Otherwise fall back to conservative hardcoded limits.
+                // trips are reported warn→critical, so [N-1] is critical (red)
+                // and [N-2] is the throttle/warn level (amber).
+                const redAt = trips && trips.length >= 1 ? trips[trips.length - 1] : 85
+                const amberAt =
+                  trips && trips.length >= 2
+                    ? trips[trips.length - 2]
+                    : trips && trips.length === 1
+                      ? redAt - 10
+                      : 75
+                const color =
+                  selectedCoral.temperature >= redAt
+                    ? "text-red-500"
+                    : selectedCoral.temperature >= amberAt
+                      ? "text-amber-500"
+                      : "text-green-500"
+                return (
+                  <div className="flex justify-between border-b border-border/50 pb-2">
+                    <span className="text-sm font-medium text-muted-foreground">Temperature</span>
+                    <div className="text-right">
+                      <span className={`text-sm font-semibold ${color}`}>
+                        {selectedCoral.temperature.toFixed(1)} °C
+                      </span>
+                      {trips && trips.length > 0 && (
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          Thresholds: {trips.map((t) => `${t.toFixed(0)}°C`).join(" · ")}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {selectedCoral.thermal_warnings && selectedCoral.thermal_warnings.length > 0 && (
+                <div className="flex justify-between items-start border-b border-border/50 pb-2">
+                  <span className="text-sm font-medium text-muted-foreground">Hardware Warnings</span>
+                  <div className="flex flex-col gap-1 items-end">
+                    {selectedCoral.thermal_warnings.map((w) => (
+                      <div key={w.name} className="flex items-center gap-2">
+                        <span className="text-xs font-mono text-muted-foreground">
+                          {w.name}
+                          {typeof w.threshold_c === "number" && ` @ ${w.threshold_c.toFixed(0)}°C`}
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className={
+                            w.enabled
+                              ? "text-green-500 border-green-500/20"
+                              : "text-muted-foreground/70"
+                          }
+                        >
+                          {w.enabled ? "enabled" : "disabled"}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {!selectedCoral.drivers_ready && (
                 <Button
@@ -2035,7 +2139,6 @@ return (
                   </div>
                 ))}
             </div>
-            <p className="mt-4 text-xs text-muted-foreground">Click on an interface for detailed information</p>
           </Card>
         )}
 
@@ -2230,7 +2333,6 @@ return (
                 )
               })}
           </div>
-          <p className="mt-4 text-xs text-muted-foreground">Click on a device for detailed hardware information</p>
         </Card>
       )}
 

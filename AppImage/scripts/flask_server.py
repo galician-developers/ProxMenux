@@ -1397,6 +1397,24 @@ _USB_CLASS_LABELS = {
     'ff': 'Vendor Specific',
 }
 
+# USB vendor IDs of known UPS manufacturers. UPSs communicate via HID (USB
+# class 0x03) using the "Power Device" usage page, so raw class detection
+# labels them as generic "HID" — which is technically correct but useless
+# for the user. When the device class is HID and the vendor matches this
+# set, we relabel as "UPS".
+_USB_UPS_VENDORS = {
+    '0463',  # MGE UPS Systems / Eaton (Ellipse, Pulsar, 5P, 9PX, Protection Station)
+    '051d',  # American Power Conversion (APC) / Schneider (Back-UPS, Smart-UPS)
+    '0764',  # CyberPower Systems
+    '0d9f',  # PowerCom
+    '06da',  # Phoenixtec Power / Liebert (some models)
+    '09ae',  # Tripp Lite
+    '047c',  # Dell (select UPS models)
+    '075d',  # Salicru
+    '10af',  # Liebert / Vertiv
+    '0665',  # Cypress Semi (OEM silicon in several UPS brands)
+}
+
 
 def _read_sysfs(path, default=''):
     """Read and trim a sysfs attribute file. Returns default on error."""
@@ -1497,6 +1515,11 @@ def get_usb_devices():
             if device_class == '00':
                 device_class = _interface_class_from_usb_device(dev_path).lower()
             class_label = _USB_CLASS_LABELS.get(device_class, 'Unknown')
+
+            # Refine HID → UPS for known UPS vendors. USB UPSs advertise class
+            # HID with a Power Device usage page; labeling them "HID" looks wrong.
+            if device_class == '03' and vendor_id.lower() in _USB_UPS_VENDORS:
+                class_label = 'UPS'
 
             serial = _read_sysfs(os.path.join(dev_path, 'serial'))
             driver = _get_usb_driver(dev_path)
@@ -1618,6 +1641,108 @@ def _coral_pci_speed(dev_path):
     return ''
 
 
+def _coral_parse_temp_value(raw):
+    """Interpret a sysfs temperature reading as float °C.
+
+    The apex driver reports millidegrees (e.g. 54050 → 54.0 °C). Hwmon nodes
+    also use millidegrees. Plain integers like "42" are treated as °C.
+    Returns None on unparsable / empty input.
+    """
+    if not raw:
+        return None
+    try:
+        val = int(raw)
+    except (ValueError, TypeError):
+        return None
+    if abs(val) >= 1000:
+        return round(val / 1000.0, 1)
+    return float(val)
+
+
+def _coral_pcie_thermal(pci_dev_path):
+    """Read full thermal picture for a PCIe Coral via the apex driver's sysfs.
+
+    The gasket/apex driver exposes (at least on current feranick / kernel 6.12):
+      temp              current die temperature (millidegrees)
+      trip_point{0..2}_temp  configured alarm thresholds (millidegrees)
+      hw_temp_warn{1,2}      hardware-signalled warning thresholds
+      hw_temp_warn{1,2}_en   whether those hw warnings are enabled
+
+    Returns a dict with the fields our payload needs, or an empty dict when
+    no apex_N entry matches this PCI slot (e.g. drivers not loaded, or a USB
+    Coral where this whole sysfs tree doesn't exist).
+    """
+    result = {'temperature': None, 'temperature_trips': None, 'thermal_warnings': None}
+    try:
+        apex_root = '/sys/class/apex'
+        if not os.path.isdir(apex_root):
+            return result
+
+        target_pci = os.path.basename(pci_dev_path)
+        for apex_name in os.listdir(apex_root):
+            apex_path = os.path.join(apex_root, apex_name)
+            device_link = os.path.join(apex_path, 'device')
+            if not os.path.islink(device_link):
+                continue
+            resolved = os.path.realpath(device_link)
+            if os.path.basename(resolved) != target_pci:
+                continue
+
+            # ── Current temperature (prefer direct attr, fall back to hwmon)
+            candidates = [
+                os.path.join(apex_path, 'temp'),
+                os.path.join(apex_path, 'device', 'temp'),
+            ]
+            hwmon_dir = os.path.join(apex_path, 'device', 'hwmon')
+            if os.path.isdir(hwmon_dir):
+                try:
+                    for hwmon in os.listdir(hwmon_dir):
+                        candidates.append(os.path.join(hwmon_dir, hwmon, 'temp1_input'))
+                except Exception:
+                    pass
+
+            for c in candidates:
+                temp = _coral_parse_temp_value(_read_sysfs(c, ''))
+                if temp is not None:
+                    result['temperature'] = temp
+                    break
+
+            # ── Trip points (alarm thresholds). Typically 3 ascending values:
+            # warn / throttle / critical. Kept ordered as-reported by the driver.
+            trips = []
+            for i in range(3):
+                t = _coral_parse_temp_value(
+                    _read_sysfs(os.path.join(apex_path, f'trip_point{i}_temp'), ''))
+                if t is not None:
+                    trips.append(t)
+            if trips:
+                result['temperature_trips'] = trips
+
+            # ── Hardware warnings (threshold + enabled flag). Surface only the
+            # pairs that are actually configured so the UI can show a badge
+            # when a warning is enabled.
+            warnings = []
+            for i in (1, 2):
+                threshold = _coral_parse_temp_value(
+                    _read_sysfs(os.path.join(apex_path, f'hw_temp_warn{i}'), ''))
+                enabled_raw = _read_sysfs(
+                    os.path.join(apex_path, f'hw_temp_warn{i}_en'), '')
+                enabled = enabled_raw.strip() in ('1', 'true', 'yes')
+                if threshold is not None or enabled_raw:
+                    warnings.append({
+                        'name': f'hw_temp_warn{i}',
+                        'threshold_c': threshold,
+                        'enabled': enabled,
+                    })
+            if warnings:
+                result['thermal_warnings'] = warnings
+
+            return result
+    except Exception:
+        pass
+    return result
+
+
 def get_coral_info():
     """Detect Coral TPU accelerators (PCIe/M.2 + USB).
 
@@ -1649,6 +1774,8 @@ def get_coral_info():
             # "drivers_ready" for PCIe = apex bound and kernel modules present
             drivers_ready = (driver_name == 'apex') and apex_loaded
 
+            thermal = _coral_pcie_thermal(dev_path)
+
             coral_devices.append({
                 'type': 'pcie',
                 'name': _coral_pcie_name_from_lspci(slot),
@@ -1666,6 +1793,11 @@ def get_coral_info():
                 'device_nodes': device_nodes,
                 'edgetpu_runtime': runtime,
                 'drivers_ready': drivers_ready,
+                # PCIe/M.2 Coral thermal data from the apex driver (same source
+                # Frigate reads). All null when drivers aren't loaded.
+                'temperature': thermal.get('temperature'),
+                'temperature_trips': thermal.get('temperature_trips'),
+                'thermal_warnings': thermal.get('thermal_warnings'),
             })
     except Exception:
         pass
@@ -1726,6 +1858,12 @@ def get_coral_info():
                 'device_nodes': [],       # No /dev/apex_* for USB
                 'edgetpu_runtime': runtime,
                 'drivers_ready': drivers_ready,
+                # USB Coral does not expose temperature, trip points or hardware
+                # warnings via sysfs; those are only readable from within the Edge
+                # TPU runtime through libusb (Frigate and similar get them there).
+                'temperature': None,
+                'temperature_trips': None,
+                'thermal_warnings': None,
             })
     except Exception:
         pass
