@@ -149,7 +149,7 @@ export function StorageOverview() {
 
   useEffect(() => {
     fetchStorageData()
-    const interval = setInterval(fetchStorageData, 60000)
+    const interval = setInterval(fetchStorageData, 30000)
     return () => clearInterval(interval)
   }, [])
 

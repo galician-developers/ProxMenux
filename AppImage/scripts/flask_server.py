@@ -8046,6 +8046,55 @@ def api_vms():
     """Get virtual machine information"""
     return jsonify(get_proxmox_vms())
 
+
+@app.route('/api/vms/<int:vmid>/status', methods=['GET'])
+@require_auth
+def api_vm_status(vmid):
+    """Lightweight per-VM live status: cpu, mem, disk, I/O counters, uptime.
+
+    Designed to be polled every 2-3s from the detail modal while it's open.
+    Single pvesh call (~200-400ms local socket); returns the same shape as
+    /api/vms entries so the frontend can swap in-place.
+    """
+    try:
+        local_node = get_proxmox_node_name()
+
+        result = subprocess.run(
+            ['pvesh', 'get', f'/nodes/{local_node}/qemu/{vmid}/status/current', '--output-format', 'json'],
+            capture_output=True, text=True, timeout=10
+        )
+        vm_type = 'qemu'
+        if result.returncode != 0:
+            result = subprocess.run(
+                ['pvesh', 'get', f'/nodes/{local_node}/lxc/{vmid}/status/current', '--output-format', 'json'],
+                capture_output=True, text=True, timeout=10
+            )
+            vm_type = 'lxc'
+
+        if result.returncode != 0:
+            return jsonify({'error': f'VM/LXC {vmid} not found'}), 404
+
+        data = json.loads(result.stdout)
+        return jsonify({
+            'vmid': vmid,
+            'name': data.get('name', f'VM-{vmid}'),
+            'status': data.get('status', 'unknown'),
+            'type': vm_type if vm_type == 'lxc' else 'qemu',
+            'cpu': data.get('cpu', 0),
+            'mem': data.get('mem', 0),
+            'maxmem': data.get('maxmem', 0),
+            'disk': data.get('disk', 0),
+            'maxdisk': data.get('maxdisk', 0),
+            'uptime': data.get('uptime', 0),
+            'netin': data.get('netin', 0),
+            'netout': data.get('netout', 0),
+            'diskread': data.get('diskread', 0),
+            'diskwrite': data.get('diskwrite', 0),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/vms/<int:vmid>/metrics', methods=['GET'])
 @require_auth
 def api_vm_metrics(vmid):
@@ -9064,9 +9113,10 @@ def api_prometheus():
         metrics = []
         timestamp = int(datetime.now().timestamp() * 1000)
         node = socket.gethostname()
-        
-        # Get system data
-        cpu_usage = psutil.cpu_percent(interval=0.5)
+
+        # Non-blocking: returns %CPU since the last psutil call (sampler keeps state primed).
+        # Avoids 500ms worker block on each Prometheus scrape.
+        cpu_usage = psutil.cpu_percent(interval=0)
         memory = psutil.virtual_memory()
         load_avg = os.getloadavg()
         uptime_seconds = time.time() - psutil.boot_time()

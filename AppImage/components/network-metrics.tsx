@@ -142,8 +142,8 @@ export function NetworkMetrics() {
     error,
     isLoading,
   } = useSWR<NetworkData>("/api/network", fetcher, {
-    refreshInterval: 53000,
-    revalidateOnFocus: false,
+    refreshInterval: 15000,
+    revalidateOnFocus: true,
     revalidateOnReconnect: true,
   })
 

@@ -423,6 +423,36 @@ export function VirtualMachines() {
     }
   }, [])
 
+  // Keep the open modal's VM in sync with the 5s poll of /api/vms so CPU/RAM/I-O
+  // values don't stay frozen at click-time while the user has the modal open.
+  useEffect(() => {
+    if (!selectedVM || !vmData) return
+    const updated = vmData.find((v) => v.vmid === selectedVM.vmid)
+    if (!updated) return
+    // Avoid unnecessary setState when no field changed (reference-equal shortcut first).
+    if (updated === selectedVM) return
+    setSelectedVM(updated)
+  }, [vmData])
+
+  // Faster per-VM live status poll that only runs while the modal is open.
+  // SWR disables polling when the key is null, so this is truly scoped to the modal.
+  const { data: liveVMStatus } = useSWR<VMData>(
+    selectedVM ? `/api/vms/${selectedVM.vmid}/status` : null,
+    fetcher,
+    {
+      refreshInterval: 2500,
+      revalidateOnFocus: true,
+      revalidateOnReconnect: true,
+      dedupingInterval: 1000,
+    },
+  )
+
+  useEffect(() => {
+    if (!liveVMStatus || !selectedVM) return
+    if (liveVMStatus.vmid !== selectedVM.vmid) return
+    setSelectedVM((prev) => (prev ? { ...prev, ...liveVMStatus } : prev))
+  }, [liveVMStatus])
+
   const handleVMClick = async (vm: VMData) => {
     setSelectedVM(vm)
     setCurrentView("main")
