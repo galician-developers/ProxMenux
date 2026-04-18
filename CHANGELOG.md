@@ -245,9 +245,6 @@ This release also consolidates significant work on the core ProxMenux scripts.
 - **Hardware & graphics menu** restructured for consistency with the rest of ProxMenux
 
 
----
-
-
 ## 2026-03-14
 
 ### New version v1.1.9 — *Helper Scripts Catalog Rebuilt*
