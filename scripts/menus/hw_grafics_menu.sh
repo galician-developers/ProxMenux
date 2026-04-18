@@ -27,7 +27,7 @@ initialize_cache
 while true; do
     OPTION=$(dialog --colors --backtitle "ProxMenux" \
         --title "$(translate "GPUs and Coral-TPU Menu")" \
-        --menu "\n$(translate "Select an option:")" 24 78 16 \
+        --menu "\n$(translate "Select an option:")" 26 78 16 \
             ""  "\Z4──────────────────────── HOST ─────────────────────────\Zn" \
             "1"         "$(translate "Install/Update NVIDIA Drivers (Host + LXC)")" \
             "2"         "$(translate "Install/Update Coral TPU on Host")" \
