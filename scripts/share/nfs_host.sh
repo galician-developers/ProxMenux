@@ -1,0 +1,545 @@
+#!/bin/bash
+# ==========================================================
+# ProxMenux - NFS Host Manager for Proxmox Host
+# ==========================================================
+# Author      : MacRimi
+# Copyright   : (c) 2024 MacRimi
+# License     : MIT
+# ==========================================================
+# Description:
+# Adds external NFS shares as Proxmox storage (pvesm).
+# Proxmox manages the mount natively — no fstab entries needed.
+# ==========================================================
+
+LOCAL_SCRIPTS="/usr/local/share/proxmenux/scripts"
+BASE_DIR="/usr/local/share/proxmenux"
+UTILS_FILE="$BASE_DIR/utils.sh"
+VENV_PATH="/opt/googletrans-env"
+
+if [[ -f "$UTILS_FILE" ]]; then
+    source "$UTILS_FILE"
+fi
+
+load_language
+initialize_cache
+
+if ! command -v pveversion >/dev/null 2>&1; then
+    dialog --backtitle "ProxMenux" --title "$(translate "Error")" \
+        --msgbox "$(translate "This script must be run on a Proxmox host.")" 8 60
+    exit 1
+fi
+
+# ==========================================================
+# STORAGE CONFIG READER
+# ==========================================================
+get_storage_config() {
+    local storage_id="$1"
+    awk -v id="$storage_id" '
+        /^[a-z]+: / { found = ($0 ~ ": "id"$"); next }
+        found && /^[^ \t]/ { exit }
+        found { print }
+    ' /etc/pve/storage.cfg
+}
+
+# ==========================================================
+# SERVER DISCOVERY
+# ==========================================================
+
+discover_nfs_servers() {
+    show_proxmenux_logo
+    msg_title "$(translate "Add NFS Share as Proxmox Storage")"
+    msg_info "$(translate "Scanning network for NFS servers...")"
+
+    HOST_IP=$(hostname -I | awk '{print $1}')
+    NETWORK=$(echo "$HOST_IP" | cut -d. -f1-3).0/24
+
+    if ! which nmap >/dev/null 2>&1; then
+        apt-get install -y nmap &>/dev/null
+    fi
+
+    SERVERS=$(nmap -p 2049 --open "$NETWORK" 2>/dev/null | grep -B 4 "2049/tcp open" | grep "Nmap scan report" | awk '{print $5}' | sort -u || true)
+
+    if [[ -z "$SERVERS" ]]; then
+        cleanup
+        dialog --clear --title "$(translate "No Servers Found")" \
+            --msgbox "$(translate "No NFS servers found on the network.")\n\n$(translate "You can add servers manually.")" 10 60
+        return 1
+    fi
+
+    OPTIONS=()
+    while IFS= read -r server; do
+        if [[ -n "$server" ]]; then
+            EXPORTS_COUNT=$(showmount -e "$server" 2>/dev/null | tail -n +2 | wc -l || echo "0")
+            OPTIONS+=("$server" "NFS Server ($EXPORTS_COUNT exports)")
+        fi
+    done <<< "$SERVERS"
+
+    if [[ ${#OPTIONS[@]} -eq 0 ]]; then
+        cleanup
+        dialog --clear --title "$(translate "No Valid Servers")" --msgbox "$(translate "No accessible NFS servers found.")" 8 50
+        return 1
+    fi
+
+    cleanup
+    NFS_SERVER=$(whiptail --backtitle "ProxMenux" --title "$(translate "Select NFS Server")" \
+        --menu "$(translate "Choose an NFS server:")" 20 80 10 "${OPTIONS[@]}" 3>&1 1>&2 2>&3)
+    [[ -n "$NFS_SERVER" ]] && return 0 || return 1
+}
+
+select_nfs_server() {
+    METHOD=$(dialog --backtitle "ProxMenux" --title "$(translate "NFS Server Selection")" \
+        --menu "$(translate "How do you want to select the NFS server?")" 15 70 3 \
+        "auto"   "$(translate "Auto-discover servers on network")" \
+        "manual" "$(translate "Enter server IP/hostname manually")" \
+        3>&1 1>&2 2>&3)
+
+    case "$METHOD" in
+        auto)
+            discover_nfs_servers || return 1
+            ;;
+        manual)
+            clear
+            NFS_SERVER=$(whiptail --inputbox "$(translate "Enter NFS server IP or hostname:")" \
+                10 60 --title "$(translate "NFS Server")" 3>&1 1>&2 2>&3)
+            [[ -z "$NFS_SERVER" ]] && return 1
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+    return 0
+}
+
+select_nfs_export() {
+    if ! which showmount >/dev/null 2>&1; then
+        whiptail --title "$(translate "NFS Client Error")" \
+            --msgbox "$(translate "showmount command is not working properly.")\n\n$(translate "Please check the installation.")" \
+            10 60
+        return 1
+    fi
+
+    if ! ping -c 1 -W 3 "$NFS_SERVER" >/dev/null 2>&1; then
+        whiptail --title "$(translate "Connection Error")" \
+            --msgbox "$(translate "Cannot reach server") $NFS_SERVER\n\n$(translate "Please check:")\n• $(translate "Server IP/hostname is correct")\n• $(translate "Network connectivity")\n• $(translate "Server is online")" \
+            12 70
+        return 1
+    fi
+
+    if ! nc -z -w 3 "$NFS_SERVER" 2049 2>/dev/null; then
+        whiptail --title "$(translate "NFS Port Error")" \
+            --msgbox "$(translate "NFS port (2049) is not accessible on") $NFS_SERVER\n\n$(translate "Please check:")\n• $(translate "NFS server is running")\n• $(translate "Firewall settings")\n• $(translate "NFS service is enabled")" \
+            12 70
+        return 1
+    fi
+
+    EXPORTS_OUTPUT=$(showmount -e "$NFS_SERVER" 2>&1)
+    EXPORTS_RESULT=$?
+
+    if [[ $EXPORTS_RESULT -ne 0 ]]; then
+        ERROR_MSG=$(echo "$EXPORTS_OUTPUT" | grep -i "error\|failed\|denied" | head -1)
+        whiptail --title "$(translate "NFS Error")" \
+            --msgbox "$(translate "Failed to connect to") $NFS_SERVER\n\n$(translate "Error:"): $ERROR_MSG" \
+            12 80
+        return 1
+    fi
+
+    EXPORTS=$(echo "$EXPORTS_OUTPUT" | tail -n +2 | awk '{print $1}' | grep -v "^$")
+
+    if [[ -z "$EXPORTS" ]]; then
+        whiptail --title "$(translate "No Exports Found")" \
+            --msgbox "$(translate "No exports found on server") $NFS_SERVER\n\n$(translate "You can enter the export path manually.")" \
+            12 70
+        NFS_EXPORT=$(whiptail --inputbox "$(translate "Enter NFS export path (e.g., /mnt/shared):")" \
+            10 60 --title "$(translate "Export Path")" 3>&1 1>&2 2>&3)
+        [[ -z "$NFS_EXPORT" ]] && return 1
+        return 0
+    fi
+
+    OPTIONS=()
+    while IFS= read -r export_line; do
+        if [[ -n "$export_line" ]]; then
+            EXPORT_PATH=$(echo "$export_line" | awk '{print $1}')
+            CLIENTS=$(echo "$EXPORTS_OUTPUT" | grep "^$EXPORT_PATH" | awk '{for(i=2;i<=NF;i++) printf "%s ",$i; print ""}' | sed 's/[[:space:]]*$//')
+            if [[ -n "$CLIENTS" ]]; then
+                OPTIONS+=("$EXPORT_PATH" "$CLIENTS")
+            else
+                OPTIONS+=("$EXPORT_PATH" "$(translate "NFS export")")
+            fi
+        fi
+    done <<< "$EXPORTS"
+
+    if [[ ${#OPTIONS[@]} -eq 0 ]]; then
+        NFS_EXPORT=$(whiptail --inputbox "$(translate "Enter NFS export path (e.g., /mnt/shared):")" \
+            10 60 --title "$(translate "Export Path")" 3>&1 1>&2 2>&3)
+        [[ -n "$NFS_EXPORT" ]] && return 0 || return 1
+    fi
+
+    NFS_EXPORT=$(whiptail --title "$(translate "Select NFS Export")" \
+        --menu "$(translate "Choose an export to mount:")" 20 70 10 "${OPTIONS[@]}" 3>&1 1>&2 2>&3)
+    [[ -n "$NFS_EXPORT" ]] && return 0 || return 1
+}
+
+validate_host_export_exists() {
+    local server="$1"
+    local export="$2"
+    VALIDATION_OUTPUT=$(showmount -e "$server" 2>/dev/null | grep "^$export[[:space:]]")
+    if [[ -n "$VALIDATION_OUTPUT" ]]; then
+        return 0
+    else
+        show_proxmenux_logo
+        echo -e
+        msg_error "$(translate "Export not found on server:") $export"
+        return 1
+    fi
+}
+
+# ==========================================================
+# STORAGE CONFIGURATION
+# ==========================================================
+
+configure_nfs_storage() {
+    STORAGE_ID=$(whiptail --inputbox "$(translate "Enter storage ID for Proxmox:")" \
+        10 60 "nfs-$(echo "$NFS_SERVER" | tr '.' '-')" \
+        --title "$(translate "Storage ID")" 3>&1 1>&2 2>&3)
+    [[ $? -ne 0 ]] && return 1
+    [[ -z "$STORAGE_ID" ]] && STORAGE_ID="nfs-$(echo "$NFS_SERVER" | tr '.' '-')"
+
+    if [[ ! "$STORAGE_ID" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]]; then
+        whiptail --msgbox "$(translate "Invalid storage ID. Use only letters, numbers, hyphens and underscores.")" 8 70
+        return 1
+    fi
+
+    local raw_content
+    raw_content=$(dialog --backtitle "ProxMenux" \
+        --title "$(translate "Content Types")" \
+        --checklist "\n$(translate "Select content types for this storage:")\n$(translate "(Import is selected by default — required for disk image imports)")" 18 65 7 \
+        "import"   "$(translate "Import            — disk image imports")"   on  \
+        "backup"   "$(translate "Backup            — VM and CT backups")"    off \
+        "iso"      "$(translate "ISO image         — installation images")"  off \
+        "vztmpl"   "$(translate "Container template— LXC templates")"        off \
+        "images"   "$(translate "Disk image        — VM disk images")"       off \
+        "rootdir"  "$(translate "Container         — LXC root directories")" off \
+        "snippets" "$(translate "Snippets          — hook scripts / config")" off \
+        3>&1 1>&2 2>&3)
+    [[ $? -ne 0 ]] && return 1
+
+    # Convert dialog checklist output (quoted space-separated) to comma-separated
+    MOUNT_CONTENT=$(echo "$raw_content" | tr -d '"' | tr -s ' ' ',' | sed 's/^,//;s/,$//')
+    [[ -z "$MOUNT_CONTENT" ]] && MOUNT_CONTENT="import"
+
+    return 0
+}
+
+add_proxmox_nfs_storage() {
+    local storage_id="$1"
+    local server="$2"
+    local export="$3"
+    local content="${4:-import}"
+
+    msg_info "$(translate "Starting Proxmox storage integration...")"
+
+    if ! command -v pvesm >/dev/null 2>&1; then
+        msg_error "$(translate "pvesm command not found. This should not happen on Proxmox.")"
+        return 1
+    fi
+
+    if pvesm status "$storage_id" >/dev/null 2>&1; then
+        msg_warn "$(translate "Storage ID already exists:") $storage_id"
+        if ! whiptail --yesno "$(translate "Storage ID already exists. Do you want to remove and recreate it?")" \
+            8 60 --title "$(translate "Storage Exists")"; then
+            return 0
+        fi
+        pvesm remove "$storage_id" 2>/dev/null || true
+    fi
+
+    msg_ok "$(translate "Storage ID is available")"
+    msg_info "$(translate "NFS storage adding in progress...")"
+    if pvesm_output=$(pvesm add nfs "$storage_id" \
+        --server "$server" \
+        --export "$export" \
+        --content "$content" 2>&1); then
+
+        msg_ok "$(translate "NFS storage added successfully!")"
+
+        local nfs_version="Auto-negotiated"
+        if get_storage_config "$storage_id" | grep -q "options.*vers="; then
+            nfs_version="v$(get_storage_config "$storage_id" | grep "options" | grep -o "vers=[0-9.]*" | cut -d= -f2)"
+        fi
+
+        echo -e ""
+        echo -e "${TAB}${BOLD}$(translate "Storage Added:")${CL}"
+        echo -e "${TAB}${BGN}$(translate "Storage ID:")${CL} ${BL}$storage_id${CL}"
+        echo -e "${TAB}${BGN}$(translate "Server:")${CL} ${BL}$server${CL}"
+        echo -e "${TAB}${BGN}$(translate "Export:")${CL} ${BL}$export${CL}"
+        echo -e "${TAB}${BGN}$(translate "Content Types:")${CL} ${BL}$content${CL}"
+        echo -e "${TAB}${BGN}$(translate "NFS Version:")${CL} ${BL}$nfs_version${CL}"
+        echo -e "${TAB}${BGN}$(translate "Mount Path:")${CL} ${BL}/mnt/pve/$storage_id${CL}"
+        echo -e ""
+        msg_ok "$(translate "Storage is now available in Proxmox web interface under Datacenter > Storage")"
+        return 0
+    else
+        msg_error "$(translate "Failed to add NFS storage to Proxmox.")"
+        echo -e "${TAB}$(translate "Error details:"): $pvesm_output"
+        echo -e ""
+        msg_info2 "$(translate "You can add it manually through:")"
+        echo -e "${TAB}• $(translate "Proxmox web interface: Datacenter > Storage > Add > NFS")"
+        echo -e "${TAB}• pvesm add nfs $storage_id --server $server --export $export --content $content"
+        return 1
+    fi
+}
+
+# ==========================================================
+# MAIN OPERATIONS
+# ==========================================================
+
+add_nfs_to_proxmox() {
+    if ! which showmount >/dev/null 2>&1; then
+        msg_info "$(translate "Installing NFS client tools...")"
+        apt-get update &>/dev/null
+        apt-get install -y nfs-common &>/dev/null
+        msg_ok "$(translate "NFS client tools installed")"
+    fi
+
+    # Step 1: Select server
+    select_nfs_server || return
+
+    # Step 2: Select export
+    select_nfs_export || return
+
+    # Step 3: Validate export
+    if ! validate_host_export_exists "$NFS_SERVER" "$NFS_EXPORT"; then
+        echo -e ""
+        msg_error "$(translate "Cannot proceed with invalid export path.")"
+        msg_success "$(translate "Press Enter to continue...")"
+        read -r
+        return
+    fi
+
+    show_proxmenux_logo
+    msg_title "$(translate "Add NFS Share as Proxmox Storage")"
+    msg_ok "$(translate "NFS server:")" "$NFS_SERVER"
+    msg_ok "$(translate "NFS export:")" "$NFS_EXPORT"
+
+    # Step 4: Configure storage
+    configure_nfs_storage || return
+
+    # Step 5: Add to Proxmox
+    show_proxmenux_logo
+    msg_title "$(translate "Add NFS Share as Proxmox Storage")"
+    msg_ok "$(translate "NFS server:") $NFS_SERVER"
+    msg_ok "$(translate "NFS export:") $NFS_EXPORT"
+    msg_ok "$(translate "Storage ID:") $STORAGE_ID"
+    msg_ok "$(translate "Content:") $MOUNT_CONTENT"
+    echo -e ""
+
+    add_proxmox_nfs_storage "$STORAGE_ID" "$NFS_SERVER" "$NFS_EXPORT" "$MOUNT_CONTENT"
+
+    echo -e ""
+    msg_success "$(translate "Press Enter to continue...")"
+    read -r
+}
+
+view_nfs_storages() {
+    show_proxmenux_logo
+    msg_title "$(translate "NFS Storages in Proxmox")"
+
+    echo "=================================================="
+    echo ""
+
+    if ! command -v pvesm >/dev/null 2>&1; then
+        msg_error "$(translate "pvesm not found.")"
+        echo ""
+        msg_success "$(translate "Press Enter to continue...")"
+        read -r
+        return
+    fi
+
+    NFS_STORAGES=$(pvesm status 2>/dev/null | awk '$2 == "nfs" {print $1, $3}')
+    if [[ -z "$NFS_STORAGES" ]]; then
+        msg_warn "$(translate "No NFS storage configured in Proxmox.")"
+        echo ""
+        msg_info2 "$(translate "Use option 1 to add an NFS share as Proxmox storage.")"
+    else
+        echo -e "${BOLD}$(translate "NFS Storages:")${CL}"
+        echo ""
+        while IFS=" " read -r storage_id storage_status; do
+            [[ -z "$storage_id" ]] && continue
+            local storage_info
+            storage_info=$(get_storage_config "$storage_id")
+            local server export_path content
+            server=$(echo "$storage_info" | awk '$1 == "server" {print $2}')
+            export_path=$(echo "$storage_info" | awk '$1 == "export" {print $2}')
+            content=$(echo "$storage_info" | awk '$1 == "content" {print $2}')
+
+            echo -e "${TAB}${BOLD}$storage_id${CL}"
+            echo -e "${TAB}  ${BGN}$(translate "Server:")${CL} ${BL}$server${CL}"
+            echo -e "${TAB}  ${BGN}$(translate "Export:")${CL} ${BL}$export_path${CL}"
+            echo -e "${TAB}  ${BGN}$(translate "Content:")${CL} ${BL}$content${CL}"
+            echo -e "${TAB}  ${BGN}$(translate "Mount Path:")${CL} ${BL}/mnt/pve/$storage_id${CL}"
+            if [[ "$storage_status" == "active" ]]; then
+                echo -e "${TAB}  ${BGN}$(translate "Status:")${CL} ${GN}$(translate "Active")${CL}"
+            else
+                echo -e "${TAB}  ${BGN}$(translate "Status:")${CL} ${RD}$storage_status${CL}"
+            fi
+            echo ""
+        done <<< "$NFS_STORAGES"
+    fi
+
+    echo ""
+    msg_success "$(translate "Press Enter to continue...")"
+    read -r
+}
+
+remove_nfs_storage() {
+    if ! command -v pvesm >/dev/null 2>&1; then
+        dialog --backtitle "ProxMenux" --title "$(translate "Error")" \
+            --msgbox "\n$(translate "pvesm not found.")" 8 60
+        return
+    fi
+
+    NFS_STORAGES=$(pvesm status 2>/dev/null | awk '$2 == "nfs" {print $1}')
+    if [[ -z "$NFS_STORAGES" ]]; then
+        dialog --backtitle "ProxMenux" --title "$(translate "No NFS Storage")" \
+            --msgbox "\n$(translate "No NFS storage found in Proxmox.")" 8 60
+        return
+    fi
+
+    OPTIONS=()
+    while IFS= read -r storage_id; do
+        [[ -z "$storage_id" ]] && continue
+        local storage_info server export_path
+        storage_info=$(get_storage_config "$storage_id")
+        server=$(echo "$storage_info" | awk '$1 == "server" {print $2}')
+        export_path=$(echo "$storage_info" | awk '$1 == "export" {print $2}')
+        OPTIONS+=("$storage_id" "$server:$export_path")
+    done <<< "$NFS_STORAGES"
+
+    SELECTED=$(dialog --backtitle "ProxMenux" --title "$(translate "Remove NFS Storage")" \
+        --menu "$(translate "Select storage to remove:")" 20 80 10 \
+        "${OPTIONS[@]}" 3>&1 1>&2 2>&3)
+    [[ -z "$SELECTED" ]] && return
+
+    local storage_info server export_path content
+    storage_info=$(get_storage_config "$SELECTED")
+    server=$(echo "$storage_info" | awk '$1 == "server" {print $2}')
+    export_path=$(echo "$storage_info" | awk '$1 == "export" {print $2}')
+    content=$(echo "$storage_info" | awk '$1 == "content" {print $2}')
+
+    if whiptail --yesno "$(translate "Remove Proxmox NFS storage:")\n\n$SELECTED\n\n$(translate "Server:"): $server\n$(translate "Export:"): $export_path\n$(translate "Content:"): $content\n\n$(translate "WARNING: This removes the storage from Proxmox. The NFS server is not affected.")" \
+        16 80 --title "$(translate "Confirm Remove")"; then
+
+        show_proxmenux_logo
+        msg_title "$(translate "Remove NFS Storage")"
+
+        if pvesm remove "$SELECTED" 2>/dev/null; then
+            msg_ok "$(translate "Storage") $SELECTED $(translate "removed successfully from Proxmox.")"
+        else
+            msg_error "$(translate "Failed to remove storage.")"
+        fi
+
+        echo -e ""
+        msg_success "$(translate "Press Enter to continue...")"
+        read -r
+    fi
+}
+
+test_nfs_connectivity() {
+    show_proxmenux_logo
+    msg_title "$(translate "Test NFS Connectivity")"
+
+    echo "=================================================="
+    echo ""
+
+    if which showmount >/dev/null 2>&1; then
+        msg_ok "$(translate "NFS Client Tools: AVAILABLE")"
+
+        if systemctl is-active --quiet rpcbind 2>/dev/null; then
+            msg_ok "$(translate "RPC Bind Service: RUNNING")"
+        else
+            msg_warn "$(translate "RPC Bind Service: STOPPED - starting...")"
+            systemctl start rpcbind 2>/dev/null || true
+        fi
+    else
+        msg_warn "$(translate "NFS Client Tools: NOT AVAILABLE")"
+    fi
+
+    echo ""
+
+    if command -v pvesm >/dev/null 2>&1; then
+        echo -e "${BOLD}$(translate "Proxmox NFS Storage Status:")${CL}"
+        NFS_STORAGES=$(pvesm status 2>/dev/null | awk '$2 == "nfs" {print $1, $3}')
+
+        if [[ -n "$NFS_STORAGES" ]]; then
+            while IFS=" " read -r storage_id storage_status; do
+                [[ -z "$storage_id" ]] && continue
+                local server
+                server=$(get_storage_config "$storage_id" | awk '$1 == "server" {print $2}')
+
+                echo -n "  $storage_id ($server): "
+
+                if ping -c 1 -W 2 "$server" >/dev/null 2>&1; then
+                    echo -ne "${GN}$(translate "Reachable")${CL}"
+
+                    if nc -z -w 2 "$server" 2049 2>/dev/null; then
+                        echo -e " | NFS port 2049: ${GN}$(translate "Open")${CL}"
+                    else
+                        echo -e " | NFS port 2049: ${RD}$(translate "Closed")${CL}"
+                    fi
+
+                    if showmount -e "$server" >/dev/null 2>&1; then
+                        echo -e "    $(translate "Export list:") ${GN}$(translate "Available")${CL}"
+                    else
+                        echo -e "    $(translate "Export list:") ${RD}$(translate "Failed")${CL}"
+                    fi
+                else
+                    echo -e "${RD}$(translate "Unreachable")${CL}"
+                fi
+
+                if [[ "$storage_status" == "active" ]]; then
+                    echo -e "    $(translate "Proxmox status:") ${GN}$storage_status${CL}"
+                else
+                    echo -e "    $(translate "Proxmox status:") ${RD}$storage_status${CL}"
+                fi
+                echo ""
+            done <<< "$NFS_STORAGES"
+        else
+            echo "  $(translate "No NFS storage configured.")"
+        fi
+    else
+        msg_warn "$(translate "pvesm not available.")"
+    fi
+
+    echo ""
+    msg_success "$(translate "Press Enter to continue...")"
+    read -r
+}
+
+# ==========================================================
+# MAIN MENU
+# ==========================================================
+
+while true; do
+    CHOICE=$(dialog --backtitle "ProxMenux" \
+        --title "$(translate "NFS Host Manager - Proxmox Host")" \
+        --menu "$(translate "Choose an option:")" 18 70 6 \
+        "1" "$(translate "Add NFS Share as Proxmox Storage")" \
+        "2" "$(translate "View NFS Storages")" \
+        "3" "$(translate "Remove NFS Storage")" \
+        "4" "$(translate "Test NFS Connectivity")" \
+        "5" "$(translate "Exit")" \
+        3>&1 1>&2 2>&3)
+
+    RETVAL=$?
+    if [[ $RETVAL -ne 0 ]]; then
+        exit 0
+    fi
+
+    case $CHOICE in
+        1) add_nfs_to_proxmox ;;
+        2) view_nfs_storages ;;
+        3) remove_nfs_storage ;;
+        4) test_nfs_connectivity ;;
+        5) exit 0 ;;
+        *) exit 0 ;;
+    esac
+done

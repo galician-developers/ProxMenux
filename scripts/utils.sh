@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # ==========================================================
-# ProxMenu - A menu-driven script for Proxmox VE management
+# ProxMenux - A menu-driven script for Proxmox VE management
 # ==========================================================
 # Author      : MacRimi
 # Copyright   : (c) 2024 MacRimi
-# License     : MIT (https://raw.githubusercontent.com/MacRimi/ProxMenux/main/LICENSE)
+# License     : (GPL-3.0) (https://github.com/MacRimi/ProxMenux/blob/main/LICENSE)
 # Version     : 1.0
 # Last Updated: 28/01/2025
 # ==========================================================
@@ -34,7 +34,7 @@
 # ==========================================================
 
 # Repository and directory structure
-REPO_URL="https://raw.githubusercontent.com/MacRimi/ProxMenux/main"
+LOCAL_SCRIPTS="/usr/local/share/proxmenux/scripts"
 INSTALL_DIR="/usr/local/bin"
 BASE_DIR="/usr/local/share/proxmenux"
 CONFIG_FILE="$BASE_DIR/config.json"
@@ -42,6 +42,7 @@ CACHE_FILE="$BASE_DIR/cache.json"
 LOCAL_VERSION_FILE="$BASE_DIR/version.txt"
 MENU_SCRIPT="menu"
 VENV_PATH="/opt/googletrans-env"
+COMPONENTS_STATUS_FILE="$BASE_DIR/components_status.json"
 
 
 # Translation context
@@ -52,8 +53,7 @@ NEON_PURPLE_BLUE="\033[38;5;99m"
 WHITE="\033[38;5;15m" 
 RESET="\033[0m"  
 DARK_GRAY="\033[38;5;244m"
-DARK_GRAY="\033[38;5;244m"
-DARK_GRAY="\033[38;5;244m"
+ORANGE="\033[38;5;208m"
 YW="\033[33m"
 YWB="\033[1;33m"
 GN="\033[1;92m"
@@ -113,6 +113,16 @@ cleanup() {
     fi
 }
 
+stop_spinner() {
+    if [ -n "$SPINNER_PID" ] && ps -p $SPINNER_PID > /dev/null 2>&1; then
+        kill $SPINNER_PID > /dev/null 2>&1
+        wait $SPINNER_PID 2>/dev/null
+    fi
+    printf "\r\033[K"  
+    printf "\e[?25h"   
+    SPINNER_PID=""
+}
+
 # Display trnaslate message with spinner
 msg_lang() {
     local msg="$1"
@@ -134,7 +144,13 @@ msg_info() {
 # Display info2 message
 msg_info2() {
     local msg="$1"
-    echo -e "${TAB}${BOLD}${YW}${HOLD}${msg}${CL}"
+    echo -e "${TAB}${BOLD}${YW}${HOLD} ${msg}${CL}"
+}
+
+# Display info message with spinner
+msg_info3() {
+    local msg="$1"
+    echo -ne "${TAB}${YW}${HOLD}${msg}${CL}"
 }
 
 # Display success message
@@ -165,7 +181,7 @@ msg_warn() {
     fi
     printf "\e[?25h"
     local msg="$1"
-    echo -e "${BFR}${TAB}${NV}${CL} ${YWB}${msg}${CL}"
+    echo -e "${BFR}${TAB}${CL} ${YWB}${msg}${CL}"
 }
 
 
@@ -174,6 +190,12 @@ msg_ok() {
     if [ -n "$SPINNER_PID" ] && ps -p $SPINNER_PID > /dev/null; then 
         kill $SPINNER_PID > /dev/null
     fi
+    printf "\e[?25h"
+    local msg="$1"
+    echo -e "${BFR}${TAB}${CM}${GN}${msg}${CL}"
+}
+
+msg_ok2() {
     printf "\e[?25h"
     local msg="$1"
     echo -e "${BFR}${TAB}${CM}${GN}${msg}${CL}"
@@ -193,24 +215,36 @@ msg_error() {
 
 # Initialize cache
 initialize_cache() {
-    if [ ! -f "$CACHE_FILE" ]; then
-        mkdir -p "$(dirname "$CACHE_FILE")"
-        echo "{}" > "$CACHE_FILE"
+    if [[ "$LANGUAGE" != "en" ]]; then
+        if [ ! -f "$CACHE_FILE" ]; then
+            mkdir -p "$(dirname "$CACHE_FILE")"
+            echo "{}" > "$CACHE_FILE"
+        fi
     fi
 }
 
+# Load language
 load_language() {
+    LANGUAGE="en"
     if [ -f "$CONFIG_FILE" ]; then
-        LANGUAGE=$(jq -r '.language' "$CONFIG_FILE")
+        lang_candidate=$(jq -r '.language // empty' "$CONFIG_FILE" 2>/dev/null)
+        if [[ -n "$lang_candidate" && "$lang_candidate" != "null" ]]; then
+            LANGUAGE="$lang_candidate"
+        fi
     fi
 }
 
-# Translation with cache and predefined terms
+
+
+########################################################
+
+
+
 translate() {
     local text="$1"
     local dest_lang="$LANGUAGE"
 
-    # If the language is English, return the original text without translating or caching
+
     if [ "$dest_lang" = "en" ]; then
         echo "$text"
         return
@@ -237,21 +271,23 @@ translate() {
 from googletrans import Translator
 import sys, json, re
 
-def translate_text(text, dest_lang):
+def translate_text(text, dest_lang, context):
     translator = Translator()
-    context = '$TRANSLATION_CONTEXT'
     try:
         full_text = context + ' ' + text
         result = translator.translate(full_text, dest=dest_lang).text
-        # Remove context and any leading/trailing whitespace
         translated = re.sub(r'^.*?(Translate:|Traducir:|Traduire:|Übersetzen:|Tradurre:|Traduzir:|翻译:|翻訳:)', '', result, flags=re.IGNORECASE | re.DOTALL).strip()
         translated = re.sub(r'^.*?(Context:|Contexto:|Contexte:|Kontext:|Contesto:|上下文：|コンテキスト：).*?:', '', translated, flags=re.IGNORECASE | re.DOTALL).strip()
-        return json.dumps({'success': True, 'text': translated})
+        print(json.dumps({'success': True, 'text': translated}))
     except Exception as e:
-        return json.dumps({'success': False, 'error': str(e)})
+        print(json.dumps({'success': False, 'error': str(e)}))
 
-print(translate_text('$text', '$dest_lang'))
-")
+translate_text(
+    json.loads(sys.argv[1]),
+    sys.argv[2],
+    json.loads(sys.argv[3])
+)
+" "$(jq -Rn --arg t "$text" '$t')" "$dest_lang" "$(jq -Rn --arg ctx "$TRANSLATION_CONTEXT" '$ctx')")
     deactivate
 
     local translation_result=$(echo "$translated" | jq -r '.')
@@ -278,6 +314,11 @@ print(translate_text('$text', '$dest_lang'))
         echo "$text"
     fi
 }
+
+
+
+########################################################
+
 
 
 
@@ -367,4 +408,223 @@ done
 echo -e
 fi
 
+}
+
+
+########################################################
+
+
+ensure_components_status_file() {
+  mkdir -p "$BASE_DIR"
+  if [[ ! -f "$COMPONENTS_STATUS_FILE" ]] || ! jq empty "$COMPONENTS_STATUS_FILE" >/dev/null 2>&1; then
+    echo '{}' > "$COMPONENTS_STATUS_FILE"
+  fi
+}
+
+update_component_status() {
+  local comp="$1"
+  local stat="$2"
+  local ver="$3"
+  local category="$4"
+  local extra_json="$5"
+  if [ -z "$extra_json" ]; then
+    extra_json="{}"
+  fi
+
+  ensure_components_status_file
+
+  local ts
+  ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+  local tmp_file
+  tmp_file=$(mktemp)
+
+  if jq --arg comp "$comp" \
+        --arg stat "$stat" \
+        --arg ver "$ver" \
+        --arg category "$category" \
+        --arg time "$ts" \
+        --argjson extra "$extra_json" \
+        '.[$comp] = ({status:$stat, version:$ver, category:$category, timestamp:$time} + $extra)' \
+        "$COMPONENTS_STATUS_FILE" > "$tmp_file" 2>/dev/null; then
+    mv "$tmp_file" "$COMPONENTS_STATUS_FILE"
+  else
+    rm -f "$tmp_file"
+    echo '{}' > "$COMPONENTS_STATUS_FILE"
+  fi
+}
+
+
+# ============================================
+# Hybrid Dialog Functions (Web/Terminal)
+# ============================================
+
+# Detect if running in web mode
+is_web_mode() {
+    [[ "$EXECUTION_MODE" == "web" ]]
+}
+
+# Generate unique interaction ID
+generate_interaction_id() {
+    echo "$(date +%s%N)_$$"
+}
+
+# Wait for web response with timeout
+wait_for_web_response() {
+    local interaction_id="$1"
+    local response_file="/tmp/proxmenux_response_${interaction_id}"
+    local timeout=300  # 5 minutes
+    local elapsed=0
+    
+    while [[ ! -f "$response_file" ]] && [[ $elapsed -lt $timeout ]]; do
+        sleep 0.1
+        elapsed=$((elapsed + 1))
+    done
+    
+    if [[ -f "$response_file" ]]; then
+        cat "$response_file"
+        rm -f "$response_file"
+        return 0
+    else
+        echo ""
+        return 1
+    fi
+}
+
+# Hybrid menu function
+hybrid_menu() {
+    local title="$1"
+    local text="$2"
+    local height="${3:-20}"
+    local width="${4:-70}"
+    local menu_height="${5:-10}"
+    shift 5
+    local items=("$@")
+    
+    if is_web_mode; then
+        local interaction_id=$(generate_interaction_id)
+        local clean_text=$(echo -e "$text" | sed 's/\\Z[0-9bn]//g')
+        local options_json="["
+        for ((i=0; i<${#items[@]}; i+=2)); do
+            if [ $i -gt 0 ]; then options_json+=","; fi
+            options_json+="{\"value\":\"${items[i]}\",\"label\":\"${items[i+1]}\"}"
+        done
+        options_json+="]"
+        
+        echo "WEB_INTERACTION:menu:${interaction_id}:$(echo -n "$title" | base64 -w0):$(echo -n "$clean_text" | base64 -w0):$options_json" >> "${WEB_LOG:-/tmp/proxmenux_web.log}"
+        wait_for_web_response "$interaction_id"
+    else
+        dialog --colors --title "$title" --menu "$text" "$height" "$width" "$menu_height" "${items[@]}" 3>&1 1>&2 2>&3
+    fi
+}
+
+# Hybrid yes/no prompt
+hybrid_yesno() {
+    local title="$1"
+    local text="$2"
+    local height="${3:-10}"
+    local width="${4:-60}"
+    
+    if is_web_mode; then
+        local interaction_id=$(generate_interaction_id)
+        local clean_text=$(echo -e "$text" | sed 's/\\Z[0-9bn]//g')
+        echo "WEB_INTERACTION:yesno:${interaction_id}:$(echo -n "$title" | base64 -w0):$(echo -n "$clean_text" | base64 -w0)" >> "${WEB_LOG:-/tmp/proxmenux_web.log}"
+        local response=$(wait_for_web_response "$interaction_id")
+        [[ "$response" == "yes" ]] && return 0 || return 1
+    else
+        dialog --colors --title "$title" --yesno "$text" "$height" "$width"
+    fi
+}
+
+# Hybrid message box
+hybrid_msgbox() {
+    local title="$1"
+    local text="$2"
+    local height="${3:-10}"
+    local width="${4:-60}"
+    
+    if is_web_mode; then
+        local interaction_id=$(generate_interaction_id)
+        local clean_text=$(echo -e "$text" | sed 's/\\Z[0-9bn]//g')
+        echo "WEB_INTERACTION:msgbox:${interaction_id}:$(echo -n "$title" | base64 -w0):$(echo -n "$clean_text" | base64 -w0)" >> "${WEB_LOG:-/tmp/proxmenux_web.log}"
+        wait_for_web_response "$interaction_id" > /dev/null
+    else
+        dialog --colors --title "$title" --msgbox "$text" "$height" "$width"
+    fi
+}
+
+# Hybrid input box
+hybrid_inputbox() {
+    local title="$1"
+    local text="$2"
+    local height="${3:-10}"
+    local width="${4:-60}"
+    local default="${5:-}"
+    
+    if is_web_mode; then
+        local interaction_id=$(generate_interaction_id)
+        echo "WEB_INTERACTION:inputbox:${interaction_id}:$(echo -n "$title" | base64 -w0):$(echo -n "$text" | base64 -w0):$(echo -n "$default" | base64 -w0)" >> "${WEB_LOG:-/tmp/proxmenux_web.log}"
+        wait_for_web_response "$interaction_id"
+    else
+        dialog --title "$title" --inputbox "$text" "$height" "$width" "$default" 3>&1 1>&2 2>&3
+    fi
+}
+
+# Hybrid whiptail menu (used during installation - doesn't hide terminal output)
+hybrid_whiptail_menu() {
+    local title="$1"
+    local text="$2"
+    local height="${3:-20}"
+    local width="${4:-70}"
+    local menu_height="${5:-10}"
+    shift 5
+    local items=("$@")
+    
+    if is_web_mode; then
+        local interaction_id=$(generate_interaction_id)
+        local options_json="["
+        for ((i=0; i<${#items[@]}; i+=2)); do
+            if [ $i -gt 0 ]; then options_json+=","; fi
+            options_json+="{\"value\":\"${items[i]}\",\"label\":\"${items[i+1]}\"}"
+        done
+        options_json+="]"
+        
+        echo "WEB_INTERACTION:menu:${interaction_id}:$(echo -n "$title" | base64 -w0):$(echo -n "$text" | base64 -w0):$options_json" >> "${WEB_LOG:-/tmp/proxmenux_web.log}"
+        wait_for_web_response "$interaction_id"
+    else
+        whiptail --title "$title" --menu "$text" "$height" "$width" "$menu_height" "${items[@]}" 3>&1 1>&2 2>&3
+    fi
+}
+
+# Hybrid whiptail yes/no (used during installation)
+hybrid_whiptail_yesno() {
+    local title="$1"
+    local text="$2"
+    local height="${3:-10}"
+    local width="${4:-70}"
+    
+    if is_web_mode; then
+        local interaction_id=$(generate_interaction_id)
+        echo "WEB_INTERACTION:yesno:${interaction_id}:$(echo -n "$title" | base64 -w0):$(echo -n "$text" | base64 -w0)" >> "${WEB_LOG:-/tmp/proxmenux_web.log}"
+        local response=$(wait_for_web_response "$interaction_id")
+        [[ "$response" == "yes" ]] && return 0 || return 1
+    else
+        whiptail --title "$title" --yesno "$text" "$height" "$width"
+    fi
+}
+
+# Hybrid whiptail message box (used during installation)
+hybrid_whiptail_msgbox() {
+    local title="$1"
+    local text="$2"
+    local height="${3:-10}"
+    local width="${4:-70}"
+    
+    if is_web_mode; then
+        local interaction_id=$(generate_interaction_id)
+        echo "WEB_INTERACTION:msgbox:${interaction_id}:$(echo -n "$title" | base64 -w0):$(echo -n "$text" | base64 -w0)" >> "${WEB_LOG:-/tmp/proxmenux_web.log}"
+        wait_for_web_response "$interaction_id" > /dev/null
+    else
+        whiptail --title "$title" --msgbox "$text" "$height" "$width"
+    fi
 }

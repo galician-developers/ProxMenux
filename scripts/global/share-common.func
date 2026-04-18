@@ -1,0 +1,999 @@
+#!/bin/bash
+# ProxMenux - Shared Common Functions
+# ============================================
+# Author      : MacRimi
+# License     : MIT
+# Version     : 1.0
+# Last Updated: 29/01/2026
+# ============================================
+# Common functions shared across multiple scripts
+
+
+
+
+
+# ==========================================================
+# Ensure repositories are properly configured
+# ==========================================================
+ensure_repositories() {
+  local pve_version need_update=false
+  pve_version=$(pveversion 2>/dev/null | grep -oP 'pve-manager/\K[0-9]+' | head -1)
+
+  if [[ -z "$pve_version" ]]; then
+    msg_error "$(translate 'Unable to detect Proxmox version.')"
+    return 1
+  fi
+
+  if (( pve_version >= 9 )); then
+    # ===== PVE 9 (Debian 13 - trixie) =====
+    # proxmox.sources (no-subscription) - create if missing
+    if [[ ! -f /etc/apt/sources.list.d/proxmox.sources ]]; then
+      cat > /etc/apt/sources.list.d/proxmox.sources <<'EOF'
+Enabled: true
+Types: deb
+URIs: http://download.proxmox.com/debian/pve
+Suites: trixie
+Components: pve-no-subscription
+Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
+EOF
+      need_update=true
+    fi
+
+    # debian.sources - create if missing
+    if [[ ! -f /etc/apt/sources.list.d/debian.sources ]]; then
+      cat > /etc/apt/sources.list.d/debian.sources <<'EOF'
+Types: deb
+URIs: http://deb.debian.org/debian/
+Suites: trixie trixie-updates
+Components: main contrib non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+
+Types: deb
+URIs: http://security.debian.org/debian-security/
+Suites: trixie-security
+Components: main contrib non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+EOF
+      need_update=true
+    fi
+
+  else
+    # ===== PVE 8 (Debian 12 - bookworm) =====
+    local sources_file="/etc/apt/sources.list"
+
+    # Debian base (create or append minimal lines if missing)
+    if ! grep -qE 'deb .* bookworm .* main' "$sources_file" 2>/dev/null; then
+      {
+        echo "deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware"
+        echo "deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware"
+        echo "deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware"
+      } >> "$sources_file"
+      need_update=true
+    fi
+
+    # Proxmox no-subscription list (classic) if missing
+    if [[ ! -f /etc/apt/sources.list.d/pve-no-subscription.list ]]; then
+      echo "deb http://download.proxmox.com/debian/pve bookworm pve-no-subscription" \
+        > /etc/apt/sources.list.d/pve-no-subscription.list
+      need_update=true
+    fi
+  fi
+
+  # apt-get update only if needed or lists are empty
+  if [[ "$need_update" == true ]] || [[ ! -d /var/lib/apt/lists || -z "$(ls -A /var/lib/apt/lists 2>/dev/null)" ]]; then
+    msg_info "$(translate 'Updating APT package lists...')"
+    apt-get update >/dev/null 2>&1 || apt-get update
+    msg_ok "$(translate 'APT package lists updated')"
+  fi
+
+  return 0
+}
+
+
+# ==========================================================
+
+
+if [[ -n "${__PROXMENUX_SHARE_COMMON__}" ]]; then
+    return 0
+fi
+__PROXMENUX_SHARE_COMMON__=1
+
+
+: "${PROXMENUX_DEFAULT_SHARE_GROUP:=sharedfiles}"
+
+
+: "${PROXMENUX_SHARE_MAP_DB:=/usr/local/share/proxmenux/share-map.db}"
+
+
+mkdir -p "$(dirname "$PROXMENUX_SHARE_MAP_DB")" 2>/dev/null || true
+touch "$PROXMENUX_SHARE_MAP_DB" 2>/dev/null || true
+
+
+pmx_share_map_get() {
+
+    local key="$1"
+    awk -F'=' -v k="$key" '$1==k {print $2}' "$PROXMENUX_SHARE_MAP_DB" 2>/dev/null | tail -n1
+}
+
+
+pmx_share_map_set() {
+
+    local key="$1" val="$2"
+
+    sed -i "\|^${key}=|d" "$PROXMENUX_SHARE_MAP_DB" 2>/dev/null || true
+    echo "${key}=${val}" >> "$PROXMENUX_SHARE_MAP_DB"
+}
+
+
+
+
+
+# ==========================================================
+
+
+
+
+pmx_choose_or_create_group() {
+    local default_group="${1:-$PROXMENUX_DEFAULT_SHARE_GROUP}"
+    local choice group_name groups menu_args gid_min
+
+
+    gid_min="$(awk '/^\s*GID_MIN\s+[0-9]+/ {print $2}' /etc/login.defs 2>/dev/null | tail -n1)"
+    [[ -z "$gid_min" ]] && gid_min=1000
+
+    choice=$(whiptail --title "$(translate "Shared Group")" \
+        --menu "$(translate "Choose a group policy for this shared directory:")" 18 78 6 \
+        "1"  "$(translate "Use default group:") $default_group $(translate "(recommended)")" \
+        "2"  "$(translate "Create a new group for isolation")" \
+        "3"  "$(translate "Select an existing group")" \
+        3>&1 1>&2 2>&3) || { echo ""; return 1; }
+
+    case "$choice" in
+        1)
+
+            pmx_ensure_host_group "$default_group" >/dev/null || { echo ""; return 1; }
+            echo "$default_group"
+            ;;
+
+        2)
+            group_name=$(whiptail --inputbox "$(translate "Enter new group name:")" 10 70 "sharedfiles-project" \
+                --title "$(translate "New Group")" 3>&1 1>&2 2>&3) || { echo ""; return 1; }
+
+            if [[ -z "$group_name" ]]; then
+                msg_error "$(translate "Group name cannot be empty.")"
+                echo ""; return 1
+            fi
+
+            if ! [[ "$group_name" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]; then
+                msg_error "$(translate "Invalid group name. Use letters, digits, underscore or hyphen, and start with a letter or underscore.")"
+                echo ""; return 1
+            fi
+
+            pmx_ensure_host_group "$group_name" >/dev/null || { echo ""; return 1; }
+            echo "$group_name"
+            ;;
+
+        3)
+
+            groups=$(getent group | awk -F: -v MIN="$gid_min" '
+                $3 >= MIN && $1 != "nogroup" && $1 !~ /^pve/ {print $0}
+            ' | sort -t: -k1,1)
+
+            if [[ -z "$groups" ]]; then
+                whiptail --title "$(translate "Groups")" --msgbox "$(translate "No user groups found.")" 8 60
+                echo ""; return 1
+            fi
+
+            menu_args=()
+            while IFS=: read -r gname _ gid members; do
+                menu_args+=("$gname" "GID=$gid")
+            done <<< "$groups"
+
+            group_name=$(whiptail --title "$(translate "Existing Groups")" \
+                --menu "$(translate "Select an existing group:")" 20 70 12 \
+                "${menu_args[@]}" 3>&1 1>&2 2>&3) || { echo ""; return 1; }
+
+
+            pmx_ensure_host_group "$group_name" >/dev/null || { echo ""; return 1; }
+            echo "$group_name"
+            ;;
+
+        *)
+            echo ""; return 1
+            ;;
+    esac
+}
+
+
+
+
+# ==========================================================
+
+
+
+pmx_ensure_host_group() {
+    local group_name="$1"
+    local suggested_gid="${2:-}"
+    local base_gid=101000
+    local new_gid gid
+
+
+    if getent group "$group_name" >/dev/null 2>&1; then
+        gid="$(getent group "$group_name" | cut -d: -f3)"
+        echo "$gid"
+        return 0
+    fi
+
+    if [[ -n "$suggested_gid" ]]; then
+
+        if getent group "$suggested_gid" >/dev/null 2>&1; then
+            msg_error "$(translate "GID already in use:") $suggested_gid"
+            echo ""
+            return 1
+        fi
+        if ! groupadd -g "$suggested_gid" "$group_name" >/dev/null 2>&1; then
+            msg_error "$(translate "Failed to create group:") $group_name"
+            echo ""
+            return 1
+        fi
+        msg_ok "$(translate "Group created:") $group_name"
+    else
+
+        new_gid="$base_gid"
+        while getent group "$new_gid" >/dev/null 2>&1; do
+            new_gid=$((new_gid+1))
+        done
+        if ! groupadd -g "$new_gid" "$group_name" >/dev/null 2>&1; then
+            msg_error "$(translate "Failed to create group:") $group_name"
+            echo ""
+            return 1
+        fi
+        msg_ok "$(translate "Group created:") $group_name"
+    fi
+
+    gid="$(getent group "$group_name" | cut -d: -f3)"
+    if [[ -z "$gid" ]]; then
+        msg_error "$(translate "Failed to resolve group GID for") $group_name"
+        echo ""
+        return 1
+    fi
+
+    echo "$gid"
+    return 0
+}
+
+
+
+
+
+# ==========================================================
+
+
+
+
+pmx_prepare_host_shared_dir() {
+
+    local dir="$1" group_name="$2"
+    [[ -z "$dir" || -z "$group_name" ]] && { msg_error "$(translate "Internal error: missing arguments in pmx_prepare_host_shared_dir")"; return 1; }
+
+    if [[ ! -d "$dir" ]]; then
+        if mkdir -p "$dir" 2>/dev/null; then
+            msg_ok "$(translate "Created directory on host:") $dir"
+        else
+            msg_error "$(translate "Failed to create directory on host:") $dir"
+            return 1
+        fi
+    fi
+
+    chown -R root:"$group_name" "$dir" 2>/dev/null || true
+    chmod -R 2775 "$dir" 2>/dev/null || true
+
+    if command -v setfacl >/dev/null 2>&1; then
+        setfacl -R -m d:g:"$group_name":rwx -m d:o::rx -m g:"$group_name":rwx "$dir" 2>/dev/null || true
+        msg_ok "$(translate "Default ACLs applied for group inheritance.")"
+    fi
+    return 0
+}
+
+
+
+
+
+
+
+# ==========================================================
+
+
+
+
+
+
+
+
+pmx_select_host_mount_point() {
+    local title="${1:-$(translate "Select Mount Point")}"
+    local default_path="${2:-/mnt/shared}"
+    local context="${3:-local}"   
+    local choice folder_name result existing_dirs mount_point
+
+    while true; do
+        choice=$(whiptail --title "$title" --menu "$(translate "Where do you want the host folder?")" 16 76 3 \
+            "1"  "$(translate "Create new folder in /mnt")" \
+            "2" "$(translate "Enter custom pathr")" 3>&1 1>&2 2>&3) || { echo ""; return 1; }
+
+        case "$choice" in
+            1)
+                folder_name=$(whiptail --inputbox "$(translate "Enter folder name for /mnt:")" 10 70 "$(basename "$default_path")" --title "$(translate "Folder Name")" 3>&1 1>&2 2>&3) || { echo ""; return 1; }
+                [[ -z "$folder_name" ]] && continue
+                mount_point="/mnt/$folder_name"
+                echo "$mount_point"; return 0
+                ;;
+            
+            2)
+                result=$(whiptail --inputbox "$(translate "Enter full path:")" 10 80 "$default_path" --title "$(translate "Custom Path")" 3>&1 1>&2 2>&3) || { echo ""; return 1; }
+                [[ -z "$result" ]] && continue
+                echo "$result"; return 0
+                ;;
+        esac
+    done
+}
+
+
+
+
+
+
+
+# ==========================================================
+
+
+
+
+
+select_host_directory_() {
+    local method choice result
+
+    method=$(whiptail --title "$(translate "Select Host Directory")" --menu "$(translate "How do you want to select the HOST folder to mount?")" 15 70 4 \
+        "mnt" "$(translate "Select from /mnt directories")" \
+        "manual" "$(translate "Enter path manually")" 3>&1 1>&2 2>&3) || return 1
+
+    case "$method" in
+        mnt|srv|media)
+            local base_path="/$method"
+            local host_dirs=("$base_path"/*)
+            local options=()
+            
+            for dir in "${host_dirs[@]}"; do
+                if [[ -d "$dir" ]]; then
+                    options+=("$dir" "$(basename "$dir")")
+                fi
+            done
+            
+            if [[ ${#options[@]} -eq 0 ]]; then
+                msg_error "$(translate "No directories found in") $base_path"
+                return 1
+            fi
+            
+            result=$(whiptail --title "$(translate "Select Host Folder")" \
+                --menu "$(translate "Select the folder to mount:")" 20 80 10 "${options[@]}" 3>&1 1>&2 2>&3)
+            ;;
+        manual)
+            
+            result=$(whiptail --title "$(translate "Enter Path")" \
+                --inputbox "$(translate "Enter the full path to the host folder:")" 10 70 "/mnt/" 3>&1 1>&2 2>&3)
+            ;;
+    esac
+
+    if [[ -z "$result" ]]; then
+        return 1
+    fi
+
+    if [[ ! -d "$result" ]]; then
+        msg_error "$(translate "The selected path is not a valid directory:") $result"
+        return 1
+    fi
+
+    echo "$result"
+}
+
+
+
+# ==========================================================
+
+
+
+select_host_directory__() {
+    local method result
+
+    method=$(whiptail --title "$(translate "Select Host Directory")" \
+        --menu "$(translate "How do you want to select the HOST folder to mount?")" 15 70 4 \
+        "mnt"    "$(translate "Select from /mnt directories")" \
+        "manual" "$(translate "Enter path manually")" \
+        3>&1 1>&2 2>&3) || return 1   
+
+    case "$method" in
+        mnt|srv|media)
+            local base_path="/$method"
+            local host_dirs=("$base_path"/*)
+            local options=()
+
+            for dir in "${host_dirs[@]}"; do
+                [[ -d "$dir" ]] && options+=("$dir" "$(basename "$dir")")
+            done
+
+            if [[ ${#options[@]} -eq 0 ]]; then
+                msg_error "$(translate "No directories found in") $base_path"
+                return 1
+            fi
+
+            result=$(whiptail --title "$(translate "Select Host Folder")" \
+                --menu "$(translate "Select the folder to mount:")" 20 80 10 \
+                "${options[@]}" 3>&1 1>&2 2>&3) || return 1
+            ;;
+        manual)
+            result=$(whiptail --title "$(translate "Enter Path")" \
+                --inputbox "$(translate "Enter the full path to the host folder:")" \
+                10 70 "/mnt/" 3>&1 1>&2 2>&3) || return 1
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+
+    [[ -z "$result" ]] && return 1
+    [[ ! -d "$result" ]] && { 
+        msg_error "$(translate "The selected path is not a valid directory:") $result"
+        return 1
+    }
+
+    echo "$result"
+
+}
+
+
+
+
+# ==========================================================
+
+
+
+select_host_directory() {
+    local method result
+
+    method=$(whiptail --title "$(translate "Select Host Directory")" \
+        --menu "$(translate "How do you want to select the HOST folder to mount?")" 15 70 4 \
+        "mnt"    "$(translate "Select from /mnt directories")" \
+        "manual" "$(translate "Enter path manually")" \
+        3>&1 1>&2 2>&3) || return 1   
+
+    case "$method" in
+        mnt|srv|media)
+            local base_path="/$method"
+            local host_dirs=("$base_path"/*)
+            local options=()
+
+            for dir in "${host_dirs[@]}"; do
+                [[ -d "$dir" ]] && options+=("$dir" "$(basename "$dir")")
+            done
+
+            if [[ ${#options[@]} -eq 0 ]]; then
+                msg_error "$(translate "No directories found in") $base_path"
+                return 1
+            fi
+
+            result=$(whiptail --title "$(translate "Select Host Folder")" \
+                --menu "$(translate "Select the folder to mount:")" 20 80 10 \
+                "${options[@]}" 3>&1 1>&2 2>&3) || return 1
+            ;;
+        manual)
+            result=$(whiptail --title "$(translate "Enter Path")" \
+                --inputbox "$(translate "Enter the full path to the host folder:")" \
+                10 70 "/mnt/" 3>&1 1>&2 2>&3) || return 1
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+
+    [[ -z "$result" ]] && return 1
+    [[ ! -d "$result" ]] && { 
+        msg_error "$(translate "The selected path is not a valid directory:") $result"
+        return 1
+    }
+
+    echo "$result"
+
+}
+
+
+
+
+# ==========================================================
+
+
+
+
+select_lxc_container() {
+    local ct_list ctid ct_status
+    
+    ct_list=$(pct list | awk 'NR>1 {print $1, $2, $3}')
+    if [[ -z "$ct_list" ]]; then
+        dialog --title "$(translate "Error")" \
+            --msgbox "$(translate "No LXC containers available")" 8 50
+        return 1
+    fi
+
+    local options=()
+    while read -r id name status; do
+        if [[ -n "$id" ]]; then
+            options+=("$id" "$name ($status)")
+        fi
+    done <<< "$ct_list"
+
+    ctid=$(dialog --title "$(translate "Select LXC Container")" \
+        --menu "\n$(translate "Select container:")" 25 80 15 \
+        "${options[@]}" 3>&1 1>&2 2>&3)
+    
+    if [[ -z "$ctid" ]]; then
+        return 1
+    fi
+
+    echo "$ctid"
+    return 0
+}
+
+
+
+
+
+# ==========================================================
+
+
+
+
+
+
+select_container_mount_point_() {
+    local ctid="$1"
+    local host_dir="$2"
+    local choice mount_point existing_dirs options
+
+    while true; do
+        choice=$(whiptail --title "$(translate "Configure Mount Point inside LXC")" \
+            --menu "$(translate "Where to mount inside container?")" 18 70 5 \
+            "1" "$(translate "Create new directory in /mnt")" \
+            "2" "$(translate "Enter path manually")" \
+            "3" "$(translate "Cancel")" 3>&1 1>&2 2>&3) || return 1
+
+        case "$choice" in
+            1)
+                mount_point=$(whiptail --inputbox "$(translate "Enter folder name for /mnt:")" 10 60 "shared" 3>&1 1>&2 2>&3) || continue
+                [[ -z "$mount_point" ]] && continue
+                mount_point="/mnt/$mount_point"
+                pct exec "$ctid" -- mkdir -p "$mount_point" 2>/dev/null
+                ;;
+
+            2)
+                mount_point=$(whiptail --inputbox "$(translate "Enter full path:")" 10 70 "/mnt/shared" 3>&1 1>&2 2>&3) || continue
+                [[ -z "$mount_point" ]] && continue
+                mount_point="/mnt/$mount_point"
+                pct exec "$ctid" -- mkdir -p "$mount_point" 2>/dev/null
+                ;;
+
+            3)
+                return 1
+                ;;
+        esac
+
+        if pct exec "$ctid" -- test -d "$mount_point" 2>/dev/null; then
+            echo "$mount_point"
+            return 0
+        else
+            whiptail --msgbox "$(translate "Could not create or access directory:") $mount_point" 8 70
+            continue
+        fi
+    done
+}
+
+
+
+
+# ==========================================================
+
+
+
+
+
+select_container_mount_point() {
+    local ctid="$1"
+    local host_dir="$2"
+    local choice mount_point base_name
+
+    base_name=$(basename "$host_dir")
+
+    while true; do
+        choice=$(whiptail --title "$(translate "Configure Mount Point inside LXC")" \
+            --menu "$(translate "Where to mount inside container?")" 18 70 5 \
+            "1" "$(translate "Create new directory in /mnt")" \
+            "2" "$(translate "Enter path manually")" \
+            "3" "$(translate "Cancel")" 3>&1 1>&2 2>&3) || return 1
+
+        case "$choice" in
+            1)
+                mount_point=$(whiptail --inputbox "$(translate "Enter folder name for /mnt:")" \
+                    10 60 "$base_name" 3>&1 1>&2 2>&3) || continue
+                [[ -z "$mount_point" ]] && continue
+                mount_point="/mnt/$mount_point"
+                pct exec "$ctid" -- mkdir -p "$mount_point" 2>/dev/null
+                ;;
+
+            2)
+                mount_point=$(whiptail --inputbox "$(translate "Enter full path:")" \
+                    10 70 "/mnt/$base_name" 3>&1 1>&2 2>&3) || continue
+                [[ -z "$mount_point" ]] && continue
+                pct exec "$ctid" -- mkdir -p "$mount_point" 2>/dev/null
+                ;;
+
+            3)
+                return 1
+                ;;
+        esac
+
+        if pct exec "$ctid" -- test -d "$mount_point" 2>/dev/null; then
+            echo "$mount_point"
+            return 0
+        else
+            whiptail --msgbox "$(translate "Could not create or access directory:") $mount_point" 8 70
+            continue
+        fi
+    done
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ==========================================================
+# CLIENT MOUNT FUNCTIONS (NFS/SAMBA COMMON)
+# ==========================================================
+
+
+
+
+
+# Check if container is privileged (required for client mounts)
+select_privileged_lxc() {
+    # === Select CT ===
+    local ct_list ctid ct_status conf unpriv
+
+    ct_list=$(pct list | awk 'NR>1 {print $1, $3}')
+    if [[ -z "$ct_list" ]]; then
+        dialog --backtitle "ProxMenux" --title "$(translate "Error")" \
+            --msgbox "$(translate "No CTs available in the system.")" 8 50
+        return 1
+    fi
+
+    ctid=$(dialog --backtitle "ProxMenux" --title "$(translate "Select CT")" \
+        --menu "$(translate "Select the CT to manage NFS/Samba client:")" 20 70 12 \
+        $ct_list 3>&1 1>&2 2>&3)
+
+    if [[ -z "$ctid" ]]; then
+        dialog --backtitle "ProxMenux" --title "$(translate "Error")" \
+            --msgbox "$(translate "No CT was selected.")" 8 50
+        return 1
+    fi
+
+    # === Start CT if not running ===
+    ct_status=$(pct status "$ctid" | awk '{print $2}')
+    if [[ "$ct_status" != "running" ]]; then
+        show_proxmenux_logo
+        echo -e
+        msg_info "$(translate "Starting CT") $ctid..."
+        pct start "$ctid"
+        sleep 2
+        if [[ "$(pct status "$ctid" | awk '{print $2}')" != "running" ]]; then
+            msg_error "$(translate "Failed to start the CT.")"
+            echo -e ""
+            msg_success "$(translate 'Press Enter to continue...')"
+            read -r
+            return 1
+        fi
+        msg_ok "$(translate "CT started successfully.")"
+    fi
+
+    # === Check privileged/unprivileged ===
+    conf="/etc/pve/lxc/${ctid}.conf"
+    unpriv=$(awk '/^unprivileged:/ {print $2}' "$conf" 2>/dev/null)
+
+    if [[ "$unpriv" == "1" ]]; then
+        dialog --backtitle "ProxMenux" --title "$(translate "Privileged Container Required")" \
+            --msgbox "\n$(translate "Network share mounting (NFS/Samba) requires a PRIVILEGED container.")\n\n$(translate "Selected container") $ctid $(translate "is UNPRIVILEGED.")\n\n$(translate "For unprivileged containers, use instead:")\n  • $(translate "Configure LXC mount points")\n  • $(translate "Mount shares on HOST first")\n  • $(translate "Then bind-mount to container")" 15 75
+        exit 1
+    fi
+
+    # Export CTID if all good
+    echo "$ctid"
+    CTID="$ctid"
+    return 0
+}
+
+
+
+# Common mount point selection for containers
+pmx_select_container_mount_point() {
+    local ctid="$1"
+    local share_name="${2:-shared}"
+    
+    while true; do
+        local choice=$(whiptail --title "$(translate "Select Mount Point")" --menu "$(translate "Where do you want to mount inside container?")" 15 70 3 \
+        "existing" "$(translate "Select from existing folders in /mnt")" \
+        "new" "$(translate "Create new folder in /mnt")" \
+        "custom" "$(translate "Enter custom path")" 3>&1 1>&2 2>&3)
+        
+        case "$choice" in
+            existing)
+                local existing_dirs=$(pct exec "$ctid" -- find /mnt -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+                if [[ -z "$existing_dirs" ]]; then
+                    whiptail --title "$(translate "No Folders")" --msgbox "$(translate "No folders found in /mnt. Please create a new folder.")" 8 60
+                    continue
+                fi
+                
+                local options=()
+                while IFS= read -r dir; do
+                    if [[ -n "$dir" ]]; then
+                        local name=$(basename "$dir")
+                        if pct exec "$ctid" -- [ "$(ls -A "$dir" 2>/dev/null | wc -l)" -eq 0 ]; then
+                            local status="$(translate "Empty")"
+                        else
+                            local status="$(translate "Contains files")"
+                        fi
+                        options+=("$dir" "$name ($status)")
+                    fi
+                done <<< "$existing_dirs"
+                
+                local mount_point=$(whiptail --title "$(translate "Select Existing Folder")" --menu "$(translate "Choose a folder to mount:")" 20 80 10 "${options[@]}" 3>&1 1>&2 2>&3)
+                
+                if [[ -n "$mount_point" ]]; then
+                    if pct exec "$ctid" -- [ "$(ls -A "$mount_point" 2>/dev/null | wc -l)" -gt 0 ]; then
+                        local file_count=$(pct exec "$ctid" -- ls -A "$mount_point" 2>/dev/null | wc -l || true)
+                        if ! whiptail --yesno "$(translate "WARNING: The selected directory is not empty!")\n\n$(translate "Directory:"): $mount_point\n$(translate "Contains:"): $file_count $(translate "files/folders")\n\n$(translate "Mounting here will hide existing files until unmounted.")\n\n$(translate "Do you want to continue?")" 14 70 --title "$(translate "Directory Not Empty")"; then
+                            continue
+                        fi
+                    fi
+                    echo "$mount_point"
+                    return 0
+                fi
+                ;;
+            new)
+                local folder_name=$(whiptail --inputbox "$(translate "Enter new folder name:")" 10 60 "$share_name" --title "$(translate "New Folder in /mnt")" 3>&1 1>&2 2>&3)
+                if [[ -n "$folder_name" ]]; then
+                    local mount_point="/mnt/$folder_name"
+                    echo "$mount_point"
+                    return 0
+                fi
+                ;;
+            custom)
+                local mount_point=$(whiptail --inputbox "$(translate "Enter full path for mount point:")" 10 70 "/mnt/${share_name}" --title "$(translate "Custom Path")" 3>&1 1>&2 2>&3)
+                if [[ -n "$mount_point" ]]; then
+                    echo "$mount_point"
+                    return 0
+                fi
+                ;;
+            *)
+                return 1
+                ;;
+        esac
+    done
+}
+
+# Common server discovery function
+pmx_discover_network_servers() {
+    local service_type="$1"  # "NFS" or "Samba"
+    local port="$2"          # "2049" for NFS, "139,445" for Samba
+    
+    local host_ip=$(hostname -I | awk '{print $1}')
+    local network=$(echo "$host_ip" | cut -d. -f1-3).0/24
+
+    # Install nmap if needed
+    if ! which nmap >/dev/null 2>&1; then
+        apt-get install -y nmap &>/dev/null
+    fi
+
+    local servers
+    if [[ "$service_type" == "Samba" ]]; then
+        servers=$(nmap -p 139,445 --open "$network" 2>/dev/null | grep -B 4 -E "(139|445)/tcp open" | grep "Nmap scan report" | awk '{print $5}' | sort -u || true)
+    else
+        servers=$(nmap -p 2049 --open "$network" 2>/dev/null | grep -B 4 "2049/tcp open" | grep "Nmap scan report" | awk '{print $5}' | sort -u || true)
+    fi
+    
+    if [[ -z "$servers" ]]; then
+        whiptail --title "$(translate "No Servers Found")" --msgbox "$(translate "No") $service_type $(translate "servers found on the network.")\n\n$(translate "You can add servers manually.")" 10 60
+        return 1
+    fi
+
+    local options=()
+    while IFS= read -r server; do
+        if [[ -n "$server" ]]; then
+            if [[ "$service_type" == "Samba" ]]; then
+                # Try to get NetBIOS name for Samba
+                local nb_name=$(nmblookup -A "$server" 2>/dev/null | awk '/<00> -.*B <ACTIVE>/ {print $1; exit}')
+                if [[ -z "$nb_name" || "$nb_name" == "$server" || "$nb_name" == "address" || "$nb_name" == "-" ]]; then
+                    nb_name="Unknown"
+                fi
+                options+=("$server" "$nb_name ($server)")
+            else
+                # For NFS, show export count
+                local exports_count=$(showmount -e "$server" 2>/dev/null | tail -n +2 | wc -l || echo "0")
+                options+=("$server" "NFS Server ($exports_count exports)")
+            fi
+        fi
+    done <<< "$servers"
+    
+    if [[ ${#options[@]} -eq 0 ]]; then
+        whiptail --title "$(translate "No Valid Servers")" --msgbox "$(translate "No accessible") $service_type $(translate "servers found.")" 8 50
+        return 1
+    fi
+
+    local selected_server=$(whiptail --title "$(translate "Select") $service_type $(translate "Server")" --menu "$(translate "Choose a server:")" 20 80 10 "${options[@]}" 3>&1 1>&2 2>&3)
+    
+    if [[ -n "$selected_server" ]]; then
+        echo "$selected_server"
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Common server selection function
+pmx_select_server() {
+    local service_type="$1"  # "NFS" or "Samba"
+    local port="$2"          # "2049" for NFS, "139,445" for Samba
+    
+    local method=$(whiptail --title "$(translate "$service_type Server Selection")" --menu "$(translate "How do you want to select the") $service_type $(translate "server?")" 15 70 3 \
+    "auto" "$(translate "Auto-discover servers on network")" \
+    "manual" "$(translate "Enter server IP/hostname manually")" \
+    "recent" "$(translate "Select from recent servers")" 3>&1 1>&2 2>&3)
+    
+    local result_code=$?
+    if [[ $result_code -ne 0 ]]; then
+        return 1
+    fi
+    
+    case "$method" in
+        auto)
+            local discovered_server
+            discovered_server=$(pmx_discover_network_servers "$service_type" "$port")
+            local discover_result=$?
+            if [[ $discover_result -eq 0 && -n "$discovered_server" ]]; then
+                echo "$discovered_server"
+                return 0
+            else
+                return 1
+            fi
+            ;;
+        manual)
+            local server=$(whiptail --inputbox "$(translate "Enter") $service_type $(translate "server IP or hostname:")" 10 60 --title "$(translate "$service_type Server")" 3>&1 1>&2 2>&3)
+            local input_result=$?
+            if [[ $input_result -eq 0 && -n "$server" ]]; then
+                echo "$server"
+                return 0
+            else
+                return 1
+            fi
+            ;;
+        recent)
+            local fs_type
+            if [[ "$service_type" == "NFS" ]]; then
+                fs_type="nfs"
+            else
+                fs_type="cifs"
+            fi
+            
+            # Fix the recent servers detection for NFS
+            local recent
+            if [[ "$service_type" == "NFS" ]]; then
+                recent=$(grep "$fs_type" /etc/fstab 2>/dev/null | awk '{print $1}' | cut -d: -f1 | sort -u || true)
+            else
+                recent=$(grep "$fs_type" /etc/fstab 2>/dev/null | awk '{print $1}' | cut -d/ -f3 | sort -u || true)
+            fi
+            
+            if [[ -z "$recent" ]]; then
+                whiptail --title "$(translate "No Recent Servers")" --msgbox "\n$(translate "No recent") $service_type $(translate "servers found.")" 8 50
+                return 1
+            fi
+            
+            local options=()
+            while IFS= read -r server; do
+                [[ -n "$server" ]] && options+=("$server" "$(translate "Recent") $service_type $(translate "server")")
+            done <<< "$recent"
+            
+            local selected_server=$(whiptail --title "$(translate "Recent") $service_type $(translate "Servers")" --menu "$(translate "Choose a recent server:")" 20 70 10 "${options[@]}" 3>&1 1>&2 2>&3)
+            local select_result=$?
+            if [[ $select_result -eq 0 && -n "$selected_server" ]]; then
+                echo "$selected_server"
+                return 0
+            else
+                return 1
+            fi
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# Common mount options configuration
+pmx_configure_mount_options() {
+    local service_type="$1"  # "NFS" or "CIFS"
+    
+    local mount_type
+    if [[ "$service_type" == "NFS" ]]; then
+        mount_type=$(whiptail --title "$(translate "Mount Options")" --menu "$(translate "Select mount configuration:")" 15 70 4 \
+        "default" "$(translate "Default options")" \
+        "readonly" "$(translate "Read-only mount")" \
+        "performance" "$(translate "Performance optimized")" \
+        "custom" "$(translate "Custom options")" 3>&1 1>&2 2>&3)
+        
+        case "$mount_type" in
+            default)
+                echo "rw,hard,intr,rsize=8192,wsize=8192,timeo=14"
+                ;;
+            readonly)
+                echo "ro,hard,intr,rsize=8192,timeo=14"
+                ;;
+            performance)
+                echo "rw,hard,intr,rsize=1048576,wsize=1048576,timeo=14,retrans=2"
+                ;;
+            custom)
+                local options=$(whiptail --inputbox "$(translate "Enter custom mount options:")" 10 70 "rw,hard,intr" --title "$(translate "Custom Options")" 3>&1 1>&2 2>&3)
+                echo "${options:-rw,hard,intr}"
+                ;;
+            *)
+                echo "rw,hard,intr,rsize=8192,wsize=8192,timeo=14"
+                ;;
+        esac
+    else
+        # CIFS options
+        mount_type=$(whiptail --title "$(translate "Mount Options")" --menu "$(translate "Select mount configuration:")" 15 70 4 \
+        "default" "$(translate "Default options")" \
+        "readonly" "$(translate "Read-only mount")" \
+        "performance" "$(translate "Performance optimized")" \
+        "custom" "$(translate "Custom options")" 3>&1 1>&2 2>&3)
+        
+        case "$mount_type" in
+            default)
+                echo "rw,file_mode=0664,dir_mode=0775,iocharset=utf8"
+                ;;
+            readonly)
+                echo "ro,file_mode=0444,dir_mode=0555,iocharset=utf8"
+                ;;
+            performance)
+                echo "rw,file_mode=0664,dir_mode=0775,iocharset=utf8,cache=strict,rsize=1048576,wsize=1048576"
+                ;;
+            custom)
+                local options=$(whiptail --inputbox "$(translate "Enter custom mount options:")" 10 70 "rw,file_mode=0664,dir_mode=0775" --title "$(translate "Custom Options")" 3>&1 1>&2 2>&3)
+                echo "${options:-rw,file_mode=0664,dir_mode=0775}"
+                ;;
+            *)
+                echo "rw,file_mode=0664,dir_mode=0775,iocharset=utf8"
+                ;;
+        esac
+    fi
+}
+
+# Common permanent mount question
+pmx_ask_permanent_mount() {
+    if whiptail --yesno "$(translate "Do you want to make this mount permanent?")\n\n$(translate "This will add the mount to /etc/fstab so it persists after reboot.")" 10 70 --title "$(translate "Permanent Mount")"; then
+        echo "true"
+    else
+        echo "false"
+    fi
+}

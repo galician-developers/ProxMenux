@@ -5,7 +5,7 @@
 # ==========================================================
 # Author      : MacRimi
 # Copyright   : (c) 2024 MacRimi
-# License     : MIT (https://raw.githubusercontent.com/MacRimi/ProxMenux/main/LICENSE)
+# License     : (GPL-3.0) (https://github.com/MacRimi/ProxMenux/blob/main/LICENSE)
 # Version     : 1.0
 # Last Updated: 07/05/2025
 # ==========================================================
@@ -24,8 +24,8 @@
 # consistent and maintainable way, using ProxMenux standards.
 # ==========================================================
 
-REPO_URL="https://raw.githubusercontent.com/MacRimi/ProxMenux/main"
-UUP_REPO="$REPO_URL/scripts/vm"
+LOCAL_SCRIPTS="/usr/local/share/proxmenux/scripts"
+UUP_REPO="$LOCAL_SCRIPTS/vm"
 BASE_DIR="/usr/local/share/proxmenux"
 UTILS_FILE="$BASE_DIR/utils.sh"
 VENV_PATH="/opt/googletrans-env"
@@ -51,7 +51,7 @@ function select_windows_iso() {
         --backtitle "ProxMenux" \
         --title "Opciones de instalación de Windows" \
         --menu "\nSeleccione el tipo de instalación de Windows:\n\n$header" \
-        18 70 10 \
+        20 70 10 \
         1 "$(printf '%-34s│ %s' 'Instalar con ISO UUP Dump' 'UUP Dump ISO creator')" \
         2 "$(printf '%-34s│ %s' 'Instalar con ISO personal' 'Almacenamiento local')" \
         3 "Volver al menú principal" \
@@ -79,7 +79,7 @@ function select_windows_iso() {
 
     case "$CHOICE" in
       1)
-        if source <(curl -fsSL "$UUP_REPO/uupdump_creator.sh"); then
+        if source "$UUP_REPO/uupdump_creator.sh"; then
           run_uupdump_creator || return 1
           detect_latest_iso_created || return 1
           EXIT_FLAG="yes"

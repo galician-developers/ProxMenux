@@ -5,7 +5,7 @@
 # ==========================================================
 # Author      : MacRimi
 # Copyright   : (c) 2024 MacRimi
-# License     : MIT (https://raw.githubusercontent.com/MacRimi/ProxMenux/main/LICENSE)
+# License     : (GPL-3.0) (https://github.com/MacRimi/ProxMenux/blob/main/LICENSE)
 # Version     : 1.0
 # Last Updated: 07/05/2025
 # ==========================================================
@@ -35,9 +35,6 @@ fi
 
 load_language
 initialize_cache
-
-clear
-show_proxmenux_logo
 
 # ==========================================================
 
@@ -78,12 +75,15 @@ function run_uupdump_creator() {
     done
 
     if [[ ${#MISSING[@]} -gt 0 ]]; then
+        show_proxmenux_logo
         msg_info "$(translate "Installing dependencies: ${MISSING[*]}")"
         apt-get update -qq >/dev/null 2>&1
         if ! apt-get install -y "${MISSING[@]}" >/dev/null 2>&1; then
             msg_error "$(translate "Failed to install: ${MISSING[*]}")"
+            sleep 2
             exit 1
         fi
+        msg_ok "$(translate "All dependencies installed and verified.")"
     fi
 
     for i in "${!CMDS[@]}"; do
@@ -92,37 +92,84 @@ function run_uupdump_creator() {
         fi
     done
 
-    if [[ ${#FAILED[@]} -eq 0 ]]; then
-        msg_ok "$(translate "All dependencies installed and verified.")"
-    else
-        msg_error "$(translate "Missing commands after installation: ${FAILED[*]}")"
+    if [[ ${#FAILED[@]} -gt 0 ]]; then
+        show_proxmenux_logo
+        msg_error "$(translate "Missing commands after installation:") ${FAILED[*]}"
+        sleep 2
         exit 1
     fi
 
 
+
 ISO_DIR=$(detect_iso_dir)
 if [[ -z "$ISO_DIR" ]]; then
+  show_proxmenux_logo
   msg_error "$(translate "Could not determine a valid ISO storage directory.")"
+  sleep 2
   exit 1
 fi
 
+
 mkdir -p "$ISO_DIR"
 
-TMP_DIR="/root/uup-temp"
-OUT_DIR="$ISO_DIR"
-CONVERTER="/root/uup-converter"
 
-mkdir -p "$TMP_DIR" "$OUT_DIR"
-cd "$TMP_DIR" || exit 1
+
+DEFAULT_BASE="/root/uup-temp"
+BASE_INPUT=$(dialog --clear --inputbox "$(translate "Enter base folder for temporary files and converter (default:") $DEFAULT_BASE):" 10 60 "$DEFAULT_BASE" 3>&1 1>&2 2>&3)
+
+if [[ $? -ne 0 || -z "$BASE_INPUT" ]]; then
+  BASE_INPUT="$DEFAULT_BASE"
+fi
+
+
+BASE_CLEAN="$(echo "$BASE_INPUT" | sed 's:[[:space:]]*$::' | sed 's:/*$::')"
+
+
+if [[ ! -d "$BASE_CLEAN" ]]; then
+  if ! mkdir -p "$BASE_CLEAN"; then
+    show_proxmenux_logo
+    msg_error "$(translate "The selected base folder does not exist and could not be created:") $BASE_CLEAN"
+    sleep 2
+    exit 1
+  fi
+fi
+if [[ ! -w "$BASE_CLEAN" ]]; then
+  show_proxmenux_logo
+  msg_error "$(translate "No write permissions on:") $BASE_CLEAN"
+  sleep 2
+  exit 1
+fi
+
+
+TMP_DIR="$BASE_CLEAN/uup-temp"
+OUT_DIR="$ISO_DIR"
+CONVERTER="$BASE_CLEAN/uup-converter"
+
+if ! mkdir -p "$TMP_DIR"; then
+  show_proxmenux_logo
+  msg_error "$(translate "Could not create temporary directory:") $TMP_DIR"
+  sleep 2
+  exit 1
+fi
+
+if ! mkdir -p "$CONVERTER"; then
+  show_proxmenux_logo
+  msg_error "$(translate "Could not create converter directory:") $CONVERTER"
+  sleep 2
+  exit 1
+fi
+
+cd "$TMP_DIR" || { msg_error "$(translate "Failed to access:") $TMP_DIR"; exit 1; }
+
 
 
 UUP_URL=$(whiptail --inputbox "$(translate "Paste the UUP Dump URL here")" 10 90 3>&1 1>&2 2>&3)
 if [[ $? -ne 0 || -z "$UUP_URL" ]]; then
-  msg_warn "$(translate "Cancelled by user or empty URL.")"
   return 1  
 fi
 
 if [[ ! "$UUP_URL" =~ id=.+\&pack=.+\&edition=.+ ]]; then
+  show_proxmenux_logo
   msg_error "$(translate "The URL does not contain the required parameters (id, pack, edition).")"
   sleep 2
   return 1 
@@ -134,6 +181,8 @@ LANG=$(echo "$UUP_URL" | grep -oP 'pack=\K[^&]+')
 EDITION=$(echo "$UUP_URL" | grep -oP 'edition=\K[^&]+')
 ARCH="amd64"
 
+show_proxmenux_logo
+echo -e
 echo -e "\n${BGN}=============== UUP Dump Creator ===============${CL}"
 echo -e "    ${BGN}🆔 ID:${CL} ${DGN}$BUILD_ID${CL}"
 echo -e "    ${BGN}🌐 Language:${CL} ${DGN}$LANG${CL}"
@@ -207,26 +256,33 @@ if [[ -f "$ISO_FILE" ]]; then
 
 
   msg_ok "$(translate "Cleaning temporary files...")"
+if [[ "$CLEAN_ALL" == true ]]; then
   rm -rf "$TMP_DIR" "$CONVERTER"
+else
+  [[ -d "$TMP_DIR" ]] && rm -rf "$TMP_DIR"
+  [[ -d "$CONVERTER" ]] && rm -rf "$CONVERTER"
+fi
     
   export OS_TYPE="windows"
-  export LANGUAGE=C
-  export LANG=C
-  export LC_ALL=C
+  export LANG=en_US.UTF-8
+  export LC_ALL=en_US.UTF-8
+  export LANGUAGE=en_US:en
+
   load_language
   initialize_cache
 
   msg_success "$(translate "Press Enter to return to menu...")"
   read -r
+
 else
   msg_warn "$(translate "No ISO was generated.")"
+  rm -rf "$TMP_DIR" "$CONVERTER"
+  export LANG=en_US.UTF-8
+  export LC_ALL=en_US.UTF-8
+  export LANGUAGE=en_US:en
 
-  export LANGUAGE=C
-  export LANG=C
-  export LC_ALL=C
   load_language
   initialize_cache
-
   msg_success "$(translate "Press Enter to return to menu...")"
   read -r
   return 1

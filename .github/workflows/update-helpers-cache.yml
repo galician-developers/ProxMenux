@@ -1,0 +1,38 @@
+name: Update Helper Scripts Cache
+
+on:
+  # Manual trigger from GitHub Actions UI
+  workflow_dispatch:
+
+  # Automatic run every 6 hours
+  schedule:
+    - cron: "0 */6 * * *"
+
+jobs:
+  update-cache:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required to push changes to the repository
+
+    steps:
+      - name: ⬇️ Checkout the repository
+        uses: actions/checkout@v3
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+
+      - name: 📦 Install Python dependencies
+        run: pip install requests
+
+      - name: ⚙️ Generate json/helpers_cache.json
+        run: python .github/scripts/generate_helpers_cache.py
+
+      - name: 📤 Commit and push if updated
+        run: |
+          git config user.name "ProxMenuxBot"
+          git config user.email "bot@proxmenux.local"
+          git add json/helpers_cache.json
+          git diff --cached --quiet || git commit -m "Update helpers_cache.json"
+          git push

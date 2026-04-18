@@ -5,7 +5,7 @@
 # ==========================================================
 # Author      : MacRimi
 # Copyright   : (c) 2024 MacRimi
-# License     : MIT (https://raw.githubusercontent.com/MacRimi/ProxMenux/main/LICENSE)
+# License     : (GPL-3.0) (https://github.com/MacRimi/ProxMenux/blob/main/LICENSE)
 # Version     : 1.0
 # Last Updated: 07/05/2025
 # ==========================================================
@@ -95,6 +95,10 @@ function load_default_vm_config() {
       ;;
   esac
 
+  if [[ "$os_type" == "1" && "$HN" == "OpenMediaVault" ]]; then
+  BIOS_TYPE=" -bios seabios"
+  fi
+
 
   [[ -z "$CORE_COUNT" ]] && CORE_COUNT="2"
   [[ -z "$RAM_SIZE" ]] && RAM_SIZE="4096"
@@ -166,18 +170,37 @@ function configure_vm_advanced() {
   [[ "$MACHINE_TYPE" == "q35" ]] && MACHINE=" -machine q35" && FORMAT="" || MACHINE="" && FORMAT=",efitype=4m"
 
   # BIOS
-  BIOS=$(whiptail --backtitle "ProxMenux" --title "$(translate "BIOS Type")" \
-    --radiolist "$(translate "Choose BIOS type")" 10 60 2 \
-    "ovmf"    "UEFI (OVMF)" ON \
-    "seabios" "Legacy BIOS (SeaBIOS)" OFF 3>&1 1>&2 2>&3) || return 1
-  BIOS_TYPE=" -bios $BIOS"
+  if [[ "$HN" == "OpenMediaVault" ]]; then
+    BIOS_TYPE=" -bios seabios"
+  else
+    BIOS=$(whiptail --backtitle "ProxMenux" --title "$(translate "BIOS Type")" \
+      --radiolist "$(translate "Choose BIOS type")" 10 60 2 \
+      "ovmf"    "UEFI (OVMF)" ON \
+      "seabios" "Legacy BIOS (SeaBIOS)" OFF 3>&1 1>&2 2>&3) || return 1
+    BIOS_TYPE=" -bios $BIOS"
+  fi
 
   # CPU Type
+#  CPU_CHOICE=$(whiptail --backtitle "ProxMenux" --title "$(translate "CPU Model")" \
+#    --radiolist "$(translate "Select CPU model")" 10 60 2 \
+#    "host"  "Host (recommended)" ON \
+#    "kvm64" "Generic KVM64" OFF 3>&1 1>&2 2>&3) || return 1
+#  [[ "$CPU_CHOICE" == "host" ]] && CPU_TYPE=" -cpu host" || CPU_TYPE=" -cpu kvm64"
+
   CPU_CHOICE=$(whiptail --backtitle "ProxMenux" --title "$(translate "CPU Model")" \
-    --radiolist "$(translate "Select CPU model")" 10 60 2 \
-    "host"  "Host (recommended)" ON \
-    "kvm64" "Generic KVM64" OFF 3>&1 1>&2 2>&3) || return 1
-  [[ "$CPU_CHOICE" == "host" ]] && CPU_TYPE=" -cpu host" || CPU_TYPE=" -cpu kvm64"
+  --radiolist "$(translate "Select CPU model")" 17 70 11 \
+  "host"          "Host (recommended)" ON \
+  "kvm64"         "Generic KVM64" OFF \
+  "kvm32"         "Generic KVM32" OFF \
+  "qemu64"        "QEMU 64-bit CPU" OFF \
+  "qemu32"        "QEMU 32-bit CPU" OFF \
+  "max"           "Expose all QEMU CPU features" OFF \
+  "x86-64-v2"     "Nehalem-class (x86-64-v2)" OFF \
+  "x86-64-v2-AES" "Same as v2 but with AES" OFF \
+  "x86-64-v3"     "Haswell-class (x86-64-v3)" OFF \
+  "x86-64-v4"     "Skylake-class (x86-64-v4)" OFF 3>&1 1>&2 2>&3) || return 1
+
+  CPU_TYPE=" -cpu $CPU_CHOICE"
 
   # Core Count
   CORE_COUNT=$(whiptail --backtitle "ProxMenux" --inputbox "$(translate "Number of CPU cores (default: 2)")" \

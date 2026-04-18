@@ -1,0 +1,16 @@
+{
+  "name": "ProxMenux Monitor",
+  "short_name": "ProxMenux",
+  "description": "Proxmox System Dashboard and Monitor",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#2b2f36",
+  "theme_color": "#2b2f36",
+  "icons": [
+    {
+      "src": "/images/proxmenux-logo.png",
+      "sizes": "256x256",
+      "type": "image/png"
+    }
+  ]
+}

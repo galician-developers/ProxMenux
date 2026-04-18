@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Soporte General
+    url: https://github.com/MacRimi/ProxMenux/discussions
+    about: If your request is neither a bug nor a feature, please use Discussions.

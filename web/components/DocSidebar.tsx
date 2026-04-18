@@ -81,7 +81,6 @@ export const sidebarItems: MenuItem[] = [
   {
     title: "Network",
     submenu: [
-      { title: "Repair Network", href: "/docs/network/repair-network" },
       { title: "Verify Network", href: "/docs/network/verify-network" },
       { title: "Show IP Information", href: "/docs/network/show-ip-information" },
     ],

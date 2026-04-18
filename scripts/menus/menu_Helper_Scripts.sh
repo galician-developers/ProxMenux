@@ -1,16 +1,16 @@
 #!/bin/bash
 
 # ==========================================================
-# ProxMenu - A menu-driven script for Proxmox VE management
+# ProxMenux - A menu-driven script for Proxmox VE management
 # ==========================================================
 # Author      : MacRimi
 # Copyright   : (c) 2024 MacRimi
-# License     : MIT (https://raw.githubusercontent.com/MacRimi/ProxMenux/main/LICENSE)
-# Version     : 1.0
-# Last Updated: 28/01/2025
+# License     : (GPL-3.0) (https://github.com/MacRimi/ProxMenux/blob/main/LICENSE)
+# Version     : 1.3
+# Last Updated: 14/03/2025
 # ==========================================================
 # Description:
-# This script provides a simple and efficient way to access and execute essential Proxmox VE scripts
+# This script provides a simple and efficient way to access and execute Proxmox VE scripts
 # from the Community Scripts project (https://community-scripts.github.io/ProxmoxVE/).
 #
 # It serves as a convenient tool to run key automation scripts that simplify system management,
@@ -20,7 +20,7 @@
 
 
 # Configuration ============================================
-REPO_URL="https://raw.githubusercontent.com/MacRimi/ProxMenux/main"
+LOCAL_SCRIPTS="/usr/local/share/proxmenux/scripts"
 BASE_DIR="/usr/local/share/proxmenux"
 UTILS_FILE="$BASE_DIR/utils.sh"
 VENV_PATH="/opt/googletrans-env"
@@ -31,154 +31,420 @@ fi
 
 load_language
 initialize_cache
-show_proxmenux_logo
 # ==========================================================
 
-# Base URL community-scripts
-BASE_URL="https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc"
-BASE_URL2="https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main"
+# New unified cache — categories and mirror URLs are embedded,
+# metadata.json is no longer needed.
+HELPERS_JSON_URL="https://raw.githubusercontent.com/MacRimi/ProxMenux/refs/heads/main/json/helpers_cache.json"
 
-download_script() {
-    local url="$1"
-    local fallback_pve="${url/misc/tools\/pve}"
-    local fallback_addon="${url/misc/tools\/addon}"
-    local fallback_copydata="${url/misc/tools\/copy-data}"
+for cmd in curl jq dialog; do
+  if ! command -v "$cmd" >/dev/null; then
+    echo "Missing required command: $cmd"
+    exit 1
+  fi
+done
 
-    if curl --silent --head --fail "$url" >/dev/null; then
-        bash <(curl -s "$url")
-    elif curl --silent --head --fail "$fallback_pve" >/dev/null; then
-        bash <(curl -s "$fallback_pve")
-    elif curl --silent --head --fail "$fallback_addon" >/dev/null; then
-        bash <(curl -s "$fallback_addon")
-    elif curl --silent --head --fail "$fallback_copydata" >/dev/null; then
-        bash <(curl -s "$fallback_copydata")
-    else
-        msg_error "$(translate 'Error: Failed to download the script.')\033[0m"
-        msg_error "\n$(translate 'Tried URLs:')\n- $url\n- $fallback_pve\n- $fallback_addons\n- $fallback_copydata\n"
+CACHE_JSON=$(curl -s "$HELPERS_JSON_URL")
 
-        msg_success "$(translate "Press Enter to return to menu...")"
-        read -r
-    fi
+# Validate that the JSON loaded correctly
+if ! echo "$CACHE_JSON" | jq -e 'if type == "array" and length > 0 then true else false end' >/dev/null 2>&1; then
+  dialog --title "Helper Scripts" \
+    --msgbox "Error: Could not load helpers cache.\nCheck your internet connection and try again.\n\nURL: $HELPERS_JSON_URL" 10 70
+  exec bash "$LOCAL_SCRIPTS/menus/main_menu.sh"
+fi
+
+# ---------------------------------------------------------------------------
+# Build category map directly from the cache (id → name).
+# Uses transpose to pair categories[] and category_names[] arrays — no
+# dependency on metadata.json, which no longer exists upstream.
+# ---------------------------------------------------------------------------
+declare -A CATEGORY_NAMES
+while IFS=$'\t' read -r id name; do
+  [[ -n "$id" && -n "$name" ]] && CATEGORY_NAMES["$id"]="$name"
+done < <(echo "$CACHE_JSON" | jq -r '
+  [.[] | [.categories, .category_names] | transpose[] | @tsv]
+  | unique[]')
+
+# Count scripts per category (deduplicated by slug)
+declare -A CATEGORY_COUNT
+while read -r id; do
+  ((CATEGORY_COUNT[$id]++))
+done < <(echo "$CACHE_JSON" | jq -r '
+  group_by(.slug) | map(.[0])[] | .categories[]')
+
+# ---------------------------------------------------------------------------
+# Type label — updated to match new type values (lxc instead of ct)
+# ---------------------------------------------------------------------------
+get_type_label() {
+  local type="$1"
+  case "$type" in
+    lxc)     echo $'\Z1LXC\Zn' ;;
+    vm)      echo $'\Z4VM\Zn' ;;
+    pve)     echo $'\Z3PVE\Zn' ;;
+    addon)   echo $'\Z2ADDON\Zn' ;;
+    turnkey) echo $'\Z5TK\Zn' ;;
+    *)       echo $'\Z7GEN\Zn' ;;
+  esac
 }
 
+# ---------------------------------------------------------------------------
+# Download and execute a script URL, with optional mirror fallback
+# ---------------------------------------------------------------------------
+download_script() {
+  local url="$1"
 
+  if curl --silent --head --fail "$url" >/dev/null; then
+    bash <(curl -s "$url")
+  else
+    dialog --title "Helper Scripts" --msgbox "$(translate "Error: Failed to download the script.")" 8 70
+  fi
+}
 
+RETURN_TO_MAIN=false
 
-# Array with script names, URLs, categories, and descriptions
-scripts=(
-    "Proxmox VE LXC IP-Tag|Containers|$BASE_URL/add-lxc-iptag.sh|Description:\n\nThis script automatically adds IP address as tags to LXC containers using a Systemd service.\n\nThe service also updates the tags if a LXC IP address is changed. Configuration: nano /opt/lxc-iptag/iptag.conf. iptag.service must be restarted after change.\n\n\The Proxmox Node must contain ipcalc and net-tools. apt-get install -y ipcalc net-tools"
-    "Add Netbird to LXC|Networking|$BASE_URL/add-netbird-lxc.sh|Description:\n\nNetBird combines a configuration-free peer-to-peer private network and a centralized access control system in a single platform, making it easy to create secure private networks for your organization or home.\n\nAfter the script finishes, reboot the LXC then run netbird up in the LXC console.\n\n\The script only works in Debian/Ubuntu, not in Alpine!"
-    "Add Tailscale to LXC|Networking|$BASE_URL/add-tailscale-lxc.sh|Description:\n\nTailscale is a software-defined networking solution that enables secure communication between devices over the internet.\n\nIt creates a virtual private network (VPN) that enables devices to communicate with each other as if they were on the same local network.\n\n\After the script finishes, reboot the LXC then run tailscale up in the LXC console."
-    "Proxmox VE LXC Cleaner|Maintenance|$BASE_URL/clean-lxcs.sh|Description:\n\nThis script provides options to delete logs and cache, and repopulate apt lists for Ubuntu and Debian systems."
-    "Proxmox VE Host Backup|Security|$BASE_URL/host-backup.sh|Description:\n\nThis script serves as a versatile backup utility, enabling users to specify both the backup path and the directory they want to work in.\n\nThis flexibility empowers users to select the specific files and directories they wish to back up, making it compatible with a wide range of hosts, not limited to Proxmox.\n\nA backup is rendered ineffective when it remains stored on the host"
-    "Add hardware Acceleration LXC|Containers|$BASE_URL/hw-acceleration.sh|Description:\n\nEnables hardware acceleration IGPU for LXC containers."
-    "Proxmox Clean Orphaned LVM|Maintenance|$BASE_URL/clean-orphaned-lvm.sh|Description:\n\nThis script helps Proxmox users identify and remove orphaned LVM volumes that are no longer associated with any VM or LXC container.\n\nIt scans all LVM volumes, detects unused ones, and provides an interactive prompt to delete them safely.\n\nSystem-critical volumes like root, swap, and data are excluded to prevent accidental deletion."
-    "Install Crowdsec|Security|$BASE_URL/crowdsec.sh|Description:\n\nCrowdSec is a free and open-source intrusion prevention system (IPS) designed to provide network security against malicious traffic.\n\nIt is a collaborative IPS that analyzes behaviors and responses to attacks by sharing signals across a community of users."
-    "Proxmox VE LXC Filesystem Trim|Maintenance|$BASE_URL/fstrim.sh|Description:\n\nThis maintains SSD performance by managing unused blocks.\n\nThin-provisioned storage systems also require management to prevent unnecessary storage use.\n\nVMs automate fstrim, while LXC containers need manual or automated fstrim processes for optimal performance.\n\nThis is designed to work with SSDs on ext4 filesystems only."
-    "Install Glances|Monitoring|$BASE_URL/glances.sh|Description:\n\nGlances is an open-source system cross-platform monitoring tool.\n\nIt allows real-time monitoring of various aspects of your system such as CPU, memory, disk, network usage etc."
-    "Proxmox VE Kernel Clean|Maintenance|$BASE_URL/kernel-clean.sh|Description:\n\nCleaning unused kernel images is beneficial for reducing the length of the GRUB menu and freeing up disk space.\n\nBy removing old, unused kernels, the system is able to conserve disk space and streamline the boot process."
-    "Proxmox VE Kernel Pin|System|$BASE_URL/kernel-pin.sh|Description:\n\nKernel Pin is an essential tool for effortlessly managing kernel pinning and unpinning."
-    "Container LXC Deletion|Containers|$BASE_URL/lxc-delete.sh|Description:\n\nThis script helps manage and delete LXC containers on a Proxmox VE server.\n\nIt lists all available containers, allowing the user to select one or more for deletion through an interactive menu.\n\nRunning containers are automatically stopped before deletion, and the user is asked to confirm each action.\n\nThe script ensures a controlled and efficient container management process."
-    "Proxmox VE Processor Microcode|System|$BASE_URL/microcode.sh|Description:\n\nProcessor Microcode is a layer of low-level software that runs on the processor and provides patches or updates to its firmware.\n\nMicrocode updates can fix hardware bugs, improve performance, and enhance security features of the processor."
-    "Proxmox VE Netdata|Monitoring|$BASE_URL/netdata.sh|Description:\n\nNetdata is an open-source, real-time performance monitoring tool designed to provide insights into the performance and health of systems and applications.\n\nIt is often used by system administrators, DevOps professionals, and developers to monitor and troubleshoot issues on servers and other devices."
-    "Install Olivetin|Applications|$BASE_URL/olivetin.sh|Description:\n\nOliveTin provides a secure and straightforward way to execute pre-determined shell commands through a web-based interface.\n\nConfiguration Path: /etc/OliveTin/config.yaml"
-    "Proxmox VE Post Install|System|$BASE_URL/post-pve-install.sh|Description:\n\nThis script provides options for managing Proxmox VE repositories, including disabling the Enterprise Repo, adding or correcting PVE sources, enabling the No-Subscription Repo, adding the test Repo, disabling the subscription nag, updating Proxmox VE, and rebooting the system.\n\nExecute within the Proxmox shell.\n\n\It is recommended to answer yes (y) to all options presented during the process."
-    "Proxmox VE CPU Scaling Governor|System|$BASE_URL/scaling-governor.sh|Description:\n\nThe CPU scaling governor determines how the CPU frequency is adjusted based on the workload, with the goal of either conserving power or improving performance.\n\nBy scaling the frequency up or down, the operating system can optimize the CPU usage and conserve energy when possible. Generic Scaling Governors."
-    "Proxmox VE Cron LXC Updater|Maintenance|$BASE_URL/cron-update-lxcs.sh|Description:\n\nThis script will add/remove a crontab schedule that updates all LXCs every Sunday at midnight. To exclude LXCs from updating, edit the crontab using crontab -e and add CTID as shown in the example below:\n\n0 0 * * 0 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/pve/update-lxcs-cron.sh)\" -s 103 111 >>/var/log/update-lxcs-cron.log 2>/dev/null"
-    "Proxmox VE LXC Updater|Maintenance|$BASE_URL/update-lxcs.sh|Description:\n\nThis script has been created to simplify and speed up the process of updating all LXC containers across various Linux distributions, such as Ubuntu, Debian, Devuan, Alpine Linux, CentOS-Rocky-Alma, Fedora, and ArchLinux.\n\nDesigned to automatically skip templates and specific containers during the update, enhancing its convenience and usability."
-    "Proxmox Backup Server|Security|$BASE_URL2/ct/proxmox-backup-server.sh|Description:\n\nProxmox Backup Server is an enterprise backup solution, for backing up and restoring VMs, containers, and physical hosts. By supporting incremental, fully deduplicated backups, Proxmox Backup Server significantly reduces network load and saves valuable storage space.\n\n\nSet a root password if using autologin. This will be the PBS password. passwd root"
+# ---------------------------------------------------------------------------
+# Format default credentials for display
+# ---------------------------------------------------------------------------
+format_credentials() {
+  local script_info="$1"
+  local credentials_info=""
 
+  local has_credentials
+  has_credentials=$(echo "$script_info" | base64 --decode | jq -r 'has("default_credentials")')
 
-)
+  if [[ "$has_credentials" == "true" ]]; then
+    local username password
+    username=$(echo "$script_info" | base64 --decode | jq -r '.default_credentials.username // empty')
+    password=$(echo "$script_info" | base64 --decode | jq -r '.default_credentials.password // empty')
 
-show_menu() {
-    declare -A category_order
-    category_order["System"]=1
-    category_order["Maintenance"]=2
-    category_order["Containers"]=3
-    category_order["Applications"]=4
-    category_order["Monitoring"]=5
-    category_order["Networking"]=6
-    category_order["Security"]=7
+    if [[ -n "$username" && -n "$password" ]]; then
+      credentials_info="Username: $username | Password: $password"
+    elif [[ -n "$username" ]]; then
+      credentials_info="Username: $username"
+    elif [[ -n "$password" ]]; then
+      credentials_info="Password: $password"
+    fi
+  fi
 
-    custom_sort() {
-        while IFS='|' read -r name category url description; do
-            category=$(echo "$category" | xargs)
-            order=${category_order[$category]:-999}
-            printf "%d|%s|%s|%s|%s\n" "$order" "$name" "$category" "$url" "$description"
-        done | sort -n | cut -d'|' -f2-
-    }
+  echo "$credentials_info"
+}
+
+# ---------------------------------------------------------------------------
+# Run a script identified by its slug.
+#
+# A slug can have multiple entries when a script supports several OS variants
+# (e.g. Debian + Alpine). Each entry carries its own script_url / mirror and
+# the os field already normalised to lowercase by generate_helpers_cache.py.
+# The menu lets the user pick OS variant × source (GitHub / Mirror).
+# ---------------------------------------------------------------------------
+run_script_by_slug() {
+  local slug="$1"
+  local -a script_infos
+  mapfile -t script_infos < <(echo "$CACHE_JSON" | jq -r --arg slug "$slug" \
+    '.[] | select(.slug == $slug) | @base64')
+
+  if [[ ${#script_infos[@]} -eq 0 ]]; then
+    dialog --title "Helper Scripts" \
+      --msgbox "$(translate "Error: No script data found for slug:") $slug" 8 60
+    return
+  fi
+
+  decode() { echo "$1" | base64 --decode | jq -r "$2"; }
+
+  local first="${script_infos[0]}"
+  local name desc notes port website
+  name=$(decode "$first" ".name")
+  desc=$(decode "$first" ".desc")
+  notes=$(decode "$first" '.notes | join("\n")')
+  port=$(decode "$first" ".port // 0")
+  website=$(decode "$first" ".website // empty")
+
+  # Build notes block
+  local notes_dialog=""
+  if [[ -n "$notes" ]]; then
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      notes_dialog+="• $line\n"
+    done <<< "$notes"
+    notes_dialog="${notes_dialog%\\n}"
+  fi
+
+  local credentials
+  credentials=$(format_credentials "$first")
+
+  # Build info message
+local msg="\Zb\Z4$(translate "Description"):\Zn\n$desc"
+  if [[ -n "$notes" ]]; then
+    local notes_short=""
+    local char_count=0
+    local max_chars=400
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      char_count=$(( char_count + ${#line} ))
+      if [[ $char_count -lt $max_chars ]]; then
+        notes_short+="• $line\n"
+      else
+        notes_short+="...\n"
+        break
+      fi
+    done <<< "$notes"
+    msg+="\n\n\Zb\Z4$(translate "Notes"):\Zn\n$notes_short"
+  fi
+  [[ -n "$credentials" ]] && msg+="\n\n\Zb\Z4$(translate "Default Credentials"):\Zn\n$credentials"
+  [[ "$port" -gt 0 ]] && msg+="\n\n\Zb\Z4$(translate "Default Port"):\Zn $port"
+  [[ -n "$website" ]] && msg+="\n\Zb\Z4$(translate "Website"):\Zn $website"
+
+  msg+="\n\n$(translate "Choose how to run the script:")"
+
+  # Build menu: one or two entries per script_info (GH + optional Mirror)
+  declare -a MENU_OPTS=()
+  local idx=0
+  for s in "${script_infos[@]}"; do
+    local os script_url script_url_mirror script_name
+    os=$(decode "$s" '.os // empty')
+    [[ -z "$os" ]] && os="$(translate "default")"
+    script_name=$(decode "$s" ".name")
+    script_url=$(decode "$s" ".script_url")
+    script_url_mirror=$(decode "$s" ".script_url_mirror // empty")
+
+    MENU_OPTS+=("${idx}_GH" "$os | $script_name | GitHub")
+
+    if [[ -n "$script_url_mirror" ]]; then
+      MENU_OPTS+=("${idx}_MR" "$os | $script_name | Mirror")
+    fi
+
+    ((idx++))
+  done
+
+  local choice
+  choice=$(dialog --clear --colors --backtitle "ProxMenux" \
+           --title "$name" \
+           --menu "$msg" 28 80 6 \
+           "${MENU_OPTS[@]}" 3>&1 1>&2 2>&3)
+
+  if [[ $? -ne 0 || -z "$choice" ]]; then
+    RETURN_TO_MAIN=false
+    return
+  fi
+
+  local sel_idx sel_src
+  IFS="_" read -r sel_idx sel_src <<< "$choice"
+
+  local selected="${script_infos[$sel_idx]}"
+  local gh_url mirror_url
+  gh_url=$(decode "$selected" ".script_url")
+  mirror_url=$(decode "$selected" ".script_url_mirror // empty")
+
+  if [[ "$sel_src" == "GH" ]]; then
+    download_script "$gh_url"
+  elif [[ "$sel_src" == "MR" ]]; then
+    if [[ -n "$mirror_url" ]]; then
+      download_script "$mirror_url"
+    else
+      dialog --title "Helper Scripts" \
+        --msgbox "$(translate "Mirror URL not available for this script.")" 8 60
+      RETURN_TO_MAIN=false
+      return
+    fi
+  fi
+
+  echo
+  echo
+
+  if [[ -n "$desc" || -n "$notes" || -n "$credentials" ]]; then
+    echo -e "$TAB\e[1;36m$(translate "Script Information"):\e[0m"
+
+    if [[ -n "$notes" ]]; then
+      echo -e "$TAB\e[1;33m$(translate "Notes"):\e[0m"
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        echo -e "$TAB• $line"
+      done <<< "$notes"
+      echo
+    fi
+
+    if [[ -n "$credentials" ]]; then
+      echo -e "$TAB\e[1;32m$(translate "Default Credentials"):\e[0m"
+      echo "$TAB$credentials"
+      echo
+    fi
+  fi
+
+  msg_success "$(translate "Press Enter to return to the main menu...")"
+  read -r
+  RETURN_TO_MAIN=true
+}
+
+# ---------------------------------------------------------------------------
+# Search / filter scripts by name or description
+# ---------------------------------------------------------------------------
+search_and_filter_scripts() {
+  local search_term=""
+
+  while true; do
+    search_term=$(dialog --inputbox \
+      "$(translate "Enter search term (leave empty to show all scripts):"):" \
+      8 65 "$search_term" 3>&1 1>&2 2>&3)
+
+    [[ $? -ne 0 ]] && return
+
+    local filtered_json
+    if [[ -z "$search_term" ]]; then
+      filtered_json="$CACHE_JSON"
+    else
+      local search_lower
+      search_lower=$(echo "$search_term" | tr '[:upper:]' '[:lower:]')
+      filtered_json=$(echo "$CACHE_JSON" | jq --arg term "$search_lower" '
+        [.[] | select(
+          (.name | ascii_downcase | contains($term)) or
+          (.desc | ascii_downcase | contains($term))
+        )]')
+    fi
+
+    local count
+    count=$(echo "$filtered_json" | jq 'group_by(.slug) | length')
+
+    if [[ "$count" -eq 0 ]]; then
+      dialog --msgbox \
+        "$(translate "No scripts found for:") '$search_term'\n\n$(translate "Try a different search term.")" \
+        8 50
+      continue
+    fi
 
     while true; do
-        IFS=$'\n' sorted_scripts=($(printf "%s\n" "${scripts[@]}" | custom_sort))
-        unset IFS
+      declare -A index_to_slug
+      local menu_items=()
+      local i=1
 
-        HEADER=$(printf " %-57s %-20s" "$(translate "Name")" "$(translate "Category")")
+      while IFS=$'\t' read -r slug name type; do
+        index_to_slug[$i]="$slug"
+        local label
+        label=$(get_type_label "$type")
+        local padded_name
+        padded_name=$(printf "%-42s" "$name")
+        menu_items+=("$i" "$padded_name $label")
+        ((i++))
+      done < <(echo "$filtered_json" | jq -r '
+        group_by(.slug) | map(.[0]) | sort_by(.name)[]
+        | [.slug, .name, .type] | @tsv')
 
-        menu_items=()
-        for script in "${sorted_scripts[@]}"; do
-            IFS='|' read -r name category url description <<< "$script"
-            translated_category=$(translate "$category")
-            padded_name=$(printf "%-57s" "$name")
-            menu_items+=("$padded_name" "$translated_category")
-        done
+      menu_items+=("" "")
+      menu_items+=("new_search" "$(translate "New Search")")
+      menu_items+=("show_all"   "$(translate "Show All Scripts")")
 
-        menu_items+=("$(translate "Return to Main Menu")" "")
-        
-        cleanup
-        
-        script_selection=$(whiptail --title "$(translate "Essential Proxmox VE Helper-Scripts")" \
-                                    --menu "\n$HEADER\n\n$(translate "Select a script to execute")" 25 78 16 \
-                                    "${menu_items[@]}" 3>&1 1>&2 2>&3)
+      local title
+      if [[ -n "$search_term" ]]; then
+        title="$(translate "Search Results for:") '$search_term' ($count $(translate "found"))"
+      else
+        title="$(translate "All Available Scripts") ($count $(translate "total"))"
+      fi
 
-        if [ -n "$script_selection" ]; then
-            script_selection=$(echo "$script_selection" | xargs)
-            if [ "$script_selection" = "$(translate "Return to Main Menu")" ]; then
+      local selected
+      selected=$(dialog --colors --backtitle "ProxMenux" \
+                 --title "$title" \
+                 --menu "$(translate "Select a script or action:"):" \
+                 22 75 15 "${menu_items[@]}" 3>&1 1>&2 2>&3)
 
+      [[ $? -ne 0 ]] && return
 
-                whiptail --title "Proxmox VE Helper-Scripts" \
-                         --msgbox "$(translate "Visit the website to discover more scripts, stay updated with the latest updates, and support the project:\n\nhttps://community-scripts.github.io/ProxmoxVE")" 15 70
-
-
-                exec bash <(curl -s "$REPO_URL/scripts/menus/main_menu.sh")
-            fi
-
-            for script in "${sorted_scripts[@]}"; do
-                IFS='|' read -r name category url description <<< "$script"
-                if [ "$name" = "$script_selection" ]; then
-                    selected_url="$url"
-                    selected_description=$(translate "$description")
-                    break
-                fi
-            done
-
-            if [ -n "$selected_url" ]; then
-                if whiptail --title "$(translate "Script Information")" \
-                            --yes-button "$(translate "Accept")" \
-                            --no-button "$(translate "Cancel")" \
-                            --yesno "$selected_description" 20 78; then
-                    msg_info2 "$(translate "Executing script:") $script_selection"
-                    sleep 2
-                    download_script "$selected_url"
-                    msg_ok "$(translate "Script completed.")"
-                    msg_success "$(translate "Press Enter to return to the main menu...")"
-                    read -r
-                else
-                    msg_info2 "$(translate "Script execution cancelled.")"
-                    sleep 2
-                fi
-            else
-                echo "$(translate "Error: Could not find the selected script URL.")"
-                read -rp "$(translate "Press Enter to continue...")"
-            fi
-        else
-            exec bash <(curl -s "$REPO_URL/scripts/menus/main_menu.sh")
-        fi
+      case "$selected" in
+        "new_search")
+          break
+          ;;
+        "show_all")
+          search_term=""
+          filtered_json="$CACHE_JSON"
+          count=$(echo "$filtered_json" | jq 'group_by(.slug) | length')
+          continue
+          ;;
+        "back"|"")
+          return
+          ;;
+        *)
+          if [[ -n "${index_to_slug[$selected]}" ]]; then
+            run_script_by_slug "${index_to_slug[$selected]}"
+            [[ "$RETURN_TO_MAIN" == true ]] && { RETURN_TO_MAIN=false; return; }
+          fi
+          ;;
+      esac
     done
+  done
 }
 
+# ---------------------------------------------------------------------------
+# Main loop — category list built from embedded category data.
+# We map scriptcatXXXXX IDs to short numeric indices so dialog doesn't show
+# the long ID string as the visible tag in the menu column.
+# ---------------------------------------------------------------------------
+while true; do
+  MENU_ITEMS=()
+  MENU_ITEMS+=("search" "$(translate "Search/Filter Scripts")")
+  MENU_ITEMS+=("" "")
 
-if [[ "$LANGUAGE" != "en" ]]; then
-    msg_lang "$(translate "Generating automatic translations...")"
-fi
-show_menu
+  # Map scriptcatXXXXX IDs to short numeric indices (1, 2, 3…) so dialog
+  # doesn't render the long ID string as the visible tag column.
+  declare -A CAT_IDX_TO_ID
+  local_idx=1
+  for id in $(printf "%s\n" "${!CATEGORY_COUNT[@]}" | sort); do
+    CAT_IDX_TO_ID[$local_idx]="$id"
+    name="${CATEGORY_NAMES[$id]:-Category $id}"
+    count="${CATEGORY_COUNT[$id]}"
+    padded_name=$(printf "%-35s" "$name")
+    padded_count=$(printf "(%2d)" "$count")
+    MENU_ITEMS+=("$local_idx" "$padded_name $padded_count")
+    ((local_idx++))
+  done
+
+  SELECTED_IDX=$(dialog --backtitle "ProxMenux" \
+    --title "Proxmox VE Helper-Scripts" \
+    --menu "$(translate "Select a category or search for scripts:"):" \
+    22 75 15 "${MENU_ITEMS[@]}" 3>&1 1>&2 2>&3) || {
+      dialog --clear --title "ProxMenux" \
+        --msgbox "\n\n$(translate "Visit the website to discover more scripts, stay updated with the latest updates, and support the project:")\n\nhttps://community-scripts.github.io/ProxmoxVE" 15 70
+      exec bash "$LOCAL_SCRIPTS/menus/main_menu.sh"
+  }
+
+  if [[ "$SELECTED_IDX" == "search" ]]; then
+    search_and_filter_scripts
+    continue
+  fi
+
+  # Resolve numeric index back to the real category ID
+  SELECTED="${CAT_IDX_TO_ID[$SELECTED_IDX]}"
+  [[ -z "$SELECTED" ]] && continue
+
+  # ---- Scripts within the selected category --------------------------------
+  while true; do
+    declare -A INDEX_TO_SLUG
+    SCRIPTS=()
+    i=1
+
+    while IFS=$'\t' read -r slug name type; do
+      INDEX_TO_SLUG[$i]="$slug"
+      label=$(get_type_label "$type")
+      padded_name=$(printf "%-42s" "$name")
+      SCRIPTS+=("$i" "$padded_name $label")
+      ((i++))
+    done < <(echo "$CACHE_JSON" | jq -r --arg id "$SELECTED" '
+      [
+        .[]
+        | select(.categories | index($id))
+        | {slug, name, type}
+      ]
+      | group_by(.slug)
+      | map(.[0])
+      | sort_by(.name)[]
+      | [.slug, .name, .type]
+      | @tsv')
+
+    SCRIPT_INDEX=$(dialog --colors --backtitle "ProxMenux" \
+      --title "$(translate "Scripts in") ${CATEGORY_NAMES[$SELECTED]}" \
+      --menu "$(translate "Choose a script to execute:"):" \
+      22 75 15 "${SCRIPTS[@]}" 3>&1 1>&2 2>&3) || break
+
+    SCRIPT_SELECTED="${INDEX_TO_SLUG[$SCRIPT_INDEX]}"
+    run_script_by_slug "$SCRIPT_SELECTED"
+
+    [[ "$RETURN_TO_MAIN" == true ]] && { RETURN_TO_MAIN=false; break; }
+  done
+done

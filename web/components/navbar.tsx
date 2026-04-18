@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import Image from "next/image"
-import { Book, GitBranch, FileText, Github, Menu } from "lucide-react"
+import { Book, GitBranch, FileText, Github, Menu, Rss } from "lucide-react"
 import { useState } from "react"
 
 export default function Navbar() {
@@ -43,6 +43,18 @@ export default function Navbar() {
                 <span>{item.label}</span>
               </Link>
             ))}
+
+            {/* RSS Feed Link */}
+            <Link
+              href="https://proxmenux.com/rss.xml"
+              className="flex items-center space-x-2 transition-colors hover:text-primary text-orange-600 hover:text-orange-700"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="RSS Feed"
+            >
+              <Rss className="h-4 w-4" />
+              <span>RSS</span>
+            </Link>
           </nav>
 
           {/* Mobile menu button */}
@@ -66,10 +78,22 @@ export default function Navbar() {
                 <span>{item.label}</span>
               </Link>
             ))}
+
+            {/* RSS Feed Link - Mobile */}
+            <Link
+              href="https://proxmenux.com/rss.xml"
+              className="flex items-center space-x-2 py-2 transition-colors hover:text-primary text-orange-600 hover:text-orange-700"
+              onClick={() => setIsMenuOpen(false)}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="RSS Feed"
+            >
+              <Rss className="h-4 w-4" />
+              <span>RSS</span>
+            </Link>
           </nav>
         )}
       </div>
     </header>
   )
 }
-

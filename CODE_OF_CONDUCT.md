@@ -29,6 +29,7 @@ Instead, please report it privately via email:
 
 📧 proxmenux@macrimi.pro
 
+For detailed information on security vulnerabilities and how to report them, please refer to our [Security Policy](./SECURITY.md).
 
 ## 🤝 3. Community Guidelines
 

@@ -1,3 +1,745 @@
+
+## 2026-04-17
+
+### New version ProxMenux v1.2.0 — *AI-Enhanced Monitoring*
+
+
+![ProxMenux AI](https://raw.githubusercontent.com/MacRimi/ProxMenux/main/images/ProxMenux_ai.png)
+
+This release is the culmination of the v1.1.9.1 → v1.1.9.6 beta cycle and introduces the biggest evolution of **ProxMenux Monitor** to date: AI-enhanced notifications, a redesigned multi-channel notification system, a fully reworked hardware and storage experience, and broad performance improvements across the monitoring stack. It also consolidates all recent work on the Storage, Hardware and GPU/TPU scripts.
+
+---
+
+## 🤖 ProxMenux Monitor — AI-Enhanced Notifications
+
+Notifications can now be enhanced using AI to generate clear, contextual messages instead of raw technical output.
+
+Example — instead of `backup completed exitcode=0 size=2.3GB`, AI produces: *"The web server backup completed successfully. Size: 2.3GB"*.
+
+### What AI does
+- Transforms technical notifications into readable messages
+- Translates to your preferred language
+- Lets you choose detail level: minimal, standard, or detailed
+- Works with Telegram, Discord, Email, Pushover, and Webhooks
+
+### What AI does NOT do
+- It is **not** a chatbot or assistant
+- It does **not** analyze your system or make decisions
+- It does **not** have access to data beyond the notification being processed
+- It does **not** execute commands or modify the server
+- It does **not** store history or learn from your data
+
+### Multi-Provider Support
+Choose between 6 AI providers, each with its own API key stored independently:
+- **Groq** — fast inference, generous free tier
+- **Google Gemini** — excellent quality/price ratio, free tier available
+- **OpenAI** — industry standard
+- **Anthropic Claude** — excellent for writing and translation
+- **OpenRouter** — 300+ models with a single API key
+- **Ollama** — 100% local execution, no internet required
+
+### Verified AI Models
+A curated list of models (`verified_ai_models.json`) tested specifically for notification enhancement.
+
+- **Hybrid verification**: the system fetches provider-side models and filters to only show those tested to work correctly
+- **Per-Provider Model Memory**: selected model is saved per provider, so switching providers preserves each choice
+- **Daily verification**: background task checks model availability and auto-migrates to a verified alternative if the current model disappears
+- **Incompatible models excluded**: Whisper, TTS, image/video, embeddings, guard models, etc. are filtered out per provider
+
+| Provider | Recommended | Also Verified |
+|----------|-------------|---------------|
+| Gemini | gemini-2.5-flash-lite | gemini-flash-lite-latest |
+| OpenAI | gpt-4o-mini | gpt-4.1-mini |
+| Groq | llama-3.3-70b-versatile | llama-3.1-70b-versatile, llama-3.1-8b-instant, llama3-70b-8192, llama3-8b-8192, mixtral-8x7b-32768, gemma2-9b-it |
+| Anthropic | claude-3-5-haiku-latest | claude-3-5-sonnet-latest, claude-3-opus-latest |
+| OpenRouter | meta-llama/llama-3.3-70b-instruct | meta-llama/llama-3.1-70b-instruct, anthropic/claude-3.5-haiku, google/gemini-flash-2.5-flash-lite, openai/gpt-4o-mini, mistralai/mixtral-8x7b-instruct |
+| Ollama | (all local models) | No filtering — shows all installed models |
+
+### Custom AI Prompts
+Advanced users can define their own prompt for full control over formatting and translation.
+
+- **Prompt Mode selector** — Default Prompt or Custom Prompt
+- **Export / Import** — save and share custom prompts across installations
+- **Example Template** — starting point to build your own prompt
+- **Community Prompts** — direct link to GitHub Discussions to share templates
+- Language selector is hidden in Custom Prompt mode (you define the output language in the prompt itself)
+
+### Enriched Context
+- System **uptime** is included only for error/warning events (not informational ones) — helps distinguish startup vs runtime errors
+- **Event frequency** tracking — indicates recurring vs one-time issues
+- **SMART disk health** data is passed for disk-related errors
+- **Known Proxmox errors** database improves diagnosis accuracy
+- Clearer prompt instructions to prevent AI hallucinations
+
+---
+
+## 📨 Notification System Redesign
+
+- **Multi-Channel Architecture** — Telegram, Discord, Pushover, Email, and Webhook channels running simultaneously
+- **Per-Event Configuration** — enable/disable specific event types per channel
+- **Channel Overrides** — customize notification behaviour per channel
+- **Secure Webhook Endpoint** — external systems can send authenticated notifications
+- **Encrypted Storage** — API keys and sensitive data stored encrypted
+- **Queue-Based Processing** — background worker with automatic retry for failed notifications
+- **SQLite-Based Config Storage** — replaces file-based config for reliability
+
+### Telegram Topics Support
+Send notifications to a specific topic inside groups with Topics enabled.
+- New **Topic ID** field on the Telegram channel
+- Automatic detection of topic-enabled groups
+- Fully backwards compatible
+
+### ProxMenux Update Notifications
+The Monitor now detects when a new ProxMenux version is released.
+- **Dual-channel** — monitors both stable (`version.txt`) and beta (`beta_version.txt`)
+- **GitHub integration** — compares local vs remote versions
+- **Dashboard Update Indicator** — the ProxMenux logo changes to an update variant when a new version is detected (non-intrusive, no popups)
+- **Persistent state** — status stored in `config.json`, reset by update scripts
+- Single toggle in Settings controls both channels (enabled by default)
+
+---
+
+## 🖥️ Hardware Panel — Expanded Detection
+
+The Hardware page has been significantly expanded, with better detection and richer per-device detail.
+
+- **SCSI / SAS / RAID Controllers** — model, driver and PCI slot shown in the storage controllers section
+- **PCIe Link Speed Detection** — NVMe drives show current link speed (PCIe generation and lane width), making it easy to spot drives underperforming due to limited slot bandwidth
+- **Enhanced Disk Detail Modal** — NVMe, SATA, SAS, and USB drives now expose their specific fields (PCIe link info, SAS version/speed, interface type) instead of a generic view
+- **Smarter Disk Type Recognition** — uniform labelling for NVMe SSDs, SATA SSDs, HDDs and removable disks
+- **Hardware Info Caching** (`lspci`, `lspci -vmm`) — 5 min cache avoids repeated scans for data that doesn't change
+
+---
+
+## 💽 Storage Overview — Health, Observations, Exclusions
+
+The Storage Overview has been reworked around real-time state and user-controlled tracking.
+
+### Disk Health Status Alignment
+- Badges now reflect the **current** SMART state reported by Proxmox, not a historical worst value
+- **Observations preserved** — historical findings remain accessible via the "X obs." badge
+- **Automatic recovery** — when SMART reports healthy again, the disk immediately shows **Healthy**
+- Removed the old `worst_health` tracking that required manual clearing
+
+### Disk Registry Improvements
+- **Smart serial lookup** — when a serial is unknown the system checks for an existing entry with a serial before inserting a new one
+- **No more duplicates** — prevents separate entries for the same disk appearing with/without a serial
+- **USB disk support** — handles USB drives that may appear under different device names between reboots
+
+### Storage and Network Interface Exclusions
+- **Storage Exclusions** section — exclude drives from health monitoring and notifications
+- **Network Interface Exclusions** — new section for excluding interfaces (bridges `vmbr`, bonds, physical NICs, VLANs) from health and notifications; ideal for intentionally disabled interfaces that would otherwise generate false alerts
+- **Separate toggles** per item for Health monitoring and Notifications
+
+### Disk Detection Robustness
+- **Power-On-Hours validation** — detects and corrects absurdly large values (billions of hours) on drives with non-standard SMART encoding
+- **Intelligent bit masking** — extracts the correct value from drives that pack extra info into high bytes
+- **Graceful fallback** — shows "N/A" instead of impossible numbers when data cannot be parsed
+
+---
+
+## 🧠 Health Monitor & Error Lifecycle
+
+### Stale Error Cleanup
+Errors for resources that no longer exist are now resolved automatically.
+- **Deleted VMs / CTs** — related errors auto-resolve when the resource is removed
+- **Removed Disks** — errors for disconnected USB or hot-swap drives are cleaned up
+- **Cluster Changes** — cluster errors clear when a node leaves the cluster
+- **Log Patterns** — log-based errors auto-resolve after 48 hours without recurrence
+- **Security Updates** — update notifications auto-resolve after 7 days
+
+### Database Migration System
+- **Automatic column detection** — missing columns are added on startup
+- **Schema compatibility** — works with both old and new column naming conventions
+- **Backwards compatible** — databases from older ProxMenux versions are supported
+- **Graceful migration** — no data loss during schema updates
+
+---
+
+## 🧩 VM / CT Detail Modal
+
+The VM/CT detail modal has been completely redesigned for usability.
+
+- **Tabbed Navigation** — *Overview* (general information, status, resource usage) and *Backups* (dedicated history)
+- **Visual Enhancements** — icons throughout, improved hierarchy and spacing, better VM vs CT distinction
+- **Mobile Responsiveness** — adapts correctly to mobile screens in both webapp and direct browser access, no more overflow on small devices
+- **Touch-Friendly Controls** — larger buttons and spacing
+
+### Secure Gateway Modal
+- **Scrollable storage list** when many destinations are available
+- Mobile-adapted layout and improved visual hierarchy
+
+### Terminal Connection
+- **Reconnection loop fix** that was affecting mobile devices
+- Improved WebSocket handling for mobile browsers
+- More graceful connection timeout recovery
+
+### Fail2ban & Lynis Management
+- **Delete buttons** added in Settings for both tools
+- Clean removal of packages and configuration files
+- Confirmation dialog to prevent accidental deletion
+
+---
+
+## ⚡ Performance Optimizations
+
+Major reduction in CPU usage and elimination of spikes on the Monitor.
+
+### Staggered Polling Intervals
+Collectors now run on offset schedules to prevent simultaneous execution:
+
+| Collector | Schedule |
+|-----------|----------|
+| CPU sampling | Every 30s at offset 0 |
+| Temperature sampling | Every 15s at offset 7s |
+| Latency pings | Every 60s at offset 25s |
+| Temperature record | Every 60s at offset 40s |
+| Health collector | Starts at 55s offset |
+| Notification polling | Health=10s, Updates=30s, ProxMenux=45s, AI=50s |
+
+### Cached System Information
+Expensive commands now cached to reduce repeated execution:
+
+| Command | Cache TTL | Impact |
+|---------|-----------|--------|
+| `pveversion` | 6 hours | Eliminates 23%+ CPU spikes from Perl execution |
+| `apt list --upgradable` | 6 hours | Reduces package manager queries |
+| `pvesh get /cluster/resources` | 30 seconds | 6 API calls per request reduced to 1 |
+| `sensors` | 10 seconds | Temperature readings cached between polls |
+| `smartctl` (SMART health) | 30 minutes | Disk health checks reduced from every 5 min |
+| `lspci` / `lspci -vmm` | 5 minutes | Hardware info cached (doesn't change) |
+| `journalctl --since 24h` | 1 hour | Login attempts count cached (92% reduction) |
+
+### Increased journalctl Timeouts
+Prevents timeout cascades under system load:
+
+| Query Type | Before | After |
+|------------|--------|-------|
+| Short-term (3-10 min) | 3s | 10s |
+| Medium-term (1 hour) | 5s | 15s |
+| Long-term (24 hours) | 5s | 20s |
+
+### Reduced Polling Frequency
+- `TaskWatcher` interval raised from **2s → 5s** (60% fewer checks)
+
+### GitHub Actions
+- All workflow actions upgraded to **v6** for Node.js 24 compatibility
+- Deprecation warnings eliminated in CI/CD
+
+---
+
+## 🧰 Scripts — Storage, Hardware and GPU/TPU Work
+
+This release also consolidates significant work on the core ProxMenux scripts.
+
+### Storage scripts
+- **SMART scheduled tests** and improved interactive SMART test workflow with clearer progress feedback
+- **Disk formatting** (`format-disk.sh`) rework with safer device selection and dialog flow
+- **Disk passthrough** for VMs and CTs — updated device enumeration, serial-based identification, and cleaner teardown
+- **NVMe controller addition for VMs** — improved controller type selection and slot detection
+- **Import disk image** — smoother path validation and progress reporting
+- **Disk & storage manual guide** refresh
+
+### Hardware / GPU / TPU scripts
+- **Coral TPU installer** updated for current kernels and udev rules (Proxmox VE 8 & VE 9)
+- **NVIDIA installer** — cleaner driver installation, kernel header handling, and VM/LXC attachment flow
+- **GPU mode switch** (direct and interactive variants) — safer switching between iGPU modes
+- **Add GPU to VM / LXC** — unified selection dialogs and permission handling
+- **Intel / AMD GPU tools** kept in sync with the new shared patterns
+- **Hardware & graphics menu** restructured for consistency with the rest of ProxMenux
+
+
+## 2026-03-14
+
+### New version v1.1.9 — *Helper Scripts Catalog Rebuilt*
+
+### Changed
+
+- **Helper Scripts Menu — Full Catalog Rebuild**
+  The Helper Scripts catalog has been completely rebuilt to adapt to the new data architecture of the [Community Scripts](https://community-scripts.github.io/ProxmoxVE/) project.
+
+  The previous implementation relied on a `metadata.json` file that no longer exists in the upstream repository. The catalog now connects directly to the **PocketBase API** (`db.community-scripts.org`), which is the new official data source for the project.
+
+  A new GitHub Actions workflow generates a local `helpers_cache.json` index that replaces the old metadata dependency. This new cache is richer, more structured, and includes:
+  - Script type, slug, description, notes, and default credentials
+  - OS variants per script (e.g. Debian, Alpine) — each shown as a separate selectable option in the menu
+  - Direct GitHub URL and **Mirror URL** (`git.community-scripts.org`) for every script
+  - Category names embedded directly in the cache — no external requests needed to build the menu
+  - Additional metadata: default port, website, logo, update support, ARM availability
+
+  Scripts that support multiple OS variants (e.g. Docker with Alpine and Debian) now correctly show **one entry per OS**, each with its own GitHub and Mirror download option — restoring the behavior that existed before the upstream migration.
+
+---
+
+### 🎖 Special Acknowledgment
+
+This update would not have been possible without the openness and collaboration of the **Community Scripts** maintainers.
+
+When the upstream metadata structure changed and broke the ProxMenux catalog, the maintainers responded quickly, explained the new architecture in detail, and provided all the information needed to rebuild the integration cleanly.
+
+Special thanks to:
+
+- **MickLeskCanbiZ ([@MickLesk](https://github.com/MickLesk))** — for documenting the new script path structure by type and slug, and for the clear and direct technical guidance.
+- **Michel Roegl-Brunner ([@michelroegl-brunner](https://github.com/michelroegl-brunner))** — for explaining the new PocketBase collections structure (`script_scripts`, `script_categories`).
+
+The Helper Scripts project is an extraordinary resource for the Proxmox community. The scripts belong entirely to their authors and maintainers — ProxMenux simply offers a guided way to discover and launch them. All credit goes to the community behind [community-scripts/ProxmoxVE](https://github.com/community-scripts/ProxmoxVE).
+
+## 2025-09-18
+
+### New version v1.1.8 — *ProxMenux Offline Mode*
+
+![ProxMenux Offline](https://macrimi.github.io/ProxMenux/ProxMenux_offline.png)
+
+---
+
+### Added
+
+- **Offline Execution Mode (no GitHub dependency)**  
+  All ProxMenux core scripts now run **entirely locally**, without requiring live requests to GitHub (`raw.githubusercontent.com`).  
+  This change provides:
+  - Greater stability during execution
+  - No interruptions due to network timeouts or regional GitHub blocks
+  - Support for **offline or isolated environments**
+
+  ⚠️ This update resolves recent issues where users in certain regions were unable to run scripts due to CDN or TLS filtering errors while downloading `.sh` files from GitHub raw URLs.
+
+  **🎖 Special Acknowledgment: @cod378**  
+  This offline conversion has been made possible thanks to the extraordinary work of **@cod378**,  
+  who redesigned the entire internal logic of the installer and updater, refactored the file management system,  
+  and implemented the new fully local execution workflow.  
+  Without his collaboration, dedication, and technical contribution, this transformation would not have been possible.
+
+- **ProxMenux Monitor v1.0.1**  
+  This update brings a major leap in the **ProxMenux Monitor** interface.  
+  New features and improvements:
+  - `Proxy Support`: Access ProxMenux through reverse proxies with full functionality
+  - `Authentication System`: Secure your dashboard with password protection
+  - `Two-Factor Authentication (2FA)`: Optional TOTP support for enhanced security
+  - `PCIe Link Speed Detection`: View NVMe connection speeds and detect performance bottlenecks
+  - `Enhanced Storage Display`: Auto-formats disk sizes (GB → TB when appropriate)
+  - `SATA/SAS Interface Info`: Detect and show storage type (SATA, SAS, NVMe, etc.)
+  - `Health Monitoring System`: Built-in system health check with dismissible alerts
+  - Improved rendering across browsers and better performance
+
+- **Helper Scripts Menu (Mirror Support)**  
+  The `Helper Scripts` menu now:
+  - Detects **mirror URLs** and shows alternative download options when available
+  - Lists available OS versions when a helper script is version-dependent (e.g. template installers)
+
+---
+
+### Fixed
+
+- Minor fixes and refinements throughout the codebase to ensure full offline compatibility and a smoother user experience.
+
+
+
+## 2025-09-04
+
+### New version v1.1.7
+
+### Added
+
+- **ProxMenux Monitor**  
+  Your new monitoring tool for Proxmox. Discover all the features that will help you manage and supervise your infrastructure efficiently.
+
+  ProxMenux Monitor is designed to support future updates where **actions can be triggered without using the terminal**, and managed through a **user-friendly interface** accessible across multiple formats and devices.
+
+  Access it at: **http://your-server-ip:8008**
+
+  ![ProxMenux Monitor](https://macrimi.github.io/ProxMenux/monitor/welcome.png)
+- **New Banner Removal Method**  
+  A new function to disable the Proxmox subscription message with improved safety:
+  - Creates a full backup before modifying any files
+  - Shows a clear warning that breaking changes may occur with future GUI updates
+  - If the GUI fails to load, the user can revert changes via SSH from the post-install menu using the **"Uninstall Options → Restore Banner"** tool
+
+  Special thanks to **@eryonki** for providing the improved method.
+
+---
+
+### Improved
+
+- **CORAL TPU Installer Updated for PVE 9**  
+  The CORAL TPU driver installer now supports both **Proxmox VE 8 and VE 9**, ensuring compatibility with the latest kernels and udev rules.
+
+- **Log2RAM Installation & Integration**  
+  - Log2RAM installation is now idempotent and can be safely run multiple times.
+  - Automatically adjusts `journald` configuration to align with the size and behavior of Log2RAM.
+  - Ensures journaling is correctly tuned to avoid overflows or RAM exhaustion on low-memory systems.
+
+- **Network Optimization Function (LXC + NFS)**  
+  Improved to prevent “martian source” warnings in setups where **LXC containers share storage with VMs** over NFS within the same server.
+
+- **APT Upgrade Progress**  
+  When running full system upgrades via ProxMenux, a **real-time progress bar** is now displayed, giving the user clear visibility into the update process.
+
+---
+
+### Fixed
+
+- Other small improvements and fixes to optimize runtime performance and eliminate minor bugs.
+
+
+
+## 2025-01-10
+
+### New version v1.1.6
+
+![Shared Resources Menu](https://macrimi.github.io/ProxMenux/share/main-menu.png)
+
+
+### Added
+
+- **New Menu: Mount and Share Manager**  
+  Introduced a comprehensive new menu for managing shared resources between Proxmox host and LXC containers:
+
+  **Host Configuration Options:**
+  - **Configure NFS Shared on Host** - Add, view, and remove NFS shared resources on the Proxmox server with automatic export management
+  - **Configure Samba Shared on Host** - Add, view, and remove Samba/CIFS shared resources on the Proxmox server with share configuration  
+  - **Configure Local Shared on Host** - Create and manage local shared directories with proper permissions on the Proxmox host
+
+  **LXC Integration Options:**
+  - **Configure LXC Mount Points (Host ↔ Container)** - **Core feature** that enables mounting host directories into LXC containers with automatic permission handling. Includes the ability to **view existing mount points** for each container in a clear, organized way and **remove mount points** with proper verification that the process completed successfully. Especially optimized for **unprivileged containers** where UID/GID mapping is critical.
+  - **Configure NFS Client in LXC** - Set up NFS client inside privileged containers
+  - **Configure Samba Client in LXC** - Set up Samba client inside privileged containers  
+  - **Configure NFS Server in LXC** - Install NFS server inside privileged containers
+  - **Configure Samba Server in LXC** - Install Samba server inside privileged containers
+
+  **Documentation & Support:**
+  - **Help & Info (commands)** - Comprehensive guides with step-by-step manual instructions for all sharing scenarios
+
+  The entire system is built around the **LXC Mount Points** functionality, which automatically detects filesystem types, handles permission mapping between host and container users, and provides seamless integration for both privileged and unprivileged containers.
+
+---
+
+### Improved
+
+- **Log2RAM Auto-Detection Enhancement**  
+  In the automatic post-install script, the Log2RAM installation function now prompts the user when automatic disk ssd/m2 detection fails.
+  This ensures Log2RAM can still be installed on systems where automatic disk detection doesn't work properly.
+
+---
+
+### Fixed
+
+- **Proxmox Update Repository Verification**  
+  Fixed an issue in the Proxmox update function where empty repository source files would cause errors during conflict verification. The function now properly handles empty `/etc/apt/sources.list.d/` files without throwing false warnings.
+
+  Thanks to **@JF_Car** for reporting this issue.
+
+---
+
+### Acknowledgments
+
+Special thanks to **@JF_Car**, **@ghosthvj**, and **@jonatanc** for their testing, valuable feedback, and suggestions that helped refine the shared resources functionality and improve the overall user experience.
+
+
+
+## 2025-08-20
+
+### New version v1.1.5
+
+### Added
+
+- **New Script: Upgrade PVE 8 to PVE 9**  
+  Added a full upgrade tool located under `Utilities and Tools`. It provides:
+  1. **Automatic upgrade** from PVE 8 to 9
+  2. **Interactive upgrade** with step-by-step confirmations
+  3. **Check-only mode** using `check-pve8to9`
+  4. **Manual instructions** shown in order for users who prefer to upgrade manually
+
+- **New Tools in System Utilities**
+  - [`s-tui`](https://github.com/amanusk/s-tui): Terminal-based CPU monitoring with graphs
+  - [`intel-gpu-tools`](https://gitlab.freedesktop.org/drm/igt-gpu-tools): Useful for Intel GPU diagnostics
+
+---
+
+### Improved
+
+- **APT Upgrade Handling**  
+  The PVE upgrade function now blocks the process if any package prompts for manual confirmation. This avoids partial upgrades and ensures consistency.
+
+- **Network Optimization (sysctl)**  
+  - Obsolete kernel parameters removed (e.g., `tcp_tw_recycle`, `nf_conntrack_helper`) to prevent warnings in **Proxmox 9 / kernel 6.14**
+  - Now generates only valid, up-to-date sysctl parameters
+
+- **AMD CPU Patch Handling**  
+  - Now applies correct `idle=nomwait` and KVM options (`ignore_msrs=1`, `report_ignored_msrs=0`)
+  - Expected warning is now documented and safely handled for stability with Ryzen/EPYC
+
+- **Timezone & NTP Fixes**  
+  - Automatically detects timezone using public IP geolocation
+  - Falls back to UTC if detection fails
+  - Restarts Postfix after timezone set → resolves `/var/spool/postfix/etc/localtime` mismatch warning
+
+- **Repository & Package Installer Logic**  
+  - Now verifies that working repositories exist before installing any package
+  - If none are available, adds a fallback **Debian stable** repository
+  - Replaces deprecated `mlocate` with `plocate` (compatible with Debian 13 and Proxmox 9)
+
+- **Improved Logs and User Feedback**  
+  - Actions that fail now provide precise messages (instead of falsely marking as success)
+  - Helps users clearly understand what's been applied or skipped
+
+
+
+## 2025-08-06
+
+### New version v1.1.4
+
+### Added
+
+- **Proxmox 9 Compatibility Preparation**  
+  This version prepares **ProxMenux** for the upcoming **Proxmox VE 9**:
+  - The function to add the official Proxmox repositories now supports the new `.sources` format used in Proxmox 9, while maintaining backward compatibility with Proxmox 8.
+  - Banner removal is now optionally supported for Proxmox 9.
+
+- **xshok-proxmox Detection**  
+  Added a check to detect if the `xshok-proxmox` post-install script has already been executed.  
+  If detected, a warning is shown to avoid conflicting adjustments:
+
+  ```
+  It appears that you have already executed the xshok-proxmox post-install script on this system.
+
+  If you continue, some adjustments may be duplicated or conflict with those already made by xshok.
+
+  Do you want to continue anyway?
+  ```
+
+---
+
+### Improved
+
+- **Banner Removal (Proxmox 8.4.9+)**  
+  Updated the logic for removing the subscription banner in **Proxmox 8.4.9**, due to changes in `proxmoxlib.js`.
+
+- **LXC Disk Passthrough (Persistent UUID)**  
+  The function to add a physical disk to an LXC container now uses **UUID-based persistent paths**.  
+  This ensures that disks remain correctly mounted, even if the `/dev/sdX` order changes due to new hardware.
+
+  ```bash
+  PERSISTENT_DISK=$(get_persistent_path "$DISK")
+  if [[ "$PERSISTENT_DISK" != "$DISK" ]] ...
+  ```
+
+- **System Utilities Installer**  
+  Now checks whether APT sources are available before installing selected tools.  
+  If a new Proxmox installation has no active repos, it will **automatically add the default sources** to avoid installation failure.
+
+- **IOMMU Activation on ZFS Systems**  
+  The function that enables IOMMU for passthrough now verifies existing kernel parameters to avoid duplication if the user has already configured them manually.
+
+---
+
+### Fixed
+
+- Minor code cleanup and improved runtime performance across several modules.
+
+
+
+## 2025-07-20
+
+### Changed
+
+- **Subscription Banner Removal (Proxmox 8.4.5+)**  
+  Improved the `remove_subscription_banner` function to ensure compatibility with Proxmox 8.4.5, where the banner removal method was failing after clean installations.
+
+- **Improved Log2RAM Detection**  
+  In both the automatic and customizable post-install scripts, the logic for Log2RAM installation has been improved.  
+  Now it correctly detects if Log2RAM is already configured and avoids triggering errors or reconfiguration.
+
+- **Optimized Figurine Installation**  
+  The `install_figurine` function now avoids duplicating `.bashrc` entries if the customization for the root prompt already exists.
+
+
+### Added
+
+- **New Function: Persistent Network Interface Naming**  
+  Added a new function `setup_persistent_network` to create stable network interface names using `.link` files based on MAC addresses.  
+  This avoids unpredictable renaming (e.g., `enp2s0` becoming `enp3s0`) when hardware changes, PCI topology shifts, or passthrough configurations are applied.
+
+  **Why use `.link` files?**  
+  Because predictable interface names in `systemd` can change with hardware reordering or replacement. Using static `.link` files bound to MAC addresses ensures consistency, especially on systems with multiple NICs or passthrough setups.
+
+  Special thanks to [@Andres_Eduardo_Rojas_Moya] for contributing the persistent  
+  network naming function and for the original idea.
+
+```bash
+[Match]
+MACAddress=XX:XX:XX:XX:XX:XX
+
+[Link]
+Name=eth0
+```
+
+
+## 2025-07-01
+
+### New version v1.1.3
+
+![Installer Menu](https://macrimi.github.io/ProxMenux/install/install.png)
+
+- **Dual Installation Modes for ProxMenux**  
+  The installer now offers two distinct modes:  
+  1. **Lite version (no translations):** Only installs two official Debian packages (`dialog`, `jq`) to enable menus and JSON parsing. No files are written beyond the configuration directory.  
+  2. **Full version (with translations):** Uses a virtual environment and allows selecting the interface language during installation.  
+
+  When updating, if the user switches from full to lite, the old version will be **automatically removed** for a clean transition.
+
+### Added
+
+- **New Script: Automated Post-Installation Setup**  
+  A new minimal post-install script that performs essential setup automatically:  
+  - System upgrade and sync  
+  - Remove enterprise banner  
+  - Optimize APT, journald, logrotate, system limits  
+  - Improve kernel panic handling, memory settings, entropy, network  
+  - Add `.bashrc` tweaks and **Log2RAM auto-install** (if SSD/M.2 is detected)
+
+- **New Function: Log2RAM Configuration**  
+  Now available in both the customizable and automatic post-install scripts.  
+  On systems with SSD/NVMe, Log2RAM is **enabled automatically** to preserve disk life.
+
+- **New Menus:**
+  - 🧰 **System Utilities Menu**  
+    Lets users select and install useful CLI tools with proper command validation.
+  - 🌐 **Network Configuration & Repair**  
+    A new interactive menu for analyzing and repairing network interfaces.
+
+### Improved
+
+- **Post-Install Menu Logic**  
+  Options are now grouped more logically for better usability.
+
+- **VM Creation Menu**  
+  Enhanced with improved CPU model support and custom options.
+
+- **UUP Dump ISO Creator Script**  
+  - Added option to **customize the temporary folder location**  
+  - Fixed issue where entire temp folder was deleted instead of just contents  
+    💡 Suggested by [@igrokit](https://github.com/igrokit)  
+    [#17](https://github.com/MacRimi/ProxMenux/issues/17), [#11](https://github.com/MacRimi/ProxMenux/issues/11)
+
+- **Physical Disk to LXC Script**  
+  Now handles **XFS-formatted disks** correctly.  
+  Thanks to [@antroxin](https://github.com/antroxin) for reporting and testing!
+
+- **System Utilities Installer**  
+  Rewritten to **verify command availability** after installation, ensuring tools work as expected.  
+  🐛 Fix for [#18](https://github.com/MacRimi/ProxMenux/issues/18) by [@DST73](https://github.com/DST73)
+
+### Fixed
+
+- **Enable IOMMU on ZFS**  
+  The detection and configuration for enabling IOMMU on ZFS-based systems is now fully functional.  
+  🐛 Fix for [#15](https://github.com/MacRimi/ProxMenux/issues/15) by [@troponaut](https://github.com/troponaut)
+
+### Other
+
+- Performance and code cleanup improvements across several modules.
+
+
+
+## 2025-06-06
+
+### Added
+
+- **New Menu: Proxmox PVE Helper Scripts**  
+  Officially introduced the new **Proxmox PVE Helper Scripts** menu, replacing the previous: Esenciales Proxmox.  
+  This new menu includes:
+  - Script search by name in real time
+  - Category-based browsing
+
+  It’s a cleaner, faster, and more functional way to access community scripts in Proxmox.
+
+  ![Helper Scripts Menu](https://macrimi.github.io/ProxMenux/menu-helpers-script.png)
+
+
+- **New CPU Models in VM Creation**  
+  The CPU selection menu in VM creation has been greatly expanded to support advanced QEMU and x86-64 CPU profiles.  
+  This allows better compatibility with modern guest systems and fine-tuning performance for specific workloads, including nested virtualization and hardware-assisted features.
+
+
+  ![CPU Config](https://macrimi.github.io/ProxMenux/vm/config-cpu.png)
+
+  Thanks to **@Nida Légé (Nidouille)** for suggesting this enhancement.
+
+
+- **Support for `.raw` Disk Images**  
+  The disk import tool for VMs now supports `.raw` files, in addition to `.img`, `.qcow2`, and `.vmdk`.  
+  This improves compatibility when working with disk exports from other hypervisors or backup tools.
+
+  💡 Suggested by **@guilloking** in [GitHub Issue #5](https://github.com/MacRimi/ProxMenux/issues/5)
+
+
+- **Locale Detection in Language Skipping**  
+  The function that disables extra APT languages now includes:
+  - Automatic locale detection (`LANG`)
+  - Auto-generation of `en_US.UTF-8` if none is found
+  - Prevents warnings during script execution due to undefined locale
+
+
+### Improved
+
+- **APT Language Skipping Logic**  
+  Improved locale handling ensures system compatibility before disabling translations:
+  ```bash
+  if ! locale -a | grep -qi "^${default_locale//-/_}$"; then
+      echo "$default_locale UTF-8" >> /etc/locale.gen
+      locale-gen "$default_locale"
+  fi
+  ```
+
+- **System Update Speed**  
+  Post-install system upgrades are now faster:  
+  - The upgrade process (`dist-upgrade`) is separated from container template index updates.
+  - Index refresh is now an optional feature selected in the script.
+
+
+
+## 2025-05-27
+
+### Fixed
+- **Kali Linux ISO URL Updated**  
+  Fixed the incorrect download URL for Kali Linux ISO in the Linux installer module. The new correct path is:  
+  ```
+  https://cdimage.kali.org/kali-2025.1c/kali-linux-2025.1c-installer-amd64.iso
+  ```
+
+### Improved
+- **Faster Dialog Menu Transitions**  
+  Improved UI responsiveness across all interactive menus by replacing `whiptail` with `dialog`, offering faster transitions and smoother navigation.
+
+- **Coral USB Support in LXC**  
+  Improved the logic for configuring Coral USB TPU passthrough into LXC containers:
+  - Refactored configuration into modular blocks with better structure and inline comments.
+  - Clear separation of Coral USB (`/dev/coral`) and Coral M.2 (`/dev/apex_0`) logic.
+  - Maintains backward compatibility with existing LXC configurations.
+  - Introduced persistent Coral USB passthrough using a udev rule:
+    ```bash
+    # Create udev rule for Coral USB
+    SUBSYSTEM=="usb", ATTRS{idVendor}=="18d1", ATTRS{idProduct}=="9302", MODE="0666", TAG+="uaccess", SYMLINK+="coral"
+    
+    # Map /dev/coral if it exists
+    if [ -e /dev/coral ]; then
+        echo "lxc.mount.entry: /dev/coral dev/coral none bind,optional,create=file" >> "$CONFIG_FILE"
+    fi
+    ```
+  - Special thanks to **@Blaspt** for validating the persistent Coral USB passthrough and suggesting the use of `/dev/coral` symbolic link.
+
+
+### Added
+- **Persistent Coral USB Passthrough Support**  
+  Added udev rule support for Coral USB devices to persistently map them as `/dev/coral`, enabling consistent passthrough across reboots. This path is automatically detected and mapped in the container configuration.
+
+- **RSS Feed Integration**  
+  Added support for generating an RSS feed for the changelog, allowing users to stay informed of updates through news clients.
+
+- **Release Service Automation**  
+  Implemented a new release management service to automate publishing and tagging of versions, starting with version **v1.1.2**.
+
+
 ## 2025-05-13
 
 ### Fixed

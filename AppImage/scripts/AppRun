@@ -1,0 +1,41 @@
+#!/bin/bash
+
+# ProxMenux Monitor AppImage Entry Point
+# This script is executed when the AppImage is run
+
+# Get the directory where this AppImage is mounted
+APPDIR="$(dirname "$(readlink -f "${0}")")"
+
+export PATH="${APPDIR}/usr/bin:${PATH}"
+export LD_LIBRARY_PATH="${APPDIR}/usr/lib/x86_64-linux-gnu:${APPDIR}/usr/lib:${APPDIR}/lib/x86_64-linux-gnu:${APPDIR}/lib:${LD_LIBRARY_PATH}"
+export PYTHONPATH="${APPDIR}/usr/lib/python3/dist-packages:${APPDIR}/usr/lib/python3/site-packages:${PYTHONPATH}"
+
+# Change to the AppImage directory
+cd "${APPDIR}"
+
+# Check for translation argument
+if [[ "$1" == "--translate" ]]; then
+    echo "🌐 Starting ProxMenux Translation Service..."
+    exec python3 "${APPDIR}/usr/bin/translate_cli.py" "${@:2}"
+else
+    echo "🚀 Starting ProxMenux Monitor Dashboard..."
+    echo ""
+    
+    echo "🔧 Hardware monitoring tools:"
+    [ -x "${APPDIR}/usr/bin/ipmitool" ] && echo "  ✅ ipmitool available" || echo "  ⚠️  ipmitool not available"
+    [ -x "${APPDIR}/usr/bin/sensors" ] && echo "  ✅ sensors available" || echo "  ⚠️  sensors not available"
+    [ -x "${APPDIR}/usr/bin/upsc" ] && echo "  ✅ upsc available" || echo "  ⚠️  upsc not available"
+    
+    if [ -x "${APPDIR}/usr/bin/ipmitool" ]; then
+        if ldd "${APPDIR}/usr/bin/ipmitool" 2>/dev/null | grep -q "libfreeipmi.so.17 => not found"; then
+            echo "  ⚠️  libfreeipmi.so.17 not found - ipmitool may not work"
+        elif ldd "${APPDIR}/usr/bin/ipmitool" 2>/dev/null | grep -q "libfreeipmi.so.17"; then
+            echo "  ✅ libfreeipmi.so.17 loaded successfully"
+        fi
+    fi
+    
+    echo ""
+    
+    # Start the Flask server
+    exec python3 "${APPDIR}/usr/bin/flask_server.py"
+fi
