@@ -3,7 +3,6 @@
 
 ### New version ProxMenux v1.2.0 — *AI-Enhanced Monitoring*
 
-# <img src="https://raw.githubusercontent.com/MacRimi/ProxMenux/main/images/logo.png" alt="ProxMenux logo" width="40"/>  
 
 ![ProxMenux AI](https://raw.githubusercontent.com/MacRimi/ProxMenux/main/images/ProxMenux_ai.png)
 
