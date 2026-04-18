@@ -428,6 +428,7 @@ EOF
 
   # Attempt to unload nouveau if currently loaded
   if lsmod | grep -q "^nouveau "; then
+    stop_spinner
     msg_info "$(translate 'Nouveau module is loaded, attempting to unload...')"
     modprobe -r nouveau 2>/dev/null || true
 
@@ -550,6 +551,7 @@ complete_nvidia_uninstall() {
   update_component_status "nvidia_driver" "removed" "" "gpu" '{}'
   
   msg_ok "$(translate 'Complete NVIDIA uninstallation finished.')" | tee -a "$screen_capture"
+  stop_spinner
 }
 
 cleanup_nvidia_dkms() {
