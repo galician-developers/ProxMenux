@@ -3087,7 +3087,7 @@
     "config_path": "/opt/dawarich/.env",
     "default_credentials": {
       "username": "demo@dawarich.app",
-      "password": "password"
+      "password": "safepassword"
     },
     "os": ""
   },
