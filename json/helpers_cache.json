@@ -14496,7 +14496,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": false,
+    "is_dev": true,
     "execute_in": [
       "lxc"
     ],
