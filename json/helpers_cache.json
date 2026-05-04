@@ -695,36 +695,6 @@
     "os": ""
   },
   {
-    "name": "Anytype",
-    "slug": "anytype",
-    "desc": "Anytype is a local-first, privacy-focused alternative to Notion. This script deploys the any-sync-bundle which provides a self-hosted sync server for Anytype clients with external MongoDB and Redis Stack.",
-    "script": "ct/anytype.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/anytype.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/anytype.sh",
-    "type": "lxc",
-    "type_id": "nm9bra8mzye2scg",
-    "categories": [
-      "scriptcat00012"
-    ],
-    "category_names": [
-      "Documents & Notes"
-    ],
-    "notes": [],
-    "port": 33010,
-    "website": "https://anytype.io/",
-    "documentation": "https://doc.anytype.io/",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/anytype.webp",
-    "updateable": true,
-    "privileged": false,
-    "has_arm": false,
-    "is_dev": true,
-    "execute_in": [
-      "lxc"
-    ],
-    "config_path": "",
-    "os": ""
-  },
-  {
     "name": "Anytype Server",
     "slug": "anytype-server",
     "desc": "Anytype is a local-first, privacy-focused alternative to Notion. This script deploys the any-sync-bundle which provides a self-hosted sync server for Anytype clients with external MongoDB and Redis Stack.",
