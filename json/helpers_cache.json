@@ -15571,6 +15571,10 @@
       "lxc"
     ],
     "config_path": "/opt/trek/server/.env",
+    "default_credentials": {
+      "username": "admin@trek.local",
+      "password": "see /opt/trek/server/.env"
+    },
     "os": ""
   },
   {
