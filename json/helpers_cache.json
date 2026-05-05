@@ -1519,7 +1519,7 @@
       "Documents & Notes"
     ],
     "notes": [],
-    "port": 8080,
+    "port": 8443,
     "website": "https://www.bentopdf.com",
     "documentation": "https://github.com/alam00000/bentopdf",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/bentopdf.webp",
