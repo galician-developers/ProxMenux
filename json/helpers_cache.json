@@ -3349,10 +3349,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00023"
+      "scriptcat00000"
     ],
     "category_names": [
-      "Finance & Budgeting"
+      "Miscellaneous"
     ],
     "notes": [],
     "port": 80,
@@ -3976,7 +3976,7 @@
     ],
     "notes": [],
     "port": 8080,
-    "website": "https://github.com/joaovitoriasilva/endurain",
+    "website": "https://codeberg.org/endurain- project/endurain",
     "documentation": "https://docs.endurain.com/",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/endurain.webp",
     "updateable": true,
