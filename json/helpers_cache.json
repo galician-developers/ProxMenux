@@ -4208,7 +4208,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -6103,7 +6103,7 @@
     ],
     "notes": [],
     "port": 3000,
-    "website": "https://github.com/Pouzor/homelable",
+    "website": "https://homelable.net/",
     "documentation": "https://github.com/Pouzor/homelable/blob/main/INSTALLATION.md",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/homelable.webp",
     "updateable": true,
