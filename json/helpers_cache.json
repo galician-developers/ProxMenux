@@ -17187,10 +17187,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00001"
+      "scriptcat00000"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Miscellaneous"
     ],
     "notes": [],
     "port": 80,
