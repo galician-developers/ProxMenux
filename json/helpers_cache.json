@@ -1162,6 +1162,36 @@
     "os": ""
   },
   {
+    "name": "ARR-Stack",
+    "slug": "arr-stack",
+    "desc": "Proxmox VE Helper Scripts for setting up a stack of applications for use with Prowlarr, Sonarr, Radarr, Lidarr, Seerr, and qBittorrent.",
+    "script": "tools/pve/arr-stack.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/pve/arr-stack.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/tools/pve/arr-stack.sh",
+    "type": "pve",
+    "type_id": "1uyjfno0fpf5buh",
+    "categories": [
+      "scriptcat00012"
+    ],
+    "category_names": [
+      "Documents & Notes"
+    ],
+    "notes": [],
+    "port": 3010,
+    "website": "https://community-scripts.org",
+    "documentation": "community-scripts/ProxmoxVED/blob/main/tools/arr-stack.sh",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/ProxmoxVE.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "Asterisk",
     "slug": "asterisk",
     "desc": "Asterisk is an open-source framework for building communications applications, most commonly used as a phone system (PBX). Developed by Digium (now part of Sangoma), it turns a standard computer into a powerful telephony server.",
@@ -3923,6 +3953,36 @@
     "is_dev": false,
     "execute_in": [
       "pve"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
+    "name": "Dynacat",
+    "slug": "dynacat",
+    "desc": "Dynacat is a lightweight self-hosted dashboard focused on dynamic updates and easy integration with external services.",
+    "script": "ct/dynacat.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/dynacat.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/dynacat.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00010"
+    ],
+    "category_names": [
+      "Dashboards & Frontends"
+    ],
+    "notes": [],
+    "port": 8080,
+    "website": "https://github.com/Panonim/dynacat",
+    "documentation": "https://dynacat.artur.zone/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/dynacat.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
     ],
     "config_path": "",
     "os": ""
@@ -9887,6 +9947,40 @@
     "os": ""
   },
   {
+    "name": "Nezha",
+    "slug": "nezha",
+    "desc": "Nezha is a lightweight server and website monitoring dashboard with real-time status, alerts, and remote operation features.",
+    "script": "ct/nezha.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/nezha.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/nezha.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00009"
+    ],
+    "category_names": [
+      "Monitoring & Analytics"
+    ],
+    "notes": [],
+    "port": 8008,
+    "website": "https://nezha.wiki/en_US/",
+    "documentation": "https://nezha.wiki/en_US/guide/dashboard.html",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/nezha.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "default_credentials": {
+      "username": "admin",
+      "password": "admin"
+    },
+    "os": ""
+  },
+  {
     "name": "Nginx UI",
     "slug": "nginx-ui",
     "desc": "Nginx UI is a comprehensive web-based interface designed to simplify the management and configuration of Nginx servers. It provides features like online statistics, ChatGPT-powered config assistant, automatic Let's Encrypt certificates, and config file editing with syntax highlighting.",
@@ -13917,6 +14011,40 @@
     "os": ""
   },
   {
+    "name": "Shiori",
+    "slug": "shiori",
+    "desc": "Shiori is a simple self-hosted bookmark manager with web UI and offline archive support, distributed as a single binary.",
+    "script": "ct/shiori.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/shiori.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/shiori.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00012"
+    ],
+    "category_names": [
+      "Documents & Notes"
+    ],
+    "notes": [],
+    "port": 8080,
+    "website": "https://github.com/go-shiori/shiori",
+    "documentation": "https://github.com/go-shiori/shiori/tree/master/docs",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/shiori.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "default_credentials": {
+      "username": "shiori",
+      "password": "gopher"
+    },
+    "os": ""
+  },
+  {
     "name": "Shlink",
     "slug": "shlink",
     "desc": "Shlink is a self-hosted URL shortener built in PHP that provides detailed analytics, a REST API, tags, expiration dates, and integrations via webhooks.",
@@ -15543,6 +15671,40 @@
       "pve"
     ],
     "config_path": "/opt/tinyauth/.env",
+    "os": ""
+  },
+  {
+    "name": "Tolgee",
+    "slug": "tolgee",
+    "desc": "Tolgee is an open-source localization platform that helps teams manage translations with in-context editing and collaboration features.",
+    "script": "ct/tolgee.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/tolgee.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/tolgee.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00020"
+    ],
+    "category_names": [
+      "AI / Coding & Dev-Tools"
+    ],
+    "notes": [],
+    "port": 8080,
+    "website": "https://tolgee.io/",
+    "documentation": "https://docs.tolgee.io/platform/self_hosting",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/tolgee.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "default_credentials": {
+      "username": "admin",
+      "password": "cat /opt/tolgee_data/initial.pwd"
+    },
     "os": ""
   },
   {
