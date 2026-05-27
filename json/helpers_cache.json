@@ -301,6 +301,40 @@
     "os": ""
   },
   {
+    "name": "Apache Airflow",
+    "slug": "airflow",
+    "desc": "Apache Airflow is an open-source platform for developing, scheduling, and monitoring batch-oriented workflows. It uses Python to author DAGs (Directed Acyclic Graphs) that represent workflows, and provides a rich web UI for managing and observing pipelines.",
+    "script": "ct/airflow.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/airflow.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/airflow.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00019"
+    ],
+    "category_names": [
+      "Automation & Scheduling"
+    ],
+    "notes": [],
+    "port": 8080,
+    "website": "https://airflow.apache.org/",
+    "documentation": "https://airflow.apache.org/docs/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/apache.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "default_credentials": {
+      "username": "admin",
+      "password": ""
+    },
+    "os": ""
+  },
+  {
     "name": "AliasVault",
     "slug": "aliasvault",
     "desc": "AliasVault is an open-source, end-to-end encrypted password manager and email alias service. It features a zero-knowledge architecture where your master password never leaves your device, a built-in SMTP server for alias email addresses, browser extensions with autofill, and native iOS/Android apps.",
@@ -3218,6 +3252,36 @@
     "os": ""
   },
   {
+    "name": "DDNS-Updater",
+    "slug": "ddns-updater",
+    "desc": "Lightweight universal DDNS updater with web UI, supporting 60+ DNS providers including Cloudflare, Namecheap, GoDaddy, DuckDNS and more.",
+    "script": "ct/ddns-updater.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/ddns-updater.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/ddns-updater.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00004"
+    ],
+    "category_names": [
+      "Network & Firewall"
+    ],
+    "notes": [],
+    "port": 8000,
+    "website": "https://github.com/qdm12/ddns-updater",
+    "documentation": "https://github.com/qdm12/ddns-updater/wiki",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/ddns-updater.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "Debian",
     "slug": "debian",
     "desc": "Debian is a free operating system (OS) that comes with over 59000 packages. It's known for its stability, security, and extensive software repository.",
@@ -5954,7 +6018,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -9436,7 +9500,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -14286,6 +14350,40 @@
       "pve"
     ],
     "config_path": "/etc/smokeping/config.d/Targets",
+    "os": ""
+  },
+  {
+    "name": "SnapOtter",
+    "slug": "snapotter",
+    "desc": "SnapOtter is a self-hosted, privacy-first image processing toolbox with 50+ tools including background removal, upscaling, format conversion, OCR, face enhancement, and more — all running locally in your browser and on your server.",
+    "script": "ct/snapotter.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/snapotter.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/snapotter.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00013"
+    ],
+    "category_names": [
+      "Media & Streaming"
+    ],
+    "notes": [],
+    "port": 1349,
+    "website": "https://snapotter.com/",
+    "documentation": "https://docs.snapotter.com/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/snapotter.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "default_credentials": {
+      "username": "admin",
+      "password": "admin"
+    },
     "os": ""
   },
   {
