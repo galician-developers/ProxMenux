@@ -12617,7 +12617,7 @@
     "notes": [],
     "port": 6868,
     "website": "https://github.com/Dictionarry-Hub/profilarr",
-    "documentation": "https://github.com/Dictionarry-Hub/profilarr#readme",
+    "documentation": "https://v2.dictionarry.dev/",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/profilarr.webp",
     "updateable": true,
     "privileged": false,
