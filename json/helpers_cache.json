@@ -10881,6 +10881,10 @@
       "pve"
     ],
     "config_path": "",
+    "default_credentials": {
+      "username": "root",
+      "password": ""
+    },
     "os": ""
   },
   {
