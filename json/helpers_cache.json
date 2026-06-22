@@ -13461,7 +13461,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/qdrant.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -13491,7 +13491,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/qui.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -13521,7 +13521,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/rabbitmq.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -13585,7 +13585,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/radarr.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -13645,7 +13645,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/rclone.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -13675,7 +13675,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/real-debrid.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -13735,7 +13735,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/readeck.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -13765,7 +13765,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/recyclarr.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -13825,7 +13825,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/reitti.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -14010,7 +14010,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/rustdesk.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -14070,7 +14070,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/sabnzbd.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -14160,7 +14160,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/scanopy.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -14190,7 +14190,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/scraparr-dark.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -14250,7 +14250,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/seaweedfs.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -14310,7 +14310,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/seerr.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -14340,7 +14340,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/semaphore-ui.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -14404,7 +14404,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/shelfmark.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -14502,7 +14502,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/shlink.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "lxc"
@@ -14532,7 +14532,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/signoz.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -14562,7 +14562,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/silverbullet.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -14622,7 +14622,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/slskd.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -14780,7 +14780,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/solidtime.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "lxc"
@@ -14812,7 +14812,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/sonarqube.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -14846,7 +14846,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/sonarr.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -14876,7 +14876,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/sonobarr.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -14906,7 +14906,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/soulsync.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "lxc"
@@ -14936,7 +14936,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/sparkyfitness.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -14997,7 +14997,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/speedtest-tracker.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -15061,7 +15061,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/splitpro.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -15151,7 +15151,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/sportarr.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -15271,7 +15271,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/step-ca.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "lxc"
@@ -15339,7 +15339,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/storybook.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "lxc"
@@ -15369,7 +15369,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/storyteller.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "lxc"
@@ -15399,7 +15399,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/strapi.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -15463,7 +15463,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/stylus.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -15493,7 +15493,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/sure-finance.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -15617,7 +15617,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/tandoor-recipes.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -15737,7 +15737,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/tdarr.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -15767,7 +15767,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/teable.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "lxc"
@@ -15827,7 +15827,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/technitium.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -15917,7 +15917,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/teleport.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "lxc"
@@ -15947,7 +15947,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/termix.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
