@@ -5522,7 +5522,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/github.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "lxc"
@@ -5735,7 +5735,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/gogs.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "lxc"
@@ -6630,7 +6630,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/gotify.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "lxc"
@@ -6721,7 +6721,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/immich-frame.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -7055,7 +7055,7 @@
     "logo": "https://raw.githubusercontent.com/ajayyy/SponsorBlock/master/public/icons/IconSponsorBlocker512px.png",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": false,
     "execute_in": [
       "pve"
@@ -12754,7 +12754,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
