@@ -7150,7 +7150,7 @@
     "updateable": false,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -7855,8 +7855,8 @@
     ],
     "notes": [],
     "port": 3000,
-    "website": "",
-    "documentation": "",
+    "website": "https://github.com/PanSalut/Koffan",
+    "documentation": "https://github.com/PanSalut/Koffan/wiki",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/koffan.webp",
     "updateable": true,
     "privileged": false,
