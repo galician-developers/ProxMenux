@@ -2774,6 +2774,36 @@
     "os": ""
   },
   {
+    "name": "CookCLI",
+    "slug": "cookcli",
+    "desc": "CookCLI is a recipe management CLI and embedded web server in a single binary. It serves a Cooklang recipe collection as a web interface with shopping lists, pantry tracking, and meal planning.",
+    "script": "ct/cookcli.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/cookcli.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/cookcli.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00012"
+    ],
+    "category_names": [
+      "Documents & Notes"
+    ],
+    "notes": [],
+    "port": 9080,
+    "website": "https://cooklang.org",
+    "documentation": "https://github.com/cooklang/cookcli/blob/main/docs/server.md",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/cooklang.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "Coolify",
     "slug": "coolify",
     "desc": "Coolify is an open-source & self-hostable alternative to Heroku, Netlify, and Vercel. It helps you manage your servers, applications, and databases on your own hardware with Docker. Deploy any application from Git repositories, Docker images, or use pre-built templates.",
@@ -6299,6 +6329,36 @@
       "pve"
     ],
     "config_path": "/opt/hivemq/conf/config.xml",
+    "os": ""
+  },
+  {
+    "name": "Hister",
+    "slug": "hister",
+    "desc": "Hister is a privacy-focused personal search engine that indexes the websites you visit via a browser extension. It stores your browsing history locally with full-text search, advanced query language, and optional semantic search.",
+    "script": "ct/hister.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/hister.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/hister.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00020"
+    ],
+    "category_names": [
+      "AI / Coding & Dev-Tools"
+    ],
+    "notes": [],
+    "port": 4433,
+    "website": "https://hister.org",
+    "documentation": "https://hister.org/docs",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/hister.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
     "os": ""
   },
   {
@@ -12982,6 +13042,40 @@
     "os": ""
   },
   {
+    "name": "Poznote",
+    "slug": "poznote",
+    "desc": "Poznote is a personal note-taking and documentation platform built with PHP 8.4 and SQLite. Features include Markdown editing, OIDC/SSO support, MCP server integration, and a clean web interface served via nginx.",
+    "script": "ct/poznote.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/poznote.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/poznote.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00012"
+    ],
+    "category_names": [
+      "Documents & Notes"
+    ],
+    "notes": [],
+    "port": 8040,
+    "website": "https://github.com/timothepoznanski/poznote",
+    "documentation": "https://github.com/timothepoznanski/poznote",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/poznote.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "default_credentials": {
+      "username": "admin_change_me",
+      "password": "admin"
+    },
+    "os": ""
+  },
+  {
     "name": "PrivateBin",
     "slug": "privatebin",
     "desc": "PrivateBin is a minimalist, open-source pastebin where the server has zero knowledge of pasted data. Data is encrypted/decrypted in the browser using 256-bit AES.",
@@ -15756,6 +15850,40 @@
     "os": ""
   },
   {
+    "name": "Sync-in",
+    "slug": "sync-in",
+    "desc": "Sync-in is a self-hosted platform for file storage, synchronization, and team collaboration. Features include drag-and-drop uploads, OIDC/LDAP authentication, WebDAV support, full-text search, and online document editing with OnlyOffice or Collabora.",
+    "script": "ct/sync-in.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/sync-in.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/sync-in.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00011"
+    ],
+    "category_names": [
+      "Files & Downloads"
+    ],
+    "notes": [],
+    "port": 8080,
+    "website": "https://sync-in.com",
+    "documentation": "https://sync-in.com/docs",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/sync-in.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "default_credentials": {
+      "username": "sync-in",
+      "password": "sync-in"
+    },
+    "os": ""
+  },
+  {
     "name": "Syncthing",
     "slug": "syncthing",
     "desc": "Syncthing is an open-source file syncing tool that allows users to keep their files in sync across multiple devices by using peer-to-peer synchronization. It doesn't rely on any central server, so all data transfers are directly between devices.",
@@ -18471,6 +18599,36 @@
     "is_dev": false,
     "execute_in": [
       "pve"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
+    "name": "Yuvomi",
+    "slug": "yuvomi",
+    "desc": "Yuvomi is a self-hosted family planner covering tasks, calendars, shopping lists, meals, and budget tracking. Data is stored in an encrypted SQLite database (SQLCipher) with optional WebDAV backup and OIDC support.",
+    "script": "ct/yuvomi.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/yuvomi.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/yuvomi.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00000"
+    ],
+    "category_names": [
+      "Miscellaneous"
+    ],
+    "notes": [],
+    "port": 3000,
+    "website": "https://github.com/ulsklyc/yuvomi",
+    "documentation": "https://github.com/ulsklyc/yuvomi",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/yuvomi.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
     ],
     "config_path": "",
     "os": ""
