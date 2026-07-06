@@ -532,12 +532,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000",
-      "scriptcat00004"
+      "scriptcat00018"
     ],
     "category_names": [
-      "Miscellaneous",
-      "Network & Firewall"
+      "MQTT & Messaging"
     ],
     "notes": [],
     "port": 8080,
@@ -1633,6 +1631,36 @@
       "pve"
     ],
     "config_path": "/opt/bazarr/data/config/config.yaml",
+    "os": ""
+  },
+  {
+    "name": "BeaverHabits",
+    "slug": "beaverhabits",
+    "desc": "BeaverHabits is a self-hosted habit tracking app without goals. Track streaks, view heatmaps, and manage your daily habits through a clean web interface powered by NiceGUI and Python.",
+    "script": "ct/beaverhabits.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/beaverhabits.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/beaverhabits.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00000"
+    ],
+    "category_names": [
+      "Miscellaneous"
+    ],
+    "notes": [],
+    "port": 8080,
+    "website": "https://beaverhabits.com",
+    "documentation": "https://github.com/daya0576/beaverhabits/wiki",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/beaverhabits.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
     "os": ""
   },
   {
@@ -8148,6 +8176,40 @@
     "os": ""
   },
   {
+    "name": "LeafWiki",
+    "slug": "leafwiki",
+    "desc": "LeafWiki is a self-hosted wiki built as a single Go binary with SQLite and Markdown stored on disk. No Node.js, no Redis, no Postgres — just a binary and a data directory.",
+    "script": "ct/leafwiki.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/leafwiki.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/leafwiki.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00012"
+    ],
+    "category_names": [
+      "Documents & Notes"
+    ],
+    "notes": [],
+    "port": 8080,
+    "website": "https://leafwiki.com",
+    "documentation": "https://github.com/perber/leafwiki",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/leafwiki.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "default_credentials": {
+      "username": "admin",
+      "password": "auto-generated"
+    },
+    "os": ""
+  },
+  {
     "name": "Leantime",
     "slug": "leantime",
     "desc": "Leantime is a goals focused project management system for non-project managers. Building with ADHD, Autism, and dyslexia in mind. ",
@@ -10690,6 +10752,40 @@
       "pve"
     ],
     "config_path": "",
+    "os": ""
+  },
+  {
+    "name": "NoteDiscovery",
+    "slug": "notediscovery",
+    "desc": "NoteDiscovery is a lightweight, self-hosted knowledge base and note-taking platform. Write Markdown notes, build a graph of linked knowledge, and search full-text across your entire vault — all stored as plain files.",
+    "script": "ct/notediscovery.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/notediscovery.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/notediscovery.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00012"
+    ],
+    "category_names": [
+      "Documents & Notes"
+    ],
+    "notes": [],
+    "port": 8000,
+    "website": "https://www.notediscovery.com",
+    "documentation": "https://github.com/gamosoft/NoteDiscovery/tree/main/documentation",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/notediscovery.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "default_credentials": {
+      "username": "",
+      "password": "admin"
+    },
     "os": ""
   },
   {
