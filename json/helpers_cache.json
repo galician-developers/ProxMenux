@@ -3592,6 +3592,40 @@
     "os": ""
   },
   {
+    "name": "Directus",
+    "slug": "directus",
+    "desc": "Directus is a data platform that provides instant REST and GraphQL APIs plus a visual data studio for SQL databases.",
+    "script": "ct/directus.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/directus.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/directus.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00020"
+    ],
+    "category_names": [
+      "AI / Coding & Dev-Tools"
+    ],
+    "notes": [],
+    "port": 8055,
+    "website": "https://directus.com/",
+    "documentation": "https://directus.com/docs/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/directus.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "default_credentials": {
+      "username": "admin@directus.local",
+      "password": ""
+    },
+    "os": ""
+  },
+  {
     "name": "DiscoPanel",
     "slug": "discopanel",
     "desc": "The Minecraft Server Manager That *Actually* Works\r\nBuilt by someone who was done with bloated panels, endless menus, and tools that break the moment you need them most.\r\nSpin up servers in minutes, configure your proxy without headaches, and link your own DNS name effortlessly.\r\nFast setup, clean controls, zero nonsense—just a manager that gets out of your way and lets you play.",
@@ -9036,6 +9070,36 @@
     "os": ""
   },
   {
+    "name": "Mailpit",
+    "slug": "mailpit",
+    "desc": "Mailpit is a fast, lightweight email testing tool that captures SMTP messages and provides a web UI and API for viewing and testing them.",
+    "script": "ct/mailpit.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/mailpit.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/mailpit.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00020"
+    ],
+    "category_names": [
+      "AI / Coding & Dev-Tools"
+    ],
+    "notes": [],
+    "port": 8025,
+    "website": "https://mailpit.axllent.org/",
+    "documentation": "https://mailpit.axllent.org/docs/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/mailpit.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "Manage My Damn Life",
     "slug": "managemydamnlife",
     "desc": "Manage My Damn Life (MMDL) is a self-hosted front end for managing your CalDAV tasks and calendars.",
@@ -9123,6 +9187,40 @@
       "pve"
     ],
     "config_path": "",
+    "os": ""
+  },
+  {
+    "name": "Mastodon",
+    "slug": "mastodon",
+    "desc": "Mastodon is a decentralized, open-source social network (ActivityPub/Fediverse). Self-host your own instance to publish short posts, follow people across the Fediverse, and federate with thousands of other servers.",
+    "script": "ct/mastodon.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/mastodon.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/mastodon.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00000"
+    ],
+    "category_names": [
+      "Miscellaneous"
+    ],
+    "notes": [],
+    "port": 80,
+    "website": "https://joinmastodon.org",
+    "documentation": "https://docs.joinmastodon.org",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/mastodon.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "default_credentials": {
+      "username": "admin",
+      "password": "auto-generated"
+    },
     "os": ""
   },
   {
@@ -11288,6 +11386,36 @@
     "os": ""
   },
   {
+    "name": "OmniTools",
+    "slug": "omnitools",
+    "desc": "OmniTools is a self-hosted collection of browser-based tools for working with PDFs, images, video, audio, text, data, dates, mathematics, and other everyday file and conversion tasks.",
+    "script": "ct/omnitools.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/omnitools.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/omnitools.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00000"
+    ],
+    "category_names": [
+      "Miscellaneous"
+    ],
+    "notes": [],
+    "port": 80,
+    "website": "https://omnitools.app",
+    "documentation": "https://github.com/iib0011/omni-tools#self-hostrun",
+    "logo": "https://cdn.jsdelivr.net/gh/iib0011/omni-tools@main/src/assets/logo.png",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "OpenMediaVault",
     "slug": "omv",
     "desc": "OpenMediaVault is a next-generation network-attached storage (NAS) solution based on Debian Linux. It provides a web-based interface for managing and storing digital data, making it easy to use and set up. OpenMediaVault supports various storage protocols, including SMB/CIFS, NFS, and FTP, and provides a wide range of features for data management, such as user and group management, disk quotas, and data backup and recovery. The software is designed to be flexible and scalable, making it a valuable solution for both personal and enterprise use. OpenMediaVault provides a stable and reliable platform for managing and storing digital data, making it a popular choice for those who want to host their own data and ensure its security and privacy. With OpenMediaVault, users can access their data from anywhere and easily share it with others, making it a valuable tool for collaboration and data management.",
@@ -11349,6 +11477,36 @@
       "pve"
     ],
     "config_path": "/opt/onedev/conf",
+    "os": ""
+  },
+  {
+    "name": "Onetime Secret",
+    "slug": "onetimesecret",
+    "desc": "Onetime Secret is a self-hosted secret sharing app that creates self-destructing links for passwords, API keys, and other sensitive text.",
+    "script": "ct/onetimesecret.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/onetimesecret.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/onetimesecret.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00006"
+    ],
+    "category_names": [
+      "Authentication & Security"
+    ],
+    "notes": [],
+    "port": 80,
+    "website": "https://onetimesecret.com/",
+    "documentation": "https://docs.onetimesecret.com/en/self-hosting/installation/",
+    "logo": "https://onetimesecret.com/favicon.svg",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
     "os": ""
   },
   {
@@ -12219,6 +12377,36 @@
       "pve"
     ],
     "config_path": "/etc/passbolt/passbolt.php",
+    "os": ""
+  },
+  {
+    "name": "PasswordPusher",
+    "slug": "passwordpusher",
+    "desc": "PasswordPusher is an open-source app for securely sharing passwords, notes, files, and URLs via self-deleting links. Links expire after a set number of views or time, with full audit logs.",
+    "script": "ct/passwordpusher.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/passwordpusher.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/passwordpusher.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00006"
+    ],
+    "category_names": [
+      "Authentication & Security"
+    ],
+    "notes": [],
+    "port": 5100,
+    "website": "https://pwpush.com",
+    "documentation": "https://docs.pwpush.com",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/pwpush.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
     "os": ""
   },
   {
@@ -15133,6 +15321,36 @@
     "os": ""
   },
   {
+    "name": "SolidInvoice",
+    "slug": "solidinvoice",
+    "desc": "SolidInvoice is an open-source invoicing application that helps small businesses and freelancers manage clients, create professional invoices, track payments, and handle recurring billing.",
+    "script": "ct/solidinvoice.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/solidinvoice.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/solidinvoice.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00023"
+    ],
+    "category_names": [
+      "Finance & Budgeting"
+    ],
+    "notes": [],
+    "port": 8765,
+    "website": "https://solidinvoice.co",
+    "documentation": "https://solidinvoice.co/docs",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/solidinvoice.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "SolidTime",
     "slug": "solidtime",
     "desc": "SolidTime is a modern open-source time tracking application for freelancers and agencies, featuring project management, task tracking, billable rates, and multiple organizations.",
@@ -15689,6 +15907,36 @@
       "username": "admin",
       "password": "stirling"
     },
+    "os": ""
+  },
+  {
+    "name": "Stoatchat",
+    "slug": "stoatchat",
+    "desc": "A self-hostable open-source chat platform and community server. Stoatchat is a fork of Revolt, featuring real-time messaging, voice channels, file sharing, and a full-featured web client. Built with Rust (backend) and SolidJS (frontend).",
+    "script": "ct/stoatchat.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/stoatchat.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/stoatchat.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00022"
+    ],
+    "category_names": [
+      "Bots & ChatOps"
+    ],
+    "notes": [],
+    "port": 80,
+    "website": "https://stoat.chat",
+    "documentation": "https://github.com/stoatchat/self-hosted",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/stoatchat.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
     "os": ""
   },
   {
