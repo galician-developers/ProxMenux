@@ -1656,7 +1656,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": true,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -7310,6 +7310,36 @@
     "os": ""
   },
   {
+    "name": "JDownloader",
+    "slug": "jdownloader",
+    "desc": "JDownloader is a free, open-source download management tool that simplifies downloading files from one-click hosting sites. It runs headless on servers and is managed remotely via the MyJDownloader cloud web interface at my.jdownloader.org.",
+    "script": "ct/jdownloader.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/jdownloader.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/jdownloader.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00011"
+    ],
+    "category_names": [
+      "Files & Downloads"
+    ],
+    "notes": [],
+    "port": 3129,
+    "website": "https://jdownloader.org/",
+    "documentation": "https://jdownloader.org/knowledge/wiki/setup",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/jdownloader.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "Jeedom",
     "slug": "jeedom",
     "desc": "Jeedom is a home automation system that is free, open, and cloudless. It allows users to manage and automate various aspects of their homes by creating objects, installing plugins for added functionalities, and connecting to a Market account for services. It also supports direct access URLs and user management.",
@@ -10867,7 +10897,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": true,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -15932,7 +15962,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": true,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
