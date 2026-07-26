@@ -335,6 +335,36 @@
     "os": ""
   },
   {
+    "name": "AirTrail",
+    "slug": "airtrail",
+    "desc": "AirTrail is a modern, self-hosted personal flight tracking system. Log your flights, visualize them on an interactive world map, view detailed statistics, share flights between multiple users, and import from sources such as MyFlightRadar24, Flighty and OpenFlights.",
+    "script": "ct/airtrail.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/airtrail.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/airtrail.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00000"
+    ],
+    "category_names": [
+      "Miscellaneous"
+    ],
+    "notes": [],
+    "port": 3000,
+    "website": "https://airtrail.johan.ohly.dk/",
+    "documentation": "https://airtrail.johan.ohly.dk/docs/overview/introduction",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/airtrail.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "AliasVault",
     "slug": "aliasvault",
     "desc": "AliasVault is an open-source, end-to-end encrypted password manager and email alias service. It features a zero-knowledge architecture where your master password never leaves your device, a built-in SMTP server for alias email addresses, browser extensions with autofill, and native iOS/Android apps.",
@@ -11610,6 +11640,36 @@
     "os": ""
   },
   {
+    "name": "OmniRoute",
+    "slug": "omniroute",
+    "desc": "OmniRoute is a self-hosted, OpenAI-compatible AI gateway that routes requests across 290+ providers and 500+ models with quota-aware auto-fallback, prompt compression and a management dashboard. Works with Claude Code, Cursor, Cline, Codex and any OpenAI-compatible client.",
+    "script": "ct/omniroute.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/omniroute.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/omniroute.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00020"
+    ],
+    "category_names": [
+      "AI / Coding & Dev-Tools"
+    ],
+    "notes": [],
+    "port": 20128,
+    "website": "https://omniroute.online",
+    "documentation": "https://github.com/diegosouzapw/OmniRoute/tree/main/docs",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/omniroute.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "OmniTools",
     "slug": "omnitools",
     "desc": "OmniTools is a self-hosted collection of browser-based tools for working with PDFs, images, video, audio, text, data, dates, mathematics, and other everyday file and conversion tasks.",
@@ -12785,6 +12845,36 @@
       "pve"
     ],
     "config_path": "/etc/peanut/settings.yml",
+    "os": ""
+  },
+  {
+    "name": "PegaProx",
+    "slug": "pegaprox",
+    "desc": "PegaProx is a third-party multi-cluster web UI for Proxmox VE (and XCP-ng): unified datacenter management, cross-cluster VM migrations, intelligent load balancing, and integrated VNC/SSH consoles. It connects to your clusters remotely over the Proxmox API and SSH and stores its config in an encrypted local SQLite database.",
+    "script": "ct/pegaprox.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/pegaprox.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/pegaprox.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00001"
+    ],
+    "category_names": [
+      "Proxmox & Virtualization"
+    ],
+    "notes": [],
+    "port": 5000,
+    "website": "https://pegaprox.com/",
+    "documentation": "https://docs.pegaprox.com/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/pegaprox.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
     "os": ""
   },
   {
