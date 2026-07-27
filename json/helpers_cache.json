@@ -3772,7 +3772,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -3993,7 +3993,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": true,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -9010,6 +9010,36 @@
     "os": ""
   },
   {
+    "name": "Lore",
+    "slug": "lore",
+    "desc": "Lore is Epic Games' open-source, centralized, self-hostable version control server. Teams push to, clone from, and resolve conflicts through the loreserver endpoint over QUIC and gRPC, backed by durable local-disk storage.",
+    "script": "ct/lore.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/lore.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/lore.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00020"
+    ],
+    "category_names": [
+      "AI / Coding & Dev-Tools"
+    ],
+    "notes": [],
+    "port": 41337,
+    "website": "https://epicgames.github.io/lore/",
+    "documentation": "https://epicgames.github.io/lore/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/lore.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "LubeLogger",
     "slug": "lubelogger",
     "desc": "Web-Based Vehicle Maintenance and Fuel Mileage Tracker",
@@ -9398,7 +9428,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": true,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -10935,7 +10965,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -12686,7 +12716,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": true,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -13626,7 +13656,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": true,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -15379,7 +15409,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -15476,6 +15506,36 @@
     "is_dev": false,
     "execute_in": [
       "pve"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
+    "name": "SimpleLogin",
+    "slug": "simplelogin",
+    "desc": "SimpleLogin is an open-source email alias solution that lets you create anonymous email aliases to protect your real email address from spam, trackers and data breaches.",
+    "script": "ct/simplelogin.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/simplelogin.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/simplelogin.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00006"
+    ],
+    "category_names": [
+      "Authentication & Security"
+    ],
+    "notes": [],
+    "port": 80,
+    "website": "https://simplelogin.io/",
+    "documentation": "https://github.com/simple-login/app/blob/master/docs/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/simplelogin.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
     ],
     "config_path": "",
     "os": ""
@@ -18467,6 +18527,36 @@
       "pve"
     ],
     "config_path": "/etc/vikunja/config.yml",
+    "os": ""
+  },
+  {
+    "name": "vLLM",
+    "slug": "vllm",
+    "desc": "vLLM is a high-throughput, memory-efficient inference and serving engine for LLMs. It exposes an OpenAI-compatible HTTP API (/v1) so existing OpenAI clients can serve local models.",
+    "script": "ct/vllm.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/vllm.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/vllm.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00020"
+    ],
+    "category_names": [
+      "AI / Coding & Dev-Tools"
+    ],
+    "notes": [],
+    "port": 8000,
+    "website": "https://vllm.ai/",
+    "documentation": "https://docs.vllm.ai/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/vllm.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
     "os": ""
   },
   {
