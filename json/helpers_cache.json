@@ -2402,6 +2402,36 @@
     "os": ""
   },
   {
+    "name": "Chatwoot",
+    "slug": "chatwoot",
+    "desc": "Chatwoot is an open-source omnichannel customer-support platform for live chat, email, social media and messaging conversations.",
+    "script": "ct/chatwoot.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/chatwoot.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/chatwoot.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00022"
+    ],
+    "category_names": [
+      "Bots & ChatOps"
+    ],
+    "notes": [],
+    "port": 3000,
+    "website": "https://www.chatwoot.com/",
+    "documentation": "https://developers.chatwoot.com/self-hosted/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/chatwoot.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "Checkmate",
     "slug": "checkmate",
     "desc": "Checkmate is an open source uptime and infrastructure monitoring application that helps you track the availability and performance of your services.",
@@ -7895,6 +7925,36 @@
     "os": ""
   },
   {
+    "name": "Kaneo",
+    "slug": "kaneo",
+    "desc": "Kaneo is an open source project management platform with kanban boards, task tracking, time tracking and team workspaces.",
+    "script": "ct/kaneo.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/kaneo.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/kaneo.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00025"
+    ],
+    "category_names": [
+      "Business & ERP"
+    ],
+    "notes": [],
+    "port": 5173,
+    "website": "https://kaneo.app/",
+    "documentation": "https://kaneo.app/docs",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/kaneo.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "Kapowarr",
     "slug": "kapowarr",
     "desc": "Kapowarr allows you to build a digital library of comics. You can add volumes, map them to a folder and start managing! Download, rename, move and convert issues of the volume (including TPB's, One Shots, Hard Covers, and more). The whole process is automated and can be customised in the settings.",
@@ -11976,6 +12036,36 @@
     "os": ""
   },
   {
+    "name": "OpenBao",
+    "slug": "openbao",
+    "desc": "OpenBao is a community-driven, open-source fork of HashiCorp Vault for managing, storing and distributing secrets such as tokens, passwords, certificates and encryption keys.",
+    "script": "ct/openbao.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/openbao.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/openbao.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00006"
+    ],
+    "category_names": [
+      "Authentication & Security"
+    ],
+    "notes": [],
+    "port": 8200,
+    "website": "https://openbao.org/",
+    "documentation": "https://openbao.org/docs/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/openbao.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "OpenCloud",
     "slug": "opencloud",
     "desc": "OpenCloud is the file sharing and collaboration solution of the Heinlein Group. Through intelligent file management and a strong open source community, files become valuable resources, effectively structured and usable in the long term. With flexible data rooms and intelligent access rights, teams can access and work together on data anytime, anywhere without barriers, but with a lot of productivity.",
@@ -12319,6 +12409,38 @@
       "username": "root",
       "password": "opnsense"
     },
+    "os": ""
+  },
+  {
+    "name": "Orb",
+    "slug": "orb",
+    "desc": "Orb continuously measures internet quality rather than just speed, scoring responsiveness, reliability and bandwidth into a single Orb Score. The sensor is a headless agent that runs 24/7, uploads its measurements to your Orb account, and is viewed from the Orb mobile or desktop app. Orb is free for up to five sensors.",
+    "script": "ct/orb.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/orb.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/orb.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00009",
+      "scriptcat00004"
+    ],
+    "category_names": [
+      "Monitoring & Analytics",
+      "Network & Firewall"
+    ],
+    "notes": [],
+    "port": 0,
+    "website": "https://orb.net/",
+    "documentation": "https://orb.net/docs",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/orb.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
     "os": ""
   },
   {
