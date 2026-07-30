@@ -4369,16 +4369,18 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00014"
+      "scriptcat00011",
+      "scriptcat00013"
     ],
     "category_names": [
-      "*Arr Suite"
+      "Files & Downloads",
+      "Media & Streaming"
     ],
     "notes": [],
     "port": 8688,
     "website": "https://github.com/droppedneedle/droppedneedle",
     "documentation": "https://droppedneedle.com/docs",
-    "logo": "",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/droppedneedle.webp",
     "updateable": true,
     "privileged": false,
     "has_arm": true,
@@ -6105,6 +6107,40 @@
       "pve"
     ],
     "config_path": "/opt/go2rtc/go2rtc.yaml",
+    "os": ""
+  },
+  {
+    "name": "GoDoxy",
+    "slug": "godoxy",
+    "desc": "GoDoxy is a lightweight, performant reverse proxy with an embedded WebUI, file-based routes, automatic certificates, and Proxmox integration.",
+    "script": "ct/godoxy.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/godoxy.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/godoxy.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00021"
+    ],
+    "category_names": [
+      "Webservers & Proxies"
+    ],
+    "notes": [],
+    "port": 443,
+    "website": "https://github.com/yusing/godoxy",
+    "documentation": "https://docs.godoxy.dev",
+    "logo": "https://cdn.jsdelivr.net/gh/yusing/godoxy@main/assets/godoxy.png",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "default_credentials": {
+      "username": "admin",
+      "password": ""
+    },
     "os": ""
   },
   {
