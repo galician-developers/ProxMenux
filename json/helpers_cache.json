@@ -918,6 +918,36 @@
     "os": ""
   },
   {
+    "name": "AnythingLLM",
+    "slug": "anythingllm",
+    "desc": "AnythingLLM is an all-in-one AI application: turn documents, websites and other content into a chat-ready knowledge base with RAG, agents and multi-user workspaces. It connects to local model runners such as Ollama and LM Studio as well as OpenAI, Anthropic and other hosted providers.",
+    "script": "ct/anythingllm.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/anythingllm.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/anythingllm.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00020"
+    ],
+    "category_names": [
+      "AI / Coding & Dev-Tools"
+    ],
+    "notes": [],
+    "port": 3001,
+    "website": "https://anythingllm.com/",
+    "documentation": "https://docs.anythingllm.com/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/anythingllm.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "Anytype Server",
     "slug": "anytype-server",
     "desc": "Anytype is a local-first, privacy-focused alternative to Notion. This script deploys the any-sync-bundle which provides a self-hosted sync server for Anytype clients with external MongoDB and Redis Stack.",
@@ -5675,6 +5705,36 @@
     "os": ""
   },
   {
+    "name": "Fleet",
+    "slug": "fleet",
+    "desc": "Fleet is an open-source device management platform for IT and security teams to manage and monitor servers, laptops, and other devices with osquery.",
+    "script": "ct/fleet.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/fleet.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/fleet.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00009"
+    ],
+    "category_names": [
+      "Monitoring & Analytics"
+    ],
+    "notes": [],
+    "port": 8080,
+    "website": "https://fleetdm.com/",
+    "documentation": "https://fleetdm.com/docs",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/fleet-dm.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "FlowiseAI",
     "slug": "flowiseai",
     "desc": "FlowiseAI is an open source low-code tool for developers to build customized LLM orchestration flow & AI agents",
@@ -6333,7 +6393,7 @@
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/gitlab.webp",
     "updateable": true,
     "privileged": false,
-    "has_arm": false,
+    "has_arm": true,
     "is_dev": true,
     "execute_in": [
       "lxc"
@@ -8380,6 +8440,36 @@
     "os": ""
   },
   {
+    "name": "Journiv",
+    "slug": "journiv",
+    "desc": "Journiv is a self-hosted, privacy-focused journaling app. It stores entries, photos and videos on your own server, supports activity and mood tracking, full-text search and imports from Daylio and other journaling apps, with a Flutter web frontend served by a FastAPI backend.",
+    "script": "ct/journiv.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/journiv.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/journiv.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00012"
+    ],
+    "category_names": [
+      "Documents & Notes"
+    ],
+    "notes": [],
+    "port": 8000,
+    "website": "https://journiv.com/",
+    "documentation": "https://github.com/journiv/journiv-app#readme",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/journiv.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "Jupyter Notebook",
     "slug": "jupyternotebook",
     "desc": "The Jupyter Notebook is an open-source web application that allows you to create and share documents that contain live code, equations, visualizations and narrative text. Uses include: data cleaning and transformation, numerical simulation, statistical modeling, data visualization, machine learning, and much more.",
@@ -9604,6 +9694,36 @@
     "is_dev": false,
     "execute_in": [
       "pve"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
+    "name": "llama.cpp",
+    "slug": "llama-cpp",
+    "desc": "llama.cpp runs GGUF language models directly in C/C++ with no Python runtime. This installs llama-server, which serves a built-in web chat UI plus an OpenAI-compatible API on the same port, so it can back tools like AnythingLLM, Open WebUI or Claude Code. Lighter and closer to the metal than Ollama.",
+    "script": "ct/llama-cpp.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/llama-cpp.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/llama-cpp.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00020"
+    ],
+    "category_names": [
+      "AI / Coding & Dev-Tools"
+    ],
+    "notes": [],
+    "port": 8080,
+    "website": "https://github.com/ggml-org/llama.cpp",
+    "documentation": "https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/llama-cpp.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
     ],
     "config_path": "",
     "os": ""
@@ -12070,6 +12190,36 @@
     "os": ""
   },
   {
+    "name": "Nomad",
+    "slug": "nomad",
+    "desc": "Nomad is a workload orchestrator from HashiCorp. It schedules containers, raw binaries, Java applications and VMs across a cluster from a single binary, and is a much lighter alternative to Kubernetes for homelab-scale deployments. This installs a single node running as both server and client.",
+    "script": "ct/nomad.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/nomad.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/nomad.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00003"
+    ],
+    "category_names": [
+      "Containers & Docker"
+    ],
+    "notes": [],
+    "port": 4646,
+    "website": "https://www.nomadproject.io/",
+    "documentation": "https://developer.hashicorp.com/nomad/docs",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/nomad.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "NoteDiscovery",
     "slug": "notediscovery",
     "desc": "NoteDiscovery is a lightweight, self-hosted knowledge base and note-taking platform. Write Markdown notes, build a graph of linked knowledge, and search full-text across your entire vault — all stored as plain files.",
@@ -13852,6 +14002,40 @@
       "pve"
     ],
     "config_path": "/etc/peanut/settings.yml",
+    "os": ""
+  },
+  {
+    "name": "PeerTube",
+    "slug": "peertube",
+    "desc": "PeerTube is a federated, self-hosted video platform. Videos are distributed peer-to-peer via WebTorrent to reduce bandwidth on the origin server, and instances federate over ActivityPub so users can follow channels across the fediverse, including Mastodon.",
+    "script": "ct/peertube.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/peertube.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/peertube.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00013"
+    ],
+    "category_names": [
+      "Media & Streaming"
+    ],
+    "notes": [],
+    "port": 9000,
+    "website": "https://joinpeertube.org/",
+    "documentation": "https://docs.joinpeertube.org/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/peertube.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "default_credentials": {
+      "username": "root",
+      "password": ""
+    },
     "os": ""
   },
   {
@@ -18283,6 +18467,40 @@
     "os": ""
   },
   {
+    "name": "TeslaMate",
+    "slug": "teslamate",
+    "desc": "TeslaMate is a self-hosted data logger for Tesla vehicles. It records drives, charges, battery health, efficiency and vehicle updates into PostgreSQL and visualizes everything through a set of prebuilt Grafana dashboards, with optional MQTT publishing for home automation.",
+    "script": "ct/teslamate.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/teslamate.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/teslamate.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00009"
+    ],
+    "category_names": [
+      "Monitoring & Analytics"
+    ],
+    "notes": [],
+    "port": 4000,
+    "website": "https://github.com/teslamate-org/teslamate",
+    "documentation": "https://docs.teslamate.org/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/teslamate.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "default_credentials": {
+      "username": "admin",
+      "password": "admin"
+    },
+    "os": ""
+  },
+  {
     "name": "The Lounge",
     "slug": "the-lounge",
     "desc": "Modern web IRC client designed for self-hosting ",
@@ -19426,6 +19644,36 @@
     "privileged": false,
     "has_arm": true,
     "is_dev": false,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
+    "name": "Unsloth",
+    "slug": "unsloth",
+    "desc": "Unsloth Studio is a local web UI for running and fine-tuning language models. It can search, download and serve GGUF, LoRA and safetensors models, compare two models side by side, export to other formats, and expose OpenAI- and Anthropic-compatible endpoints so local models can be used from Claude Code, Codex and similar tools. Fine-tuning with LoRA is configured entirely through the UI.",
+    "script": "ct/unsloth.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/unsloth.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/unsloth.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00020"
+    ],
+    "category_names": [
+      "AI / Coding & Dev-Tools"
+    ],
+    "notes": [],
+    "port": 8888,
+    "website": "https://unsloth.ai/",
+    "documentation": "https://unsloth.ai/docs/new/studio",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/unsloth.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
     "execute_in": [
       "lxc"
     ],
@@ -20602,6 +20850,36 @@
       "pve"
     ],
     "config_path": "/opt/yamtrack/src/.env",
+    "os": ""
+  },
+  {
+    "name": "Your Spotify",
+    "slug": "your-spotify",
+    "desc": "Your Spotify records your Spotify listening history and turns it into statistics: top tracks, artists and albums over any period, listening habits by time of day, and long-term trends. Past history can be imported from a Spotify privacy data export.",
+    "script": "ct/your-spotify.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/your-spotify.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/your-spotify.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00013"
+    ],
+    "category_names": [
+      "Media & Streaming"
+    ],
+    "notes": [],
+    "port": 3000,
+    "website": "https://github.com/Yooooomi/your_spotify",
+    "documentation": "https://github.com/Yooooomi/your_spotify#readme",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/your-spotify.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
     "os": ""
   },
   {
