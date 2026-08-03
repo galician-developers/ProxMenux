@@ -902,7 +902,7 @@
     "port": 8080,
     "website": "https://apps.ankiweb.net/",
     "documentation": "https://docs.ankiweb.net/sync-server.html",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/anki-sync-server.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/anki.webp",
     "updateable": true,
     "privileged": false,
     "has_arm": true,
@@ -7029,6 +7029,40 @@
     "os": ""
   },
   {
+    "name": "HAProxy",
+    "slug": "haproxy",
+    "desc": "HAProxy is a TCP and HTTP load balancer and reverse proxy, known for handling very high connection counts with low latency. Unlike the UI-driven proxies it is configured entirely through a single text file, which makes it a good fit for layer-4 balancing, health checking and failover setups where a GUI proxy is not enough.",
+    "script": "ct/haproxy.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/haproxy.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/haproxy.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00021"
+    ],
+    "category_names": [
+      "Webservers & Proxies"
+    ],
+    "notes": [],
+    "port": 8404,
+    "website": "https://www.haproxy.org/",
+    "documentation": "https://docs.haproxy.org/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/haproxy.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "default_credentials": {
+      "username": "admin",
+      "password": ""
+    },
+    "os": ""
+  },
+  {
     "name": "Headscale",
     "slug": "headscale",
     "desc": "An open source, self-hosted implementation of the Tailscale control server",
@@ -12208,7 +12242,7 @@
     "port": 4646,
     "website": "https://www.nomadproject.io/",
     "documentation": "https://developer.hashicorp.com/nomad/docs",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/nomad.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/hashicorp-nomad.webp",
     "updateable": true,
     "privileged": false,
     "has_arm": true,
@@ -12345,6 +12379,40 @@
       "pve"
     ],
     "config_path": "/etc/ntfy/server.yml",
+    "os": ""
+  },
+  {
+    "name": "ntopng",
+    "slug": "ntopng",
+    "desc": "ntopng is a network traffic probe and analyser. It shows who is talking to whom, which protocols and applications are in use, and keeps historical traffic statistics, with alerting and flow export on top. This installs the free Community Edition from the official ntop repository.",
+    "script": "ct/ntopng.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/ntopng.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/ntopng.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00009"
+    ],
+    "category_names": [
+      "Monitoring & Analytics"
+    ],
+    "notes": [],
+    "port": 3000,
+    "website": "https://www.ntop.org/products/traffic-analysis/ntop/",
+    "documentation": "https://www.ntop.org/guides/ntopng/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/ntopng.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "default_credentials": {
+      "username": "admin",
+      "password": "admin"
+    },
     "os": ""
   },
   {
@@ -13516,6 +13584,36 @@
       "lxc"
     ],
     "config_path": "/opt/ownfoil/app/config/settings.yaml",
+    "os": ""
+  },
+  {
+    "name": "OwnTracks Recorder",
+    "slug": "owntracks-recorder",
+    "desc": "OwnTracks Recorder stores and serves the location data published by the OwnTracks apps for iOS and Android. It subscribes to an MQTT broker, keeps the history in a local LMDB store, and provides a web interface plus an HTTP API for maps, tracks and friend positions - a self-hosted alternative to commercial location sharing.",
+    "script": "ct/owntracks-recorder.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/owntracks-recorder.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/owntracks-recorder.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00016"
+    ],
+    "category_names": [
+      "IoT & Smart Home"
+    ],
+    "notes": [],
+    "port": 8083,
+    "website": "https://owntracks.org/",
+    "documentation": "https://github.com/owntracks/recorder#readme",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/owntracks.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
     "os": ""
   },
   {
@@ -15510,6 +15608,36 @@
     "os": ""
   },
   {
+    "name": "qBit Manage",
+    "slug": "qbit-manage",
+    "desc": "qBit Manage keeps a qBittorrent instance tidy: tagging by tracker, cross-seed handling, orphaned file cleanup, share-limit enforcement, recheck of paused torrents and automatic removal of unregistered ones. It runs on a schedule and ships a web UI to configure the rules and inspect runs.",
+    "script": "ct/qbit-manage.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/qbit-manage.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/qbit-manage.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00014"
+    ],
+    "category_names": [
+      "*Arr Suite"
+    ],
+    "notes": [],
+    "port": 8181,
+    "website": "https://github.com/StuffAnThings/qbit_manage",
+    "documentation": "https://github.com/StuffAnThings/qbit_manage/wiki",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/qbittorrent.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "qBittorrent",
     "slug": "qbittorrent",
     "desc": "qBittorrent offers a user-friendly interface that allows users to search for and download torrent files easily. It also supports magnet links, which allow users to start downloading files without the need for a torrent file.",
@@ -16093,6 +16221,36 @@
     "os": ""
   },
   {
+    "name": "RSSHub",
+    "slug": "rsshub",
+    "desc": "RSSHub generates RSS feeds for sites that do not offer them - social networks, video platforms, shops, forums, news outlets and hundreds more, through community-maintained route definitions. Feed the resulting URLs into any reader such as FreshRSS, Miniflux or CommaFeed.",
+    "script": "ct/rsshub.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/rsshub.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/rsshub.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00012"
+    ],
+    "category_names": [
+      "Documents & Notes"
+    ],
+    "notes": [],
+    "port": 1200,
+    "website": "https://rsshub.app/",
+    "documentation": "https://docs.rsshub.app/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/rsshub.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "Runtipi",
     "slug": "runtipi",
     "desc": "Runtipi lets you install all your favorite self-hosted apps without the hassle of configuring and managing each service. One-click installs and updates for more than 180 popular apps.",
@@ -16149,6 +16307,36 @@
     "is_dev": false,
     "execute_in": [
       "pve"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
+    "name": "RustFS",
+    "slug": "rustfs",
+    "desc": "RustFS is an S3-compatible object storage server written in Rust. It covers the S3 core API, versioning, bucket replication, lifecycle management, bitrot protection and multi-tenancy, and is a drop-in target for anything that speaks S3 - backup tools, media apps or CI artifacts. Frequently named as a MinIO alternative.",
+    "script": "ct/rustfs.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/rustfs.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/rustfs.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00011"
+    ],
+    "category_names": [
+      "Files & Downloads"
+    ],
+    "notes": [],
+    "port": 9001,
+    "website": "https://rustfs.com/",
+    "documentation": "https://docs.rustfs.com/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/rustfs.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
     ],
     "config_path": "",
     "os": ""
@@ -17707,7 +17895,7 @@
   {
     "name": "Stoatchat",
     "slug": "stoatchat",
-    "desc": "A self-hostable open-source chat platform and community server. Stoatchat is a fork of Revolt, featuring real-time messaging, voice channels, file sharing, and a full-featured web client. Built with Rust (backend) and SolidJS (frontend).",
+    "desc": "<p>A self-hostable open-source chat platform and community server. Stoatchat is a fork of Revolt, featuring real-time messaging, voice channels, file sharing, and a full-featured web client. Built with Rust (backend) and SolidJS (frontend).</p>",
     "script": "ct/stoatchat.sh",
     "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/stoatchat.sh",
     "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/stoatchat.sh",
@@ -17723,7 +17911,7 @@
     "port": 80,
     "website": "https://stoat.chat",
     "documentation": "https://github.com/stoatchat/self-hosted",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/stoatchat.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/stoat.webp",
     "updateable": true,
     "privileged": false,
     "has_arm": false,
@@ -20850,6 +21038,36 @@
       "pve"
     ],
     "config_path": "/opt/yamtrack/src/.env",
+    "os": ""
+  },
+  {
+    "name": "Yopass",
+    "slug": "yopass",
+    "desc": "Yopass shares secrets through one-time links. The secret is encrypted in the browser before it is sent, so the server only ever stores an opaque blob with an expiry, and the decryption key travels in the URL fragment which is never transmitted. Opening the link destroys the secret.",
+    "script": "ct/yopass.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/yopass.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/yopass.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00006"
+    ],
+    "category_names": [
+      "Authentication & Security"
+    ],
+    "notes": [],
+    "port": 1337,
+    "website": "https://yopass.se/",
+    "documentation": "https://github.com/jhaals/yopass#readme",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/yopass.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
     "os": ""
   },
   {
