@@ -9057,10 +9057,6 @@
       "lxc"
     ],
     "config_path": "",
-    "default_credentials": {
-      "username": "",
-      "password": "shopping123"
-    },
     "os": ""
   },
   {
