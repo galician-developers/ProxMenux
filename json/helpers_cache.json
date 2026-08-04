@@ -918,36 +918,6 @@
     "os": ""
   },
   {
-    "name": "AnythingLLM",
-    "slug": "anythingllm",
-    "desc": "AnythingLLM is an all-in-one AI application: turn documents, websites and other content into a chat-ready knowledge base with RAG, agents and multi-user workspaces. It connects to local model runners such as Ollama and LM Studio as well as OpenAI, Anthropic and other hosted providers.",
-    "script": "ct/anythingllm.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/anythingllm.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/anythingllm.sh",
-    "type": "lxc",
-    "type_id": "nm9bra8mzye2scg",
-    "categories": [
-      "scriptcat00020"
-    ],
-    "category_names": [
-      "AI / Coding & Dev-Tools"
-    ],
-    "notes": [],
-    "port": 3001,
-    "website": "https://anythingllm.com/",
-    "documentation": "https://docs.anythingllm.com/",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/anythingllm.webp",
-    "updateable": true,
-    "privileged": false,
-    "has_arm": true,
-    "is_dev": true,
-    "execute_in": [
-      "lxc"
-    ],
-    "config_path": "",
-    "os": ""
-  },
-  {
     "name": "Anytype Server",
     "slug": "anytype-server",
     "desc": "Anytype is a local-first, privacy-focused alternative to Notion. This script deploys the any-sync-bundle which provides a self-hosted sync server for Anytype clients with external MongoDB and Redis Stack.",
@@ -2216,6 +2186,36 @@
       "username": "admin@admin.com",
       "password": "password"
     },
+    "os": ""
+  },
+  {
+    "name": "Borg-UI",
+    "slug": "borg-ui",
+    "desc": "Borg-UI is a web frontend for BorgBackup. It replaces the borg command line for everyday work: creating and browsing repositories, scheduling backups, inspecting archives and restoring files, all from the browser. BorgBackup itself is installed alongside it.",
+    "script": "ct/borg-ui.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/borg-ui.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/borg-ui.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00002"
+    ],
+    "category_names": [
+      "Operating Systems"
+    ],
+    "notes": [],
+    "port": 8081,
+    "website": "https://github.com/karanhudia/borg-ui",
+    "documentation": "https://github.com/karanhudia/borg-ui#readme",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/borgbackup.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
     "os": ""
   },
   {
@@ -4828,6 +4828,40 @@
     "config_path": "/etc/default/ebusd",
     "default_credentials": {
       "username": "root",
+      "password": ""
+    },
+    "os": ""
+  },
+  {
+    "name": "Elasticsearch",
+    "slug": "elasticsearch",
+    "desc": "Elasticsearch is a distributed search and analytics engine. It is mostly deployed as the backend for something else - log aggregation, full-text search in an application, or as the storage layer for Graylog and similar tools. This installs a single node from the official Elastic repository.",
+    "script": "ct/elasticsearch.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/elasticsearch.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/elasticsearch.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00008"
+    ],
+    "category_names": [
+      "Databases"
+    ],
+    "notes": [],
+    "port": 9200,
+    "website": "https://www.elastic.co/elasticsearch",
+    "documentation": "https://www.elastic.co/docs/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/elasticsearch.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "default_credentials": {
+      "username": "elastic",
       "password": ""
     },
     "os": ""
@@ -9545,6 +9579,36 @@
     "os": ""
   },
   {
+    "name": "Lingarr",
+    "slug": "lingarr",
+    "desc": "Lingarr translates subtitles in your Radarr and Sonarr libraries. It watches for media without subtitles in the languages you want and translates existing ones automatically, using either a self-hosted LibreTranslate instance or a hosted provider such as DeepL, OpenAI, Anthropic or Gemini.",
+    "script": "ct/lingarr.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/lingarr.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/lingarr.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00014"
+    ],
+    "category_names": [
+      "*Arr Suite"
+    ],
+    "notes": [],
+    "port": 9876,
+    "website": "https://github.com/lingarr-translate/lingarr",
+    "documentation": "https://lingarr.com/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/lingarr.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "linkding",
     "slug": "linkding",
     "desc": "linkding is a self-hosted bookmark manager that is designed to be minimal, fast, and easy to set up. It features a clean UI, tag-based organization, bulk editing, Markdown notes, read it later functionality, sharing, REST API, and browser extensions for Firefox and Chrome.",
@@ -12224,36 +12288,6 @@
     "os": ""
   },
   {
-    "name": "Nomad",
-    "slug": "nomad",
-    "desc": "Nomad is a workload orchestrator from HashiCorp. It schedules containers, raw binaries, Java applications and VMs across a cluster from a single binary, and is a much lighter alternative to Kubernetes for homelab-scale deployments. This installs a single node running as both server and client.",
-    "script": "ct/nomad.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/nomad.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/nomad.sh",
-    "type": "lxc",
-    "type_id": "nm9bra8mzye2scg",
-    "categories": [
-      "scriptcat00003"
-    ],
-    "category_names": [
-      "Containers & Docker"
-    ],
-    "notes": [],
-    "port": 4646,
-    "website": "https://www.nomadproject.io/",
-    "documentation": "https://developer.hashicorp.com/nomad/docs",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/hashicorp-nomad.webp",
-    "updateable": true,
-    "privileged": false,
-    "has_arm": true,
-    "is_dev": true,
-    "execute_in": [
-      "lxc"
-    ],
-    "config_path": "",
-    "os": ""
-  },
-  {
     "name": "NoteDiscovery",
     "slug": "notediscovery",
     "desc": "NoteDiscovery is a lightweight, self-hosted knowledge base and note-taking platform. Write Markdown notes, build a graph of linked knowledge, and search full-text across your entire vault — all stored as plain files.",
@@ -14777,6 +14811,36 @@
     "os": ""
   },
   {
+    "name": "Proxmox Datacenter Manager Post Install",
+    "slug": "post-pdm-install",
+    "desc": "This script performs post-installation routines on a Proxmox Datacenter Manager host: it corrects the Debian sources, manages the pdm-enterprise, pdm-no-subscription and pdm-test repositories, optionally removes the subscription nag, and runs a distribution upgrade. Each step is a separate prompt, so nothing is changed without being asked.",
+    "script": "tools/pve/post-pdm-install.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/pve/post-pdm-install.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/tools/pve/post-pdm-install.sh",
+    "type": "pve",
+    "type_id": "1uyjfno0fpf5buh",
+    "categories": [
+      "scriptcat00001"
+    ],
+    "category_names": [
+      "Proxmox & Virtualization"
+    ],
+    "notes": [],
+    "port": 0,
+    "website": "https://pdm.proxmox.com/",
+    "documentation": "https://pdm.proxmox.com/docs/installation.html",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/proxmox.webp",
+    "updateable": false,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "pve"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "PMG Post Install",
     "slug": "post-pmg-install",
     "desc": "The script is designed for Proxmox Mail Gateway and will give options to Disable the Enterprise Repo, Add/Correct PMG Sources, Enable the No-Subscription Repo, Add Test Repo, Disable Subscription Nag, Update Proxmox Mail Gateway and Reboot PMG.",
@@ -16007,6 +16071,36 @@
     "os": ""
   },
   {
+    "name": "ReadMeABook",
+    "slug": "readmeabook",
+    "desc": "ReadMeABook is a request and download platform for audiobooks - the audiobook counterpart to Sonarr and Radarr. Users request titles, ReadMeABook finds and fetches them, and the result drops into a library that Audiobookshelf or a similar player can serve.",
+    "script": "ct/readmeabook.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/readmeabook.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/readmeabook.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00014"
+    ],
+    "category_names": [
+      "*Arr Suite"
+    ],
+    "notes": [],
+    "port": 3030,
+    "website": "https://github.com/kikootwo/ReadMeABook",
+    "documentation": "https://github.com/kikootwo/ReadMeABook#readme",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/readmeabook.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "Recyclarr",
     "slug": "recyclarr",
     "desc": "Recyclarr is an automation tool that integrates with media management software like Sonarr and Radarr. It helps users manage and organize their media libraries by automatically searching for and adding content from indexers, based on user-defined criteria. It streamlines the process of maintaining and updating media collections without manual intervention.",
@@ -16213,36 +16307,6 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
-    "execute_in": [
-      "lxc"
-    ],
-    "config_path": "",
-    "os": ""
-  },
-  {
-    "name": "RSSHub",
-    "slug": "rsshub",
-    "desc": "RSSHub generates RSS feeds for sites that do not offer them - social networks, video platforms, shops, forums, news outlets and hundreds more, through community-maintained route definitions. Feed the resulting URLs into any reader such as FreshRSS, Miniflux or CommaFeed.",
-    "script": "ct/rsshub.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/rsshub.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/rsshub.sh",
-    "type": "lxc",
-    "type_id": "nm9bra8mzye2scg",
-    "categories": [
-      "scriptcat00012"
-    ],
-    "category_names": [
-      "Documents & Notes"
-    ],
-    "notes": [],
-    "port": 1200,
-    "website": "https://rsshub.app/",
-    "documentation": "https://docs.rsshub.app/",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/rsshub.webp",
-    "updateable": true,
-    "privileged": false,
-    "has_arm": true,
     "is_dev": true,
     "execute_in": [
       "lxc"
@@ -16955,6 +17019,36 @@
     "privileged": false,
     "has_arm": true,
     "is_dev": false,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
+    "name": "Shoko Server",
+    "slug": "shoko",
+    "desc": "Shoko Server organizes anime collections. It identifies files by hash against AniDB, pulls in metadata from TvDB, TMDB and Trakt, and tracks watched state and series relations. Plugins expose the result to Plex, Jellyfin and Kodi, so the library stays correct even with inconsistently named files.",
+    "script": "ct/shoko.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/shoko.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/shoko.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00013"
+    ],
+    "category_names": [
+      "Media & Streaming"
+    ],
+    "notes": [],
+    "port": 8111,
+    "website": "https://shokoanime.com/",
+    "documentation": "https://docs.shokoanime.com/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/shoko.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
     "execute_in": [
       "lxc"
     ],
@@ -18104,6 +18198,36 @@
       "pve"
     ],
     "config_path": "/opt/stylus/config.yaml",
+    "os": ""
+  },
+  {
+    "name": "SuggestArr",
+    "slug": "suggestarr",
+    "desc": "SuggestArr watches what you actually play on Jellyfin, Plex or Emby, looks up similar titles on TMDB, and automatically files requests for them in Jellyseerr or Overseerr. It turns your viewing history into an automatically growing library without manual searching.",
+    "script": "ct/suggestarr.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/suggestarr.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/suggestarr.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00014"
+    ],
+    "category_names": [
+      "*Arr Suite"
+    ],
+    "notes": [],
+    "port": 5000,
+    "website": "https://github.com/giuseppe99barchetta/SuggestArr",
+    "documentation": "https://giuseppe99barchetta.github.io/SuggestArr/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/suggestarr.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": true,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
     "os": ""
   },
   {
