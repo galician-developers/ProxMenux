@@ -2176,7 +2176,7 @@
     "port": 8081,
     "website": "https://github.com/karanhudia/borg-ui",
     "documentation": "https://github.com/karanhudia/borg-ui#readme",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/borgbackup.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/borg-ui.webp",
     "updateable": true,
     "privileged": false,
     "has_arm": true,
@@ -9993,7 +9993,7 @@
     "port": 41337,
     "website": "https://epicgames.github.io/lore/",
     "documentation": "https://epicgames.github.io/lore/",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/lore.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/lore-epic-games.webp",
     "updateable": true,
     "privileged": false,
     "has_arm": false,
@@ -11735,7 +11735,7 @@
     "port": 8042,
     "website": "https://ozarkconnect.net/network-optimizer",
     "documentation": "https://github.com/Ozark-Connect/NetworkOptimizer",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/networkoptimizer.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/network-optimizer.webp",
     "updateable": true,
     "privileged": false,
     "has_arm": true,
@@ -14830,7 +14830,7 @@
     "has_arm": false,
     "is_dev": false,
     "execute_in": [
-      "pve"
+      "pdm"
     ],
     "config_path": "",
     "os": ""
@@ -17039,7 +17039,7 @@
     "port": 8111,
     "website": "https://shokoanime.com/",
     "documentation": "https://docs.shokoanime.com/",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/shoko.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/shoko-server.webp",
     "updateable": true,
     "privileged": false,
     "has_arm": false,
