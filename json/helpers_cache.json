@@ -15663,6 +15663,38 @@
     "os": ""
   },
   {
+    "name": "PVE-UPS",
+    "slug": "pve-ups",
+    "desc": "PVE-UPS is a web-based UPS shutdown appliance for Proxmox VE. It monitors UPS devices via SNMP (RFC 1628 or vendor MIB) or NUT and automatically shuts down Proxmox hosts during power outages, replacing vendor-locked solutions like APC PowerChute.",
+    "script": "ct/pve-ups.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/pve-ups.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/pve-ups.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00001",
+      "scriptcat00009"
+    ],
+    "category_names": [
+      "Proxmox & Virtualization",
+      "Monitoring & Analytics"
+    ],
+    "notes": [],
+    "port": 8080,
+    "website": "https://github.com/ffind-dev/pve-ups",
+    "documentation": "https://github.com/ffind-dev/pve-ups/blob/main/README.md",
+    "logo": "https://github.com/ffind-dev/pve-ups/raw/refs/heads/main/Screenshots/logo/favicon.svg",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "pyLoad",
     "slug": "pyload",
     "desc": "pyLoad is a lightweight download manager written in Python. It handles one-click hosters, container files (DLC, RSDF, CCF) and direct links, supports premium accounts, captcha solving and a plugin system, and is controlled through a web interface, a CLI or third-party clients.",
