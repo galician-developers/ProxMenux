@@ -39,10 +39,12 @@
     "type": "addon",
     "type_id": "88xtxy57q80v38v",
     "categories": [
-      "scriptcat00009"
+      "scriptcat00009",
+      "scriptcat00023"
     ],
     "category_names": [
-      "Monitoring & Analytics"
+      "Monitoring & Analytics",
+      "Finance & Budgeting"
     ],
     "notes": [],
     "port": 3001,
@@ -100,7 +102,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -127,10 +129,10 @@
     "type": "addon",
     "type_id": "88xtxy57q80v38v",
     "categories": [
-      "scriptcat00001"
+      "scriptcat000027"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Remote Access & VPN"
     ],
     "notes": [],
     "port": 0,
@@ -157,10 +159,10 @@
     "type": "addon",
     "type_id": "88xtxy57q80v38v",
     "categories": [
-      "scriptcat00001"
+      "scriptcat000027"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Remote Access & VPN"
     ],
     "notes": [],
     "port": 0,
@@ -278,10 +280,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat00012",
+      "scriptcat000026"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Documents & Notes",
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 3010,
@@ -371,7 +375,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -431,7 +435,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 0,
@@ -461,7 +465,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 0,
@@ -522,10 +526,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00018"
+      "scriptcat00022"
     ],
     "category_names": [
-      "MQTT & Messaging"
+      "Communication & Community"
     ],
     "notes": [],
     "port": 8080,
@@ -582,10 +586,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00002"
+      "scriptcat00011"
     ],
     "category_names": [
-      "Operating Systems"
+      "Files & Downloads"
     ],
     "notes": [],
     "port": 443,
@@ -616,10 +620,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00010"
+      "scriptcat00000"
     ],
     "category_names": [
-      "Dashboards & Frontends"
+      "Miscellaneous"
     ],
     "notes": [],
     "port": 5252,
@@ -646,10 +650,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00009"
+      "scriptcat00020"
     ],
     "category_names": [
-      "Monitoring & Analytics"
+      "AI / Coding & Dev-Tools"
     ],
     "notes": [],
     "port": 3000,
@@ -704,10 +708,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat00013"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Media & Streaming"
     ],
     "notes": [],
     "port": 3000,
@@ -798,10 +802,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat00012",
+      "scriptcat000026"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Documents & Notes",
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 33010,
@@ -922,10 +928,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat000027"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Remote Access & VPN"
     ],
     "notes": [],
     "port": 8080,
@@ -986,10 +992,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00010"
+      "scriptcat00021"
     ],
     "category_names": [
-      "Dashboards & Frontends"
+      "Webservers & Proxies"
     ],
     "notes": [],
     "port": 8080,
@@ -1016,9 +1022,11 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
+      "scriptcat00018",
       "scriptcat00019"
     ],
     "category_names": [
+      "Messaging & Queues",
       "Automation & Scheduling"
     ],
     "notes": [],
@@ -1148,7 +1156,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 0,
@@ -1178,7 +1186,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 0,
@@ -1265,10 +1273,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat00014"
     ],
     "category_names": [
-      "Documents & Notes"
+      "*Arr Suite"
     ],
     "notes": [],
     "port": 3010,
@@ -1295,10 +1303,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00022"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Communication & Community"
     ],
     "notes": [],
     "port": 0,
@@ -1547,10 +1555,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00023"
+      "scriptcat000026"
     ],
     "category_names": [
-      "Finance & Budgeting"
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 80,
@@ -1611,10 +1619,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat000026"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 80,
@@ -1765,10 +1773,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat000026"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 8080,
@@ -2039,10 +2047,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat00013"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Media & Streaming"
     ],
     "notes": [],
     "port": 3000,
@@ -2103,10 +2111,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00002"
+      "scriptcat00007"
     ],
     "category_names": [
-      "Operating Systems"
+      "Backup & Recovery"
     ],
     "notes": [],
     "port": 8081,
@@ -2163,10 +2171,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00006"
+      "scriptcat00006",
+      "scriptcat00021"
     ],
     "category_names": [
-      "Authentication & Security"
+      "Authentication & Security",
+      "Webservers & Proxies"
     ],
     "notes": [],
     "port": 0,
@@ -2320,7 +2330,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 80,
@@ -2380,7 +2390,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 0,
@@ -2445,10 +2455,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00024"
+      "scriptcat00009"
     ],
     "category_names": [
-      "Gaming & Leisure"
+      "Monitoring & Analytics"
     ],
     "notes": [],
     "port": 5000,
@@ -2508,7 +2518,7 @@
       "scriptcat00022"
     ],
     "category_names": [
-      "Bots & ChatOps"
+      "Communication & Community"
     ],
     "notes": [],
     "port": 4000,
@@ -2538,7 +2548,7 @@
       "scriptcat00022"
     ],
     "category_names": [
-      "Bots & ChatOps"
+      "Communication & Community"
     ],
     "notes": [],
     "port": 3000,
@@ -2625,10 +2635,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00011"
+      "scriptcat00013"
     ],
     "category_names": [
-      "Files & Downloads"
+      "Media & Streaming"
     ],
     "notes": [],
     "port": 80,
@@ -2658,7 +2668,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -2688,7 +2698,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -2839,10 +2849,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00004"
+      "scriptcat00021",
+      "scriptcat000027"
     ],
     "category_names": [
-      "Network & Firewall"
+      "Webservers & Proxies",
+      "Remote Access & VPN"
     ],
     "notes": [],
     "port": 0,
@@ -2869,10 +2881,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat00011"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Files & Downloads"
     ],
     "notes": [],
     "port": 5212,
@@ -2899,10 +2911,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00010"
+      "scriptcat00001"
     ],
     "category_names": [
-      "Dashboards & Frontends"
+      "Host Management"
     ],
     "notes": [],
     "port": 9090,
@@ -2929,12 +2941,10 @@
     "type": "addon",
     "type_id": "88xtxy57q80v38v",
     "categories": [
-      "scriptcat00001",
       "scriptcat00020",
       "scriptcat00011"
     ],
     "category_names": [
-      "Proxmox & Virtualization",
       "AI / Coding & Dev-Tools",
       "Files & Downloads"
     ],
@@ -2965,10 +2975,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat00012",
+      "scriptcat000026"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Documents & Notes",
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 4000,
@@ -3025,10 +3037,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat00013"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Media & Streaming"
     ],
     "notes": [],
     "port": 8082,
@@ -3089,10 +3101,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00009"
+      "scriptcat00012"
     ],
     "category_names": [
-      "Monitoring & Analytics"
+      "Documents & Notes"
     ],
     "notes": [],
     "port": 3000,
@@ -3245,11 +3257,9 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00002",
       "scriptcat00003"
     ],
     "category_names": [
-      "Operating Systems",
       "Containers & Docker"
     ],
     "notes": [],
@@ -3314,7 +3324,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -3378,7 +3388,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 3000,
@@ -3469,10 +3479,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat00012",
+      "scriptcat000026"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Documents & Notes",
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 3000,
@@ -3625,10 +3637,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00009"
+      "scriptcat00000"
     ],
     "category_names": [
-      "Monitoring & Analytics"
+      "Miscellaneous"
     ],
     "notes": [],
     "port": 3000,
@@ -3722,7 +3734,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 0,
@@ -3756,7 +3768,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 0,
@@ -3786,7 +3798,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 0,
@@ -3873,10 +3885,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00006"
+      "scriptcat00006",
+      "scriptcat000027"
     ],
     "category_names": [
-      "Authentication & Security"
+      "Authentication & Security",
+      "Remote Access & VPN"
     ],
     "notes": [],
     "port": 8000,
@@ -3974,7 +3988,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -4004,7 +4018,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 0,
@@ -4099,10 +4113,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00022"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Communication & Community"
     ],
     "notes": [],
     "port": 80,
@@ -4136,7 +4150,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -4223,11 +4237,9 @@
     "type": "vm",
     "type_id": "lte524abgx960bd",
     "categories": [
-      "scriptcat00002",
       "scriptcat00003"
     ],
     "category_names": [
-      "Operating Systems",
       "Containers & Docker"
     ],
     "notes": [],
@@ -4350,10 +4362,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat00012",
+      "scriptcat00025"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Documents & Notes",
+      "Business & ERP"
     ],
     "notes": [],
     "port": 3000,
@@ -4501,10 +4515,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00019"
+      "scriptcat000026"
     ],
     "category_names": [
-      "Automation & Scheduling"
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 2021,
@@ -4561,9 +4575,11 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
+      "scriptcat00008",
       "scriptcat00020"
     ],
     "category_names": [
+      "Databases",
       "AI / Coding & Dev-Tools"
     ],
     "notes": [],
@@ -4591,10 +4607,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat00012",
+      "scriptcat000026"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Documents & Notes",
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 8080,
@@ -4784,7 +4802,7 @@
       "scriptcat00022"
     ],
     "category_names": [
-      "Bots & ChatOps"
+      "Communication & Community"
     ],
     "notes": [],
     "port": 8008,
@@ -4844,7 +4862,7 @@
       "scriptcat00018"
     ],
     "category_names": [
-      "MQTT & Messaging"
+      "Messaging & Queues"
     ],
     "notes": [],
     "port": 18083,
@@ -4909,10 +4927,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00011"
+      "scriptcat00013"
     ],
     "category_names": [
-      "Files & Downloads"
+      "Media & Streaming"
     ],
     "notes": [],
     "port": 3000,
@@ -5003,12 +5021,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00016",
-      "scriptcat00020"
+      "scriptcat00016"
     ],
     "category_names": [
-      "IoT & Smart Home",
-      "AI / Coding & Dev-Tools"
+      "IoT & Smart Home"
     ],
     "notes": [],
     "port": 443,
@@ -5065,10 +5081,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat00012",
+      "scriptcat000026"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Documents & Notes",
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 9001,
@@ -5155,10 +5173,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat00012",
+      "scriptcat000026"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Documents & Notes",
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 3000,
@@ -5188,7 +5208,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -5248,7 +5268,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 0,
@@ -5339,11 +5359,9 @@
     "type": "addon",
     "type_id": "88xtxy57q80v38v",
     "categories": [
-      "scriptcat00001",
       "scriptcat00011"
     ],
     "category_names": [
-      "Proxmox & Virtualization",
       "Files & Downloads"
     ],
     "notes": [],
@@ -5376,11 +5394,9 @@
     "type": "addon",
     "type_id": "88xtxy57q80v38v",
     "categories": [
-      "scriptcat00001",
       "scriptcat00011"
     ],
     "category_names": [
-      "Proxmox & Virtualization",
       "Files & Downloads"
     ],
     "notes": [],
@@ -5713,12 +5729,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00019",
-      "scriptcat00000"
+      "scriptcat000026"
     ],
     "category_names": [
-      "Automation & Scheduling",
-      "Miscellaneous"
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 3000,
@@ -5865,10 +5879,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00022"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Communication & Community"
     ],
     "notes": [],
     "port": 80,
@@ -5895,10 +5909,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat00013"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Media & Streaming"
     ],
     "notes": [],
     "port": 80,
@@ -5958,7 +5972,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -5985,10 +5999,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00010"
+      "scriptcat00012"
     ],
     "category_names": [
-      "Dashboards & Frontends"
+      "Documents & Notes"
     ],
     "notes": [],
     "port": 3000,
@@ -6015,10 +6029,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00008"
+      "scriptcat00011"
     ],
     "category_names": [
-      "Databases"
+      "Files & Downloads"
     ],
     "notes": [],
     "port": 3900,
@@ -6078,7 +6092,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 0,
@@ -6139,10 +6153,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00025"
+      "scriptcat00021",
+      "scriptcat00022"
     ],
     "category_names": [
-      "Business & ERP"
+      "Webservers & Proxies",
+      "Communication & Community"
     ],
     "notes": [],
     "port": 2368,
@@ -6384,10 +6400,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00006"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Authentication & Security"
     ],
     "notes": [],
     "port": 443,
@@ -6600,10 +6616,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00019"
+      "scriptcat00018"
     ],
     "category_names": [
-      "Automation & Scheduling"
+      "Messaging & Queues"
     ],
     "notes": [],
     "port": 80,
@@ -6668,10 +6684,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat00024"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Gaming & Leisure"
     ],
     "notes": [],
     "port": 5000,
@@ -6698,9 +6714,11 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
+      "scriptcat00012",
       "scriptcat00021"
     ],
     "category_names": [
+      "Documents & Notes",
       "Webservers & Proxies"
     ],
     "notes": [],
@@ -6762,10 +6780,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat000026"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 8484,
@@ -6856,10 +6874,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00009"
+      "scriptcat00004"
     ],
     "category_names": [
-      "Monitoring & Analytics"
+      "Network & Firewall"
     ],
     "notes": [],
     "port": 8443,
@@ -6980,10 +6998,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00004"
+      "scriptcat000027"
     ],
     "category_names": [
-      "Network & Firewall"
+      "Remote Access & VPN"
     ],
     "notes": [],
     "port": 0,
@@ -7167,7 +7185,7 @@
       "scriptcat00018"
     ],
     "category_names": [
-      "MQTT & Messaging"
+      "Messaging & Queues"
     ],
     "notes": [],
     "port": 1883,
@@ -7254,10 +7272,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00024"
+      "scriptcat00025"
     ],
     "category_names": [
-      "Gaming & Leisure"
+      "Business & ERP"
     ],
     "notes": [],
     "port": 7745,
@@ -7284,9 +7302,11 @@
     "type": "addon",
     "type_id": "88xtxy57q80v38v",
     "categories": [
+      "scriptcat00001",
       "scriptcat00020"
     ],
     "category_names": [
+      "Host Management",
       "AI / Coding & Dev-Tools"
     ],
     "notes": [],
@@ -7476,7 +7496,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -7593,10 +7613,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00019"
+      "scriptcat00018"
     ],
     "category_names": [
-      "Automation & Scheduling"
+      "Messaging & Queues"
     ],
     "notes": [],
     "port": 80,
@@ -7774,10 +7794,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00024"
+      "scriptcat00022"
     ],
     "category_names": [
-      "Gaming & Leisure"
+      "Communication & Community"
     ],
     "notes": [],
     "port": 6667,
@@ -7898,9 +7918,11 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
+      "scriptcat00023",
       "scriptcat00025"
     ],
     "category_names": [
+      "Finance & Budgeting",
       "Business & ERP"
     ],
     "notes": [],
@@ -7928,10 +7950,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00023"
+      "scriptcat00023",
+      "scriptcat00025"
     ],
     "category_names": [
-      "Finance & Budgeting"
+      "Finance & Budgeting",
+      "Business & ERP"
     ],
     "notes": [],
     "port": 80,
@@ -8085,7 +8109,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 26000,
@@ -8112,10 +8136,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00011"
+      "scriptcat00014"
     ],
     "category_names": [
-      "Files & Downloads"
+      "*Arr Suite"
     ],
     "notes": [],
     "port": 9117,
@@ -8297,10 +8321,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00022"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Communication & Community"
     ],
     "notes": [],
     "port": 443,
@@ -8451,10 +8475,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00025"
+      "scriptcat000026"
     ],
     "category_names": [
-      "Business & ERP"
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 3000,
@@ -8481,10 +8505,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00025"
+      "scriptcat000026"
     ],
     "category_names": [
-      "Business & ERP"
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 5173,
@@ -8601,10 +8625,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00009"
+      "scriptcat000027"
     ],
     "category_names": [
-      "Monitoring & Analytics"
+      "Remote Access & VPN"
     ],
     "notes": [],
     "port": 443,
@@ -8664,7 +8688,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -8694,7 +8718,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -8785,10 +8809,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00025"
+      "scriptcat00025",
+      "scriptcat000026"
     ],
     "category_names": [
-      "Business & ERP"
+      "Business & ERP",
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 0,
@@ -8819,10 +8845,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00013"
+      "scriptcat00024"
     ],
     "category_names": [
-      "Media & Streaming"
+      "Gaming & Leisure"
     ],
     "notes": [],
     "port": 80,
@@ -8849,10 +8875,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00012"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Documents & Notes"
     ],
     "notes": [],
     "port": 8080,
@@ -9124,10 +9150,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00012"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Documents & Notes"
     ],
     "notes": [],
     "port": 8081,
@@ -9218,10 +9244,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat000026"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 80,
@@ -9368,10 +9394,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00020"
     ],
     "category_names": [
-      "Miscellaneous"
+      "AI / Coding & Dev-Tools"
     ],
     "notes": [],
     "port": 5000,
@@ -9522,10 +9548,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00009"
+      "scriptcat00010"
     ],
     "category_names": [
-      "Monitoring & Analytics"
+      "Dashboards & Frontends"
     ],
     "notes": [],
     "port": 80,
@@ -9582,10 +9608,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00022"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Communication & Community"
     ],
     "notes": [],
     "port": 9000,
@@ -9953,7 +9979,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -10070,10 +10096,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00024"
+      "scriptcat00016"
     ],
     "category_names": [
-      "Gaming & Leisure"
+      "IoT & Smart Home"
     ],
     "notes": [],
     "port": 8080,
@@ -10100,10 +10126,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00007"
+      "scriptcat00007",
+      "scriptcat00022"
     ],
     "category_names": [
-      "Backup & Recovery"
+      "Backup & Recovery",
+      "Communication & Community"
     ],
     "notes": [],
     "port": 5000,
@@ -10196,10 +10224,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat000026"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 3000,
@@ -10286,10 +10314,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00022"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Communication & Community"
     ],
     "notes": [],
     "port": 80,
@@ -10470,10 +10498,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00025"
+      "scriptcat00022"
     ],
     "category_names": [
-      "Business & ERP"
+      "Communication & Community"
     ],
     "notes": [],
     "port": 8065,
@@ -10500,10 +10528,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat00024"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Gaming & Leisure"
     ],
     "notes": [],
     "port": 9000,
@@ -10686,10 +10714,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00004"
+      "scriptcat000027"
     ],
     "category_names": [
-      "Network & Firewall"
+      "Remote Access & VPN"
     ],
     "notes": [],
     "port": 80,
@@ -10746,10 +10774,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00011"
+      "scriptcat00013"
     ],
     "category_names": [
-      "Files & Downloads"
+      "Media & Streaming"
     ],
     "notes": [],
     "port": 8081,
@@ -10779,7 +10807,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -10810,7 +10838,7 @@
       "scriptcat00004"
     ],
     "category_names": [
-      "Operating Systems",
+      "Operating Systems & Appliances",
       "Network & Firewall"
     ],
     "notes": [],
@@ -10940,10 +10968,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00008"
+      "scriptcat00011"
     ],
     "category_names": [
-      "Databases"
+      "Files & Downloads"
     ],
     "notes": [],
     "port": 9001,
@@ -11038,10 +11066,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00024"
+      "scriptcat000026"
     ],
     "category_names": [
-      "Gaming & Leisure"
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 80,
@@ -11075,7 +11103,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -11139,7 +11167,7 @@
       "scriptcat00018"
     ],
     "category_names": [
-      "MQTT & Messaging"
+      "Messaging & Queues"
     ],
     "notes": [],
     "port": 0,
@@ -11169,7 +11197,7 @@
       "scriptcat00022"
     ],
     "category_names": [
-      "Bots & ChatOps"
+      "Communication & Community"
     ],
     "notes": [],
     "port": 64738,
@@ -11260,10 +11288,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00004"
+      "scriptcat00009"
     ],
     "category_names": [
-      "Network & Firewall"
+      "Monitoring & Analytics"
     ],
     "notes": [],
     "port": 5216,
@@ -11290,10 +11318,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00016"
+      "scriptcat00019"
     ],
     "category_names": [
-      "IoT & Smart Home"
+      "Automation & Scheduling"
     ],
     "notes": [],
     "port": 5678,
@@ -11513,10 +11541,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00004"
+      "scriptcat000027"
     ],
     "category_names": [
-      "Network & Firewall"
+      "Remote Access & VPN"
     ],
     "notes": [],
     "port": 0,
@@ -11603,10 +11631,12 @@
     "type": "addon",
     "type_id": "88xtxy57q80v38v",
     "categories": [
-      "scriptcat00001"
+      "scriptcat00001",
+      "scriptcat00009"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management",
+      "Monitoring & Analytics"
     ],
     "notes": [],
     "port": 19999,
@@ -11667,10 +11697,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00004"
+      "scriptcat000027"
     ],
     "category_names": [
-      "Network & Firewall"
+      "Remote Access & VPN"
     ],
     "notes": [],
     "port": 0,
@@ -11728,10 +11758,10 @@
     "type": "vm",
     "type_id": "lte524abgx960bd",
     "categories": [
-      "scriptcat00002"
+      "scriptcat00011"
     ],
     "category_names": [
-      "Operating Systems"
+      "Files & Downloads"
     ],
     "notes": [],
     "port": 80,
@@ -11762,10 +11792,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00002"
+      "scriptcat00011"
     ],
     "category_names": [
-      "Operating Systems"
+      "Files & Downloads"
     ],
     "notes": [],
     "port": 443,
@@ -11792,10 +11822,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00010"
+      "scriptcat000027"
     ],
     "category_names": [
-      "Dashboards & Frontends"
+      "Remote Access & VPN"
     ],
     "notes": [],
     "port": 6989,
@@ -11985,7 +12015,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -12012,10 +12042,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00009",
+      "scriptcat00016"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Monitoring & Analytics",
+      "IoT & Smart Home"
     ],
     "notes": [],
     "port": 1337,
@@ -12042,9 +12074,11 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
+      "scriptcat00008",
       "scriptcat00025"
     ],
     "category_names": [
+      "Databases",
       "Business & ERP"
     ],
     "notes": [],
@@ -12072,10 +12106,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00016"
+      "scriptcat00016",
+      "scriptcat00019"
     ],
     "category_names": [
-      "IoT & Smart Home"
+      "IoT & Smart Home",
+      "Automation & Scheduling"
     ],
     "notes": [],
     "port": 1880,
@@ -12460,10 +12496,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00024"
+      "scriptcat00016"
     ],
     "category_names": [
-      "Gaming & Leisure"
+      "IoT & Smart Home"
     ],
     "notes": [],
     "port": 5000,
@@ -12524,10 +12560,12 @@
     "type": "addon",
     "type_id": "88xtxy57q80v38v",
     "categories": [
-      "scriptcat00010"
+      "scriptcat00001",
+      "scriptcat00019"
     ],
     "category_names": [
-      "Dashboards & Frontends"
+      "Host Management",
+      "Automation & Scheduling"
     ],
     "notes": [],
     "port": 1337,
@@ -12619,10 +12657,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00013"
+      "scriptcat00013",
+      "scriptcat00014"
     ],
     "category_names": [
-      "Media & Streaming"
+      "Media & Streaming",
+      "*Arr Suite"
     ],
     "notes": [],
     "port": 5000,
@@ -12679,10 +12719,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00020"
     ],
     "category_names": [
-      "Miscellaneous"
+      "AI / Coding & Dev-Tools"
     ],
     "notes": [],
     "port": 80,
@@ -12712,7 +12752,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 80,
@@ -12934,7 +12974,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 0,
@@ -12965,9 +13005,11 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
+      "scriptcat00012",
       "scriptcat00020"
     ],
     "category_names": [
+      "Documents & Notes",
       "AI / Coding & Dev-Tools"
     ],
     "notes": [],
@@ -13055,10 +13097,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00025"
+      "scriptcat000026"
     ],
     "category_names": [
-      "Business & ERP"
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 80,
@@ -13092,7 +13134,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 0,
@@ -13188,7 +13230,7 @@
     ],
     "category_names": [
       "Network & Firewall",
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 0,
@@ -13215,10 +13257,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00004"
+      "scriptcat000027"
     ],
     "category_names": [
-      "Network & Firewall"
+      "Remote Access & VPN"
     ],
     "notes": [],
     "port": 0,
@@ -13245,10 +13287,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00004"
+      "scriptcat000027"
     ],
     "category_names": [
-      "Network & Firewall"
+      "Remote Access & VPN"
     ],
     "notes": [],
     "port": 0,
@@ -13280,7 +13322,7 @@
     ],
     "category_names": [
       "Network & Firewall",
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 443,
@@ -13437,10 +13479,10 @@
     "type": "vm",
     "type_id": "lte524abgx960bd",
     "categories": [
-      "scriptcat00002"
+      "scriptcat00011"
     ],
     "category_names": [
-      "Operating Systems"
+      "Files & Downloads"
     ],
     "notes": [],
     "port": 80,
@@ -13593,10 +13635,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00021"
+      "scriptcat000027"
     ],
     "category_names": [
-      "Webservers & Proxies"
+      "Remote Access & VPN"
     ],
     "notes": [],
     "port": 443,
@@ -13623,10 +13665,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00020"
+      "scriptcat000026"
     ],
     "category_names": [
-      "AI / Coding & Dev-Tools"
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 3100,
@@ -13653,9 +13695,11 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
+      "scriptcat00012",
       "scriptcat00020"
     ],
     "category_names": [
+      "Documents & Notes",
       "AI / Coding & Dev-Tools"
     ],
     "notes": [],
@@ -13683,9 +13727,11 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
+      "scriptcat00012",
       "scriptcat00020"
     ],
     "category_names": [
+      "Documents & Notes",
       "AI / Coding & Dev-Tools"
     ],
     "notes": [],
@@ -13893,10 +13939,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00021"
+      "scriptcat00025"
     ],
     "category_names": [
-      "Webservers & Proxies"
+      "Business & ERP"
     ],
     "notes": [],
     "port": 80,
@@ -13930,7 +13976,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -13960,7 +14006,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -13987,10 +14033,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00004"
+      "scriptcat00009"
     ],
     "category_names": [
-      "Network & Firewall"
+      "Monitoring & Analytics"
     ],
     "notes": [],
     "port": 8080,
@@ -14054,7 +14100,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 5000,
@@ -14206,10 +14252,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00004"
+      "scriptcat00009"
     ],
     "category_names": [
-      "Network & Firewall"
+      "Monitoring & Analytics"
     ],
     "notes": [],
     "port": 0,
@@ -14357,10 +14403,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00022"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Communication & Community"
     ],
     "notes": [],
     "port": 80,
@@ -14387,10 +14433,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00025"
+      "scriptcat000026"
     ],
     "category_names": [
-      "Business & ERP"
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 80,
@@ -14417,10 +14463,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat000026"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 1337,
@@ -14695,7 +14741,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -14725,7 +14771,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -14755,7 +14801,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -14785,7 +14831,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -14842,10 +14888,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00019"
+      "scriptcat00019",
+      "scriptcat00022"
     ],
     "category_names": [
-      "Automation & Scheduling"
+      "Automation & Scheduling",
+      "Communication & Community"
     ],
     "notes": [],
     "port": 80,
@@ -15086,11 +15134,9 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00001",
       "scriptcat00009"
     ],
     "category_names": [
-      "Proxmox & Virtualization",
       "Monitoring & Analytics"
     ],
     "notes": [],
@@ -15153,7 +15199,7 @@
       "scriptcat00009"
     ],
     "category_names": [
-      "Proxmox & Virtualization",
+      "Host Management",
       "Monitoring & Analytics"
     ],
     "notes": [],
@@ -15181,10 +15227,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00018"
+      "scriptcat00022"
     ],
     "category_names": [
-      "MQTT & Messaging"
+      "Communication & Community"
     ],
     "notes": [],
     "port": 0,
@@ -15244,7 +15290,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 8007,
@@ -15278,7 +15324,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 8443,
@@ -15308,7 +15354,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 8006,
@@ -15342,7 +15388,7 @@
       "scriptcat00018"
     ],
     "category_names": [
-      "MQTT & Messaging"
+      "Messaging & Queues"
     ],
     "notes": [],
     "port": 8645,
@@ -15459,10 +15505,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat000026"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 4100,
@@ -15492,7 +15538,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -15522,7 +15568,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 3000,
@@ -15553,7 +15599,7 @@
       "scriptcat00009"
     ],
     "category_names": [
-      "Proxmox & Virtualization",
+      "Host Management",
       "Monitoring & Analytics"
     ],
     "notes": [],
@@ -15773,7 +15819,7 @@
       "scriptcat00018"
     ],
     "category_names": [
-      "MQTT & Messaging"
+      "Messaging & Queues"
     ],
     "notes": [],
     "port": 15672,
@@ -15864,10 +15910,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat000026"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 5232,
@@ -15954,10 +16000,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat000026"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 3000,
@@ -16228,10 +16274,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00013"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Media & Streaming"
     ],
     "notes": [],
     "port": 80,
@@ -16261,7 +16307,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 80,
@@ -16289,10 +16335,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00021"
+      "scriptcat000027"
     ],
     "category_names": [
-      "Webservers & Proxies"
+      "Remote Access & VPN"
     ],
     "notes": [],
     "port": 21114,
@@ -16506,7 +16552,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -16533,9 +16579,11 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
+      "scriptcat00006",
       "scriptcat00009"
     ],
     "category_names": [
+      "Authentication & Security",
       "Monitoring & Analytics"
     ],
     "notes": [],
@@ -16606,7 +16654,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": true,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -16627,10 +16675,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00004"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Network & Firewall"
     ],
     "notes": [],
     "port": 8888,
@@ -16747,10 +16795,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00013"
+      "scriptcat00013",
+      "scriptcat00014"
     ],
     "category_names": [
-      "Media & Streaming"
+      "Media & Streaming",
+      "*Arr Suite"
     ],
     "notes": [],
     "port": 5055,
@@ -16939,10 +16989,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00021"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Webservers & Proxies"
     ],
     "notes": [],
     "port": 3000,
@@ -17059,10 +17109,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00006"
+      "scriptcat00006",
+      "scriptcat00022"
     ],
     "category_names": [
-      "Authentication & Security"
+      "Authentication & Security",
+      "Communication & Community"
     ],
     "notes": [],
     "port": 80,
@@ -17277,10 +17329,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00023"
+      "scriptcat00023",
+      "scriptcat00025"
     ],
     "category_names": [
-      "Finance & Budgeting"
+      "Finance & Budgeting",
+      "Business & ERP"
     ],
     "notes": [],
     "port": 8765,
@@ -17307,10 +17361,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00025"
+      "scriptcat00025",
+      "scriptcat000026"
     ],
     "category_names": [
-      "Business & ERP"
+      "Business & ERP",
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 80,
@@ -17337,12 +17393,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00020",
-      "scriptcat00019"
+      "scriptcat00020"
     ],
     "category_names": [
-      "AI / Coding & Dev-Tools",
-      "Automation & Scheduling"
+      "AI / Coding & Dev-Tools"
     ],
     "notes": [],
     "port": 9000,
@@ -17648,10 +17702,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00024"
+      "scriptcat00016"
     ],
     "category_names": [
-      "Gaming & Leisure"
+      "IoT & Smart Home"
     ],
     "notes": [],
     "port": 7912,
@@ -17768,10 +17822,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00004"
+      "scriptcat00021"
     ],
     "category_names": [
-      "Network & Firewall"
+      "Webservers & Proxies"
     ],
     "notes": [],
     "port": 3128,
@@ -17798,10 +17852,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00022"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Communication & Community"
     ],
     "notes": [],
     "port": 8080,
@@ -17933,7 +17987,7 @@
       "scriptcat00022"
     ],
     "category_names": [
-      "Bots & ChatOps"
+      "Communication & Community"
     ],
     "notes": [],
     "port": 80,
@@ -17963,7 +18017,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -18050,10 +18104,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat00021"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Webservers & Proxies"
     ],
     "notes": [],
     "port": 1337,
@@ -18080,10 +18134,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00011"
+      "scriptcat00013"
     ],
     "category_names": [
-      "Files & Downloads"
+      "Media & Streaming"
     ],
     "notes": [],
     "port": 8000,
@@ -18174,10 +18228,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat000026"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 80,
@@ -18332,10 +18386,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat00011"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Files & Downloads"
     ],
     "notes": [],
     "port": 8384,
@@ -18542,10 +18596,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00024"
+      "scriptcat00022"
     ],
     "category_names": [
-      "Gaming & Leisure"
+      "Communication & Community"
     ],
     "notes": [],
     "port": 9987,
@@ -18602,10 +18656,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00013"
+      "scriptcat00016"
     ],
     "category_names": [
-      "Media & Streaming"
+      "IoT & Smart Home"
     ],
     "notes": [],
     "port": 80,
@@ -18662,10 +18716,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00006"
+      "scriptcat00006",
+      "scriptcat000027"
     ],
     "category_names": [
-      "Authentication & Security"
+      "Authentication & Security",
+      "Remote Access & VPN"
     ],
     "notes": [],
     "port": 3080,
@@ -18692,10 +18748,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00006"
+      "scriptcat00006",
+      "scriptcat000027"
     ],
     "category_names": [
-      "Authentication & Security"
+      "Authentication & Security",
+      "Remote Access & VPN"
     ],
     "notes": [],
     "port": 80,
@@ -18722,10 +18780,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00009"
+      "scriptcat00009",
+      "scriptcat00016"
     ],
     "category_names": [
-      "Monitoring & Analytics"
+      "Monitoring & Analytics",
+      "IoT & Smart Home"
     ],
     "notes": [],
     "port": 4000,
@@ -18759,7 +18819,7 @@
       "scriptcat00022"
     ],
     "category_names": [
-      "Bots & ChatOps"
+      "Communication & Community"
     ],
     "notes": [],
     "port": 9000,
@@ -18978,10 +19038,12 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00009",
+      "scriptcat00016"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Monitoring & Analytics",
+      "IoT & Smart Home"
     ],
     "notes": [],
     "port": 8082,
@@ -19136,10 +19198,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00011"
+      "scriptcat00013"
     ],
     "category_names": [
-      "Files & Downloads"
+      "Media & Streaming"
     ],
     "notes": [],
     "port": 3313,
@@ -19263,7 +19325,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 0,
@@ -19354,10 +19416,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat000026"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Productivity & Workflows"
     ],
     "notes": [],
     "port": 3002,
@@ -19417,7 +19479,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 0,
@@ -19474,10 +19536,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00004"
+      "scriptcat000027"
     ],
     "category_names": [
-      "Network & Firewall"
+      "Remote Access & VPN"
     ],
     "notes": [],
     "port": 0,
@@ -19507,7 +19569,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 0,
@@ -19541,7 +19603,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 0,
@@ -19571,7 +19633,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 0,
@@ -19601,7 +19663,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 0,
@@ -19692,10 +19754,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00025"
+      "scriptcat00021"
     ],
     "category_names": [
-      "Business & ERP"
+      "Webservers & Proxies"
     ],
     "notes": [],
     "port": 443,
@@ -19725,7 +19787,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 80,
@@ -19846,10 +19908,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00013"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Media & Streaming"
     ],
     "notes": [],
     "port": 8888,
@@ -19876,10 +19938,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00011"
+      "scriptcat00014"
     ],
     "category_names": [
-      "Files & Downloads"
+      "*Arr Suite"
     ],
     "notes": [],
     "port": 0,
@@ -19939,7 +20001,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -19969,7 +20031,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -19999,7 +20061,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 0,
@@ -20566,9 +20628,11 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
+      "scriptcat00006",
       "scriptcat00009"
     ],
     "category_names": [
+      "Authentication & Security",
       "Monitoring & Analytics"
     ],
     "notes": [],
@@ -20667,7 +20731,7 @@
       "scriptcat00001"
     ],
     "category_names": [
-      "Proxmox & Virtualization"
+      "Host Management"
     ],
     "notes": [],
     "port": 10000,
@@ -20700,10 +20764,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00012"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Documents & Notes"
     ],
     "notes": [],
     "port": 80,
@@ -20888,10 +20952,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00004"
+      "scriptcat000027"
     ],
     "category_names": [
-      "Network & Firewall"
+      "Remote Access & VPN"
     ],
     "notes": [],
     "port": 10086,
@@ -21014,10 +21078,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00012"
+      "scriptcat00022"
     ],
     "category_names": [
-      "Documents & Notes"
+      "Communication & Community"
     ],
     "notes": [],
     "port": 80,
@@ -21121,7 +21185,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": true,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -21168,10 +21232,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00000"
+      "scriptcat00021"
     ],
     "category_names": [
-      "Miscellaneous"
+      "Webservers & Proxies"
     ],
     "notes": [],
     "port": 80,
@@ -21202,10 +21266,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00011"
+      "scriptcat00013"
     ],
     "category_names": [
-      "Files & Downloads"
+      "Media & Streaming"
     ],
     "notes": [],
     "port": 3033,
@@ -21269,7 +21333,7 @@
       "scriptcat00002"
     ],
     "category_names": [
-      "Operating Systems"
+      "Operating Systems & Appliances"
     ],
     "notes": [],
     "port": 80,
@@ -21420,10 +21484,10 @@
     "type": "lxc",
     "type_id": "nm9bra8mzye2scg",
     "categories": [
-      "scriptcat00004"
+      "scriptcat000027"
     ],
     "category_names": [
-      "Network & Firewall"
+      "Remote Access & VPN"
     ],
     "notes": [],
     "port": 3443,
