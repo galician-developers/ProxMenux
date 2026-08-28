@@ -2129,6 +2129,10 @@
       "lxc"
     ],
     "config_path": "",
+    "default_credentials": {
+      "username": "admin",
+      "password": "admin123"
+    },
     "os": ""
   },
   {
