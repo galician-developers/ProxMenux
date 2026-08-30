@@ -3904,7 +3904,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": true,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -7685,7 +7685,7 @@
     "notes": [],
     "port": 3000,
     "website": "https://github.com/alangrainger/immich-public-proxy",
-    "documentation": "https://github.com/alangrainger/immich-public-proxy/tree/main/docs",
+    "documentation": "https://docs.ipp.nz/",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/immich-public-proxy.webp",
     "updateable": true,
     "privileged": false,
@@ -8522,36 +8522,6 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
-    "execute_in": [
-      "lxc"
-    ],
-    "config_path": "",
-    "os": ""
-  },
-  {
-    "name": "Kanidm",
-    "slug": "kanidm",
-    "desc": "Kanidm is a modern, simple and secure identity management platform written in Rust. It provides OAuth2/OIDC, LDAP, RADIUS and Unix (PAM/nsswitch) authentication, WebAuthn/passkey support and a self-service web portal for managing people, groups and service accounts.",
-    "script": "ct/kanidm.sh",
-    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/kanidm.sh",
-    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/kanidm.sh",
-    "type": "lxc",
-    "type_id": "nm9bra8mzye2scg",
-    "categories": [
-      "scriptcat00006"
-    ],
-    "category_names": [
-      "Authentication & Security"
-    ],
-    "notes": [],
-    "port": 8443,
-    "website": "https://kanidm.com/",
-    "documentation": "https://kanidm.github.io/kanidm/stable/",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/kanidm.webp",
-    "updateable": true,
-    "privileged": false,
-    "has_arm": true,
     "is_dev": true,
     "execute_in": [
       "lxc"
@@ -12924,7 +12894,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": true,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -17348,7 +17318,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": true,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -18245,7 +18215,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
