@@ -395,7 +395,7 @@
   {
     "name": "AllStarLink",
     "slug": "allstarlink-vm",
-    "desc": "AllStarLink is a network of Amateur Radio repeaters, remote base stations and hot spots accessible to each other via Voice over Internet Protocol.",
+    "desc": "AllStarLink is an amateur radio network that links repeaters and hotspots over the internet using Asterisk. This VM runs a full node.",
     "script": "vm/allstarlink-vm.sh",
     "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/allstarlink-vm.sh",
     "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/allstarlink-vm.sh",
@@ -409,9 +409,9 @@
     ],
     "notes": [],
     "port": 0,
-    "website": "https://www.allstarlink.org/",
+    "website": "https://allstarlink.org/",
     "documentation": "https://allstarlink.github.io/",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/allstar-link.webp",
+    "logo": "",
     "updateable": false,
     "privileged": false,
     "has_arm": false,
@@ -636,6 +636,32 @@
     "is_dev": false,
     "execute_in": [
       "pve"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
+    "name": "Alpine",
+    "slug": "alpine-vm",
+    "desc": "Alpine Linux is a minimal distribution built on musl and BusyBox that idles in well under 100 MB. This creates a VM from the official UEFI cloud image, which gives Alpine a kernel of its own -- the one thing an Alpine LXC cannot have.",
+    "script": "vm/alpine-vm.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/alpine-vm.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/alpine-vm.sh",
+    "type": "vm",
+    "type_id": "lte524abgx960bd",
+    "categories": [],
+    "category_names": [],
+    "notes": [],
+    "port": 0,
+    "website": "https://alpinelinux.org/cloud/",
+    "documentation": "https://wiki.alpinelinux.org/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/alpine-linux.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "vm"
     ],
     "config_path": "",
     "os": ""
@@ -1176,7 +1202,7 @@
   {
     "name": "Arch Linux",
     "slug": "archlinux-vm",
-    "desc": "Arch Linux is a highly customizable, independent Linux distribution that gives users complete control over their system. Known for its rolling release model, Arch Linux is always up-to-date with the latest software. It's favored by experienced users who appreciate its minimalist approach, demanding a hands-on installation and configuration process. This level of control and flexibility makes it a popular choice for those who want to tailor their Linux system to their exact needs.",
+    "desc": "Arch Linux is a rolling-release distribution built around simplicity and user control. Packages arrive as upstream releases them, and the system is assembled rather than preconfigured.",
     "script": "vm/archlinux-vm.sh",
     "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/archlinux-vm.sh",
     "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/archlinux-vm.sh",
@@ -1191,14 +1217,14 @@
     "notes": [],
     "port": 0,
     "website": "https://archlinux.org/",
-    "documentation": "https://wiki.archlinux.org/title/Main_page",
+    "documentation": "https://wiki.archlinux.org/",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/arch-linux.webp",
-    "updateable": true,
+    "updateable": false,
     "privileged": false,
     "has_arm": false,
     "is_dev": false,
     "execute_in": [
-      "pve"
+      "vm"
     ],
     "config_path": "",
     "os": ""
@@ -1410,7 +1436,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": false,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -1978,6 +2004,32 @@
     "os": ""
   },
   {
+    "name": "BlissOS",
+    "slug": "blissos-vm",
+    "desc": "BlissOS is Android x86 as a full desktop operating system, running on its own kernel rather than inside a host. It suits a VM with a passed-through GPU, where Android apps get real graphics acceleration and their own machine.",
+    "script": "vm/blissos-vm.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/blissos-vm.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/blissos-vm.sh",
+    "type": "vm",
+    "type_id": "lte524abgx960bd",
+    "categories": [],
+    "category_names": [],
+    "notes": [],
+    "port": 0,
+    "website": "https://blissos.org/",
+    "documentation": "https://docs.blissos.org/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/android.webp",
+    "updateable": false,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "vm"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "Blocky",
     "slug": "blocky",
     "desc": "Blocky is a software tool designed for blocking unwanted ads and trackers on local networks. It functions as a DNS proxy and runs on the Go programming language. Blocky intercepts requests to advertisements and other unwanted content and blocks them before they reach the end user. This results in a cleaner, faster, and more secure online experience for users connected to the local network. Blocky is open-source, easy to configure and can be run on a variety of devices, making it a versatile solution for small to medium-sized local networks.",
@@ -2253,6 +2305,32 @@
     "is_dev": false,
     "execute_in": [
       "pve"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
+    "name": "CachyOS",
+    "slug": "cachyos-vm",
+    "desc": "CachyOS is a performance-focused Arch derivative with custom kernels, BORE and sched-ext schedulers, and packages built for x86-64-v3/v4. Installation is completed in the graphical Calamares installer.",
+    "script": "vm/cachyos-vm.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/cachyos-vm.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/cachyos-vm.sh",
+    "type": "vm",
+    "type_id": "lte524abgx960bd",
+    "categories": [],
+    "category_names": [],
+    "notes": [],
+    "port": 0,
+    "website": "https://cachyos.org/",
+    "documentation": "https://wiki.cachyos.org/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/cachyos.webp",
+    "updateable": false,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "vm"
     ],
     "config_path": "",
     "os": ""
@@ -3762,7 +3840,7 @@
   {
     "name": "Debian 13",
     "slug": "debian-13-vm",
-    "desc": "Debian 13 (Trixie) Linux is a distribution that emphasizes free software. It supports many hardware platforms",
+    "desc": "Debian 13 (Trixie) as a cloud image. A general-purpose base for anything you would otherwise install by hand.",
     "script": "vm/debian-13-vm.sh",
     "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/debian-13-vm.sh",
     "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/debian-13-vm.sh",
@@ -3777,14 +3855,14 @@
     "notes": [],
     "port": 0,
     "website": "https://www.debian.org/",
-    "documentation": "",
+    "documentation": "https://www.debian.org/doc/",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/debian.webp",
-    "updateable": true,
+    "updateable": false,
     "privileged": false,
     "has_arm": false,
     "is_dev": false,
     "execute_in": [
-      "pve"
+      "vm"
     ],
     "config_path": "",
     "os": ""
@@ -3792,7 +3870,7 @@
   {
     "name": "Debian 12",
     "slug": "debian-vm",
-    "desc": "Debian Linux is a distribution that emphasizes free software. It supports many hardware platforms",
+    "desc": "Debian 12 (Bookworm) as a cloud image. The long-standing default base for servers that value stability over recency.",
     "script": "vm/debian-vm.sh",
     "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/debian-vm.sh",
     "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/debian-vm.sh",
@@ -3807,14 +3885,14 @@
     "notes": [],
     "port": 0,
     "website": "https://www.debian.org/",
-    "documentation": "",
+    "documentation": "https://www.debian.org/doc/",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/debian.webp",
-    "updateable": true,
+    "updateable": false,
     "privileged": false,
     "has_arm": false,
     "is_dev": false,
     "execute_in": [
-      "pve"
+      "vm"
     ],
     "config_path": "",
     "os": ""
@@ -4234,7 +4312,7 @@
   {
     "name": "Docker",
     "slug": "docker-vm",
-    "desc": "Docker is an open-source project for automating the deployment of applications as portable, self-sufficient containers. This Template includes Docker Engine and Docker Compose Plugin.",
+    "desc": "A Debian VM with Docker and Docker Compose installed, optionally with Portainer. Useful where containers need a kernel of their own rather than an LXC.",
     "script": "vm/docker-vm.sh",
     "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/docker-vm.sh",
     "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/docker-vm.sh",
@@ -4249,20 +4327,16 @@
     "notes": [],
     "port": 0,
     "website": "https://www.docker.com/",
-    "documentation": "",
+    "documentation": "https://docs.docker.com/",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/docker.webp",
-    "updateable": true,
+    "updateable": false,
     "privileged": false,
     "has_arm": false,
     "is_dev": false,
     "execute_in": [
-      "pve"
+      "vm"
     ],
     "config_path": "",
-    "default_credentials": {
-      "username": "root",
-      "password": "Cloud-Init Password (in Console) or without Cloud-Init: No Password"
-    },
     "os": ""
   },
   {
@@ -5291,6 +5365,32 @@
       "username": "root",
       "password": ""
     },
+    "os": ""
+  },
+  {
+    "name": "Fedora",
+    "slug": "fedora-vm",
+    "desc": "Fedora is the upstream of Red Hat Enterprise Linux and ships current kernels, compilers and desktop software roughly every six months. This creates a VM from the official Cloud Base image, so the release is picked up from the mirror rather than pinned in the script.",
+    "script": "vm/fedora-vm.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/fedora-vm.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/fedora-vm.sh",
+    "type": "vm",
+    "type_id": "lte524abgx960bd",
+    "categories": [],
+    "category_names": [],
+    "notes": [],
+    "port": 0,
+    "website": "https://fedoraproject.org/cloud/",
+    "documentation": "https://docs.fedoraproject.org/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/fedora.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "vm"
+    ],
+    "config_path": "",
     "os": ""
   },
   {
@@ -6931,7 +7031,7 @@
   {
     "name": "Home Assistant OS",
     "slug": "haos-vm",
-    "desc": "This script automates the process of creating a Virtual Machine (VM) using the official KVM (qcow2) disk image provided by the Home Assistant Team. It involves finding, downloading, and extracting the image, defining user-defined settings, importing and attaching the disk, setting the boot order, and starting the VM. It supports various storage types, and does not involve any hidden installations. After the script completes, click on the VM, then on the Summary tab to find the VM IP.",
+    "desc": "Home Assistant OS is the appliance image of Home Assistant, managing its own supervisor and add-ons. This installs the official image as a VM.",
     "script": "vm/haos-vm.sh",
     "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/haos-vm.sh",
     "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/haos-vm.sh",
@@ -6948,12 +7048,12 @@
     "website": "https://www.home-assistant.io/",
     "documentation": "https://www.home-assistant.io/docs/",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/home-assistant.webp",
-    "updateable": true,
+    "updateable": false,
     "privileged": false,
     "has_arm": false,
     "is_dev": false,
     "execute_in": [
-      "pve"
+      "vm"
     ],
     "config_path": "",
     "os": ""
@@ -10799,9 +10899,9 @@
     "os": ""
   },
   {
-    "name": "Mikrotik RouterOS CHR",
+    "name": "MikroTik RouterOS",
     "slug": "mikrotik-routeros",
-    "desc": "Mikrotik RouterOS CHR is a Linux-based operating system that transforms a computer into a router. It provides a wide range of features for network routing, firewall, bandwidth management, wireless access point, backhaul link, hotspot gateway, VPN server, and many others. RouterOS is a versatile solution that supports various network configurations, including those with multiple WAN links, hotspots, and VPNs. It is highly customizable, allowing administrators to configure and manage their networks according to their specific requirements. With RouterOS, network administrators can monitor and control the performance and security of their networks, ensuring reliable and secure communication for their users. The software is designed to be easy to use and provides a wide range of tools for network management, making it a valuable solution for small and large networks alike.",
+    "desc": "RouterOS is MikroTik's network operating system, offering routing, firewalling, VPN and wireless management. The Cloud Hosted Router image runs as a VM.",
     "script": "vm/mikrotik-routeros.sh",
     "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/mikrotik-routeros.sh",
     "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/mikrotik-routeros.sh",
@@ -10817,21 +10917,17 @@
     ],
     "notes": [],
     "port": 0,
-    "website": "https://mikrotik.com",
-    "documentation": "https://help.mikrotik.com/docs/spaces/ROS/pages/18350234/Cloud+Hosted+Router+CHR",
+    "website": "https://mikrotik.com/software",
+    "documentation": "https://help.mikrotik.com/docs/",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/mikrotik.webp",
-    "updateable": true,
+    "updateable": false,
     "privileged": false,
     "has_arm": false,
-    "is_dev": false,
+    "is_dev": true,
     "execute_in": [
-      "pve"
+      "vm"
     ],
     "config_path": "",
-    "default_credentials": {
-      "username": "admin",
-      "password": "none"
-    },
     "os": ""
   },
   {
@@ -11725,7 +11821,7 @@
   {
     "name": "Nextcloud",
     "slug": "nextcloud-vm",
-    "desc": "TurnKey Nextcloud is an open-source file sharing server and collaboration platform that can store your personal content, like documents and pictures, in a centralized location.",
+    "desc": "Nextcloud is a self-hosted platform for files, calendars, contacts and collaboration. This installs the TurnKey appliance as a VM.",
     "script": "vm/nextcloud-vm.sh",
     "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/nextcloud-vm.sh",
     "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/nextcloud-vm.sh",
@@ -11739,21 +11835,17 @@
     ],
     "notes": [],
     "port": 80,
-    "website": "https://www.turnkeylinux.org/nextcloud",
-    "documentation": "https://docs.nextcloud.com/server/21/admin_manual/contents.html",
+    "website": "https://nextcloud.com/",
+    "documentation": "https://docs.nextcloud.com/",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/nextcloud.webp",
-    "updateable": true,
+    "updateable": false,
     "privileged": false,
     "has_arm": false,
     "is_dev": false,
     "execute_in": [
-      "pve"
+      "vm"
     ],
     "config_path": "",
-    "default_credentials": {
-      "username": "admin",
-      "password": ""
-    },
     "os": ""
   },
   {
@@ -13192,7 +13284,7 @@
   {
     "name": "OpenWrt",
     "slug": "openwrt-vm",
-    "desc": "OpenWrt is a powerful open-source firmware that can transform a wide range of networking devices into highly customizable and feature-rich routers, providing users with greater control and flexibility over their network infrastructure.",
+    "desc": "OpenWrt is a Linux distribution for routers and embedded devices, with a full package manager and writable filesystem. Running it as a VM turns the host into a router.",
     "script": "vm/openwrt-vm.sh",
     "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/openwrt-vm.sh",
     "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/openwrt-vm.sh",
@@ -13211,12 +13303,12 @@
     "website": "https://openwrt.org/",
     "documentation": "https://openwrt.org/docs/start",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/openwrt.webp",
-    "updateable": true,
+    "updateable": false,
     "privileged": false,
     "has_arm": false,
     "is_dev": false,
     "execute_in": [
-      "pve"
+      "vm"
     ],
     "config_path": "",
     "os": ""
@@ -13284,7 +13376,7 @@
   {
     "name": "OPNsense",
     "slug": "opnsense-vm",
-    "desc": "OPNsense is an open-source firewall and routing platform based on FreeBSD. It provides advanced security features, including intrusion detection, VPN support, traffic shaping, and web filtering, with an intuitive web interface for easy management. Known for its reliability and regular updates, OPNsense is a popular choice for both businesses and home networks.",
+    "desc": "OPNsense is a FreeBSD-based firewall and routing platform with a web interface, IDS/IPS and VPN support. Installation is completed in the installer console.",
     "script": "vm/opnsense-vm.sh",
     "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/opnsense-vm.sh",
     "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/opnsense-vm.sh",
@@ -13303,18 +13395,14 @@
     "website": "https://opnsense.org/",
     "documentation": "https://docs.opnsense.org/",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/opnsense.webp",
-    "updateable": true,
+    "updateable": false,
     "privileged": false,
     "has_arm": false,
     "is_dev": false,
     "execute_in": [
-      "pve"
+      "vm"
     ],
     "config_path": "",
-    "default_credentials": {
-      "username": "root",
-      "password": "opnsense"
-    },
     "os": ""
   },
   {
@@ -13446,7 +13534,7 @@
   {
     "name": "ownCloud",
     "slug": "owncloud-vm",
-    "desc": "TurnKey ownCloud is an open-source file sharing server and collaboration platform that can store your personal content, like documents and pictures, in a centralized location.",
+    "desc": "ownCloud is a self-hosted file sync and share platform. This installs the TurnKey appliance as a VM.",
     "script": "vm/owncloud-vm.sh",
     "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/owncloud-vm.sh",
     "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/owncloud-vm.sh",
@@ -13460,21 +13548,17 @@
     ],
     "notes": [],
     "port": 80,
-    "website": "https://www.turnkeylinux.org/owncloud",
+    "website": "https://owncloud.com/",
     "documentation": "https://doc.owncloud.com/",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/owncloud.webp",
-    "updateable": true,
+    "updateable": false,
     "privileged": false,
     "has_arm": false,
     "is_dev": false,
     "execute_in": [
-      "pve"
+      "vm"
     ],
     "config_path": "",
-    "default_credentials": {
-      "username": "admin",
-      "password": ""
-    },
     "os": ""
   },
   {
@@ -14308,9 +14392,9 @@
     "os": ""
   },
   {
-    "name": "PiMox HAOS",
+    "name": "Home Assistant OS (ARM64)",
     "slug": "pimox-haos-vm",
-    "desc": "The script automates the manual process of finding, downloading and extracting the aarch64 (qcow2) disk image provided by the Home Assistant Team, creating a VM with user defined settings, importing and attaching the disk, setting the boot order and starting the VM.",
+    "desc": "Home Assistant OS built for ARM64 hosts running Pimox. The same appliance image as the amd64 VM, different architecture.",
     "script": "vm/pimox-haos-vm.sh",
     "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/pimox-haos-vm.sh",
     "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/pimox-haos-vm.sh",
@@ -14324,15 +14408,15 @@
     ],
     "notes": [],
     "port": 8123,
-    "website": "https://github.com/jiangcuo/Proxmox-Port",
-    "documentation": "",
+    "website": "https://www.home-assistant.io/",
+    "documentation": "https://www.home-assistant.io/docs/",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/home-assistant.webp",
-    "updateable": true,
+    "updateable": false,
     "privileged": false,
     "has_arm": false,
     "is_dev": false,
     "execute_in": [
-      "pve"
+      "vm"
     ],
     "config_path": "",
     "os": ""
@@ -19287,9 +19371,9 @@
     "os": ""
   },
   {
-    "name": "TrueNAS Community Edition",
+    "name": "TrueNAS",
     "slug": "truenas-vm",
-    "desc": "TrueNAS Community Edition is the world's most deployed storage software. Free, flexible and build on OpenZFS with Docker.",
+    "desc": "TrueNAS is a ZFS-based storage operating system with snapshots, replication and shares over SMB, NFS and iSCSI. Installation is completed in the installer console.",
     "script": "vm/truenas-vm.sh",
     "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/truenas-vm.sh",
     "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/truenas-vm.sh",
@@ -19303,7 +19387,7 @@
     ],
     "notes": [],
     "port": 0,
-    "website": "https://www.truenas.com/truenas-community-edition/",
+    "website": "https://www.truenas.com/",
     "documentation": "https://www.truenas.com/docs/",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/truenas-core.webp",
     "updateable": false,
@@ -19311,7 +19395,7 @@
     "has_arm": false,
     "is_dev": false,
     "execute_in": [
-      "pve"
+      "vm"
     ],
     "config_path": "",
     "os": ""
@@ -19567,7 +19651,7 @@
   {
     "name": "Ubuntu 22.04",
     "slug": "ubuntu2204-vm",
-    "desc": "Ubuntu is a distribution based on Debian, designed to have regular releases and a consistent user experience.",
+    "desc": "Ubuntu 22.04 LTS (Jammy Jellyfish) as a cloud image, supported until 2027.",
     "script": "vm/ubuntu2204-vm.sh",
     "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/ubuntu2204-vm.sh",
     "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/ubuntu2204-vm.sh",
@@ -19582,14 +19666,14 @@
     "notes": [],
     "port": 0,
     "website": "https://ubuntu.com/",
-    "documentation": "",
+    "documentation": "https://help.ubuntu.com/",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/ubuntu.webp",
-    "updateable": true,
+    "updateable": false,
     "privileged": false,
     "has_arm": false,
     "is_dev": false,
     "execute_in": [
-      "pve"
+      "vm"
     ],
     "config_path": "",
     "os": ""
@@ -19597,7 +19681,7 @@
   {
     "name": "Ubuntu 24.04",
     "slug": "ubuntu2404-vm",
-    "desc": "Ubuntu is a distribution based on Debian, designed to have regular releases and a consistent user experience.",
+    "desc": "Ubuntu 24.04 LTS (Noble Numbat) as a cloud image, supported until 2029.",
     "script": "vm/ubuntu2404-vm.sh",
     "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/ubuntu2404-vm.sh",
     "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/ubuntu2404-vm.sh",
@@ -19612,14 +19696,14 @@
     "notes": [],
     "port": 0,
     "website": "https://ubuntu.com/",
-    "documentation": "",
+    "documentation": "https://help.ubuntu.com/",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/ubuntu.webp",
-    "updateable": true,
+    "updateable": false,
     "privileged": false,
     "has_arm": false,
     "is_dev": false,
     "execute_in": [
-      "pve"
+      "vm"
     ],
     "config_path": "",
     "os": ""
@@ -19627,7 +19711,7 @@
   {
     "name": "Ubuntu 25.04",
     "slug": "ubuntu2504-vm",
-    "desc": "Ubuntu is a distribution based on Debian, designed to have regular releases and a consistent user experience.",
+    "desc": "Ubuntu 25.04 (Plucky Puffin) as a cloud image. An interim release with a nine-month support window.",
     "script": "vm/ubuntu2504-vm.sh",
     "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/ubuntu2504-vm.sh",
     "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/ubuntu2504-vm.sh",
@@ -19642,14 +19726,14 @@
     "notes": [],
     "port": 0,
     "website": "https://ubuntu.com/",
-    "documentation": "",
+    "documentation": "https://help.ubuntu.com/",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/ubuntu.webp",
-    "updateable": true,
+    "updateable": false,
     "privileged": false,
     "has_arm": false,
     "is_dev": false,
     "execute_in": [
-      "pve"
+      "vm"
     ],
     "config_path": "",
     "os": ""
@@ -19751,7 +19835,7 @@
   {
     "name": "Umbrel OS",
     "slug": "umbrel-os-vm",
-    "desc": "Take control of your digital life with Umbrel — a private, personal server that lets you self-host powerful open source apps with ease. Whether you want to run a Bitcoin or Lightning node, manage your files with Nextcloud, stream media, block ads across your network, or explore self-hosted AI tools, Umbrel gives you full ownership and privacy. All through a beautiful, user-friendly interface — no cloud, no tracking, just your data under your control.",
+    "desc": "Umbrel OS is a personal server operating system with an app store for self-hosted software. This installs the official image as a VM.",
     "script": "vm/umbrel-os-vm.sh",
     "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/umbrel-os-vm.sh",
     "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/umbrel-os-vm.sh",
@@ -19766,20 +19850,16 @@
     "notes": [],
     "port": 80,
     "website": "https://umbrel.com/",
-    "documentation": "https://community.umbrel.com/c/guides/",
+    "documentation": "https://umbrel.com/umbrelos",
     "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/umbrelos.webp",
-    "updateable": true,
+    "updateable": false,
     "privileged": false,
     "has_arm": false,
     "is_dev": false,
     "execute_in": [
-      "pve"
+      "vm"
     ],
     "config_path": "",
-    "default_credentials": {
-      "username": "umbrel",
-      "password": "umbrel"
-    },
     "os": ""
   },
   {
@@ -21508,6 +21588,32 @@
     "is_dev": false,
     "execute_in": [
       "pve"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
+    "name": "ZimaOS",
+    "slug": "zimaos-vm",
+    "desc": "ZimaOS is the successor to CasaOS: a NAS operating system with an app store, ZFS-backed storage, RAID support and A/B system updates. It targets the Zima hardware line but runs on any x86-64 machine with UEFI.",
+    "script": "vm/zimaos-vm.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/vm/zimaos-vm.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/vm/zimaos-vm.sh",
+    "type": "vm",
+    "type_id": "lte524abgx960bd",
+    "categories": [],
+    "category_names": [],
+    "notes": [],
+    "port": 80,
+    "website": "https://github.com/IceWhaleTech/ZimaOS",
+    "documentation": "https://www.zimaspace.com/docs/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/zimaos.webp",
+    "updateable": false,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "vm"
     ],
     "config_path": "",
     "os": ""
