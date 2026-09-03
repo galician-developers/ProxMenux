@@ -2156,7 +2156,7 @@
   {
     "name": "Borg-UI",
     "slug": "borg-ui",
-    "desc": "Borg-UI is a web frontend for BorgBackup. It replaces the borg command line for everyday work: creating and browsing repositories, scheduling backups, inspecting archives and restoring files, all from the browser. BorgBackup itself is installed alongside it.",
+    "desc": "Borg-UI is a web frontend for BorgBackup. It replaces the borg command line for everyday work: creating and browsing repositories, scheduling backups, inspecting archives and restoring files, all from the browser. Borg 1 and Borg 2 are installed alongside it, at the versions the upstream release pins.",
     "script": "ct/borg-ui.sh",
     "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/borg-ui.sh",
     "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/borg-ui.sh",
@@ -2172,7 +2172,7 @@
     "port": 8081,
     "website": "https://github.com/karanhudia/borg-ui",
     "documentation": "https://github.com/karanhudia/borg-ui#readme",
-    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/borg-ui.webp",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/borgbackup.webp",
     "updateable": true,
     "privileged": false,
     "has_arm": true,
