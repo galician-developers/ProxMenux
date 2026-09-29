@@ -777,7 +777,7 @@
     "updateable": true,
     "privileged": false,
     "has_arm": true,
-    "is_dev": true,
+    "is_dev": false,
     "execute_in": [
       "lxc"
     ],
@@ -6465,6 +6465,36 @@
     "os": ""
   },
   {
+    "name": "Gitea Runner",
+    "slug": "gitea-runner",
+    "desc": "Gitea Runner (act_runner) is the daemon that executes CI/CD jobs for Gitea Actions. It connects to your Gitea instance, polls for queued workflow runs, and executes tasks using either host execution or containerized engines.",
+    "script": "ct/gitea-runner.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/gitea-runner.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/gitea-runner.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00020"
+    ],
+    "category_names": [
+      "AI / Coding & Dev-Tools"
+    ],
+    "notes": [],
+    "port": 0,
+    "website": "https://gitea.com/gitea/runner",
+    "documentation": "https://docs.gitea.com/runner/",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/gitea.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
     "name": "GitHub Runner",
     "slug": "github-runner",
     "desc": "GitHub Actions self-hosted runner executes workflows for your repository or organization, enabling CI/CD, builds, and deployments.",
@@ -8930,6 +8960,36 @@
     "is_dev": false,
     "execute_in": [
       "pve"
+    ],
+    "config_path": "",
+    "os": ""
+  },
+  {
+    "name": "Keeper",
+    "slug": "keeper",
+    "desc": "Keeper is an open-source calendar syncing tool. It pulls events from iCal/ICS links, CalDAV, iCloud, Fastmail, Google Calendar and Outlook, and pushes them to one or many destination calendars, removing copies again when the source event is deleted. Self-hosted instances get every Pro feature.",
+    "script": "ct/keeper.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/keeper.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/keeper.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00019"
+    ],
+    "category_names": [
+      "Automation & Scheduling"
+    ],
+    "notes": [],
+    "port": 3000,
+    "website": "https://www.keeper.sh/",
+    "documentation": "https://github.com/ridafkih/keeper.sh#self-hosted",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/keeper.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
     ],
     "config_path": "",
     "os": ""
@@ -19989,6 +20049,40 @@
       "pve"
     ],
     "config_path": "",
+    "os": ""
+  },
+  {
+    "name": "Tvheadend",
+    "slug": "tvheadend",
+    "desc": "Tvheadend is a TV streaming server and Digital Video Recorder for Linux, supporting DVB-S/S2, DVB-C, DVB-T/T2, ATSC, IPTV, SAT>IP and HDHomeRun as input sources, with HTSP and HTTP streaming output.",
+    "script": "ct/tvheadend.sh",
+    "script_url": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/tvheadend.sh",
+    "script_url_mirror": "https://git.community-scripts.org/community-scripts/ProxmoxVE/raw/branch/main/ct/tvheadend.sh",
+    "type": "lxc",
+    "type_id": "nm9bra8mzye2scg",
+    "categories": [
+      "scriptcat00013"
+    ],
+    "category_names": [
+      "Media & Streaming"
+    ],
+    "notes": [],
+    "port": 9981,
+    "website": "https://tvheadend.org/",
+    "documentation": "https://docs.tvheadend.org",
+    "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/tvheadend.webp",
+    "updateable": true,
+    "privileged": false,
+    "has_arm": false,
+    "is_dev": true,
+    "execute_in": [
+      "lxc"
+    ],
+    "config_path": "",
+    "default_credentials": {
+      "username": "admin",
+      "password": "auto-generated"
+    },
     "os": ""
   },
   {
